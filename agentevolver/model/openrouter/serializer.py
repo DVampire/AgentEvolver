@@ -407,7 +407,8 @@ class OpenRouterChatSerializer:
             _text = _splittable_text(message.content)
             split = (
                 (_text, "") if _text is not None and message.cache
-                else OpenRouterChatSerializer._cache_split(_text) if _text is not None
+                else OpenRouterChatSerializer._cache_split(_text)
+                if _text is not None and message.context_layer is None
                 else None
             )
             if split is not None:

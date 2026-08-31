@@ -286,7 +286,8 @@ class AnthropicChatSerializer:
             text = message.content if isinstance(message.content, str) else None
             split = (
                 (text, "") if text is not None and message.cache
-                else AnthropicChatSerializer._cache_split(text) if text is not None
+                else AnthropicChatSerializer._cache_split(text)
+                if text is not None and message.context_layer is None
                 else None
             )
             if split is not None:

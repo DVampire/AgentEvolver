@@ -412,7 +412,12 @@ class LLMHubChatSerializer:
             _text = _splittable_text(message.content)
             split = (
                 (_text, "") if _text is not None and message.cache
-                else LLMHubChatSerializer._cache_split(_text) if _text is not None
+                # ContextBuilder already separated fixed and live layers. Re-running
+                # the legacy combined-prompt split on the live message creates a fifth
+                # Claude cache breakpoint (system + task + rolling + live + tools),
+                # which Anthropic rejects. Only unlayered legacy messages need inference.
+                else LLMHubChatSerializer._cache_split(_text)
+                if _text is not None and message.context_layer is None
                 else None
             )
             if split is not None:

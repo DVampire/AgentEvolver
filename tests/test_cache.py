@@ -11,9 +11,17 @@ Both halves are checked here so neither can drift without the other noticing. A 
 off a whole surface as uncacheable with no number ever changing.
 """
 
+import asyncio
+
 import pytest
 
-from agentevolver.message.types import AssistantMessage, ContentPartText, HumanMessage, ToolMessage
+from agentevolver.message.types import (
+    AssistantMessage,
+    ContentPartText,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from agentevolver.model.llm_hub.serializer import LLMHubChatSerializer
 from agentevolver.model.openrouter.serializer import OpenRouterChatSerializer
 from agentevolver.model.types import TokenUsage
@@ -171,6 +179,63 @@ def test_a_turn_without_a_catalog_gets_no_breakpoint(serializer):
     """
     out = serializer.serialize_message(HumanMessage(content="the file did not exist"))
     assert out["content"] == "the file did not exist"
+
+
+@pytest.mark.parametrize("serializer", SERIALIZERS)
+def test_an_explicit_live_layer_never_infers_an_extra_breakpoint(serializer):
+    """ContextBuilder has already split this suffix from the fixed task anchor."""
+    live = HumanMessage(content=TURN, context_layer="live")
+    serialized = serializer.serialize_message(live)
+
+    assert "cache_control" not in str(serialized)
+
+
+def test_native_anthropic_live_layer_never_infers_an_extra_breakpoint():
+    from agentevolver.model.anthropic.serializer import AnthropicChatSerializer
+
+    serialized = AnthropicChatSerializer.serialize(
+        HumanMessage(content=TURN, context_layer="live")
+    )
+
+    assert "cache_control" not in str(serialized)
+
+
+def test_claude_relay_request_stays_within_four_cache_breakpoints():
+    """Pin the exact layout that produced `found 5` during the SWE Pro smoke run."""
+    from agentevolver.agent.native_tools import _SchemaTool
+    from agentevolver.model.llm_hub.chat import ChatLLMHub
+
+    tool = _SchemaTool(
+        name="read_file_tool",
+        description="read",
+        function_calling={
+            "type": "function",
+            "function": {
+                "name": "read_file_tool",
+                "description": "read",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+    )
+    messages = [
+        SystemMessage(content="stable system", context_layer="fixed"),
+        HumanMessage(content="stable task", cache=True, context_layer="fixed"),
+        AssistantMessage(content="read files", cache=True, context_layer="recent"),
+        ToolMessage(tool_call_id="c1", content="result", context_layer="recent"),
+        HumanMessage(content=TURN, context_layer="live"),
+    ]
+    built = asyncio.run(ChatLLMHub(
+        model="claude-opus-5", reasoning={},
+    )._build_params(messages, tools=[tool], stream=True))
+
+    def count(value):
+        if isinstance(value, dict):
+            return int("cache_control" in value) + sum(count(v) for v in value.values())
+        if isinstance(value, list):
+            return sum(count(v) for v in value)
+        return 0
+
+    assert count(built) == 4
 
 
 @pytest.mark.parametrize("serializer", SERIALIZERS)
