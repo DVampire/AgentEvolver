@@ -103,6 +103,18 @@ def test_the_two_models_actually_configured_declare_their_window():
     assert declared.get("llm_hub/gpt-5.6-sol") == 1_050_000
 
 
+def test_only_verified_llm_hub_routes_declare_native_compaction():
+    declared = {
+        spec["model_name"]: bool(spec.get("native_compaction", False))
+        for spec in _specs() if spec["model_name"].startswith("llm_hub/")
+    }
+
+    assert declared["llm_hub/claude-opus-5"] is True
+    assert declared["llm_hub/gpt-5.6-sol"] is True
+    assert declared["llm_hub/gpt-5.6-luna"] is False
+    assert declared["llm_hub/deepseek-v4-flash"] is False
+
+
 def test_the_default_is_not_below_what_the_configured_models_accept():
     """A default under the real window is a wall we invented.
 

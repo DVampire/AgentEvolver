@@ -66,6 +66,7 @@ def _tool_call(start: Any) -> ToolCall:
             name=start.action_name or "",
             arguments=json.dumps(start.input or {}, ensure_ascii=False, sort_keys=True, default=str),
         ),
+        caller=(getattr(start, "metadata", None) or {}).get("caller"),
     )
 
 
@@ -120,6 +121,7 @@ def derive_messages(events: Sequence[Any]) -> List[Message]:
                 tool_call_id=_call_id(result),
                 name=getattr(result, "action_name", None),
                 is_error=not bool(result.success),
+                caller=(getattr(result, "metadata", None) or {}).get("caller"),
             ))
         pending = None
 

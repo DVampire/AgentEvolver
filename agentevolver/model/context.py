@@ -20,7 +20,7 @@ from agentevolver.model.openai.transcribe import TranscribeOpenAI
 from agentevolver.model.openai.embedding import EmbeddingOpenAI
 from agentevolver.model.openrouter.chat import ChatOpenRouter
 from agentevolver.model.llm_hub.chat import ChatLLMHub
-from agentevolver.model.llm_hub.response import ResponseLLMHub
+from agentevolver.model.llm_hub.response import NativeFeatureUnavailable, ResponseLLMHub
 from agentevolver.model.anthropic.chat import ChatAnthropic
 from agentevolver.model.google.chat import ChatGoogle
 from agentevolver.message.types import Message
@@ -452,6 +452,10 @@ class ModelContextManager:
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"),
+                native_compaction=bool(m.get("native_compaction", False)),
+                persisted_reasoning=bool(m.get("persisted_reasoning", False)),
+                native_programmatic_tool_calling=bool(m.get("native_programmatic_tool_calling", False)),
+                native_multi_agent=bool(m.get("native_multi_agent", False)),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -469,11 +473,15 @@ class ModelContextManager:
                 max_output_tokens=m.get("max_output_tokens"),
                 timeout=m.get("timeout", self.default_timeout),
                 supports_streaming=False,
-                supports_functions=False,
+                supports_functions=bool(m.get("supports_functions", False)),
                 supports_vision=True,
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"),
+                native_compaction=bool(m.get("native_compaction", False)),
+                persisted_reasoning=bool(m.get("persisted_reasoning", False)),
+                native_programmatic_tool_calling=bool(m.get("native_programmatic_tool_calling", False)),
+                native_multi_agent=bool(m.get("native_multi_agent", False)),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -494,6 +502,10 @@ class ModelContextManager:
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"),
+                native_compaction=bool(m.get("native_compaction", False)),
+                persisted_reasoning=bool(m.get("persisted_reasoning", False)),
+                native_programmatic_tool_calling=bool(m.get("native_programmatic_tool_calling", False)),
+                native_multi_agent=bool(m.get("native_multi_agent", False)),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -514,6 +526,8 @@ class ModelContextManager:
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"),
+                native_compaction=bool(m.get("native_compaction", False)),
+                persisted_reasoning=bool(m.get("persisted_reasoning", False)),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -552,6 +566,8 @@ class ModelContextManager:
                 output_version=None,
                 fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"),
+                native_compaction=bool(m.get("native_compaction", False)),
+                persisted_reasoning=bool(m.get("persisted_reasoning", False)),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -589,6 +605,8 @@ class ModelContextManager:
                 supports_streaming=True, supports_functions=True, supports_vision=True,
                 output_version=None, fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"), max_retries=m.get("max_retries"),
+                native_compaction=bool(m.get("native_compaction", False)),
+                persisted_reasoning=bool(m.get("persisted_reasoning", False)),
                 # Per-token prices so a call this relay does not price gets a computed cost.
                 cost=m.get("cost"),
             )
@@ -608,6 +626,10 @@ class ModelContextManager:
                 supports_streaming=False, supports_functions=True, supports_vision=True,
                 output_version=None, fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"), max_retries=m.get("max_retries"),
+                native_compaction=bool(m.get("native_compaction", False)),
+                persisted_reasoning=bool(m.get("persisted_reasoning", False)),
+                native_programmatic_tool_calling=bool(m.get("native_programmatic_tool_calling", False)),
+                native_multi_agent=bool(m.get("native_multi_agent", False)),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -646,6 +668,10 @@ class ModelContextManager:
                 fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"),
                 cost=m.get("cost"),
+                native_compaction=bool(m.get("native_compaction", False)),
+                persisted_reasoning=bool(m.get("persisted_reasoning", False)),
+                native_programmatic_tool_calling=bool(m.get("native_programmatic_tool_calling", False)),
+                native_multi_agent=bool(m.get("native_multi_agent", False)),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -677,6 +703,8 @@ class ModelContextManager:
                 output_version=None,
                 fallback_model=None,
                 context_window=m.get("context_window"),
+                native_compaction=bool(m.get("native_compaction", False)),
+                persisted_reasoning=bool(m.get("persisted_reasoning", False)),
             )
             self.models[cfg.model_name] = cfg
             await self._create_client(cfg)
@@ -743,6 +771,9 @@ class ModelContextManager:
                     reasoning=config.reasoning or None,
                     max_output_tokens=config.max_output_tokens or self.max_tokens,
                     timeout=config.timeout or self.default_timeout,
+                    persisted_reasoning=config.persisted_reasoning,
+                    native_programmatic_tool_calling=config.native_programmatic_tool_calling,
+                    native_multi_agent=config.native_multi_agent,
                 )
             raise ValueError(
                 f"Unsupported model type {config.model_type} for LLM Hub provider"
@@ -776,11 +807,27 @@ class ModelContextManager:
             raise ValueError(
                 f"Unsupported model type {config.model_type} for Google provider"
             )
-        elif config.model_type == "responses":
-            return ResponseOpenAI(
+        elif config.model_type == "responses" and (
+            config.persisted_reasoning
+            or config.native_compaction
+            or config.native_programmatic_tool_calling
+            or config.native_multi_agent
+        ):
+            return ResponseLLMHub(
                 model=config.model_id,
                 api_key=config.api_key,
                 base_url=config.api_base,
+                reasoning=config.reasoning or None,
+                max_output_tokens=config.max_output_tokens or self.max_tokens,
+                timeout=config.timeout or self.default_timeout,
+                provider_name="openai",
+                persisted_reasoning=config.persisted_reasoning,
+                native_programmatic_tool_calling=config.native_programmatic_tool_calling,
+                native_multi_agent=config.native_multi_agent,
+            )
+        elif config.model_type == "responses":
+            return ResponseOpenAI(
+                model=config.model_id, api_key=config.api_key, base_url=config.api_base,
                 reasoning=config.reasoning or None,
                 max_output_tokens=config.max_output_tokens or self.max_tokens,
             )
@@ -851,6 +898,90 @@ class ModelContextManager:
     def list(self) -> List[str]:
         return list(self.models.keys())
 
+    def resolve_runtime_features(
+        self, model: str, requested: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Resolve native optimizations without changing the Agent protocol.
+
+        The returned modes are deliberately explicit and snapshot-safe.  A provider
+        feature is used only when the exact registered route declares it; otherwise the
+        stable framework implementation remains authoritative.
+        """
+        config = self.models.get(model)
+        requested = requested or {}
+        modes: Dict[str, Any] = {
+            "persisted_reasoning": (
+                "native" if config and config.persisted_reasoning else "message_replay"
+            ),
+            "compaction": (
+                "native" if config and config.native_compaction else "portable_checkpoint"
+            ),
+            "programmatic_tool_calling": "direct_tools",
+            "multi_agent": "local_meta_agent",
+        }
+        if (
+            requested.get("programmatic_tool_calling") and config
+            and config.model_type == "responses"
+            and config.supports_functions
+            and config.native_programmatic_tool_calling
+        ):
+            modes["programmatic_tool_calling"] = "native"
+        if (
+            requested.get("multi_agent") and config
+            and config.model_type == "responses" and config.native_multi_agent
+        ):
+            modes["multi_agent"] = "native"
+            modes["max_concurrent_subagents"] = int(
+                requested.get("max_concurrent_subagents") or 3
+            )
+        return modes
+
+    def _runtime_call_kwargs(
+        self, model: str, client: Any, request_input: Dict[str, Any],
+        call_kwargs: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        """Return (wire kwargs, snapshot kwargs) for resolved runtime features."""
+        resolved = self.resolve_runtime_features(
+            model, request_input.get("runtime_features") or {},
+        )
+        if not isinstance(client, ResponseLLMHub):
+            # A custom runtime registration can pair a declarative config with another
+            # adapter. Never record/use a native mode the concrete adapter cannot encode.
+            if resolved.get("programmatic_tool_calling") == "native":
+                resolved["programmatic_tool_calling"] = "direct_tools"
+            if resolved.get("multi_agent") == "native":
+                resolved["multi_agent"] = "local_meta_agent"
+                resolved.pop("max_concurrent_subagents", None)
+        disabled = getattr(client, "_disabled_features", set())
+        if "programmatic_tool_calling" in disabled:
+            resolved["programmatic_tool_calling"] = "direct_tools"
+        if "multi_agent" in disabled:
+            resolved["multi_agent"] = "local_meta_agent"
+            resolved.pop("max_concurrent_subagents", None)
+        snapshot_kwargs = {**call_kwargs, "runtime_features": resolved}
+        wire_kwargs = dict(call_kwargs)
+        # Only the Responses adapter owns this framework option. Sending it through a
+        # generic chat adapter would leak an unknown field into provider JSON.
+        if isinstance(client, ResponseLLMHub):
+            wire_kwargs["runtime_features"] = resolved
+        return wire_kwargs, snapshot_kwargs
+
+    @staticmethod
+    def _native_feature_attempt(
+        config: Optional[ModelConfig], requested: Dict[str, Any], tools: Any,
+    ) -> bool:
+        """Whether one extra attempt is needed to guarantee a native→fallback retry."""
+        programmatic_tool = any(
+            bool((getattr(tool, "metadata", None) or {}).get("programmatic"))
+            for tool in (tools or [])
+        )
+        return bool(config and config.model_type == "responses" and (
+            (requested.get("programmatic_tool_calling")
+             and config.supports_functions
+             and config.native_programmatic_tool_calling and programmatic_tool)
+            or (requested.get("multi_agent") and config.native_multi_agent)
+        ))
+
     async def compact_history(
         self,
         name: str,
@@ -863,12 +994,14 @@ class ModelContextManager:
     ) -> Optional[Dict[str, Any]]:
         """Return a provider-native checkpoint when the selected route supports it.
 
-        The manager discovers this capability on the client, so agent and memory code
-        never branch on provider names. Unsupported routes return ``None`` and continue
-        through the portable text checkpoint path.
+        A route must declare the capability in ``ModelConfig`` and its client must
+        implement it. Agent and memory code therefore never branch on provider names,
+        while a shared protocol client cannot accidentally opt every model into a beta
+        feature. Unsupported routes return ``None`` and continue through the portable
+        text checkpoint path.
         """
         config = self.models.get(name)
-        if config is None:
+        if config is None or not config.native_compaction:
             return None
         client = await self._get_client(name)
         compact = getattr(client, "compact_history", None)
@@ -1108,10 +1241,19 @@ class ModelContextManager:
             logger.error(f"| ❌ {overflow}")
             primary_request, last_exc = None, overflow
 
-        for attempt in range(max_retries if primary_request is not None else 0):
+        requested_features = input.get("runtime_features") or {}
+        native_attempt = self._native_feature_attempt(
+            model_config, requested_features, tools,
+        )
+        attempt_budget = max_retries + int(native_attempt)
+        native_downgraded = False
+        for attempt in range(attempt_budget if primary_request is not None else 0):
             _start = _t.time()
             try:
                 client = await self._get_client(name)
+                wire_kwargs, snapshot_kwargs = self._runtime_call_kwargs(
+                    name, client, input, kwargs,
+                )
                 await _record_request_snapshot(
                     session_id=session_id,
                     requested_model=name,
@@ -1122,7 +1264,7 @@ class ModelContextManager:
                     tools=tools,
                     response_format=response_format,
                     request_input=input,
-                    call_kwargs=kwargs,
+                    call_kwargs=snapshot_kwargs,
                     stream=stream,
                     attempt=attempt + 1,
                     route_index=0,
@@ -1136,7 +1278,7 @@ class ModelContextManager:
                     response_format,
                     stream,
                     plugins,
-                    kwargs,
+                    wire_kwargs,
                 )
                 self._price_result(name, result)
                 self._log_usage(name, result)
@@ -1179,7 +1321,12 @@ class ModelContextManager:
                 last_exc = e
                 _elapsed = _t.time() - _start
                 tag = f", caller={self._current_caller}" if self._current_caller else ""
-                more = attempt < max_retries - 1
+                if isinstance(e, NativeFeatureUnavailable):
+                    native_downgraded = True
+                # The reserved attempt becomes usable only after an actual native
+                # rejection. A declaration alone must not increase ordinary retries.
+                effective_budget = max_retries + int(native_downgraded)
+                more = attempt < effective_budget - 1
                 # Computed before the record so the trace says how long the wait will be,
                 # not merely that there was one. An empty completion is not a rate limit:
                 # it is a transient upstream blip (llm_hub's Bedrock-backed opus route
@@ -1190,17 +1337,20 @@ class ModelContextManager:
                 # a dropped stream still gets the long climb, because there retrying sooner
                 # only re-triggers the same rejection.
                 if more:
-                    delay = (_EMPTY_COMPLETION_RETRY_DELAY if _is_transient_empty(e)
-                             else _retry_delay(attempt + 1))
+                    delay = (
+                        0.0 if isinstance(e, NativeFeatureUnavailable)
+                        else (_EMPTY_COMPLETION_RETRY_DELAY if _is_transient_empty(e)
+                              else _retry_delay(attempt + 1))
+                    )
                 else:
                     delay = None
                 await _record_retry(
-                    session_id, name, attempt + 1, max_retries,
+                    session_id, name, attempt + 1, effective_budget,
                     str(e), delay, self._current_caller,
                 )
                 if more:
                     logger.warning(
-                        f"| ⚠️ Model {name} attempt {attempt+1}/{max_retries} failed ({_elapsed:.0f}s{tag}): {e}, "
+                        f"| ⚠️ Model {name} attempt {attempt+1}/{effective_budget} failed ({_elapsed:.0f}s{tag}): {e}, "
                         f"retrying in {delay:.1f}s..."
                     )
                     # Backing off is the whole reason a retry helps. Retrying instantly
@@ -1210,8 +1360,9 @@ class ModelContextManager:
                     await asyncio.sleep(delay)
                 else:
                     logger.error(
-                        f"| ❌ Model {name} failed after {max_retries} attempts ({_elapsed:.0f}s{tag}): {e}"
+                        f"| ❌ Model {name} failed after {attempt+1} attempts ({_elapsed:.0f}s{tag}): {e}"
                     )
+                    break
 
         if model_config and model_config.fallback_model:
             fallback = model_config.fallback_model
@@ -1241,58 +1392,81 @@ class ModelContextManager:
                     type=ResponseType.LLM, success=False, message=str(overflow),
                     data={"pressure": overflow.pressure},
                 )
-            try:
-                fb_client = await self._get_client(fallback)
-                await _record_request_snapshot(
-                    session_id=session_id,
-                    requested_model=name,
-                    routed_model=fallback,
-                    model_config=fallback_config,
-                    client=fb_client,
-                    messages=fallback_request.messages,
-                    tools=tools,
-                    response_format=response_format,
-                    request_input=input,
-                    call_kwargs=kwargs,
-                    stream=stream,
-                    attempt=1,
-                    route_index=1,
-                    pressure=fallback_request.pressure,
-                )
-                result = await self._call_client(
-                    fb_client,
-                    fallback_config,
-                    fallback_request.messages,
-                    tools,
-                    response_format,
-                    stream,
-                    plugins,
-                    kwargs,
-                )
-                self._price_result(fallback, result)
-                self._log_usage(fallback, result)
-                if not result.success:
-                    raise Exception(result.message or "Fallback returned success=False")
-                is_chat = not fallback_config or fallback_config.model_type not in (
-                    "transcriptions",
-                    "embeddings",
-                )
-                if is_chat and not result.message:
-                    raise Exception("Fallback returned empty message")
-                logger.info(f"| Fallback model {fallback} succeeded")
-                return result
-            except Exception as fallback_error:
-                from agentevolver.trace.checkpoint import TraceIntegrityError
-                if isinstance(fallback_error, TraceIntegrityError):
-                    raise
-                logger.error(
-                    f"| Fallback model {fallback} also failed: {fallback_error}"
-                )
-                return Response(
-                    type=ResponseType.LLM,
-                    success=False,
-                    message=f"Both {name} and fallback {fallback} failed. Primary: {last_exc}, Fallback: {fallback_error}",
-                )
+            fallback_attempts = 1 + int(self._native_feature_attempt(
+                fallback_config, requested_features, tools,
+            ))
+            fallback_error: Optional[Exception] = None
+            for fallback_attempt in range(fallback_attempts):
+                try:
+                    fb_client = await self._get_client(fallback)
+                    wire_kwargs, snapshot_kwargs = self._runtime_call_kwargs(
+                        fallback, fb_client, input, kwargs,
+                    )
+                    await _record_request_snapshot(
+                        session_id=session_id,
+                        requested_model=name,
+                        routed_model=fallback,
+                        model_config=fallback_config,
+                        client=fb_client,
+                        messages=fallback_request.messages,
+                        tools=tools,
+                        response_format=response_format,
+                        request_input=input,
+                        call_kwargs=snapshot_kwargs,
+                        stream=stream,
+                        attempt=fallback_attempt + 1,
+                        route_index=1,
+                        pressure=fallback_request.pressure,
+                    )
+                    result = await self._call_client(
+                        fb_client,
+                        fallback_config,
+                        fallback_request.messages,
+                        tools,
+                        response_format,
+                        stream,
+                        plugins,
+                        wire_kwargs,
+                    )
+                    self._price_result(fallback, result)
+                    self._log_usage(fallback, result)
+                    if not result.success:
+                        raise Exception(result.message or "Fallback returned success=False")
+                    is_chat = not fallback_config or fallback_config.model_type not in (
+                        "transcriptions",
+                        "embeddings",
+                    )
+                    if is_chat and not result.message:
+                        raise Exception("Fallback returned empty message")
+                    logger.info(f"| Fallback model {fallback} succeeded")
+                    return result
+                except Exception as error:
+                    from agentevolver.trace.checkpoint import TraceIntegrityError
+                    if isinstance(error, TraceIntegrityError):
+                        raise
+                    fallback_error = error
+                    # Only a definite native-capability rejection earns the reserved
+                    # downgrade attempt. Ordinary fallback failures retain the original
+                    # one-shot behavior instead of silently multiplying cost.
+                    if (
+                        isinstance(error, NativeFeatureUnavailable)
+                        and fallback_attempt + 1 < fallback_attempts
+                    ):
+                        logger.warning(
+                            f"| Fallback model {fallback} rejected a native feature; "
+                            "retrying with the portable mode"
+                        )
+                        continue
+                    break
+
+            logger.error(
+                f"| Fallback model {fallback} also failed: {fallback_error}"
+            )
+            return Response(
+                type=ResponseType.LLM,
+                success=False,
+                message=f"Both {name} and fallback {fallback} failed. Primary: {last_exc}, Fallback: {fallback_error}",
+            )
 
         return Response(type=ResponseType.LLM, success=False, message=str(last_exc))
 
@@ -1355,15 +1529,16 @@ class ModelContextManager:
 
         async def _events(target: str, client: Any, effective_messages: List[Any]):
             """Canonical events for one model (true stream, or buffered→events)."""
+            wire_kwargs, _ = self._runtime_call_kwargs(target, client, input, kwargs)
             if hasattr(client, "stream"):
                 async for ev in client.stream(
-                    messages=effective_messages, tools=tools, response_format=response_format, **kwargs
+                    messages=effective_messages, tools=tools, response_format=response_format, **wire_kwargs
                 ):
                     yield _price_event(target, ev)
             else:
                 # Providers without a stream(): buffer one call, re-emit as events.
                 resp = await client(
-                    messages=effective_messages, tools=tools, response_format=response_format, **kwargs
+                    messages=effective_messages, tools=tools, response_format=response_format, **wire_kwargs
                 )
                 async for ev in buffered_response_to_events(resp):
                     yield _price_event(target, ev)
@@ -1371,25 +1546,42 @@ class ModelContextManager:
         model_config = self.models.get(name)
         max_retries = _resolve_max_retries(max_retries, model_config)
 
-        # Ordered attempt plan: primary (retried max_retries×) then fallback (once).
-        plan: List[tuple] = [(name, max_retries)]
+        # Ordered attempt plan. Each route reserves one additional attempt only when a
+        # requested native feature may need to downgrade after an explicit rejection.
+        requested_features = input.get("runtime_features") or {}
+        primary_native_attempt = self._native_feature_attempt(
+            model_config, requested_features, tools,
+        )
+        plan: List[tuple] = [(name, max_retries, int(primary_native_attempt))]
         fb = model_config.fallback_model if model_config else None
         if fb and fb != name and fb in self.model_clients:
-            plan.append((fb, 1))
+            fb_config = self.models.get(fb)
+            plan.append((
+                fb,
+                1,
+                int(self._native_feature_attempt(
+                    fb_config, requested_features, tools,
+                )),
+            ))
 
         last_exc: Optional[Exception] = None
-        for ci, (target, attempts) in enumerate(plan):
+        for ci, (target, base_attempts, native_reserve) in enumerate(plan):
+            attempts = base_attempts + native_reserve
+            native_downgraded = False
             for attempt in range(attempts):
                 started = False
                 try:
                     client = await self._get_client(target)
+                    _, snapshot_kwargs = self._runtime_call_kwargs(
+                        target, client, input, kwargs,
+                    )
                     effective = _prepare_request_messages(
                         messages=messages,
                         tools=tools,
                         response_format=response_format,
                         model_config=self.models.get(target),
                         request_input=input,
-                        call_kwargs=kwargs,
+                        call_kwargs=snapshot_kwargs,
                         model_name=target,
                         default_output_tokens=self.max_tokens,
                     )
@@ -1403,7 +1595,7 @@ class ModelContextManager:
                         tools=tools,
                         response_format=response_format,
                         request_input=input,
-                        call_kwargs=kwargs,
+                        call_kwargs=snapshot_kwargs,
                         stream=True,
                         attempt=attempt + 1,
                         route_index=ci,
@@ -1445,10 +1637,15 @@ class ModelContextManager:
                             f"cannot retry: {e}"
                         )
                         raise
+                    if isinstance(e, NativeFeatureUnavailable):
+                        native_downgraded = True
                     logger.warning(
                         f"| ⚠️ Stream {target} failed before first event "
                         f"(attempt {attempt+1}/{attempts}, {type(e).__name__}): {e}"
                     )
+                    # A reserved attempt is unlocked only by an actual native rejection.
+                    if attempt + 1 >= base_attempts + int(native_downgraded):
+                        break
             if ci < len(plan) - 1:
                 logger.warning(
                     f"| Stream {target} exhausted retries, falling back to {plan[ci+1][0]}"

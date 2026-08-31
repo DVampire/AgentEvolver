@@ -538,8 +538,9 @@ class Agent(BaseModel):
         retain_recent_steps: int = 2,
         compact_after_steps: int = 24,
         compact_body_tokens: int = 100_000,
-        compact_at_tokens: int = 750_000,
-        compact_uncached_growth: int = 30_000,
+        prefer_native_programmatic_tools: bool = True,
+        prefer_native_multi_agent: bool = False,
+        native_max_concurrent_subagents: int = 3,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
@@ -569,8 +570,13 @@ class Agent(BaseModel):
         #: Primary Codex-style trigger: growth since the carried checkpoint prefix.
         #: Unlike total request size, this resets after every successful compaction.
         self.compact_body_tokens = max(0, int(compact_body_tokens or 0))
-        self.compact_at_tokens = max(0, int(compact_at_tokens or 0))
-        self.compact_uncached_growth = max(0, int(compact_uncached_growth or 0))
+        # Provider-neutral preferences. ModelManager resolves each one against the exact
+        # route and records the native/fallback choice in the request snapshot.
+        self.prefer_native_programmatic_tools = bool(prefer_native_programmatic_tools)
+        self.prefer_native_multi_agent = bool(prefer_native_multi_agent)
+        self.native_max_concurrent_subagents = max(
+            1, int(native_max_concurrent_subagents or 3)
+        )
         self.model_name = model_name
 
         # Setup steps
@@ -1692,11 +1698,20 @@ class Agent(BaseModel):
                             "compact_body_tokens": getattr(
                                 self, "compact_body_tokens", 100_000,
                             ),
-                            "compact_at_tokens": getattr(self, "compact_at_tokens", 750_000),
-                            "compact_uncached_growth": getattr(
-                                self, "compact_uncached_growth", 30_000,
-                            ),
                             "fold_at_pressure": getattr(self, "fold_at_pressure", 0.85),
+                        },
+                        "runtime_features": {
+                            "programmatic_tool_calling": getattr(
+                                self, "prefer_native_programmatic_tools", True,
+                            ),
+                            # Native multi-agent is an orchestration backend, never a way
+                            # to silently turn a leaf actor into an orchestrator.
+                            "multi_agent": getattr(
+                                self, "prefer_native_multi_agent", False,
+                            ) and include_agents,
+                            "max_concurrent_subagents": getattr(
+                                self, "native_max_concurrent_subagents", 3,
+                            ),
                         },
                         **({
                             "trace_integrity_profile": ctx.extra["trace_integrity_profile"],
@@ -1861,6 +1876,7 @@ class Agent(BaseModel):
             # emitted by the model. The parent id lets a training projector keep their
             # observations while excluding them from the assistant target's tool_calls.
             "parent_call_id": parent_call_id,
+            "caller": getattr(call, "caller", None),
         }
 
         done, result, reasoning, error, action_result = False, None, None, None, None
@@ -2809,22 +2825,13 @@ class Agent(BaseModel):
         metrics = self._context_history_metrics(run)
         reasons: list[str] = []
         logical_steps = metrics["logical_steps"]
-        estimated_tokens = metrics["estimated_tokens"]
         body_tokens = metrics.get("body_after_prefix_tokens", 0)
-        uncached_growth = metrics["uncached_growth"]
         ratio = metrics["pressure_ratio"]
         if self.compact_after_steps and logical_steps >= self.compact_after_steps:
             reasons.append(f"history={logical_steps} steps")
         body_limit = getattr(self, "compact_body_tokens", 0)
         if body_limit and body_tokens >= body_limit:
             reasons.append(f"body-after-prefix≈{body_tokens:,} tokens")
-        if self.compact_at_tokens and estimated_tokens >= self.compact_at_tokens:
-            reasons.append(f"request≈{estimated_tokens:,} tokens")
-        if (
-            self.compact_uncached_growth
-            and uncached_growth >= self.compact_uncached_growth
-        ):
-            reasons.append(f"uncached growth={uncached_growth:,} tokens")
         if self.fold_at_pressure and ratio >= self.fold_at_pressure:
             reasons.append(f"capacity={ratio:.0%}")
         if not reasons:
@@ -2838,16 +2845,13 @@ class Agent(BaseModel):
     def _context_history_metrics(self, run) -> Dict[str, Any]:
         """Read early-compaction signals from the retained Trace."""
         from agentevolver.trace import trace_manager
-        from agentevolver.trace.derive import _marker
         from agentevolver.trace.surface import fold_surface
         from agentevolver.trace.types import TraceEventType
 
         empty = {
             "logical_steps": 0,
-            "estimated_tokens": 0,
             "body_after_prefix_tokens": 0,
             "pressure_ratio": 0.0,
-            "uncached_growth": 0,
         }
         try:
             events = trace_manager.events(str(getattr(run.ctx, "id", "") or "")) or []
@@ -2870,10 +2874,9 @@ class Agent(BaseModel):
         ), None)
         pressure = ((request.input or {}).get("pressure") or {}) if request else {}
         try:
-            estimated_tokens = int(pressure.get("estimated_tokens_after") or 0)
             pressure_ratio = float(pressure.get("pressure_ratio_after") or 0.0)
         except (TypeError, ValueError):
-            estimated_tokens, pressure_ratio = 0, 0.0
+            pressure_ratio = 0.0
 
         # The active body is everything after the carried checkpoint.  Before the
         # first checkpoint the task is the stable anchor, so it is excluded as well.
@@ -2893,44 +2896,10 @@ class Agent(BaseModel):
         except Exception as error:  # noqa: BLE001 - pressure fallback remains valid
             logger.debug(f"| [{self.name}] cannot measure compaction body: {error}")
 
-        last_fold = max((
-            int(event.seq_no) for event in events
-            if event.seq_no is not None
-            and event.event_type is TraceEventType.CUSTOM
-            and _marker(event) == "compaction"
-        ), default=-1)
-        request_provider = {
-            event.step_number: str((event.input or {}).get("provider") or "").lower()
-            for event in events
-            if event.event_type is TraceEventType.MODEL_REQUEST
-        }
-        uncached = []
-        for event in events:
-            if (
-                event.seq_no is not None and event.seq_no > last_fold
-                and event.event_type is TraceEventType.AGENT_CALL
-                and (not event.agent_name or event.agent_name == self.name)
-                and event.usage
-            ):
-                try:
-                    input_tokens = int(event.usage.get("input_tokens") or 0)
-                    cache_read = int(event.usage.get("cache_read_tokens") or 0)
-                    provider = request_provider.get(event.step_number, "")
-                    # Native Anthropic reports uncached input separately. OpenAI-shaped
-                    # relays include the cached subset in input_tokens.
-                    uncached.append(
-                        input_tokens if "anthropic" in provider
-                        else max(0, input_tokens - cache_read)
-                    )
-                except (TypeError, ValueError):
-                    pass
-        growth = max(0, uncached[-1] - uncached[0]) if len(uncached) > 1 else 0
         return {
             "logical_steps": logical_steps,
-            "estimated_tokens": estimated_tokens,
             "body_after_prefix_tokens": body_tokens,
             "pressure_ratio": pressure_ratio,
-            "uncached_growth": growth,
         }
 
     async def _last_pressure_ratio(self, run) -> float:

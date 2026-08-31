@@ -36,9 +36,11 @@ through the ordinary chat route. All three forms live on one `CompactionMessage`
 and MetaAgent never branch on provider and provider-owned state is never flattened into
 prose when its native protocol is available.
 
-The configured `llm_hub/claude-opus-5` route does expose native Anthropic Messages and is
-therefore built with that adapter; `llm_hub/gpt-5.6-sol` uses Responses. Both use provider
-compaction while retaining their existing public model names and LLM Hub credential pool.
+Native support is declared per model route, not inferred from the provider or client
+class. The configured `llm_hub/claude-opus-5` and `llm_hub/gpt-5.6-sol` routes are marked
+`native_compaction=True` after live probes. Other LLM Hub models remain portable-text-only
+until their exact route is verified. A native failure also falls back to text without
+removing the original history.
 
 The latest unclosed Claude tool loop is never partially compacted. Its `thinking` or
 `redacted_thinking` blocks, signatures, `tool_use`, and matching `tool_result` remain one
@@ -47,9 +49,11 @@ portable checkpoint is serialized as user context. Switching routes therefore de
 to readable state instead of sending one provider's opaque payload to another.
 
 The primary trigger is mutable token growth after the latest checkpoint. Complete-step
-count, uncached growth, total request size, and provider context pressure are independent
-safety triggers. The exact tail is deliberately small; it is a protocol-safety window,
-not the main memory store.
+count and provider context pressure are the two safety triggers; an actual overflow uses
+the same fold path. Cache growth remains request telemetry rather than a compaction trigger:
+a cache miss does not prove that semantic history should be discarded, and folding merely
+to chase cache misses churns the prefix again. The exact tail is deliberately small; it is
+a protocol-safety window, not the main memory store.
 
 Conversation memory remains session-scoped. Cross-session learning belongs to the
 versioned capability/evolution pipeline, so one benchmark task cannot silently leak its

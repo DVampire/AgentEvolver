@@ -147,6 +147,41 @@ async def test_a_native_claude_summary_replaces_the_window_without_resummarising
     assert recorded[0]["format"] == "anthropic.compact_20260112"
 
 
+@pytest.mark.asyncio
+async def test_an_opaque_native_checkpoint_still_gets_a_portable_text_companion(monkeypatch):
+    """Responses state is replayable but unreadable and cannot carry a provider switch."""
+    memory, state = _memory(), _state()
+    _fill(state, 9)
+    native_checkpoint = {
+        "provider_state": {"responses": {"compaction_items": [
+            {"type": "compaction", "encrypted_content": "opaque"}
+        ]}},
+        "format": "openai.responses.compaction",
+        "native": True,
+    }
+
+    async def native(*args, **kwargs):
+        return native_checkpoint
+
+    async def portable(items, existing):
+        return "portable checkpoint"
+
+    recorded = []
+
+    async def record(*args, **kwargs):
+        recorded.append(kwargs.get("native"))
+
+    monkeypatch.setattr(memory, "_native_checkpoint", native)
+    monkeypatch.setattr(memory, "_summarise", portable)
+    monkeypatch.setattr(memory, "_record_fold", record)
+
+    await memory._compact(state, down_to=2)
+
+    assert list(state.working) == ["portable checkpoint"]
+    assert len(state.recent) == 2
+    assert recorded[-1] is native_checkpoint
+
+
 def test_a_partial_run_keeps_what_it_finished():
     """A failure on the second chunk must not undo the first."""
     memory, state = _memory(), _state()

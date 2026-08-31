@@ -145,6 +145,9 @@ class ToolCall(BaseModel):
     id: str = Field(description="The ID of the tool call.")
     function: Function = Field(description="The function that the model called.")
     type: Literal['function'] = Field(default='function', description="The type of the tool. Currently, only `function` is supported.")  # type: ignore
+    # Opaque linkage used by hosted program runtimes. Ordinary direct calls leave this
+    # empty; Responses PTC requires it to be echoed on function_call_output unchanged.
+    caller: Optional[Dict[str, Any]] = Field(default=None)
 
     def __str__(self) -> str:
         return f'ToolCall[{self.id}]: {str(self.function)}'
@@ -294,6 +297,10 @@ class ToolMessage(Message):
     tool_call_id: str = Field(description="Id of the assistant tool call this result answers.")
     name: Optional[str] = Field(default=None, description="The tool's name. Carried because not every provider pairs a result to its call by id: Gemini pairs by declared function name, so a message without it cannot be replayed there at all.")
     is_error: bool = Field(default=False, description="Whether the call failed. Kept out of `content` so a consumer can style or count failures without parsing prose.")
+    caller: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Opaque provider caller linkage copied from the matching tool call.",
+    )
 
     @property
     def text(self) -> str:

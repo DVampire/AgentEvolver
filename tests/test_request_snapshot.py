@@ -208,7 +208,7 @@ async def test_the_model_manager_records_before_it_calls_the_provider():
 
 
 @pytest.mark.asyncio
-async def test_compaction_is_discovered_by_capability_not_provider_name():
+async def test_compaction_requires_declared_route_capability_and_client_support():
     order = []
 
     class Client:
@@ -233,7 +233,7 @@ async def test_compaction_is_discovered_by_capability_not_provider_name():
         return "snapshot-id"
 
     manager = ModelContextManager()
-    manager.models["main"] = _config(provider="anthropic")
+    manager.models["main"] = _config(provider="anthropic", native_compaction=True)
     manager.model_clients["main"] = Client()
     with patch("agentevolver.model.context._record_request_snapshot", side_effect=record):
         result = await manager.compact_history(
@@ -243,6 +243,24 @@ async def test_compaction_is_discovered_by_capability_not_provider_name():
     assert result["summary"] == "checkpoint"
     assert result["provider"] == "anthropic"
     assert order == ["snapshot", "provider"]
+
+
+@pytest.mark.asyncio
+async def test_a_client_method_does_not_opt_an_unverified_model_into_native_compaction():
+    called = False
+
+    class Client:
+        async def compact_history(self, _messages):
+            nonlocal called
+            called = True
+            return {"summary": "should not run"}
+
+    manager = ModelContextManager()
+    manager.models["main"] = _config(native_compaction=False)
+    manager.model_clients["main"] = Client()
+
+    assert await manager.compact_history("main", [HumanMessage(content="history")]) is None
+    assert called is False
 
 
 @pytest.mark.asyncio

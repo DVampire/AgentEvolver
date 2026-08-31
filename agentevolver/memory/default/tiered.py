@@ -13,13 +13,14 @@ Tiers
 -----
 recent_history : queue of raw records. ``get()`` injects the last
                  ``recent_fetch`` verbatim.
-working_memory : bounded queue of LLM summaries. When the agent measures high
-                 request pressure, old records are handed to the ``compact`` hook
-                 and the returned text is appended here.
+working_memory : bounded queue of portable text checkpoints. When the agent measures
+                 high request pressure, native compaction is attempted only for an
+                 explicitly capable model route. The ``compact`` hook supplies the
+                 portable fallback/readable companion.
                  ``get()`` injects the last ``working_fetch`` summaries.
 
-Summarisation is delegated to the ``compact`` hook (list[str] → text) so the
-LLM-summary logic lives in exactly one place.
+Portable summarisation is delegated to the ``compact`` hook (list[str] → text) so the
+fallback logic lives in exactly one place.
 """
 
 from __future__ import annotations
@@ -217,7 +218,10 @@ class TieredMemory(Memory):
 
     base_dir: str = Field(default="")
     model_name: str = Field(default="gpt-4.1")
-    compact_hook: str = Field(default="compact", description="Hook name used to summarise overflow.")
+    compact_hook: str = Field(
+        default="compact",
+        description="Hook used only for the portable text checkpoint fallback.",
+    )
 
     recent_max: int = Field(default=30, description="Retention floor for direct/legacy compaction.")
     recent_fetch: int = Field(default=10, description="Recent records injected by get().")
@@ -824,7 +828,7 @@ class TieredMemory(Memory):
     async def _native_checkpoint(
         self, state: _SessionState, records: List[MemoryRecord]
     ) -> Optional[Dict[str, Any]]:
-        """Ask a Responses model for one opaque checkpoint for this logical window."""
+        """Ask an explicitly capable route for one native checkpoint."""
         try:
             span = self._fold_span(state, records)
             if span is None:

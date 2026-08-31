@@ -91,6 +91,4 @@ meta_agent.update(
     retain_recent_steps=2,
     compact_after_steps=24,
     compact_body_tokens=100000,
-    compact_at_tokens=750000,
-    compact_uncached_growth=30000,
 )

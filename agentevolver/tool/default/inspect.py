@@ -174,7 +174,9 @@ class InspectTool(Tool):
     description: str = _DESCRIPTION
     guidance: str = _GUIDANCE
     examples: List[str] = _EXAMPLES
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    metadata: Dict[str, Any] = Field(
+        default={"programmatic": True}, description="The metadata of the tool",
+    )
     enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
     mutates: bool = False
 

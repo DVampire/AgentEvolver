@@ -54,6 +54,12 @@ class ModelManagerServer(BaseModel):
     async def aget_model_config(self, model: str) -> Optional[ModelConfig]:
         return self.model_context_manager.get_model_config(model)
 
+    def resolve_runtime_features(
+        self, model: str, requested: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Return native/fallback modes for one exact registered model route."""
+        return self.model_context_manager.resolve_runtime_features(model, requested)
+
     # ------------------------------------------------------------------
     # Invocation
     # ------------------------------------------------------------------

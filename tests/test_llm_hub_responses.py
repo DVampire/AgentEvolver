@@ -27,6 +27,7 @@ from agentevolver.message.types import (
     ToolMessage,
 )
 from agentevolver.model.llm_hub.response import (
+    NativeFeatureUnavailable,
     ResponseLLMHub,
     serialize_input,
     serialize_tools,
@@ -58,8 +59,28 @@ def test_the_catalog_routes_the_model_to_responses():
 
     assert [m["model_name"] for m in specs["response"]] == ["llm_hub/gpt-5.6-sol"]
     assert specs["response"][0]["model_type"] == "responses"
+    assert specs["response"][0]["native_compaction"] is True
+    assert specs["response"][0]["persisted_reasoning"] is True
+    assert specs["response"][0]["native_programmatic_tool_calling"] is True
+    assert specs["response"][0].get("native_multi_agent", False) is False
     # And it must not still be on the surface that refuses its tools.
     assert not any("5.6-sol" in m["model_name"] for m in specs["chat"])
+
+
+def test_direct_openai_catalog_declares_the_same_protocol_with_a_tool_safe_fallback():
+    from agentevolver.model.config import openai_models
+
+    specs = openai_models(
+        max_tokens=8192, default_temperature=0.7,
+        default_reasoning={"reasoning": {"effort": "low"}},
+    )
+    sol = next(model for model in specs["response"] if model["model_name"] == "openai/gpt-5.6-sol")
+
+    assert sol["persisted_reasoning"] is True
+    assert sol["native_compaction"] is True
+    assert sol["native_programmatic_tool_calling"] is True
+    assert sol["native_multi_agent"] is True
+    assert sol["fallback_model"] == "openai/gpt-4.1"
 
 
 def test_the_catalog_omits_temperature_for_opus_5():
@@ -72,6 +93,15 @@ def test_the_catalog_omits_temperature_for_opus_5():
     assert "temperature" not in opus
     assert opus["model_id"] == "claude-opus-5", "the relay refuses the prefixed form"
     assert opus["model_type"] == "anthropic/messages"
+    assert opus["native_compaction"] is True
+
+    portable_only = {
+        model["model_name"]: model.get("native_compaction", False)
+        for model in specs["chat"]
+        if model["model_name"] != "llm_hub/claude-opus-5"
+    }
+    assert portable_only
+    assert not any(portable_only.values())
 
 
 def test_the_client_sends_no_temperature_unless_given_one():
@@ -294,8 +324,30 @@ def test_a_native_compaction_item_is_replayed_without_flattening_to_user_text():
     assert items == [opaque, {"role": "user", "content": "continue"}]
 
 
+def test_native_compaction_replaces_user_history_but_keeps_system_instructions():
+    canonical = [
+        {"type": "message", "role": "user", "content": "task"},
+        {"type": "compaction", "encrypted_content": "opaque"},
+    ]
+    items = serialize_input([
+        SystemMessage(content="agent contract"),
+        HumanMessage(content="task"),
+        CompactionMessage(
+            content="portable",
+            provider_state={"responses": {"compaction_items": canonical}},
+        ),
+        HumanMessage(content="continue"),
+    ])
+
+    assert items == [
+        {"role": "system", "content": "agent contract"},
+        *canonical,
+        {"role": "user", "content": "continue"},
+    ]
+
+
 @pytest.mark.asyncio
-async def test_native_compaction_keeps_later_user_items_but_not_the_task_anchor():
+async def test_native_compaction_keeps_the_canonical_output_verbatim():
     async def compact(**kwargs):
         assert kwargs["input"][0] == {"role": "user", "content": "task"}
         return SimpleNamespace(model_dump=lambda: {
@@ -317,8 +369,9 @@ async def test_native_compaction_keeps_later_user_items_but_not_the_task_anchor(
     ])
 
     saved = result["provider_state"]["responses"]["compaction_items"]
-    assert [item["type"] for item in saved] == ["message", "compaction"]
-    assert saved[0]["content"] == "Error: retry"
+    assert [item["type"] for item in saved] == ["message", "message", "compaction"]
+    assert saved[0]["content"] == "task"
+    assert saved[1]["content"] == "Error: retry"
     assert result["usage"] == {"input_tokens": 12}
 
 
@@ -330,6 +383,73 @@ def test_reasoning_is_accepted_in_either_catalog_shape():
 
     assert responses_shape["reasoning"] == {"effort": "low"}
     assert chat_shape["reasoning"] == {"effort": "high"}
+
+
+def test_persisted_reasoning_options_are_forwarded_without_chat_vocabulary():
+    params = _client(reasoning={
+        "effort": "low", "context": "all_turns", "mode": "pro",
+    })._build_params([HumanMessage(content="x")])
+
+    assert params["reasoning"] == {
+        "effort": "low", "context": "all_turns", "mode": "pro",
+    }
+
+
+def test_programmatic_tool_calling_only_opts_read_only_tools_in():
+    direct = _tool("write_file_tool")
+    read = _tool("read_file_tool")
+    read.metadata = {"programmatic": True}
+    client = _client(native_programmatic_tool_calling=True)
+
+    params = client._build_params(
+        [HumanMessage(content="inspect")], [direct, read],
+        runtime_features={"programmatic_tool_calling": "native"},
+    )
+
+    by_type = {tool.get("name", tool["type"]): tool for tool in params["tools"]}
+    assert "allowed_callers" not in by_type["write_file_tool"]
+    assert by_type["read_file_tool"]["allowed_callers"] == ["direct", "programmatic"]
+    assert by_type["programmatic_tool_calling"] == {"type": "programmatic_tool_calling"}
+
+
+def test_multi_agent_is_an_explicit_beta_request():
+    client = _client(
+        native_multi_agent=True,
+        reasoning={"reasoning": {"effort": "high", "summary": "auto"}},
+    )
+    params = client._build_params(
+        [HumanMessage(content="review")],
+        runtime_features={"multi_agent": "native", "max_concurrent_subagents": 2},
+        max_tool_calls=10,
+        # Stale provider kwargs cannot override the framework's resolved mode.
+        multi_agent={"enabled": False},
+    )
+
+    assert params["multi_agent"] == {"enabled": True, "max_concurrent_subagents": 2}
+    assert params["betas"] == ["responses_multi_agent=v1"]
+    assert params["reasoning"] == {"effort": "high"}
+    assert "max_tool_calls" not in params
+
+
+def test_feature_resolution_has_a_named_fallback_for_every_optimization():
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig
+
+    manager = ModelContextManager()
+    manager.models["plain"] = ModelConfig(
+        model_name="plain", model_id="plain", model_type="chat/completions",
+        provider="test",
+    )
+    resolved = manager.resolve_runtime_features("plain", {
+        "programmatic_tool_calling": True, "multi_agent": True,
+    })
+
+    assert resolved == {
+        "persisted_reasoning": "message_replay",
+        "compaction": "portable_checkpoint",
+        "programmatic_tool_calling": "direct_tools",
+        "multi_agent": "local_meta_agent",
+    }
 
 
 def test_a_reasoning_toggle_with_no_effort_is_not_sent():
@@ -377,6 +497,259 @@ def test_responses_reasoning_items_are_replayed_before_the_next_call():
     )])
 
     assert [item["type"] for item in items] == ["reasoning", "function_call"]
+
+
+def test_complete_response_output_is_replayed_without_reconstruction():
+    program = {"type": "program", "call_id": "prog_1", "code": "text('ok')"}
+    call = {
+        "type": "function_call", "call_id": "call_1", "name": "read_file_tool",
+        "arguments": '{"path":"a"}',
+        "caller": {"type": "program", "caller_id": "prog_1"},
+    }
+    message = AssistantMessage(
+        content="ignored reconstruction",
+        provider_state={"responses": {"output_items": [program, call]}},
+    )
+    output = ToolMessage(
+        content="contents", tool_call_id="call_1", caller=call["caller"],
+    )
+
+    assert serialize_input([message, output]) == [
+        program,
+        call,
+        {
+            "type": "function_call_output", "call_id": "call_1",
+            "output": "contents", "caller": call["caller"],
+        },
+    ]
+
+
+def test_multi_agent_parser_exposes_only_the_root_final_answer():
+    parsed = _client()._parse({"status": "completed", "output": [
+        {"type": "message", "agent": {"agent_name": "/root/a"},
+         "phase": "final_answer", "content": [{"text": "worker"}]},
+        {"type": "message", "agent": {"agent_name": "/root"},
+         "phase": "final_answer", "content": [{"text": "root"}]},
+    ]})
+
+    assert parsed.message == "root"
+    assert len(parsed.data["provider_state"]["responses"]["output_items"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_rejected_native_feature_is_disabled_for_the_route():
+    async def create(**kwargs):
+        raise RuntimeError("unsupported tool type programmatic_tool_calling")
+
+    client = _client(native_programmatic_tool_calling=True)
+    read = _tool()
+    read.metadata = {"programmatic": True}
+    client._client = lambda: SimpleNamespace(
+        responses=SimpleNamespace(create=create), beta=SimpleNamespace(),
+    )
+
+    with pytest.raises(NativeFeatureUnavailable):
+        await client(
+            messages=[HumanMessage(content="inspect")], tools=[read],
+            runtime_features={"programmatic_tool_calling": "native"},
+        )
+
+    assert "programmatic_tool_calling" in client._disabled_features
+    fallback = client._build_params(
+        [HumanMessage(content="inspect")], [read],
+        runtime_features={"programmatic_tool_calling": "native"},
+    )
+    assert not any(
+        tool.get("type") == "programmatic_tool_calling"
+        for tool in fallback["tools"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_transient_failure_does_not_change_the_capability_catalog():
+    async def create(**kwargs):
+        raise TimeoutError("upstream timed out")
+
+    client = _client(native_programmatic_tool_calling=True)
+    read = _tool()
+    read.metadata = {"programmatic": True}
+    client._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
+
+    with pytest.raises(TimeoutError):
+        await client(
+            messages=[HumanMessage(content="inspect")], tools=[read],
+            runtime_features={"programmatic_tool_calling": "native"},
+        )
+
+    assert not client._disabled_features
+
+
+@pytest.mark.asyncio
+async def test_manager_records_native_rejection_then_retries_the_named_fallback(monkeypatch):
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig, ModelContext
+
+    wire_modes = []
+    snapshots = []
+
+    async def create(**params):
+        native = any(
+            tool.get("type") == "programmatic_tool_calling"
+            for tool in params.get("tools") or []
+        )
+        wire_modes.append("native" if native else "direct_tools")
+        if native:
+            raise RuntimeError("programmatic tool calling is unavailable")
+        return SimpleNamespace(model_dump=lambda **_kwargs: {
+            "status": "completed",
+            "output": [{"type": "message", "content": [{"text": "OK"}]}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        })
+
+    async def record(**kwargs):
+        snapshots.append(kwargs["call_kwargs"]["runtime_features"])
+
+    client = _client(native_programmatic_tool_calling=True)
+    client._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
+    manager = ModelContextManager()
+    manager.models["main"] = ModelConfig(
+        model_name="main", model_id="gpt-5.6-sol", model_type="responses",
+        provider="llm_hub", supports_functions=True,
+        native_programmatic_tool_calling=True,
+    )
+    manager.model_clients["main"] = client
+    read = _tool()
+    read.metadata = {"programmatic": True}
+    monkeypatch.setattr("agentevolver.model.context._record_request_snapshot", record)
+
+    result = await manager(
+        name="main",
+        input={
+            "messages": [HumanMessage(content="inspect")], "tools": [read],
+            "max_retries": 1,
+            "runtime_features": {"programmatic_tool_calling": True},
+        },
+        ctx=ModelContext(id="session"),
+    )
+
+    assert result.success and result.message == "OK"
+    assert wire_modes == ["native", "direct_tools"]
+    assert [item["programmatic_tool_calling"] for item in snapshots] == [
+        "native", "direct_tools",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fallback_route_can_itself_downgrade_a_rejected_native_feature(monkeypatch):
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig, ModelContext
+    from agentevolver.response.types import Response, ResponseType
+
+    wire_modes = []
+    snapshots = []
+
+    async def unavailable_primary(**_kwargs):
+        return Response(type=ResponseType.LLM, success=False, message="primary unavailable")
+
+    async def create(**params):
+        native = any(
+            tool.get("type") == "programmatic_tool_calling"
+            for tool in params.get("tools") or []
+        )
+        wire_modes.append("native" if native else "direct_tools")
+        if native:
+            raise RuntimeError("programmatic tool calling is unavailable")
+        return SimpleNamespace(model_dump=lambda **_kwargs: {
+            "status": "completed",
+            "output": [{"type": "message", "content": [{"text": "fallback OK"}]}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        })
+
+    async def record(**kwargs):
+        snapshots.append((
+            kwargs["routed_model"],
+            kwargs["call_kwargs"]["runtime_features"]["programmatic_tool_calling"],
+        ))
+
+    fallback_client = _client(native_programmatic_tool_calling=True)
+    fallback_client._client = lambda: SimpleNamespace(
+        responses=SimpleNamespace(create=create),
+    )
+    manager = ModelContextManager()
+    manager.models["primary"] = ModelConfig(
+        model_name="primary", model_id="primary", model_type="responses",
+        provider="test", fallback_model="fallback",
+    )
+    manager.model_clients["primary"] = unavailable_primary
+    manager.models["fallback"] = ModelConfig(
+        model_name="fallback", model_id="gpt-5.6-sol", model_type="responses",
+        provider="llm_hub", supports_functions=True,
+        native_programmatic_tool_calling=True,
+    )
+    manager.model_clients["fallback"] = fallback_client
+    read = _tool()
+    read.metadata = {"programmatic": True}
+    monkeypatch.setattr("agentevolver.model.context._record_request_snapshot", record)
+
+    result = await manager(
+        name="primary",
+        input={
+            "messages": [HumanMessage(content="inspect")], "tools": [read],
+            "max_retries": 1,
+            "runtime_features": {"programmatic_tool_calling": True},
+        },
+        ctx=ModelContext(id="session"),
+    )
+
+    assert result.success and result.message == "fallback OK"
+    assert wire_modes == ["native", "direct_tools"]
+    assert snapshots == [
+        ("primary", "direct_tools"),
+        ("fallback", "native"),
+        ("fallback", "direct_tools"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_native_declaration_does_not_add_an_ordinary_retry(monkeypatch):
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig, ModelContext
+
+    calls = 0
+
+    async def create(**_params):
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("temporary upstream failure")
+
+    client = _client(native_programmatic_tool_calling=True)
+    client._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
+    manager = ModelContextManager()
+    manager.models["main"] = ModelConfig(
+        model_name="main", model_id="gpt-5.6-sol", model_type="responses",
+        provider="llm_hub", supports_functions=True,
+        native_programmatic_tool_calling=True,
+    )
+    manager.model_clients["main"] = client
+    read = _tool()
+    read.metadata = {"programmatic": True}
+    monkeypatch.setattr(
+        "agentevolver.model.context._record_request_snapshot",
+        lambda **_kwargs: asyncio.sleep(0),
+    )
+
+    result = await manager(
+        name="main",
+        input={
+            "messages": [HumanMessage(content="inspect")], "tools": [read],
+            "max_retries": 1,
+            "runtime_features": {"programmatic_tool_calling": True},
+        },
+        ctx=ModelContext(id="session"),
+    )
+
+    assert not result.success
+    assert calls == 1
 
 
 def test_malformed_arguments_are_kept_rather_than_dropped():

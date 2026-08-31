@@ -133,7 +133,7 @@ Permission mode: `workspace_write` · changes state
 
 ## `deploy_tool`
 
-Deploy and manage web services (static/SPA/API) in isolated sandboxes, each bound to its own URL.
+Deploy and manage web apps — from a one-call inline HTML page to a full frontend/backend project — each bound to a URL.
 
 Permission mode: `danger_full_access` · changes state
 

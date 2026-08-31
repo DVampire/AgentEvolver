@@ -23,6 +23,32 @@ generation interface.
 
 Provider packages adapt wire protocols; Agents consume only the shared Manager contract.
 
+Provider-native compaction is an explicit model-route capability. A
+`native_compaction=True` catalog entry and a client implementation are both required;
+otherwise memory uses its portable text checkpoint. This avoids treating every model on a
+shared Responses or Anthropic client as if its upstream relay supported the same endpoint
+or beta.
+
+## Runtime capability negotiation
+
+`ModelConfig` declares native capabilities per exact route: persisted reasoning,
+compaction, programmatic tool calling, and multi-agent. `model_manager` resolves an
+Agent's provider-neutral preferences into an explicit mode that is stored in every
+request snapshot:
+
+| Capability | Native path | Stable fallback |
+|---|---|---|
+| persisted reasoning | opaque provider output/thinking replay | visible assistant/tool messages |
+| compaction | provider checkpoint item/block | portable text checkpoint |
+| programmatic tools | hosted program + eligible read-only functions | direct calls; optional guarded `batch_call_tool` |
+| multi-agent | provider beta orchestration when explicitly enabled | registered local MetaAgent/sub-agent runtime |
+
+A shared client class never proves capability. A route must opt in, and a provider
+rejection disables that optimization for the client instance. The retry is recorded as a
+second request with the fallback mode, so Trace, request HTML, and actual execution agree.
+Provider switches remain safe because opaque state is namespaced: another serializer
+ignores it and uses the same canonical assistant/tool transcript.
+
 ## Request provenance
 
 `ModelContextManager` is the single place that knows both the requested model and the

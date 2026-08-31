@@ -1,9 +1,10 @@
-"""CompactHook — generic summariser.
+"""CompactHook — portable checkpoint summariser.
 
-Compresses a list of records into a single short text. Used by the memory
-systems to consolidate overflow ``recent_history`` into ``working_memory``,
-but deliberately knows nothing about TraceEvents or memory internals: callers
-pass pre-formatted text lines, the hook returns a summary.
+Compresses a list of records into one provider-neutral text checkpoint. It is the
+fallback when the selected route has no native compaction, and the readable companion
+for an opaque native checkpoint such as OpenAI Responses. Scheduling and history
+mutation stay in Agent/TieredMemory: this hook only turns bounded, pre-formatted closed
+turns into text.
 
 Contract
 --------
@@ -42,7 +43,7 @@ alone; do not refer to an 'existing checkpoint' or 'records above'."""
 @HOOK.register_module(force=True)
 class CompactHook(Hook):
     name: str = "compact"
-    description: str = "Generic summariser: compress a list of records into a short text."
+    description: str = "Portable fallback: summarise closed turns into a text checkpoint."
     priority: int = 50
 
     model_name: str = ""

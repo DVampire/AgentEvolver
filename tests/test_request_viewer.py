@@ -77,7 +77,7 @@ def _event() -> TraceEvent:
                 "input_capacity_tokens": 200_000,
                 "compaction_policy": {
                     "compact_after_steps": 30,
-                    "compact_at_tokens": 120_000,
+                    "compact_body_tokens": 100_000,
                 },
             },
         },

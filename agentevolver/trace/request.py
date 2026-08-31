@@ -39,6 +39,8 @@ _BEHAVIOUR_PARAMETERS = (
     "plugins",
     "stream",
     "max_retries",
+    "runtime_features",
+    "store",
 )
 
 

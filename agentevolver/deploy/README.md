@@ -1,7 +1,7 @@
 ---
 name: deploy
 description: "Deploys web apps — from a one-call inline HTML page served locally to a full frontend/backend project in an isolated container — and records their URLs, health, and lifecycle state."
-version: 1.1.0
+version: 1.0.0
 type: module
 category: deploy
 requirements: []

@@ -22,7 +22,7 @@ a real token stream would add a second wire format to maintain for no behavioura
 from typing import Any, Dict, List, Optional, TYPE_CHECKING, Union
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 try:
     from openai import AsyncOpenAI
@@ -38,12 +38,37 @@ if TYPE_CHECKING:
     from agentevolver.tool.types import Tool
 
 
+class NativeFeatureUnavailable(RuntimeError):
+    """An advertised native optimization was rejected; retry via framework fallback."""
+
+    def __init__(self, features: List[str], cause: Exception):
+        self.features = list(features)
+        self.cause = cause
+        super().__init__(
+            f"native feature unavailable ({', '.join(self.features)}): {cause}"
+        )
+
+
+def _feature_rejected(error: Exception) -> bool:
+    """Whether the provider rejected the feature contract, not the request transport."""
+    status = getattr(error, "status_code", None)
+    if status is not None:
+        return status in (400, 404, 409, 422)
+    text = str(error).lower()
+    markers = (
+        "unsupported", "not supported", "unavailable", "unknown tool type",
+        "allowed_callers", "programmatic_tool_calling", "responses_multi_agent",
+        "beta header", "multi-agent execution requires",
+    )
+    return any(marker in text for marker in markers)
+
+
 def _dump(value: Any) -> Dict[str, Any]:
     """Dump SDK or relay objects without noisy union-mismatch warnings."""
     if not hasattr(value, "model_dump"):
         return dict(value)
     try:
-        return value.model_dump(warnings=False)
+        return value.model_dump(warnings=False, exclude_none=True)
     except TypeError:  # small test doubles and older Pydantic versions
         return value.model_dump()
 
@@ -78,21 +103,39 @@ def serialize_input(messages: List[Message]) -> List[Dict[str, Any]]:
             state = (message.provider_state or {}).get("responses") or {}
             native = state.get("compaction_items") or []
             if native:
-                # Opaque means opaque: replay the exact item returned by /compact.
-                items.extend(dict(item) for item in native)
+                # /responses/compact returns all user messages plus one compaction item,
+                # but not the current system/developer instructions. Keep only those
+                # stable instruction items from the logical fixed layer, then install the
+                # provider output verbatim. Keeping the user task as well would duplicate
+                # it; dropping system would silently remove the agent contract.
+                instructions = [
+                    item for item in items if item.get("role") in ("system", "developer")
+                ]
+                items = [*instructions, *[dict(item) for item in native]]
                 continue
         role = getattr(message, "role", "user")
 
         if role == "tool":
-            items.append({
+            output = {
                 "type": "function_call_output",
                 "call_id": getattr(message, "tool_call_id", ""),
                 "output": _content_text(getattr(message, "content", "")),
-            })
+            }
+            caller = getattr(message, "caller", None)
+            if caller:
+                output["caller"] = dict(caller)
+            items.append(output)
             continue
 
         if role == "assistant":
             state = (getattr(message, "provider_state", None) or {}).get("responses") or {}
+            output_items = state.get("output_items") or []
+            if output_items:
+                # Stateless Responses continuation requires every provider output item
+                # in its original order. This covers encrypted reasoning, programs,
+                # program_output, multi-agent items, messages and function calls.
+                items.extend(dict(item) for item in output_items)
+                continue
             # Manual Responses history must replay model output items, not flatten
             # reasoning into assistant prose. Keep the exact item returned by the API.
             items.extend(dict(item) for item in state.get("reasoning_items") or [])
@@ -116,19 +159,25 @@ def serialize_input(messages: List[Message]) -> List[Dict[str, Any]]:
     return items
 
 
-def serialize_tools(tools: List["Tool"]) -> List[Dict[str, Any]]:
+def serialize_tools(
+    tools: List["Tool"], *, programmatic: bool = False,
+) -> List[Dict[str, Any]]:
     """Tool schemas in the Responses shape — flat, not nested under ``function``."""
     from agentevolver.model.llm_hub.serializer import LLMHubChatSerializer
 
     flattened = []
-    for tool in LLMHubChatSerializer.serialize_tools(tools) or []:
-        function = tool.get("function") or {}
-        flattened.append({
+    serialized_tools = LLMHubChatSerializer.serialize_tools(tools) or []
+    for source, serialized in zip(tools, serialized_tools):
+        function = serialized.get("function") or {}
+        item = {
             "type": "function",
             "name": function.get("name", ""),
             "description": function.get("description", ""),
             "parameters": function.get("parameters") or {"type": "object", "properties": {}},
-        })
+        }
+        if programmatic and bool((getattr(source, "metadata", None) or {}).get("programmatic")):
+            item["allowed_callers"] = ["direct", "programmatic"]
+        flattened.append(item)
     return flattened
 
 
@@ -138,10 +187,14 @@ class ResponseLLMHub(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     model: str
+    provider_name: str = "llm_hub"
     api_key: Optional[str] = None
     base_url: Optional[Union[str, httpx.URL]] = None
     reasoning: Optional[Dict[str, Any]] = None
     max_output_tokens: Optional[int] = 16384
+    # AgentEvolver owns durable conversation state in Trace. Stateless Responses keeps
+    # provider switching deterministic and returns replayable encrypted reasoning items.
+    store: bool = False
     timeout: Optional[Union[float, httpx.Timeout]] = 600.0
     #: Retries live in one place: `ModelContextManager.__call__`, which backs off, records
     #: each failed attempt in the trace, and knows the caller. Handing the SDK a budget of
@@ -150,10 +203,14 @@ class ResponseLLMHub(BaseModel):
     #: log and the trajectory. Raise this only for a provider whose SDK retry does something
     #: ours cannot.
     max_retries: int = 0
+    persisted_reasoning: bool = False
+    native_programmatic_tool_calling: bool = False
+    native_multi_agent: bool = False
+    _disabled_features: set[str] = PrivateAttr(default_factory=set)
 
     @property
     def provider(self) -> str:
-        return "llm_hub"
+        return self.provider_name
 
     @property
     def name(self) -> str:
@@ -181,6 +238,7 @@ class ResponseLLMHub(BaseModel):
         params: Dict[str, Any] = {
             "model": self.model,
             "input": serialize_input(messages),
+            "store": self.store,
         }
         if self.max_output_tokens:
             params["max_output_tokens"] = self.max_output_tokens
@@ -189,13 +247,43 @@ class ResponseLLMHub(BaseModel):
             # chat shape (`{"reasoning": {...}}`) the catalog uses elsewhere, so one
             # catalog entry can move between the two surfaces without being rewritten.
             reasoning = self.reasoning.get("reasoning", self.reasoning)
-            if isinstance(reasoning, dict) and "effort" in reasoning:
-                params["reasoning"] = {"effort": reasoning["effort"]}
+            if isinstance(reasoning, dict):
+                supported = {
+                    key: reasoning[key]
+                    for key in ("effort", "context", "mode", "summary")
+                    if key in reasoning
+                }
+                if supported:
+                    params["reasoning"] = supported
+        features = kwargs.pop("runtime_features", None) or {}
+        use_programmatic = bool(
+            features.get("programmatic_tool_calling") == "native"
+            and self.native_programmatic_tool_calling
+            and "programmatic_tool_calling" not in self._disabled_features
+        )
+        use_multi_agent = bool(
+            features.get("multi_agent") == "native"
+            and self.native_multi_agent
+            and "multi_agent" not in self._disabled_features
+        )
         if tools:
-            serialized = serialize_tools(tools)
+            serialized = serialize_tools(tools, programmatic=use_programmatic)
             if serialized:
+                if use_programmatic and any("programmatic" in item.get("allowed_callers", []) for item in serialized):
+                    serialized.append({"type": "programmatic_tool_calling"})
                 params["tools"] = serialized
         params.update({k: v for k, v in kwargs.items() if v is not None})
+        if use_multi_agent:
+            # These parameters are rejected by the beta surface. Resolve the conflict
+            # here so provider-specific constraints do not leak into Agent/MetaAgent.
+            if isinstance(params.get("reasoning"), dict):
+                params["reasoning"].pop("summary", None)
+            params.pop("max_tool_calls", None)
+            params["multi_agent"] = {
+                "enabled": True,
+                "max_concurrent_subagents": int(features.get("max_concurrent_subagents") or 3),
+            }
+            params["betas"] = ["responses_multi_agent=v1"]
         return params
 
     def _parse(self, raw: Any) -> Response:
@@ -210,10 +298,23 @@ class ResponseLLMHub(BaseModel):
         reasoning_parts: List[str] = []
         reasoning_items: List[Dict[str, Any]] = []
         functions: List[Dict[str, Any]] = []
+        output_items = [dict(item) for item in payload.get("output") or []]
 
-        for item in payload.get("output") or []:
+        message_items = [item for item in output_items if item.get("type") == "message"]
+        root_final = [
+            item for item in message_items
+            if ((item.get("agent") or {}).get("agent_name") == "/root"
+                and item.get("phase") == "final_answer")
+        ]
+        visible_messages = root_final or [
+            item for item in message_items if not item.get("agent")
+        ] or message_items
+
+        for item in output_items:
             item_type = item.get("type")
             if item_type == "message":
+                if item not in visible_messages:
+                    continue
                 for part in item.get("content") or []:
                     if part.get("text"):
                         text_parts.append(part["text"])
@@ -231,6 +332,7 @@ class ResponseLLMHub(BaseModel):
                     "id": item.get("call_id") or item.get("id") or "",
                     "name": item.get("name", ""),
                     "args": parsed,
+                    "caller": item.get("caller"),
                 })
             elif item_type == "reasoning":
                 reasoning_items.append(dict(item))
@@ -257,8 +359,12 @@ class ResponseLLMHub(BaseModel):
                 "functions": functions,
                 "reasoning": "".join(reasoning_parts),
                 "provider_state": {
-                    "responses": {"reasoning_items": reasoning_items}
-                } if reasoning_items else {},
+                    "responses": {
+                        "output_items": output_items,
+                        # Backward-compatible diagnostic; output_items is authoritative.
+                        "reasoning_items": reasoning_items,
+                    }
+                } if output_items else {},
                 "usage": usage,
                 "finish_reason": "tool_use" if functions else "end_turn",
                 "raw_response": payload,
@@ -269,9 +375,9 @@ class ResponseLLMHub(BaseModel):
     async def compact_history(self, messages: List[Message]) -> Dict[str, Any]:
         """Compact canonical history with the native Responses endpoint.
 
-        The endpoint also returns user messages. AgentEvolver keeps its task anchor on
-        the Trace surface, so that first copy is removed; later user items and the opaque
-        compaction item are replayed exactly at the replacement point.
+        Its output is a canonical replacement input. It must be replayed as-is; the
+        provider serializer retains stable system/developer instructions, replaces the
+        older conversation with this output, and then appends only newer turns.
         """
         client = self._client()
         raw = await client.responses.compact(
@@ -283,23 +389,8 @@ class ResponseLLMHub(BaseModel):
         if not any(item.get("type") == "compaction" for item in output):
             raise RuntimeError("Responses compaction returned no compaction item")
 
-        # /compact deliberately returns user messages outside the opaque item. The
-        # first one is our task anchor, which ContextBuilder already retains as a stable
-        # cache prefix. Keep every later user item so compaction cannot erase an injected
-        # execution error or correction.
-        skipped_anchor = False
-        items = []
-        for item in output:
-            if (
-                not skipped_anchor
-                and item.get("type") == "message"
-                and item.get("role") == "user"
-            ):
-                skipped_anchor = True
-                continue
-            items.append(item)
         return {
-            "provider_state": {"responses": {"compaction_items": items}},
+            "provider_state": {"responses": {"compaction_items": output}},
             "usage": payload.get("usage") or {},
             "format": "openai.responses.compaction",
             "native": True,
@@ -332,12 +423,62 @@ class ResponseLLMHub(BaseModel):
         params = self._build_params(messages, tools=tools, **kwargs)
         client = self._client()
         try:
-            raw = await client.responses.create(**params)
+            surface = client.beta.responses if params.get("multi_agent") else client.responses
+            raw = await surface.create(**params)
         except Exception as error:
-            logger.error(f"| 🔴 llm_hub responses error (model={self.model}): "
-                         f"{type(error).__name__}: {error}")
-            raise
-        return self._parse(raw)
+            active = []
+            if any(tool.get("type") == "programmatic_tool_calling" for tool in params.get("tools") or []):
+                active.append("programmatic_tool_calling")
+            if params.get("multi_agent"):
+                active.append("multi_agent")
+            if active and _feature_rejected(error):
+                # A relay/model catalog can drift. Disable only a definitively rejected
+                # native optimization. The manager records the failed request, then an
+                # immediate retry with direct tools/local orchestration.
+                self._disabled_features.update(active)
+                logger.warning(
+                    f"| ⚠️ {self.model}: native {', '.join(active)} unavailable; "
+                    "retrying with provider-neutral fallback"
+                )
+                raise NativeFeatureUnavailable(active, error) from error
+            else:
+                logger.error(f"| 🔴 llm_hub responses error (model={self.model}): "
+                             f"{type(error).__name__}: {error}")
+                raise
+        response = self._parse(raw)
+        usages = [response.usage] if response.usage is not None else []
+        # A hosted program may finish in one response and emit the root message in the
+        # next. Continue internally when there is no client-owned call to dispatch.
+        continuation_input = serialize_input(messages)
+        for _ in range(3):
+            state = ((response.data or {}).get("provider_state") or {}).get("responses") or {}
+            output = state.get("output_items") or []
+            if response.message or (response.data or {}).get("functions"):
+                break
+            if not any(item.get("type") in ("program", "program_output", "multi_agent_call") for item in output):
+                break
+            continuation_input.extend(dict(item) for item in output)
+            next_params = dict(params)
+            next_params["input"] = list(continuation_input)
+            surface = client.beta.responses if next_params.get("multi_agent") else client.responses
+            raw = await surface.create(**next_params)
+            response = self._parse(raw)
+            if response.usage is not None:
+                usages.append(response.usage)
+        if len(usages) > 1:
+            costs = [usage.cost for usage in usages if usage.cost is not None]
+            combined = TokenUsage(
+                input_tokens=sum(usage.input_tokens for usage in usages),
+                output_tokens=sum(usage.output_tokens for usage in usages),
+                cache_write_tokens=sum(usage.cache_write_tokens for usage in usages),
+                cache_read_tokens=sum(usage.cache_read_tokens for usage in usages),
+                cost=sum(costs) if costs else None,
+            )
+            response.usage = combined
+            response.data["usage"] = combined.model_dump()
+        return response
 
 
-__all__ = ["ResponseLLMHub", "serialize_input", "serialize_tools"]
+__all__ = [
+    "NativeFeatureUnavailable", "ResponseLLMHub", "serialize_input", "serialize_tools",
+]

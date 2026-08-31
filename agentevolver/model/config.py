@@ -47,6 +47,23 @@ def openai_models(
     ]
     response_models = [
         {
+            "model_name": "openai/gpt-5.6-sol",
+            "model_id": "gpt-5.6-sol",
+            "model_type": "responses",
+            "reasoning": {"reasoning": {"effort": "low", "context": "all_turns"}},
+            "max_output_tokens": max_tokens,
+            "context_window": 1_050_000,
+            "native_compaction": True,
+            "persisted_reasoning": True,
+            "native_programmatic_tool_calling": True,
+            "native_multi_agent": True,
+            "supports_functions": True,
+            # The fallback must preserve the Agent's function-call contract. The legacy
+            # ResponseOpenAI adapter used by older response entries is text-only, while
+            # gpt-4.1's chat adapter keeps the same canonical tool loop.
+            "fallback_model": "openai/gpt-4.1",
+        },
+        {
             "model_name": "openai/gpt-5",
             "model_id": "gpt-5",
             "model_type": "responses",
@@ -166,6 +183,8 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # Live-probed on this relay: /v1/messages supports native tools, signed
             # Anthropic blocks, compact_20260112, and compaction-block continuation.
             "model_type": "anthropic/messages",
+            "native_compaction": True,
+            "persisted_reasoning": True,
             # The relay routes this to AWS Bedrock (response ids are `msg_bdrk_*`), which
             # intermittently returns an empty completion (finish_reason null, ~3 tokens) —
             # mostly isolated single misses that one retry clears. The default of 3 attempts
@@ -244,10 +263,19 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             "model_name": "llm_hub/gpt-5.6-sol",
             "model_id": "gpt-5.6-sol",
             "model_type": "responses",
+            # Live-probed against this exact relay route: /responses/compact returns a
+            # replayable opaque compaction item. Other Responses routes are not assumed
+            # to support it merely because they share a client implementation.
+            "native_compaction": True,
+            "persisted_reasoning": True,
+            # Live probe on this exact relay accepted both allowed_callers and the
+            # programmatic_tool_calling hosted tool. Multi-agent is intentionally absent:
+            # the same relay returned 400 because it strips the required beta header.
+            "native_programmatic_tool_calling": True,
             # OpenAI's published spec. Codex reports 272k for its own bundle — that is a
             # billing threshold (input above it is priced 2x), not a capacity limit.
             "context_window": 1_050_000,
-            "reasoning": {"effort": "low"},
+            "reasoning": {"effort": "low", "context": "all_turns"},
             "max_output_tokens": max_tokens,
             "timeout": default_timeout,
         },
@@ -266,6 +294,10 @@ def anthropic_models(*, max_tokens, default_temperature, default_timeout, defaul
             "model_name": "anthropic/claude-opus-5",
             "model_id": "claude-opus-5",
             "model_type": "chat/completions",
+            # Official Anthropic Messages support for this exact model. Sibling models
+            # remain opt-in because a shared client class is not a capability guarantee.
+            "native_compaction": True,
+            "persisted_reasoning": True,
             "reasoning": {
                 "thinking": {"type": "adaptive"},
                 "output_config": {"effort": "high"},

@@ -146,6 +146,8 @@ class TraceHook(Hook):
             )
             if action.get("parent_call_id"):
                 event.metadata["parent_call_id"] = str(action["parent_call_id"])
+            if action.get("caller"):
+                event.metadata["caller"] = dict(action["caller"])
             self._timers[f"{ctx.id}:action:{step}:{idx}"] = time.monotonic()
 
         elif inp_event == HookEvent.POST_ACTION:
@@ -173,6 +175,8 @@ class TraceHook(Hook):
             )
             if action.get("parent_call_id"):
                 event.metadata["parent_call_id"] = str(action["parent_call_id"])
+            if action.get("caller"):
+                event.metadata["caller"] = dict(action["caller"])
             execution_meta = inp.get("execution_meta")
             if isinstance(execution_meta, dict) and execution_meta:
                 # The Tool pipeline owns this classified outcome. Keep it nested so its

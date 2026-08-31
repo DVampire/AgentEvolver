@@ -157,8 +157,6 @@ class _Ahead(_Agent):
         super().__init__(**kwargs)
         self.fold_at_pressure = fold_at_pressure
         self.compact_after_steps = 0
-        self.compact_at_tokens = 0
-        self.compact_uncached_growth = 0
 
 
 @pytest.fixture
@@ -221,14 +219,10 @@ async def test_a_request_below_the_threshold_is_left_alone(folds, at_pressure):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "field,value,metric",
-    [
-        ("compact_after_steps", 30, {"logical_steps": 30}),
-        ("compact_at_tokens", 120_000, {"estimated_tokens": 120_000}),
-        ("compact_uncached_growth", 50_000, {"uncached_growth": 50_000}),
-    ],
-)
+@pytest.mark.parametrize("field,value,metric", [
+    ("compact_after_steps", 30, {"logical_steps": 30}),
+    ("compact_body_tokens", 100_000, {"body_after_prefix_tokens": 100_000}),
+])
 async def test_early_compaction_triggers_before_window_pressure(
     folds, field, value, metric
 ):
@@ -237,9 +231,8 @@ async def test_early_compaction_triggers_before_window_pressure(
     setattr(agent, field, value)
     measured = {
         "logical_steps": 0,
-        "estimated_tokens": 0,
+        "body_after_prefix_tokens": 0,
         "pressure_ratio": 0.10,
-        "uncached_growth": 0,
         **metric,
     }
     agent._context_history_metrics = lambda run: measured

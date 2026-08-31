@@ -376,14 +376,6 @@ def _request_diagnostics(
     )
     if body_eta is not None:
         compaction_candidates.append(body_eta)
-    token_eta = projected_steps(
-        current,
-        int(policy.get("compact_at_tokens") or 0),
-        slope,
-    )
-    if token_eta is not None:
-        compaction_candidates.append(token_eta)
-
     return {
         "fixed_prefix_tokens": fixed_tokens,
         "rolling_prefix_tokens": rolling_tokens,
@@ -495,6 +487,11 @@ def render_request_html(
     diagnostics = _request_diagnostics(
         event, snapshot, usage=usage, previous_event=previous_event,
     )
+    runtime_features = (snapshot.get("parameters") or {}).get("runtime_features") or {}
+    feature_summary = ", ".join(
+        f"{name}={mode}" for name, mode in runtime_features.items()
+        if name != "max_concurrent_subagents"
+    ) or "provider defaults"
 
     route_rows = [
         ("Operation", (snapshot.get("parameters") or {}).get("operation") or "generate"),
@@ -503,6 +500,7 @@ def render_request_html(
         ("Provider", snapshot.get("provider") or "—"),
         ("Provider model", snapshot.get("provider_model") or "—"),
         ("Model API", snapshot.get("model_type") or "—"),
+        ("Runtime features", feature_summary),
         ("Snapshot schema", snapshot.get("schema_version") or "—"),
         ("Attempt", metadata.get("attempt", 1)),
         ("Route index", metadata.get("route_index", 0)),

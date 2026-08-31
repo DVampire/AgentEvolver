@@ -44,11 +44,17 @@ class _SchemaTool(Tool):
         raise RuntimeError("schema-only tool shim is not directly callable")
 
 
-def _shim(fc: Dict[str, Any]) -> _SchemaTool:
+def _shim(
+    fc: Dict[str, Any], *, mutates: Any = None, programmatic: bool = False,
+) -> _SchemaTool:
     """Wrap one function-calling dict in a schema-only ``_SchemaTool`` so serialization
     can read ``tool.function_calling`` uniformly; the shim itself is never executed."""
     fn = fc.get("function", {})
-    return _SchemaTool(name=fn.get("name", ""), description=fn.get("description", ""), function_calling=fc)
+    return _SchemaTool(
+        name=fn.get("name", ""), description=fn.get("description", ""),
+        function_calling=fc, mutates=mutates,
+        metadata={"programmatic": bool(programmatic)},
+    )
 
 
 def _projects(capability_type: str, agent: Any, extra: Dict[str, Any], include_agents: bool) -> bool:
@@ -113,7 +119,34 @@ async def assemble_native_tools(
             **_projection_kwargs(entry.type, agent),
         )
 
-    tools = [_shim(fc) for fc, _ in pairs]
+    tools: List[_SchemaTool] = []
+    for fc, route in pairs:
+        # Hosted programs are deliberately narrower than direct calls. A Tool must be
+        # both read-only and explicitly opt in through metadata; writes,
+        # approval-sensitive capabilities, agents, skills and connectors remain direct
+        # so the authorization boundary is visible to the ordinary Agent loop. The local
+        # batch_call fallback applies the same guard on every nested call.
+        mutates = None
+        declared_programmatic = False
+        if route and route[0] == "tool":
+            try:
+                from agentevolver.tool import tool_manager
+                info = await tool_manager.get_info(route[1])
+                mutates = getattr(info, "mutates", None) if info is not None else None
+                declared_programmatic = bool(
+                    ((getattr(info, "metadata", None) or {}).get("programmatic"))
+                    if info is not None else False
+                )
+            except Exception:
+                mutates = None
+        tools.append(_shim(
+            fc,
+            mutates=mutates,
+            programmatic=bool(
+                route and route[0] == "tool" and mutates is False
+                and declared_programmatic
+            ),
+        ))
     routing = {fc["function"]["name"]: route for fc, route in pairs}
     return tools, routing
 

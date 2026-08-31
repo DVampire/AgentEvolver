@@ -45,6 +45,24 @@ class ModelConfig(BaseModel):
     supports_streaming: bool = Field(default=True, description="Whether streaming is supported.")
     supports_functions: bool = Field(default=False, description="Whether tool/function calling is supported.")
     supports_vision: bool = Field(default=False, description="Whether multimodal inputs are supported.")
+    native_compaction: bool = Field(
+        default=False,
+        description="Whether this exact model route has verified provider-native "
+        "compaction support. The client method alone is not sufficient: one protocol "
+        "client may serve models or relays with different capabilities.",
+    )
+    persisted_reasoning: bool = Field(
+        default=False,
+        description="Whether this exact route can replay provider-owned reasoning state.",
+    )
+    native_programmatic_tool_calling: bool = Field(
+        default=False,
+        description="Whether this exact route supports hosted programmatic tool calling.",
+    )
+    native_multi_agent: bool = Field(
+        default=False,
+        description="Whether this exact route supports provider-hosted multi-agent execution.",
+    )
     output_version: Optional[str] = Field(
         default=None,
         description="Optional output schema version when required by provider.",
@@ -297,6 +315,7 @@ class ToolCall(BaseModel):
     id: str = ""
     name: str = ""
     input: Dict[str, Any] = Field(default_factory=dict)
+    caller: Optional[Dict[str, Any]] = None
 
 
 class ToolResult(BaseModel):
@@ -322,6 +341,7 @@ class ToolCallStart:
     index: int
     id: str
     name: str
+    caller: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -337,6 +357,7 @@ class ToolCallComplete:
     id: str
     name: str
     input: Dict[str, Any] = field(default_factory=dict)
+    caller: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -398,11 +419,16 @@ async def accumulate_stream(events: "AsyncIterator[StreamEvent]") -> Dict[str, A
                 slot["id"] = ev.id
             if ev.name:
                 slot["name"] = ev.name
+            if ev.caller:
+                slot["caller"] = dict(ev.caller)
         elif isinstance(ev, ToolCallArgsDelta):
             slot = tools.setdefault(ev.index, {"id": "", "name": "", "args": ""})
             slot["args"] = slot.get("args", "") + ev.partial_json
         elif isinstance(ev, ToolCallComplete):
-            tools[ev.index] = {"id": ev.id, "name": ev.name, "input": ev.input}
+            tools[ev.index] = {
+                "id": ev.id, "name": ev.name, "input": ev.input,
+                "caller": dict(ev.caller) if ev.caller else None,
+            }
         elif isinstance(ev, ProviderState):
             provider_state.update(ev.data)
         elif isinstance(ev, StreamDone):
@@ -420,7 +446,10 @@ async def accumulate_stream(events: "AsyncIterator[StreamEvent]") -> Dict[str, A
                 parsed = _json.loads(raw) if raw else {}
             except Exception:
                 parsed = {"__raw__": raw}
-        tool_calls.append(ToolCall(id=t.get("id") or f"call_{idx}", name=t.get("name", ""), input=parsed))
+        tool_calls.append(ToolCall(
+            id=t.get("id") or f"call_{idx}", name=t.get("name", ""), input=parsed,
+            caller=t.get("caller"),
+        ))
 
     return {
         "text": "".join(text_parts),
@@ -489,7 +518,9 @@ async def build_response_from_stream(
         functions = []
         lines = []
         for c in acc["tool_calls"]:
-            functions.append({"id": c.id, "name": c.name, "args": c.input})
+            functions.append({
+                "id": c.id, "name": c.name, "args": c.input, "caller": c.caller,
+            })
             if c.input:
                 args_str = ", ".join(f"{k}={v!r}" for k, v in c.input.items())
                 lines.append(f"Calling function {c.name}({args_str})")
@@ -546,6 +577,7 @@ async def buffered_response_to_events(response: Any) -> "AsyncIterator[StreamEve
             yield ToolCallComplete(
                 index=i, id=fn.get("id") or f"call_{i}",
                 name=fn.get("name", ""), input=fn.get("args") or {},
+                caller=fn.get("caller"),
             )
     else:
         text = data.get("text")

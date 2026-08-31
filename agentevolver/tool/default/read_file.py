@@ -40,7 +40,9 @@ class ReadFileTool(Tool):
     description: str = _DESCRIPTION
     guidance: str = _GUIDANCE
     examples: List[str] = _EXAMPLES
-    metadata: Dict[str, Any] = Field(default={"canvas_category": "files"})
+    metadata: Dict[str, Any] = Field(
+        default={"canvas_category": "files", "programmatic": True},
+    )
     enable_evolving: bool = Field(default=False)
     mutates: bool = False
 

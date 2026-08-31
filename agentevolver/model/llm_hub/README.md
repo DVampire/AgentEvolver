@@ -39,6 +39,18 @@ The catalog is intentionally a checked subset rather than a mirror of every upst
 model. Adding one means verifying both its bare id and its actual protocol surface, since
 the relay neither rewrites unknown ids nor guarantees that every model supports every API.
 
+Native compaction is separately opt-in through the model spec's
+`native_compaction=True`. Sharing the Responses or Anthropic Messages client does not opt a
+model in: the exact relay/model route must have completed a generate-and-replay probe.
+Unmarked chat models use the same portable text checkpoint as every other provider.
+
+The Responses adapter keeps every returned output item in order. That one opaque list is
+the continuation state for encrypted reasoning, `program` / `program_output`, function
+call caller linkage, and beta multi-agent items; reconstructing only the visible text
+would corrupt all four. On this relay `gpt-5.6-sol` has live-probed compaction and
+programmatic tool calling. Multi-agent remains disabled because the relay rejects the
+request after dropping its required beta header, so orchestration stays in MetaAgent.
+
 `claude-opus-5` omits `temperature`: Opus 4.7 and later removed the sampling parameters,
 and a request carrying one comes back "`temperature` is deprecated for this model". It is
 routed through the relay's native Anthropic Messages surface, which was live-probed for
