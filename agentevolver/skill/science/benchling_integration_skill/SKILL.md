@@ -44,6 +44,14 @@ metadata:
 ---
 # Benchling Integration
 
+## Environment (AgentEvolver)
+
+Benchling credentials are your Benchling tenant's own (not routed through any relay). Put the
+ones you use in the project `.env`: `BENCHLING_TENANT_URL` + either `BENCHLING_API_KEY` (API-key
+auth) or `BENCHLING_CLIENT_ID` / `BENCHLING_CLIENT_SECRET` (OAuth); the `*_PROD_*` / `*_STAGING_*`
+variants are only for multi-environment setups. The scripts read these named variables from the
+environment — same third-party-service convention as the other integration skills here.
+
 ## Overview
 
 Benchling is a cloud platform for life sciences R&D. Access registry entities (DNA, RNA, proteins), inventory, electronic lab notebooks, and workflows programmatically via the Python SDK and REST API.

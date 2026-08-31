@@ -26,6 +26,13 @@ metadata:
 ---
 # Exa Web Toolkit
 
+## Environment (AgentEvolver)
+
+`EXA_API_KEY` is Exa's own service credential (not routed through any relay). Put it in the
+project `.env` — the scripts read it from the environment, and the Authentication section
+below shows how to load `.env`. This is the project's convention for a skill that talks to a
+third-party service with its own key.
+
 A skill for web-powered research tasks backed by [Exa](https://exa.ai): web search and URL extraction. Exa's index combines high-quality keyword and semantic retrieval, which makes it well-suited to scientific, technical, and conceptual queries.
 
 ## Routing — pick the right capability

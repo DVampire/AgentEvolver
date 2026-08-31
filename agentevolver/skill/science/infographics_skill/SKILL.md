@@ -21,6 +21,15 @@ metadata:
 ---
 # Infographics
 
+## Environment (AgentEvolver)
+
+This skill's LLM/image steps go through **this project's OpenRouter relay**. Put
+`OPENROUTER_API_KEY` and `OPENROUTER_API_BASE` in the project `.env` (already the
+convention here — the same pair the framework's `openrouter` model backend uses); the
+script reads the base URL from `OPENROUTER_API_BASE` and routes through the relay instead
+of the public endpoint. The models it names (Gemini image/flash, Perplexity Sonar) must be
+reachable through the relay — check `/v1/models` if a call returns "no available channel".
+
 ## Overview
 
 Infographics are visual representations of information, data, or knowledge designed to present complex content quickly and clearly. **This skill uses Nano Banana Pro AI for infographic generation with Gemini 3.6 Flash quality review and Perplexity Sonar for research.**

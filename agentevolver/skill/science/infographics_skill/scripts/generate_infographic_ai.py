@@ -426,7 +426,11 @@ IMPORTANT - NO META CONTENT:
         
         self.verbose = verbose
         self._last_error = None
-        self.base_url = "https://openrouter.ai/api/v1"
+        # Route through this project's OpenRouter relay when configured (OPENROUTER_API_BASE
+        # in .env), falling back to the public endpoint. The relay uses the same
+        # OPENROUTER_API_KEY, so no separate credential is needed. See science/README /
+        # THIRD_PARTY_NOTICES for the project's skill-env convention.
+        self.base_url = os.environ.get("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1").rstrip("/")
         # Nano Banana Pro for image generation. The slug must be an image-output
         # model; a text-only chat model is rejected with "No endpoints found that
         # support the requested output modalities".
