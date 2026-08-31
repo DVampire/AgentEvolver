@@ -47,44 +47,72 @@ def _event(seq: int, event_type: str, **fields) -> dict:
         "task_id": "t1",
         "agent_name": fields.pop("agent_name", "meta_agent"),
         "label": f"{event_type} {seq}",
-        "step_number": None, "action_index": None,
-        "action_type": None, "action_name": None,
-        "input": None, "output": None, "reasoning": None, "message": None,
-        "success": None, "error": None, "duration_ms": None, "usage": None,
+        "step_number": None,
+        "action_index": None,
+        "action_type": None,
+        "action_name": None,
+        "input": None,
+        "output": None,
+        "reasoning": None,
+        "message": None,
+        "success": None,
+        "error": None,
+        "duration_ms": None,
+        "usage": None,
         "metadata": {},
         "timestamp": (_START + timedelta(seconds=seq)).isoformat(),
         "seq_no": seq,
         "surface_op": "append",
         "source_event_seqs": None,
-        "fingerprint": None, "provenance": "live", "confidence": "high",
+        "fingerprint": None,
+        "provenance": "live",
+        "confidence": "high",
     }
     row.update(fields)
     return row
 
 
-def _write(session_id: str, rows: list, *, owner: str = "local",
-           project: str = "proj1", mtime: float | None = None) -> Path:
+def _write(
+    session_id: str,
+    rows: list,
+    *,
+    owner: str = "local",
+    project: str = "proj1",
+    mtime: float | None = None,
+) -> Path:
     """Write one run's log where trace would have written it."""
     trace = path_manager.get(P.SESSION_TRACE, owner=owner, session_id=project)
     trace.mkdir(parents=True, exist_ok=True)
     path = trace / f"{session_id}.jsonl"
     path.write_text(
         "".join(json.dumps({**row, "session_id": session_id}) + "\n" for row in rows),
-        encoding="utf-8")
+        encoding="utf-8",
+    )
     if mtime is not None:
         import os
+
         os.utime(path, (mtime, mtime))
     return path
 
 
 def _simple_run(session_id: str, task: str, answer: str, **kwargs) -> Path:
     """A three-event run: it was asked something, it did one thing, it answered."""
-    return _write(session_id, [
-        _event(0, "agent_start", input={"task": task}),
-        _event(1, "tool_call", action_name="bash_tool", action_type="tool",
-               message="pytest passed", metadata={"success": True, "call_id": "c1"}),
-        _event(2, "agent_end", message=answer, success=True),
-    ], **kwargs)
+    return _write(
+        session_id,
+        [
+            _event(0, "agent_start", input={"task": task}),
+            _event(
+                1,
+                "tool_call",
+                action_name="bash_tool",
+                action_type="tool",
+                message="pytest passed",
+                metadata={"success": True, "call_id": "c1"},
+            ),
+            _event(2, "agent_end", message=answer, success=True),
+        ],
+        **kwargs,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -102,8 +130,9 @@ def test_the_layout_key_points_where_trace_actually_writes(tree):
     root = path_manager.get(P.SESSION, owner="local", session_id="s1")
     sandbox = ProjectSandbox.create(root, materialize=False)
 
-    assert Path(sandbox.log_root) / "trace" == \
-        path_manager.get(P.SESSION_TRACE, owner="local", session_id="s1")
+    assert Path(sandbox.log_root) / "trace" == path_manager.get(
+        P.SESSION_TRACE, owner="local", session_id="s1"
+    )
 
 
 def test_a_sub_agent_run_is_found_as_its_own_session(tree):
@@ -138,8 +167,7 @@ def test_related_runs_are_the_ones_filed_together(tree):
     following it resolves to nothing and the two runs look unrelated.
     """
     _simple_run("parent", "delegate", "done")
-    _simple_run("child", "do the work", "did it",
-                project="proj1")
+    _simple_run("child", "do the work", "did it", project="proj1")
     _simple_run("elsewhere", "unrelated", "ok", project="proj2")
 
     assert [r.session_id for r in session_query.related("parent")] == ["child"]
@@ -155,11 +183,14 @@ def test_a_session_matches_terms_spread_across_its_events(tree):
     simplification, and it finds nothing: no single event of a real run contains both
     what was asked and what came back.
     """
-    _write("spread", [
-        _event(0, "agent_start", input={"task": "analyse the penguins dataset"}),
-        _event(1, "tool_call", action_name="bash_tool", message="matplotlib figure saved"),
-        _event(2, "agent_end", message="four charts produced", success=True),
-    ])
+    _write(
+        "spread",
+        [
+            _event(0, "agent_start", input={"task": "analyse the penguins dataset"}),
+            _event(1, "tool_call", action_name="bash_tool", message="matplotlib figure saved"),
+            _event(2, "agent_end", message="four charts produced", success=True),
+        ],
+    )
 
     page = session_query.search_sessions("penguins matplotlib")
     assert [hit.record.session_id for hit in page.sessions] == ["spread"]
@@ -173,10 +204,13 @@ def test_an_event_hit_carries_every_term_itself(tree):
     run as a whole satisfies, and the agent would read an `agent_start` while looking
     for the traceback.
     """
-    _write("spread", [
-        _event(0, "agent_start", input={"task": "analyse the penguins dataset"}),
-        _event(1, "tool_call", action_name="bash_tool", message="matplotlib figure saved"),
-    ])
+    _write(
+        "spread",
+        [
+            _event(0, "agent_start", input={"task": "analyse the penguins dataset"}),
+            _event(1, "tool_call", action_name="bash_tool", message="matplotlib figure saved"),
+        ],
+    )
 
     assert session_query.search_events("penguins matplotlib").events == []
     hits = session_query.search_events("matplotlib figure").events
@@ -228,14 +262,21 @@ def test_the_outline_shows_a_summary_in_place_of_what_it_shadowed(tree):
     the three events it stands for — a conversation that never happened, and one that
     reads as the agent having said everything twice.
     """
-    _write("compacted", [
-        _event(0, "agent_start", input={"task": "long task"}),
-        _event(1, "tool_call", action_name="bash_tool", message="step one"),
-        _event(2, "tool_call", action_name="bash_tool", message="step two"),
-        _event(3, "agent_call", message="summary of the work so far",
-               surface_op={"op": "replace", "start": 0, "end": 2},
-               source_event_seqs=[0, 1, 2]),
-    ])
+    _write(
+        "compacted",
+        [
+            _event(0, "agent_start", input={"task": "long task"}),
+            _event(1, "tool_call", action_name="bash_tool", message="step one"),
+            _event(2, "tool_call", action_name="bash_tool", message="step two"),
+            _event(
+                3,
+                "agent_call",
+                message="summary of the work so far",
+                surface_op={"op": "replace", "start": 0, "end": 2},
+                source_event_seqs=[0, 1, 2],
+            ),
+        ],
+    )
 
     folded = session_query.outline("compacted")
     assert [entry.seq_no for entry in folded.entries] == [3]
@@ -251,11 +292,18 @@ def test_a_log_whose_surface_will_not_fold_is_still_readable(tree):
     an unopenable one; falling back silently is worse still, since shadowed originals
     would then read as live history.
     """
-    _write("broken", [
-        _event(0, "agent_start", input={"task": "x"}),
-        _event(1, "agent_call", message="summary citing nothing",
-               surface_op={"op": "replace", "start": 0, "end": 0}),
-    ])
+    _write(
+        "broken",
+        [
+            _event(0, "agent_start", input={"task": "x"}),
+            _event(
+                1,
+                "agent_call",
+                message="summary citing nothing",
+                surface_op={"op": "replace", "start": 0, "end": 0},
+            ),
+        ],
+    )
 
     outline = session_query.outline("broken")
     assert [entry.seq_no for entry in outline.entries] == [0, 1]
@@ -270,13 +318,20 @@ def test_an_event_read_gives_the_way_back_from_a_summary(tree):
     which ones. Without both directions exposed, an agent that finds the summary can
     see that detail was dropped and cannot get any of it back.
     """
-    _write("compacted", [
-        _event(0, "agent_start", input={"task": "long task"}),
-        _event(1, "tool_call", action_name="bash_tool", message="step one"),
-        _event(2, "agent_call", message="summary",
-               surface_op={"op": "replace", "start": 0, "end": 1},
-               source_event_seqs=[0, 1]),
-    ])
+    _write(
+        "compacted",
+        [
+            _event(0, "agent_start", input={"task": "long task"}),
+            _event(1, "tool_call", action_name="bash_tool", message="step one"),
+            _event(
+                2,
+                "agent_call",
+                message="summary",
+                surface_op={"op": "replace", "start": 0, "end": 1},
+                source_event_seqs=[0, 1],
+            ),
+        ],
+    )
 
     summary = session_query.event_window("compacted", 2)
     assert summary.shadowed == [0, 1]
@@ -292,14 +347,40 @@ def test_a_result_is_linked_to_the_call_it_answers(tree):
     back — and pairing them by position breaks the moment two calls share a step, which
     is why the link follows `call_id`.
     """
-    _write("paired", [
-        _event(0, "tool_start", action_name="bash_tool", step_number=0, action_index=0,
-               input={"command": "pytest"}, surface_op=None, metadata={"call_id": "abc"}),
-        _event(1, "tool_start", action_name="bash_tool", step_number=0, action_index=1,
-               input={"command": "ruff"}, surface_op=None, metadata={"call_id": "def"}),
-        _event(2, "tool_call", action_name="bash_tool", step_number=0, action_index=1,
-               message="ruff clean", metadata={"call_id": "def"}),
-    ])
+    _write(
+        "paired",
+        [
+            _event(
+                0,
+                "tool_start",
+                action_name="bash_tool",
+                step_number=0,
+                action_index=0,
+                input={"command": "pytest"},
+                surface_op=None,
+                metadata={"call_id": "abc"},
+            ),
+            _event(
+                1,
+                "tool_start",
+                action_name="bash_tool",
+                step_number=0,
+                action_index=1,
+                input={"command": "ruff"},
+                surface_op=None,
+                metadata={"call_id": "def"},
+            ),
+            _event(
+                2,
+                "tool_call",
+                action_name="bash_tool",
+                step_number=0,
+                action_index=1,
+                message="ruff clean",
+                metadata={"call_id": "def"},
+            ),
+        ],
+    )
 
     assert session_query.event_window("paired", 2).paired_with == 1
 
@@ -321,7 +402,7 @@ def test_a_log_still_being_written_reads_rather_than_failing(tree):
 
 
 def test_a_run_with_no_end_event_is_not_reported_as_failed(tree):
-    """"We never found out" and "it failed" lead to different next moves.
+    """ "We never found out" and "it failed" lead to different next moves.
 
     A killed or still-running log has no `agent_end`. Defaulting its verdict to False —
     the obvious way to type the field as a bool — tells an agent that an approach was
@@ -342,17 +423,18 @@ def test_an_oversized_event_is_parked_rather_than_pasted(tree):
     the middle of the result it just found — its only recourse being to re-run the
     original command and be truncated identically.
     """
-    _write("huge", [
-        _event(0, "agent_start", input={"task": "build"}),
-        _event(1, "tool_call", action_name="bash_tool",
-               message="X" * (INLINE_EVENT_CHARS * 3)),
-    ])
+    _write(
+        "huge",
+        [
+            _event(0, "agent_start", input={"task": "build"}),
+            _event(1, "tool_call", action_name="bash_tool", message="X" * (INLINE_EVENT_CHARS * 3)),
+        ],
+    )
 
     response = asyncio.run(SessionEventReadTool()(session_id="huge", seq_no=1))
     assert response.success
     assert len(response.message) < INLINE_EVENT_CHARS * 2
-    locator = next(part for part in response.message.split("`")
-                   if part.endswith(".json"))
+    locator = next(part for part in response.message.split("`") if part.endswith(".json"))
     assert Path(locator).read_text(encoding="utf-8").count("X") == INLINE_EVENT_CHARS * 3
 
 
@@ -377,13 +459,20 @@ def test_reading_a_past_run_never_touches_its_log(tree):
     corrupt the evidence, and the damage would surface much later as a log that no
     longer folds.
     """
-    _write("compacted", [
-        _event(0, "agent_start", input={"task": "long task"}),
-        _event(1, "tool_call", action_name="bash_tool", message="step one"),
-        _event(2, "agent_call", message="summary",
-               surface_op={"op": "replace", "start": 0, "end": 1},
-               source_event_seqs=[0, 1]),
-    ])
+    _write(
+        "compacted",
+        [
+            _event(0, "agent_start", input={"task": "long task"}),
+            _event(1, "tool_call", action_name="bash_tool", message="step one"),
+            _event(
+                2,
+                "agent_call",
+                message="summary",
+                surface_op={"op": "replace", "start": 0, "end": 1},
+                source_event_seqs=[0, 1],
+            ),
+        ],
+    )
     trace = path_manager.get(P.SESSION_TRACE, owner="local", session_id="proj1")
     before = {path: path.read_bytes() for path in trace.glob("*.jsonl")}
 
@@ -406,8 +495,13 @@ def test_every_session_query_tool_only_reports(tree):
     changing. A read-only tool typed as a mutation makes a run of pure investigation
     look like a run of work.
     """
-    for cls in (SessionSearchTool, SessionEventSearchTool, SessionReadTool,
-                SessionEventReadTool, SessionTraceTool):
+    for cls in (
+        SessionSearchTool,
+        SessionEventSearchTool,
+        SessionReadTool,
+        SessionEventReadTool,
+        SessionTraceTool,
+    ):
         tool = cls()
         assert tool.permission_mode == "read_only", tool.name
         assert tool.mutates is False, tool.name

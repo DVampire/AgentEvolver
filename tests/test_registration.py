@@ -11,16 +11,16 @@ is invisible to a check that walks serializers, so it must be named with a reaso
 Covered and not-covered are both explicit; neither is reachable by omission.
 """
 
-from pathlib import Path
 import ast
 import importlib
 import pkgutil
-import pytest
 import re
+from pathlib import Path
 
-from agentevolver.model import config as model_config
+import pytest
+
 import agentevolver.model as model_package
-
+from agentevolver.model import config as model_config
 
 # ---------------------------------------------------------------------------
 # from test_tool_registration_is_consistent.py
@@ -50,9 +50,11 @@ def _registered_tools() -> dict:
             if not any("register_module" in ast.dump(d) for d in node.decorator_list):
                 continue
             for stmt in node.body:
-                if (isinstance(stmt, ast.AnnAssign)
-                        and getattr(stmt.target, "id", None) == "name"
-                        and isinstance(stmt.value, ast.Constant)):
+                if (
+                    isinstance(stmt, ast.AnnAssign)
+                    and getattr(stmt.target, "id", None) == "name"
+                    and isinstance(stmt.value, ast.Constant)
+                ):
                     found[stmt.value.value] = (path.name, node.name)
     return found
 
@@ -73,11 +75,13 @@ def test_every_registered_tool_is_exported(tool_name):
     # carry their own `__init__.py`, and demanding the top-level one would report five
     # correctly-exported tools as broken — the shape of an over-narrow check, which is
     # how the previous version came to skip those directories entirely instead.
-    exported_from = [init for init in TOOL_ROOT.rglob("__init__.py")
-                     if cls in init.read_text(encoding="utf-8")]
+    exported_from = [
+        init for init in TOOL_ROOT.rglob("__init__.py") if cls in init.read_text(encoding="utf-8")
+    ]
     assert exported_from, (
         f"{cls} ({tool_name}) is exported from no __init__.py under agentevolver/tool/; "
-        f"nothing imports it, so it is never registered")
+        f"nothing imports it, so it is never registered"
+    )
 
 
 def test_no_config_lists_a_tool_that_does_not_exist():
@@ -88,8 +92,7 @@ def test_no_config_lists_a_tool_that_does_not_exist():
     """
     unknown = []
     for path in sorted(CONFIG_DIR.glob("*.py")):
-        for name in re.findall(r'^\s*"([a-z0-9_]+_tool)",',
-                               path.read_text(encoding="utf-8"), re.M):
+        for name in re.findall(r'^\s*"([a-z0-9_]+_tool)",', path.read_text(encoding="utf-8"), re.M):
             if name not in REGISTERED:
                 unknown.append(f"{path.name} -> {name}")
     assert not unknown, "configs name tools that are not registered:\n  " + "\n  ".join(unknown)
@@ -99,8 +102,9 @@ def test_every_imported_stub_exists():
     """The direction that actually holds. A missing stub fails at import, not at use."""
     missing = []
     for path in sorted(CONFIG_DIR.glob("*.py")):
-        for stub in re.findall(r"^\s*from \.tools\.(\w+) import ",
-                               path.read_text(encoding="utf-8"), re.M):
+        for stub in re.findall(
+            r"^\s*from \.tools\.(\w+) import ", path.read_text(encoding="utf-8"), re.M
+        ):
             if not (CONFIG_DIR / "tools" / f"{stub}.py").exists():
                 missing.append(f"{path.name} imports configs/tools/{stub}.py, which is absent")
     assert not missing, "\n  ".join(missing)
@@ -123,8 +127,10 @@ def test_every_agent_with_bash_can_collect_a_background_job():
             continue
         if '"job",' not in text:
             stranded.append(f"{path.name} does not mount the job environment")
-    assert not stranded, ("these agents can start background work but not collect it:\n  "
-                          + "\n  ".join(stranded))
+    assert not stranded, (
+        "these agents can start background work but not collect it:\n  " + "\n  ".join(stranded)
+    )
+
 
 # ---------------------------------------------------------------------------
 # from test_config_models_are_registered.py
@@ -139,8 +145,13 @@ CATALOGS = {
     "google": model_config.google_models,
 }
 
-KWARGS = dict(max_tokens=4096, default_temperature=0.7, default_timeout=600,
-              default_plugins=[], default_reasoning={})
+KWARGS = dict(
+    max_tokens=4096,
+    default_temperature=0.7,
+    default_timeout=600,
+    default_plugins=[],
+    default_reasoning={},
+)
 
 
 def _registered() -> set:
@@ -148,6 +159,7 @@ def _registered() -> set:
     names = set()
     for provider, build in CATALOGS.items():
         import inspect
+
         accepted = set(inspect.signature(build).parameters)
         specs = build(**{k: v for k, v in KWARGS.items() if k in accepted})
         for entries in specs.values():
@@ -171,7 +183,8 @@ def test_every_config_model_is_registered():
     assert not unknown, (
         "these configs name a model no provider registers:\n  "
         + "\n  ".join(f"{where} -> {name}" for where, name in unknown)
-        + f"\n\nregistered: {sorted(registered)}")
+        + f"\n\nregistered: {sorted(registered)}"
+    )
 
 
 def test_the_check_can_actually_fail():
@@ -183,23 +196,25 @@ def test_the_check_can_actually_fail():
     """
     registered = _registered()
     assert "llm_hub/claude-opus-5" in registered, "a name in use must be found"
-    assert "openrouter/claude-opus-5-nonexistent" not in registered, \
-        "an invented name must not be"
+    assert "openrouter/claude-opus-5-nonexistent" not in registered, "an invented name must not be"
 
     referenced = list(_referenced())
     assert referenced, "the scan found no configs — it would pass on an empty repo"
-    assert all("/" in name for _, name in referenced), \
+    assert all("/" in name for _, name in referenced), (
         "a model_name is provider/model_id; one without a slash cannot resolve"
+    )
 
 
 @pytest.mark.parametrize("provider", sorted(CATALOGS))
 def test_each_catalog_builds_and_is_not_empty(provider):
     """An empty catalog would make every name in it "unregistered" at once."""
     import inspect
+
     build = CATALOGS[provider]
     accepted = set(inspect.signature(build).parameters)
     specs = build(**{k: v for k, v in KWARGS.items() if k in accepted})
     assert any(entries for entries in specs.values()), f"{provider} registers nothing"
+
 
 # ---------------------------------------------------------------------------
 # from test_nothing_escapes_the_checks.py
@@ -235,12 +250,14 @@ def test_every_provider_package_has_a_serializer_or_a_stated_reason():
     unexplained = without - set(NO_SERIALIZER)
     assert not unexplained, (
         f"provider package(s) {sorted(unexplained)} have no serializer module, so no "
-        f"gate examines them. Add one, or record why not in NO_SERIALIZER.")
+        f"gate examines them. Add one, or record why not in NO_SERIALIZER."
+    )
 
     stale = set(NO_SERIALIZER) - without
     assert not stale, (
         f"{sorted(stale)} now has a serializer; remove it from NO_SERIALIZER so the "
-        f"serializer gate covers it")
+        f"serializer gate covers it"
+    )
 
 
 def test_every_gate_file_states_the_defect_it_guards():
@@ -259,7 +276,8 @@ def test_every_gate_file_states_the_defect_it_guards():
             thin.append(path.name)
     assert not thin, (
         f"{thin} do not explain what breaks without them; a gate without a stated "
-        f"failure is deleted as noise the first time it is inconvenient")
+        f"failure is deleted as noise the first time it is inconvenient"
+    )
 
 
 def test_the_serializer_gate_covers_every_serializer_that_exists():
@@ -271,12 +289,12 @@ def test_the_serializer_gate_covers_every_serializer_that_exists():
     """
     from tests.test_serializer import SERIALIZERS
 
-    on_disk = {p.parent.name
-               for p in (ROOT / "agentevolver" / "model").glob("*/serializer.py")}
+    on_disk = {p.parent.name for p in (ROOT / "agentevolver" / "model").glob("*/serializer.py")}
     covered = {label.split(".")[0] for label, _, _ in SERIALIZERS}
     assert on_disk == covered, (
         f"serializer.py exists for {sorted(on_disk)} but the walk collected "
-        f"{sorted(covered)}; the difference is unguarded")
+        f"{sorted(covered)}; the difference is unguarded"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -298,9 +316,11 @@ def test_no_tool_claims_not_to_mutate_while_writing_to_disk():
     import ast
     import re
 
-    WRITES = re.compile(r"""open\([^)]*['"][wa]b?['"]|\.write_text\(|\.write_bytes\(|"""
-                        r"""shutil\.(copy|move)|os\.(remove|unlink|rename|makedirs)|"""
-                        r"""\.mkdir\(|urlretrieve\(""")
+    WRITES = re.compile(
+        r"""open\([^)]*['"][wa]b?['"]|\.write_text\(|\.write_bytes\(|"""
+        r"""shutil\.(copy|move)|os\.(remove|unlink|rename|makedirs)|"""
+        r"""\.mkdir\(|urlretrieve\("""
+    )
 
     liars = []
     for path in sorted(TOOL_DIR.glob("*.py")):
@@ -315,17 +335,20 @@ def test_no_tool_claims_not_to_mutate_while_writing_to_disk():
             if not any("register_module" in ast.dump(d) for d in node.decorator_list):
                 continue
             for stmt in node.body:
-                if (isinstance(stmt, ast.AnnAssign)
-                        and getattr(stmt.target, "id", None) == "mutates"
-                        and isinstance(stmt.value, ast.Constant)
-                        and stmt.value.value is False):
+                if (
+                    isinstance(stmt, ast.AnnAssign)
+                    and getattr(stmt.target, "id", None) == "mutates"
+                    and isinstance(stmt.value, ast.Constant)
+                    and stmt.value.value is False
+                ):
                     liars.append(f"{path.name}:{node.name}")
 
     assert not liars, (
         "these declare `mutates = False` in a module that writes to disk:\n  "
         + "\n  ".join(liars)
         + "\nPlan mode admits an action on that declaration alone, so an untrue one is "
-          "a way past the gate.")
+        "a way past the gate."
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -367,16 +390,22 @@ def test_no_tool_documents_a_parameter_its_body_ignores():
                     continue
                 if member.name != "__call__":
                     continue
-                declared = [a.arg for a in (member.args.args + member.args.kwonlyargs)
-                            if a.arg not in ("self", "kwargs", "args")]
+                declared = [
+                    a.arg
+                    for a in (member.args.args + member.args.kwonlyargs)
+                    if a.arg not in ("self", "kwargs", "args")
+                ]
                 # Nested scopes count: a parameter forwarded into an inner helper is used.
                 used = {n.id for n in ast.walk(member) if isinstance(n, ast.Name)}
                 for name in declared:
                     if name in used:
                         continue
                     # The instruction line for this parameter, if it has one.
-                    documented = [line for line in source.splitlines()
-                                  if line.strip().startswith(f"- {name} ")]
+                    documented = [
+                        line
+                        for line in source.splitlines()
+                        if line.strip().startswith(f"- {name} ")
+                    ]
                     if documented and not any(IGNORED.search(line) for line in documented):
                         liars.append(f"{path.name}:{node.name}.{name}")
 
@@ -384,5 +413,6 @@ def test_no_tool_documents_a_parameter_its_body_ignores():
         "these document a parameter the body never reads, without saying it is ignored:\n  "
         + "\n  ".join(liars)
         + "\nEither use it, or say in the instruction that it is accepted and ignored — "
-          "a model that asks for a narrowed search and is not told it did not get one "
-          "reads the unnarrowed results as narrowed.")
+        "a model that asks for a narrowed search and is not told it did not get one "
+        "reads the unnarrowed results as narrowed."
+    )

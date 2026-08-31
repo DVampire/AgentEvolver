@@ -8,10 +8,12 @@ import pytest
 
 from agentevolver.message import AssistantMessage, HumanMessage, ToolMessage
 from agentevolver.model.context import ModelContextManager
-from agentevolver.model.pressure import ESTIMATE_METHOD, estimate_tokens, prepare_messages
 from agentevolver.model.pressure import (
+    ESTIMATE_METHOD,
     RequestTokenEstimator,
     RequestTokenEstimatorRegistrationError,
+    estimate_tokens,
+    prepare_messages,
     register_request_token_estimator,
     resolve_request_token_estimator,
 )
@@ -20,12 +22,19 @@ from agentevolver.response import Response, ResponseType
 
 
 def test_pressure_below_the_threshold_leaves_messages_byte_for_byte_unchanged():
-    messages = [HumanMessage(content="question"), ToolMessage(
-        content="small result", tool_call_id="call-1", name="read_file_tool",
-    )]
+    messages = [
+        HumanMessage(content="question"),
+        ToolMessage(
+            content="small result",
+            tool_call_id="call-1",
+            name="read_file_tool",
+        ),
+    ]
 
     prepared = prepare_messages(
-        messages, context_window=10_000, reserved_output_tokens=1_000,
+        messages,
+        context_window=10_000,
+        reserved_output_tokens=1_000,
     )
 
     assert prepared.messages == messages
@@ -44,10 +53,14 @@ def test_pressure_prunes_oldest_tool_results_without_mutating_the_history():
     ]
 
     first = prepare_messages(
-        messages, context_window=2_500, reserved_output_tokens=500,
+        messages,
+        context_window=2_500,
+        reserved_output_tokens=500,
     )
     second = prepare_messages(
-        messages, context_window=2_500, reserved_output_tokens=500,
+        messages,
+        context_window=2_500,
+        reserved_output_tokens=500,
     )
 
     assert first.messages == second.messages
@@ -79,13 +92,18 @@ async def test_model_dispatch_and_snapshot_receive_the_same_pruned_request():
 
     manager = ModelContextManager()
     manager.models["main"] = ModelConfig(
-        model_name="main", model_type="chat/completions", model_id="provider/model",
-        provider="provider", max_completion_tokens=500, context_window=2_500,
+        model_name="main",
+        model_type="chat/completions",
+        model_id="provider/model",
+        provider="provider",
+        max_completion_tokens=500,
+        context_window=2_500,
     )
     manager.model_clients["main"] = Client()
     original = ToolMessage(
         content="begin-" + ("z" * 18_000) + "-end",
-        tool_call_id="call-1", name="bash_tool",
+        tool_call_id="call-1",
+        name="bash_tool",
     )
 
     with patch("agentevolver.model.context._record_request_snapshot", side_effect=record):
@@ -156,18 +174,29 @@ def test_deployment_can_register_exact_or_provider_wide_token_estimator():
         provider_wire_exact=True,
     )
     remove_wildcard = register_request_token_estimator(
-        provider="anthropic", estimator=wildcard,
+        provider="anthropic",
+        estimator=wildcard,
     )
     remove_exact = register_request_token_estimator(
-        provider="anthropic", model="claude-special", estimator=exact,
+        provider="anthropic",
+        model="claude-special",
+        estimator=exact,
     )
     try:
-        assert resolve_request_token_estimator(
-            provider="Anthropic", model="claude-other",
-        ) is wildcard
-        assert resolve_request_token_estimator(
-            provider="anthropic", model="CLAUDE-SPECIAL",
-        ) is exact
+        assert (
+            resolve_request_token_estimator(
+                provider="Anthropic",
+                model="claude-other",
+            )
+            is wildcard
+        )
+        assert (
+            resolve_request_token_estimator(
+                provider="anthropic",
+                model="CLAUDE-SPECIAL",
+            )
+            is exact
+        )
         with pytest.raises(RequestTokenEstimatorRegistrationError, match="already registered"):
             register_request_token_estimator(provider="anthropic", estimator=wildcard)
     finally:
@@ -180,7 +209,9 @@ def test_old_estimator_disposer_cannot_remove_its_replacement():
     new = RequestTokenEstimator(lambda text: 2, "new", False)
     remove_old = register_request_token_estimator(provider="private", estimator=old)
     remove_new = register_request_token_estimator(
-        provider="private", estimator=new, replace=True,
+        provider="private",
+        estimator=new,
+        replace=True,
     )
     try:
         remove_old()
@@ -206,8 +237,12 @@ def _unprunable(chars: int = 40_000):
 def _manager(window: int = 2_500, *, fallback: str = "") -> ModelContextManager:
     manager = ModelContextManager()
     manager.models["main"] = ModelConfig(
-        model_name="main", model_type="chat/completions", model_id="provider/model",
-        provider="provider", max_completion_tokens=500, context_window=window,
+        model_name="main",
+        model_type="chat/completions",
+        model_id="provider/model",
+        provider="provider",
+        max_completion_tokens=500,
+        context_window=window,
         fallback_model=fallback,
     )
     return manager
@@ -244,7 +279,9 @@ def test_a_request_that_still_does_not_fit_is_marked_over_capacity():
     sent at all" — and only the second one has an action attached to it.
     """
     prepared = prepare_messages(
-        _unprunable(), context_window=2_500, reserved_output_tokens=500,
+        _unprunable(),
+        context_window=2_500,
+        reserved_output_tokens=500,
     )
     assert prepared.pressure["over_capacity"] is True
     assert prepared.pressure["estimated_tokens_after"] > prepared.pressure["input_capacity_tokens"]
@@ -254,7 +291,9 @@ def test_a_large_request_that_does_fit_is_not_marked_over_capacity():
     """The guard has to stay narrow. Refusing a request merely for being large would
     turn a working long conversation into a failure."""
     prepared = prepare_messages(
-        [HumanMessage(content="q" * 100)], context_window=2_500, reserved_output_tokens=500,
+        [HumanMessage(content="q" * 100)],
+        context_window=2_500,
+        reserved_output_tokens=500,
     )
     assert prepared.pressure["over_capacity"] is False
 
@@ -309,8 +348,12 @@ async def test_a_context_that_will_not_fit_one_model_still_tries_a_larger_one():
     """
     manager = _manager(fallback="roomy")
     manager.models["roomy"] = ModelConfig(
-        model_name="roomy", model_type="chat/completions", model_id="provider/roomy",
-        provider="provider", max_completion_tokens=500, context_window=200_000,
+        model_name="roomy",
+        model_type="chat/completions",
+        model_id="provider/roomy",
+        provider="provider",
+        max_completion_tokens=500,
+        context_window=200_000,
     )
     manager.model_clients["main"] = small = _Client()
     manager.model_clients["roomy"] = large = _Client(reply="from the larger model")
@@ -328,7 +371,7 @@ async def test_a_context_that_will_not_fit_one_model_still_tries_a_larger_one():
 
 @pytest.mark.asyncio
 async def test_the_refusal_says_what_has_to_happen_next():
-    """"Provider rejected the request" sends a reader to the provider's status page.
+    """ "Provider rejected the request" sends a reader to the provider's status page.
 
     What is actually true is that the conversation has outgrown the window and only
     compaction, one level up, can reduce what is left — this boundary may not touch

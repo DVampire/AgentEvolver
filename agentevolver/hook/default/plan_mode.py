@@ -31,6 +31,7 @@ class PlanModeHook(Hook):
     #: Ahead of the advisory hooks. A refused action should not also be counted
     #: toward a repetition chain it never got to run.
     priority: int = 2
+    fail_closed: bool = True
 
     async def handle(self, ctx: HookContext) -> HookResult:
         from agentevolver.plan.server import (

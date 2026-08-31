@@ -6,12 +6,14 @@ Concise reference for **zarr 3.2.x**. See `references/v3_migration.md` for Zarr-
 
 ### `zarr.zeros()` / `zarr.ones()` / `zarr.empty()` / `zarr.full()`
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 zarr.zeros(shape, *, chunks=None, dtype='f8', store=None, compressors='default',
            fill_value=0, zarr_format=3)
 ```
 
 ### `zarr.create_array()`
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 zarr.create_array(store, *, shape, chunks, dtype='f8', compressors='default',
                   filters=None, fill_value=0, zarr_format=3, storage_options=None,
                   overwrite=False)
@@ -21,11 +23,13 @@ zarr.create_array(store, *, shape, chunks, dtype='f8', compressors='default',
 
 ### `zarr.array()`
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 zarr.array(data, *, chunks=None, dtype=None, store=None, compressors='default')
 ```
 
 ### `zarr.open_array()` / `zarr.open()`
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 zarr.open_array(store, mode='a', *, shape=None, chunks=None, dtype=None)
 zarr.open(store, mode='r')  # auto-detects Array or Group
 ```

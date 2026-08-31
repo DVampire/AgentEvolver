@@ -1,3 +1,10 @@
+"""Capability batches run concurrently only when every action is read-only.
+
+Parallelizing an unknown or mutating action can reorder externally visible effects and
+make approval checks meaningless. These tests pin the fail-closed classification for
+tools, connectors, agents, and mixed batches.
+"""
+
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +14,10 @@ from agentevolver.agent.types import Agent
 
 def _call(name: str):
     return SimpleNamespace(name=name, input={})
+
+
+def _agent_call(name: str, **contract):
+    return SimpleNamespace(name=name, input=contract)
 
 
 @pytest.mark.asyncio
@@ -50,10 +61,12 @@ async def test_unknown_or_mutating_batch_effects_are_serialized(monkeypatch):
 @pytest.mark.asyncio
 async def test_connector_batch_requires_read_only_annotations(monkeypatch):
     async def get_info(name):
-        return SimpleNamespace(action_annotations={
-            "lookup": {"readOnlyHint": True},
-            "update": {"destructiveHint": False},
-        })
+        return SimpleNamespace(
+            action_annotations={
+                "lookup": {"readOnlyHint": True},
+                "update": {"destructiveHint": False},
+            }
+        )
 
     monkeypatch.setattr("agentevolver.connector.connector_manager.get_info", get_info)
     actor = SimpleNamespace(name="meta_agent")
@@ -74,3 +87,44 @@ async def test_connector_batch_requires_read_only_annotations(monkeypatch):
             "records__update": ("connector", "records", "update"),
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_disjoint_isolated_writing_children_can_run_in_parallel():
+    actor = SimpleNamespace(name="meta_agent")
+    calls = [
+        _agent_call("agent__a", read_set=["src/a"], write_set=["src/a"], isolate_worktree=True),
+        _agent_call("agent__b", read_set=["src/b"], write_set=["src/b"], isolate_worktree=True),
+    ]
+    routing = {
+        "agent__a": ("agent", "a"),
+        "agent__b": ("agent", "b"),
+    }
+    assert not await Agent._batch_requires_serial(actor, calls, routing)
+
+
+@pytest.mark.asyncio
+async def test_writing_children_serialize_without_isolation_or_on_overlap():
+    actor = SimpleNamespace(name="meta_agent")
+    routing = {
+        "agent__a": ("agent", "a"),
+        "agent__b": ("agent", "b"),
+    }
+    unisolated = [
+        _agent_call("agent__a", write_set=["src/a"]),
+        _agent_call("agent__b", write_set=["src/b"], isolate_worktree=True),
+    ]
+    overlapping = [
+        _agent_call("agent__a", write_set=["src"], isolate_worktree=True),
+        _agent_call("agent__b", read_set=["src/a.py"], write_set=[], isolate_worktree=True),
+    ]
+    assert await Agent._batch_requires_serial(actor, unisolated, routing)
+    assert await Agent._batch_requires_serial(actor, overlapping, routing)
+
+
+@pytest.mark.asyncio
+async def test_children_without_resource_contracts_remain_serial():
+    actor = SimpleNamespace(name="meta_agent")
+    calls = [_agent_call("agent__a"), _agent_call("agent__b")]
+    routing = {"agent__a": ("agent", "a"), "agent__b": ("agent", "b")}
+    assert await Agent._batch_requires_serial(actor, calls, routing)

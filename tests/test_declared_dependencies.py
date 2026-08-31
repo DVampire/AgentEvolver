@@ -25,15 +25,29 @@ PACKAGE = ROOT / "agentevolver"
 
 #: Import name → distribution name, where the two differ.
 DISTRIBUTION = {
-    "pil": "pillow", "yaml": "pyyaml", "sklearn": "scikit_learn",
-    "dotenv": "python_dotenv", "google": "google_genai", "pydantic_core": "pydantic",
-    "markdown": "markitdown", "pdfminer": "pdfminer.six", "camelot": "camelot_py",
-    "browser_use": "browser_use", "programbench": "programbench",
+    "pil": "pillow",
+    "yaml": "pyyaml",
+    "sklearn": "scikit_learn",
+    "dotenv": "python_dotenv",
+    "google": "google_genai",
+    "pydantic_core": "pydantic",
+    "markdown": "markitdown",
+    "pdfminer": "pdfminer.six",
+    "camelot": "camelot_py",
+    "browser_use": "browser_use",
+    "programbench": "programbench",
 }
 
 #: Directories whose imports are the component's own business, not the framework's.
-EXCLUDED = ("/plugins/default/", "/skill/", "/connector/default/", "/benchmark/default/",
-            "/environment/default/", "/tool/default/markdown/", "/sandbox/default/")
+EXCLUDED = (
+    "/plugins/default/",
+    "/skill/",
+    "/connector/default/",
+    "/benchmark/default/",
+    "/environment/default/",
+    "/tool/default/markdown/",
+    "/sandbox/default/",
+)
 
 
 def _declared() -> set[str]:
@@ -60,7 +74,7 @@ def _top_level_imports() -> dict[str, set[str]]:
             tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
         except SyntaxError:
             continue
-        for node in tree.body:                       # module level only
+        for node in tree.body:  # module level only
             if isinstance(node, ast.Import):
                 names = [alias.name for alias in node.names]
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
@@ -70,8 +84,7 @@ def _top_level_imports() -> dict[str, set[str]]:
             for name in names:
                 top = name.split(".")[0]
                 if top and top not in sys.stdlib_module_names and top != "agentevolver":
-                    found.setdefault(top.lower(), set()).add(
-                        str(path.relative_to(ROOT)))
+                    found.setdefault(top.lower(), set()).add(str(path.relative_to(ROOT)))
     return found
 
 
@@ -85,7 +98,8 @@ def test_every_module_level_import_is_a_declared_dependency():
     assert not missing, (
         "these are imported at module level but declared nowhere in pyproject.toml — a "
         "clean install fails on the first import:\n"
-        + "\n".join(f"  {m}: {f}" for m, f in sorted(missing.items())))
+        + "\n".join(f"  {m}: {f}" for m, f in sorted(missing.items()))
+    )
 
 
 def test_the_alias_table_only_names_modules_that_are_imported():

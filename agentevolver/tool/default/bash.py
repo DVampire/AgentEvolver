@@ -380,8 +380,10 @@ class BashTool(Tool):
 
         # Permission check
         req = PermissionRequest(op=Operation.BASH, target=command)
+        from agentevolver.session import isolated_workspace_root, resolve_workspace_root
         result = permission_manager.check_declared(
             self.name, req, mode=self.permission_mode,
+            workspace=isolated_workspace_root(ctx),
         )
         if not result.allowed:
             return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")
@@ -401,7 +403,7 @@ class BashTool(Tool):
             # keeping relative outputs contained, this makes ordinary scripts
             # (``open('results/x.json', 'w')``) behave consistently with the
             # workspace path shown to the agent.
-            workspace_root = config.workspace_root
+            workspace_root = resolve_workspace_root(ctx)
             cwd = os.path.abspath(workspace_root) if workspace_root else None
             if cwd and not os.path.isdir(cwd):
                 return Response(

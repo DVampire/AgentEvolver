@@ -1,8 +1,11 @@
-from typing import Any, Optional, Union, List, Dict
+"""Anthropic Messages client with streaming, tools, caching, and compaction."""
+
+from typing import Any, Dict, List, Optional, Union
+
 import httpx
 
 try:
-    from anthropic import AsyncAnthropic, APIError, APIConnectionError, RateLimitError
+    from anthropic import APIConnectionError, APIError, AsyncAnthropic, RateLimitError
     try:
         from anthropic import transform_schema
     except ImportError:
@@ -14,24 +17,19 @@ except ImportError:
     RateLimitError = Exception
     transform_schema = None
 
-from pydantic import BaseModel, Field, ConfigDict
+from typing import TYPE_CHECKING, Type
 
+from pydantic import BaseModel, ConfigDict
 
-
-import json
 from agentevolver.logger import logger
-from agentevolver.response.types import Response, ResponseType
-from agentevolver.model.types import TokenUsage, BaseChatModel
 from agentevolver.message.types import (
-    AssistantMessage,
     CompactionMessage,
-    HumanMessage,
     Message,
-    SystemMessage,
 )
 from agentevolver.model.anthropic.serializer import AnthropicChatSerializer
 from agentevolver.model.pressure import estimate_tokens
-from typing import Type, TYPE_CHECKING
+from agentevolver.model.types import BaseChatModel, TokenUsage
+from agentevolver.response.types import Response, ResponseType
 
 if TYPE_CHECKING:
     from agentevolver.tool.types import Tool
@@ -192,8 +190,13 @@ class ChatAnthropic(BaseChatModel):
                     total.input_tokens += item.input_tokens
                     total.context_input_tokens += item.context_input_tokens
                     total.output_tokens += item.output_tokens
+                    total.reasoning_tokens += item.reasoning_tokens
                     total.cache_write_tokens += item.cache_write_tokens
                     total.cache_read_tokens += item.cache_read_tokens
+                    total.provider_reported_total = (
+                        (total.provider_reported_total or 0)
+                        + (item.provider_reported_total or item.total)
+                    )
             usage = total.model_dump()
         summary = "\n\n".join(
             str(block.get("content") or "") for block in blocks
@@ -336,8 +339,13 @@ class ChatAnthropic(BaseChatModel):
     async def _parse_stream(self, raw):
         """Translate Anthropic SSE events → canonical stream events. Unit-testable."""
         from agentevolver.model.types import (
-            ProviderState, TextDelta, ThinkingDelta, ToolCallStart,
-            ToolCallArgsDelta, StreamDone, normalize_stop_reason,
+            ProviderState,
+            StreamDone,
+            TextDelta,
+            ThinkingDelta,
+            ToolCallArgsDelta,
+            ToolCallStart,
+            normalize_stop_reason,
         )
         usage: Dict[str, Any] = {}
         stop = None

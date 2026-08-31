@@ -26,14 +26,15 @@ from agentevolver.model.llm_hub.serializer import LLMHubChatSerializer
 from agentevolver.model.openrouter.serializer import OpenRouterChatSerializer
 from agentevolver.model.types import TokenUsage
 
-
 # ---------------------------------------------------------------------------
 # from test_cache_breakpoint.py
 # ---------------------------------------------------------------------------
 SERIALIZERS = [LLMHubChatSerializer, OpenRouterChatSerializer]
 
-TURN = ("<capability-context><tool-context>- bash: run</tool-context></capability-context>"
-        "<agent-context><step-info>step 7 of 40</step-info></agent-context>")
+TURN = (
+    "<capability-context><tool-context>- bash: run</tool-context></capability-context>"
+    "<agent-context><step-info>step 7 of 40</step-info></agent-context>"
+)
 
 
 @pytest.mark.parametrize("serializer", SERIALIZERS)
@@ -121,9 +122,7 @@ def test_an_explicitly_cached_anchor_is_cached_in_full(serializer):
 @pytest.mark.parametrize("serializer", SERIALIZERS)
 def test_a_session_anchor_caches_stable_task_before_checkpoint(serializer):
     anchor = HumanMessage(content="<task>fix it</task>", cache=True)
-    checkpoint = HumanMessage(content=(
-        "<memory-checkpoint>latest summary</memory-checkpoint>"
-    ))
+    checkpoint = HumanMessage(content=("<memory-checkpoint>latest summary</memory-checkpoint>"))
     out = serializer.serialize_messages([anchor, checkpoint])
 
     assert len(out) == 2
@@ -141,7 +140,9 @@ def test_an_assistant_history_turn_gets_a_rolling_breakpoint_when_marked(seriali
     The rolling boundary lives on the assistant. This is accepted even when its visible
     content is empty and tool results follow it.
     """
-    asst = serializer.serialize_message(AssistantMessage(content="I will rebuild the flag loop", cache=True))
+    asst = serializer.serialize_message(
+        AssistantMessage(content="I will rebuild the flag loop", cache=True)
+    )
     assert isinstance(asst["content"], list)
     assert asst["content"][0]["cache_control"]["type"] == "ephemeral"
 
@@ -193,9 +194,7 @@ def test_an_explicit_live_layer_never_infers_an_extra_breakpoint(serializer):
 def test_native_anthropic_live_layer_never_infers_an_extra_breakpoint():
     from agentevolver.model.anthropic.serializer import AnthropicChatSerializer
 
-    serialized = AnthropicChatSerializer.serialize(
-        HumanMessage(content=TURN, context_layer="live")
-    )
+    serialized = AnthropicChatSerializer.serialize(HumanMessage(content=TURN, context_layer="live"))
 
     assert "cache_control" not in str(serialized)
 
@@ -224,9 +223,12 @@ def test_claude_relay_request_stays_within_four_cache_breakpoints():
         ToolMessage(tool_call_id="c1", content="result", context_layer="recent"),
         HumanMessage(content=TURN, context_layer="live"),
     ]
-    built = asyncio.run(ChatLLMHub(
-        model="claude-opus-5", reasoning={},
-    )._build_params(messages, tools=[tool], stream=True))
+    built = asyncio.run(
+        ChatLLMHub(
+            model="claude-opus-5",
+            reasoning={},
+        )._build_params(messages, tools=[tool], stream=True)
+    )
 
     def count(value):
         if isinstance(value, dict):
@@ -247,9 +249,12 @@ def test_non_claude_relay_never_receives_anthropic_cache_extensions():
         HumanMessage(content="stable task", cache=True, context_layer="fixed"),
         HumanMessage(content="live", context_layer="live"),
     ]
-    built = asyncio.run(ChatLLMHub(
-        model="deepseek-v4-flash", reasoning={},
-    )._build_params(messages, stream=True))
+    built = asyncio.run(
+        ChatLLMHub(
+            model="deepseek-v4-flash",
+            reasoning={},
+        )._build_params(messages, stream=True)
+    )
 
     assert "cache_control" not in str(built)
 
@@ -316,36 +321,69 @@ def test_the_system_prompt_is_cached_on_the_same_terms(serializer):
     block = serializer.serialize_message(SystemMessage(content="rules"))["content"][0]
     assert block["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
+
 # ---------------------------------------------------------------------------
 # from test_usage_spellings_are_all_normalized.py
 # ---------------------------------------------------------------------------
 # surface -> (raw payload as that surface returns it, what it means)
 OBSERVED = {
     "anthropic-native": (
-        {"input_tokens": 100, "output_tokens": 5,
-         "cache_read_input_tokens": 80, "cache_creation_input_tokens": 20},
-        {"input_tokens": 100, "context_input_tokens": 200, "output_tokens": 5,
-         "cache_read_tokens": 80, "cache_write_tokens": 20}),
+        {
+            "input_tokens": 100,
+            "output_tokens": 5,
+            "cache_read_input_tokens": 80,
+            "cache_creation_input_tokens": 20,
+        },
+        {
+            "input_tokens": 100,
+            "context_input_tokens": 200,
+            "output_tokens": 5,
+            "cache_read_tokens": 80,
+            "cache_write_tokens": 20,
+        },
+    ),
     "chat-completions": (
-        {"prompt_tokens": 100, "completion_tokens": 5,
-         "prompt_tokens_details": {"cached_tokens": 80}},
-        {"input_tokens": 20, "context_input_tokens": 100,
-         "output_tokens": 5, "cache_read_tokens": 80}),
+        {
+            "prompt_tokens": 100,
+            "completion_tokens": 5,
+            "prompt_tokens_details": {"cached_tokens": 80},
+        },
+        {
+            "input_tokens": 20,
+            "context_input_tokens": 100,
+            "output_tokens": 5,
+            "cache_read_tokens": 80,
+        },
+    ),
     "responses": (
-        {"input_tokens": 57, "output_tokens": 29,
-         "input_tokens_details": {"cached_tokens": 40, "cache_write_tokens": 17}},
-        {"input_tokens": 0, "context_input_tokens": 57, "output_tokens": 29,
-         "cache_read_tokens": 40, "cache_write_tokens": 17}),
+        {
+            "input_tokens": 57,
+            "output_tokens": 29,
+            "input_tokens_details": {"cached_tokens": 40, "cache_write_tokens": 17},
+        },
+        {
+            "input_tokens": 0,
+            "context_input_tokens": 57,
+            "output_tokens": 29,
+            "cache_read_tokens": 40,
+            "cache_write_tokens": 17,
+        },
+    ),
     "gemini": (
         # As the google provider normalizes it — the protobuf field is mapped there
         # because `from_raw` never sees a protobuf.
-        {"prompt_token_count": 100, "candidates_token_count": 5,
-         "cache_read_input_tokens": 85},
-        {"input_tokens": 15, "context_input_tokens": 100,
-         "output_tokens": 5, "cache_read_tokens": 85}),
+        {"prompt_token_count": 100, "candidates_token_count": 5, "cache_read_input_tokens": 85},
+        {
+            "input_tokens": 15,
+            "context_input_tokens": 100,
+            "output_tokens": 5,
+            "cache_read_tokens": 85,
+        },
+    ),
     "openrouter-with-cost": (
         {"prompt_tokens": 10, "completion_tokens": 2, "cost": 0.0042},
-        {"input_tokens": 10, "output_tokens": 2, "cost": 0.0042}),
+        {"input_tokens": 10, "output_tokens": 2, "cost": 0.0042},
+    ),
 }
 
 
@@ -357,7 +395,8 @@ def test_a_surface_is_read_exactly_as_it_reports(surface):
     for field, value in expected.items():
         assert getattr(usage, field) == value, (
             f"{surface}: {field} read as {getattr(usage, field)}, not {value} — an "
-            f"unknown spelling reads as zero and cannot be told from a real zero")
+            f"unknown spelling reads as zero and cannot be told from a real zero"
+        )
 
 
 def test_nothing_reported_is_not_the_same_as_nothing_spent():
@@ -382,12 +421,12 @@ def test_the_gemini_provider_still_maps_its_protobuf_field():
         prompt_token_count, candidates_token_count = 100, 5
         total_token_count, cached_content_token_count = 105, 85
 
-    serializer = next(v for v in vars(google_chat).values()
-                      if hasattr(v, "_usage_dict"))
+    serializer = next(v for v in vars(google_chat).values() if hasattr(v, "_usage_dict"))
     normalized = serializer._usage_dict(_Usage())
     assert TokenUsage.from_raw(normalized).cache_read_tokens == 85, (
         "the provider dropped cached_content_token_count; every Gemini prompt would "
-        "report as a full re-read")
+        "report as a full re-read"
+    )
 
 
 def test_every_cache_field_is_reachable_from_some_surface():
@@ -399,13 +438,17 @@ def test_every_cache_field_is_reachable_from_some_surface():
     reached = set()
     for raw, _ in OBSERVED.values():
         usage = TokenUsage.from_raw(raw)
-        for field in ("input_tokens", "output_tokens",
-                      "cache_read_tokens", "cache_write_tokens"):
+        for field in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"):
             if getattr(usage, field):
                 reached.add(field)
-    assert reached == {"input_tokens", "output_tokens",
-                       "cache_read_tokens", "cache_write_tokens"}, \
-        f"no catalogued surface exercises {sorted({'input_tokens','output_tokens','cache_read_tokens','cache_write_tokens'} - reached)}"
+    assert reached == {
+        "input_tokens",
+        "output_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+    }, (
+        f"no catalogued surface exercises {sorted({'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'} - reached)}"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -424,12 +467,16 @@ def test_the_ttl_is_defined_in_exactly_one_place():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "agentevolver" / "model"
-    definitions = [p for p in root.rglob("*.py")
-                   if re.search(r"^CACHE_TTL\s*=", p.read_text(encoding="utf-8"), re.M)]
+    definitions = [
+        p
+        for p in root.rglob("*.py")
+        if re.search(r"^CACHE_TTL\s*=", p.read_text(encoding="utf-8"), re.M)
+    ]
 
     assert [p.name for p in definitions] == ["types.py"], (
         f"CACHE_TTL is defined in {[str(p.relative_to(root)) for p in definitions]}; it "
-        f"belongs in model/types.py alone, and every serializer imports it from there")
+        f"belongs in model/types.py alone, and every serializer imports it from there"
+    )
 
 
 def test_every_serializer_that_sets_a_breakpoint_uses_that_one_value():
@@ -439,7 +486,8 @@ def test_every_serializer_that_sets_a_breakpoint_uses_that_one_value():
     for serializer in SERIALIZERS:
         blocks = serializer.serialize_message(HumanMessage(content=TURN))["content"]
         assert blocks[0]["cache_control"]["ttl"] == CACHE_TTL, (
-            f"{serializer.__name__} sends a TTL that is not the shared constant")
+            f"{serializer.__name__} sends a TTL that is not the shared constant"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -482,16 +530,22 @@ def test_stable_blocks_cached_and_live_zone_stays_volatile(serializer):
     for tag in ("<capability-context>", "<task>", "<plan>"):
         assert tag in cached, f"{tag} must be in the cached prefix"
     assert "<working-memory>" not in cached, (
-        "working-memory churns on compaction — it must stay in the live zone, not the cache")
+        "working-memory churns on compaction — it must stay in the live zone, not the cache"
+    )
     assert out[0]["content"][0]["cache_control"]["type"] == "ephemeral"
 
     # the whole live zone — working-memory, recent-steps, and the evolution delta — is outside it
-    for tag in ("<constraints>", "<working-memory>", "<recent-steps>",
-                "<capability-context-changes>"):
+    for tag in (
+        "<constraints>",
+        "<working-memory>",
+        "<recent-steps>",
+        "<capability-context-changes>",
+    ):
         assert tag in volatile, f"{tag} must be in the live zone"
     assert "<capability-context-changes>" not in cached, (
         "the evolution delta must stay on the volatile side so evolving a capability "
-        "does not invalidate the task/plan cache")
+        "does not invalidate the task/plan cache"
+    )
     assert "cache_control" not in out[1], "the volatile half must not be a breakpoint"
 
 
@@ -543,7 +597,9 @@ def test_a_user_turn_wrapped_as_a_content_part_still_caches(serializer):
     assert len(out) == 2, "the list-wrapped turn must still split into cached prefix + live rest"
     cached = out[0]["content"][0]
     assert cached["cache_control"]["type"] == "ephemeral"
-    assert "<task>reconstruct</task>" in cached["text"] and "<plan>build it</plan>" in cached["text"]
+    assert (
+        "<task>reconstruct</task>" in cached["text"] and "<plan>build it</plan>" in cached["text"]
+    )
     assert "step 7 of 40" not in cached["text"], "the live budget must be past the breakpoint"
     assert "cache_control" not in out[1], "the volatile half must not be a breakpoint"
 
@@ -554,7 +610,9 @@ def test_a_turn_with_a_non_text_part_is_left_unsplit(serializer):
     so it passes through the ordinary multi-part path rather than being force-split."""
     from agentevolver.message.types import ContentPartImage, ImageURL
 
-    parts = [ContentPartText(text="look at this"),
-             ContentPartImage(image_url=ImageURL(url="data:image/png;base64,AAAA"))]
+    parts = [
+        ContentPartText(text="look at this"),
+        ContentPartImage(image_url=ImageURL(url="data:image/png;base64,AAAA")),
+    ]
     out = serializer.serialize_messages([HumanMessage(content=parts)])
     assert len(out) == 1, "a turn with an image is one message, not a forced split"

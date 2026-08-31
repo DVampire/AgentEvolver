@@ -37,8 +37,9 @@ def _module_slots() -> set[str]:
     return set(re.findall(r"\{\{ *(available_\w+) *\}\}", MODULE.read_text(encoding="utf-8")))
 
 
-@pytest.mark.parametrize("entry", [e for e in MOUNTED_TYPES if e.type not in IN_ITS_OWN_BLOCK],
-                         ids=lambda e: e.type)
+@pytest.mark.parametrize(
+    "entry", [e for e in MOUNTED_TYPES if e.type not in IN_ITS_OWN_BLOCK], ids=lambda e: e.type
+)
 def test_every_callable_type_has_a_slot_in_the_shared_block(entry):
     """A type registered, addressable and callable, and absent from the prompt, is a
     capability the model can only reach by guessing that it exists."""
@@ -75,8 +76,11 @@ def test_the_assembly_walks_the_table_rather_than_a_list():
 def test_no_template_carries_its_own_copy_of_the_block():
     """Five variants stood in twenty-six templates, differing only by which types the
     agent had — which the roster already answers by being empty."""
-    inline = [f.name for f in (PROMPTS / "default").glob("*.html")
-              if "<capability-context>" in f.read_text(encoding="utf-8")]
+    inline = [
+        f.name
+        for f in (PROMPTS / "default").glob("*.html")
+        if "<capability-context>" in f.read_text(encoding="utf-8")
+    ]
     assert not inline, f"these inline the block instead of including the module: {inline}"
 
 
@@ -109,15 +113,17 @@ def test_the_code_mode_convention_rides_on_a_slot_that_is_rendered():
     """It was appended to `tool_context`, which no template names, so an agent holding
     `batch_call_tool` was never told how to call anything from a program."""
     source = inspect.getsource(Agent._get_tool_context)
-    assert "available_tools" in source and "tool_context" not in source.replace("_get_tool_context", "")
+    assert "available_tools" in source and "tool_context" not in source.replace(
+        "_get_tool_context", ""
+    )
 
 
 def test_the_capability_hook_cannot_collide_with_the_orchestration_state():
     """`agent` resolving to `_get_agent_context` would call the orchestration state with
     the wrong signature — at run time, and only for that one type."""
     source = inspect.getsource(Agent._capability_slots)
-    assert '_capability_{entry.type}_slots' in source
-    assert '_get_{entry.type}_context' not in source
+    assert "_capability_{entry.type}_slots" in source
+    assert "_get_{entry.type}_context" not in source
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +152,9 @@ def test_the_script_cardifies_every_catalog_the_prompt_emits():
     script = (VISUAL / "js" / "prompt.js").read_text(encoding="utf-8")
     listed = set(re.findall(r"'(\w+-context)'", script))
     missing = _rendered_leaf_tags() - listed
-    assert not missing, f"the prompt emits these catalogs and prompt.js never cardifies them: {sorted(missing)}"
+    assert not missing, (
+        f"the prompt emits these catalogs and prompt.js never cardifies them: {sorted(missing)}"
+    )
 
 
 def test_the_stylesheet_labels_every_catalog_the_prompt_emits():
@@ -168,17 +176,20 @@ def test_environments_reach_a_prompt_through_the_shared_module():
     between steps was the one placed after the state that always does — re-read at full
     price every step.
     """
-    inline = [f.name for f in (PROMPTS / "default").glob("*.html")
-              if "<environment-context>" in f.read_text(encoding="utf-8")]
+    inline = [
+        f.name
+        for f in (PROMPTS / "default").glob("*.html")
+        if "<environment-context>" in f.read_text(encoding="utf-8")
+    ]
     assert not inline, f"these still inline the environment block: {inline}"
 
     for f in sorted((PROMPTS / "default").glob("*.html")):
         text = f.read_text(encoding="utf-8")
         if "module/environment_context.html" not in text:
             continue
-        assert (text.index("module/environment_context.html")
-                < text.index("module/agent_context.html")), (
-            f"{f.name} renders its environments after its state")
+        assert text.index("module/environment_context.html") < text.index(
+            "module/agent_context.html"
+        ), f"{f.name} renders its environments after its state"
 
 
 def test_the_environment_block_renders_only_when_the_agent_has_one():
@@ -190,12 +201,15 @@ def test_the_environment_block_renders_only_when_the_agent_has_one():
     from jinja2 import Template
 
     source = (PROMPTS / "module" / "environment_context.html").read_text(encoding="utf-8")
-    body = Template(source).render(environment_context="### Available Environments\n## browser_environment")
+    body = Template(source).render(
+        environment_context="### Available Environments\n## browser_environment"
+    )
     assert "<environment-context>" in body and "browser_environment" in body
 
     empty = Template(source).render(environment_context="")
     assert "<environment-context>" not in empty, (
-        "an agent with no environments pays for a block saying so")
+        "an agent with no environments pays for a block saying so"
+    )
 
 
 def test_an_environment_backed_agent_reports_its_state_through_one_slot():
@@ -211,14 +225,19 @@ def test_an_environment_backed_agent_reports_its_state_through_one_slot():
     offenders = []
     for path in sorted(actors.glob("*.py")):
         text = path.read_text(encoding="utf-8")
-        for stale in ("base[\"remote_state\"]", "base[\"browser_state\"]"):
+        for stale in ('base["remote_state"]', 'base["browser_state"]'):
             if stale in text:
                 offenders.append(f"{path.name}: {stale}")
-    assert not offenders, f"these fill a private state slot instead of `environment_state`: {offenders}"
+    assert not offenders, (
+        f"these fill a private state slot instead of `environment_state`: {offenders}"
+    )
 
     templates = ROOT / "agentevolver" / "prompt" / "default"
-    stray = [f.name for f in templates.glob("*.html")
-             if re.search(r"<(remote|browser|desktop)-state>", f.read_text(encoding="utf-8"))]
+    stray = [
+        f.name
+        for f in templates.glob("*.html")
+        if re.search(r"<(remote|browser|desktop)-state>", f.read_text(encoding="utf-8"))
+    ]
     assert not stray, f"these render their own state tag instead of `environment-state`: {stray}"
 
 
@@ -242,14 +261,18 @@ def test_every_block_a_prompt_opens_in_the_system_turn_is_styled():
         def sub(match):
             path = (base / match.group(1)).resolve()
             return resolve(path.read_text(encoding="utf-8"), path.parent) if path.exists() else ""
+
         return re.sub(r'<module src="([^"]+)"></module>', sub, text)
 
     unstyled = {}
     for path in sorted((PROMPTS / "default").glob("*.html")):
-        system = resolve(path.read_text(encoding="utf-8"), path.parent).split('<div class="user">')[0]
+        system = resolve(path.read_text(encoding="utf-8"), path.parent).split('<div class="user">')[
+            0
+        ]
         for tag in re.findall(r"<([a-z][\w-]+)>", system):
             if "-" in tag and tag not in styled:
                 unstyled.setdefault(tag, []).append(path.name)
     assert not unstyled, (
         "these rule blocks render unlabelled; add them to prompt.css or reuse an "
-        f"existing block name: { {k: v for k, v in unstyled.items()} }")
+        f"existing block name: { {k: v for k, v in unstyled.items()} }"
+    )

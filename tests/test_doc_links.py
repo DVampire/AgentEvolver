@@ -15,21 +15,30 @@ The subjects are discovered by walking the tree, so a document added tomorrow is
 without anyone remembering to add it here.
 """
 
-from pathlib import Path
-from typing import Iterator, List, Tuple
 import re
 import urllib.parse
+from pathlib import Path
+from typing import Iterator, List, Tuple
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
 #: `others/` is a vendored reference implementation with its own docs and its own broken
 #: links; `node_modules` and `output` are generated. Checking them would report defects
 #: nobody in this repository can fix, which trains people to ignore the check.
-SKIP_DIRS = {"others", "node_modules", "output", ".git", ".venv", "venv",
-             "__pycache__", "site-packages", ".mypy_cache", ".pytest_cache"}
+SKIP_DIRS = {
+    "others",
+    "node_modules",
+    "output",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "site-packages",
+    ".mypy_cache",
+    ".pytest_cache",
+}
 
 #: Targets that are illustrations of a link, not links. Each entry is
 #: `(document, target, why)`. A template shows the agent filling it in what a citation or
@@ -39,15 +48,26 @@ SKIP_DIRS = {"others", "node_modules", "output", ".git", ".venv", "venv",
 #: when the claim stops holding — the link resolved, or the document stopped containing
 #: it. Nothing may be added here to silence a genuinely broken link.
 PLACEHOLDER_LINKS = {
-    ("agentevolver/skill/science/indication_dossier_skill/references/06-writing-style.md",
-     "url1", "an example of the inline-citation format, inside a quoted sample finding"),
-    ("agentevolver/skill/science/indication_dossier_skill/references/06-writing-style.md",
-     "url2", "the second half of the same quoted sample"),
-    ("agentevolver/skill/authoring/report_design_skill/references/"
-     "analysis_report_template.md", "figure_1.png",
-     "a slot in a report template; the agent copies the file and supplies the figure"),
-    ("agentevolver/skill/authoring/report_design_skill/references/"
-     "analysis_report_template.md", "figure_2.png", "the second figure slot"),
+    (
+        "agentevolver/skill/science/indication_dossier_skill/references/06-writing-style.md",
+        "url1",
+        "an example of the inline-citation format, inside a quoted sample finding",
+    ),
+    (
+        "agentevolver/skill/science/indication_dossier_skill/references/06-writing-style.md",
+        "url2",
+        "the second half of the same quoted sample",
+    ),
+    (
+        "agentevolver/skill/authoring/report_design_skill/references/analysis_report_template.md",
+        "figure_1.png",
+        "a slot in a report template; the agent copies the file and supplies the figure",
+    ),
+    (
+        "agentevolver/skill/authoring/report_design_skill/references/analysis_report_template.md",
+        "figure_2.png",
+        "the second figure slot",
+    ),
 }
 
 
@@ -140,6 +160,11 @@ def broken(path: Path) -> List[str]:
 
 
 DOCUMENTS = documents()
+DOCUMENT_BATCH_SIZE = 25
+DOCUMENT_BATCHES = [
+    DOCUMENTS[index : index + DOCUMENT_BATCH_SIZE]
+    for index in range(0, len(DOCUMENTS), DOCUMENT_BATCH_SIZE)
+]
 
 
 # --------------------------------------------------------------------------- #
@@ -148,8 +173,9 @@ DOCUMENTS = documents()
 def test_the_walk_found_the_documentation():
     """A walk that matches nothing passes every case below without reading a file."""
     assert len(DOCUMENTS) > 100, f"only found {len(DOCUMENTS)} Markdown files"
-    assert any(p.name == "README.md" and p.parent == ROOT for p in DOCUMENTS), \
+    assert any(p.name == "README.md" and p.parent == ROOT for p in DOCUMENTS), (
         "the top-level README is not in the scan"
+    )
 
 
 def test_the_scan_extracts_links_from_the_files_it_walks():
@@ -166,15 +192,19 @@ def test_the_scan_extracts_links_from_the_files_it_walks():
 # --------------------------------------------------------------------------- #
 # The invariant
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("path", DOCUMENTS, ids=lambda p: str(p.relative_to(ROOT)))
-def test_every_file_a_document_points_at_exists(path):
-    """One case per document, so a failure names the page that has to be edited.
+@pytest.mark.parametrize(
+    "paths",
+    DOCUMENT_BATCHES,
+    ids=lambda batch: f"{batch[0].relative_to(ROOT)}+{len(batch) - 1}",
+)
+def test_every_file_a_document_points_at_exists(paths):
+    """Check a small document batch and report every broken target with its page.
 
-    Parametrised rather than collected into one assertion for the same reason: a single
-    case listing thirty broken links across nine files gets triaged as "the docs are
-    broken" and left.
+    One pytest item per document made collection slower than resolving the links. Batches
+    retain actionable file-level messages without creating thousands of nearly empty test
+    items or collapsing the entire repository into one undifferentiated failure.
     """
-    problems = broken(path)
+    problems = [problem for path in paths for problem in broken(path)]
     assert not problems, "\n  ".join(["unresolvable references:"] + problems)
 
 
@@ -230,5 +260,6 @@ def test_a_link_inside_a_code_block_is_not_a_link(tmp_path: Path):
         "```markdown\n[example](nowhere.md)\n```\n\n"
         "<!-- [commented](gone.md) -->\n\n"
         "Write `[label](target.md)` inline.\n",
-        encoding="utf-8")
+        encoding="utf-8",
+    )
     assert list(links(doc)) == []

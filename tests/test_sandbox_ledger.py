@@ -45,7 +45,8 @@ def test_the_ledger_holds_exactly_the_sandboxes_not_yet_destroyed(monkeypatch, t
 
 
 def test_reaping_names_containers_the_way_the_daemon_did_and_then_empties_the_ledger(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     """A ledger entry is a sandbox id; the container it maps to is `sandbox-<id>`.
 
@@ -77,7 +78,8 @@ def test_reaping_names_containers_the_way_the_daemon_did_and_then_empties_the_le
 
 
 def test_a_reap_that_cannot_reach_docker_keeps_the_debt_for_the_next_boot(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     """No socket and no CLI means "not now", not "nothing to do".
 

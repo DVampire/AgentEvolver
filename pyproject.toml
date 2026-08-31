@@ -78,21 +78,27 @@ benchmark = ["programbench"]               # ProgramBench task/eval data (exampl
 # Derived, not re-listed: adding a package to an extra above must not require
 # remembering to add it here too. That is how "e2b" outlived its module in both.
 all = ["agentevolver[browser,chem,sandbox,benchmark]"]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.12"]
 
 [tool.pytest.ini_options]
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not slow'"
 testpaths = ["tests"]
 norecursedirs = ["output", "node_modules", ".git", ".venv", "venv"]
 markers = [
     "integration: requires external credentials, services, browsers, or containers",
-    # Not deselected by default: a gate that cannot fail is worse than no gate, and the
-    # only proof it can is to reintroduce the defect and watch it go red. Skipping that
-    # by default would leave the gates themselves unguarded, which is the state this
-    # marker exists to end.
+    # Run explicitly with `pytest -m slow`. Each case mutates one source file and launches
+    # a fresh pytest process; keeping that meta-gate out of the edit/test loop saves about
+    # a minute while preserving it for CI or pre-release verification.
     "slow: reintroduces a defect in a subprocess to prove a gate still catches it",
 ]
 asyncio_mode = "strict"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["D100", "E4", "E7", "E9", "F", "I"]
 
 # --------------------------------------------------------------------------- #
 # Coverage

@@ -37,6 +37,13 @@ from .checkpoint import (
     report_trace_integrity_failure,
     resolve_integrity_profile,
 )
+from .execution_checkpoint import (
+    EXECUTION_CHECKPOINT_VERSION,
+    EffectReceipt,
+    ExecutionCheckpoint,
+    UnsettledCall,
+    derive_execution_checkpoint,
+)
 from .persistence import (
     TracePersistence,
     SQLiteTracePersistence,
@@ -81,6 +88,11 @@ __all__ = [
     "checkpoint_trace",
     "report_trace_integrity_failure",
     "resolve_integrity_profile",
+    "EXECUTION_CHECKPOINT_VERSION",
+    "EffectReceipt",
+    "ExecutionCheckpoint",
+    "UnsettledCall",
+    "derive_execution_checkpoint",
     "TracePersistence",
     "SQLiteTracePersistence",
     "create_trace_persistence",

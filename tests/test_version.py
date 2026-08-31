@@ -34,7 +34,7 @@ async def test_a_registered_component_reports_its_version(versions):
 
 @pytest.mark.asyncio
 async def test_registering_again_moves_the_current_version_forward(versions):
-    """"Current" is the version most recently registered, and the older one is kept.
+    """ "Current" is the version most recently registered, and the older one is kept.
 
     Both halves are load-bearing: resolution has to follow the new version, and the
     previous one has to remain in the history, because a rollback can only return to a
@@ -288,8 +288,8 @@ async def test_listing_covers_every_known_type_even_when_empty(versions):
         ("1.0.0", "1.0.1", -1),
         ("1.0.0", "1.0.0", 0),
         ("2.0.0", "1.9.9", 1),
-        ("1.10.0", "1.9.0", 1),   # numeric, not lexicographic
-        ("1.0", "1.0.0", 0),      # padded to equal length
+        ("1.10.0", "1.9.0", 1),  # numeric, not lexicographic
+        ("1.0", "1.0.0", 0),  # padded to equal length
         ("1.0.0.1", "1.0.0", 1),
     ],
 )

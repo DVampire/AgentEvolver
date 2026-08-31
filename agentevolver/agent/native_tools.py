@@ -28,6 +28,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 from agentevolver.capability import MOUNTED_TYPES
+from agentevolver.logger import logger
 from agentevolver.tool.types import Tool
 
 # Routing table value: a tuple describing how to dispatch a tool_call by name:
@@ -109,28 +110,47 @@ async def assemble_native_tools(
     agents; ordinary sub-agents leave it off.
     """
     extra = getattr(ctx, "extra", None) or {}
-    pairs: List[Tuple[Dict[str, Any], Route]] = []
+    agent_name = getattr(agent, "name", "agent")
+    from agentevolver.agent.capability_index import catalog, remember_catalog, select
 
-    for entry in MOUNTED_TYPES:
-        if not _projects(entry.type, agent, extra, include_agents):
-            continue
-        pairs += await entry.manager().function_callings(
-            extra.get(f"{entry.type}_allowlist"),
-            **_projection_kwargs(entry.type, agent),
-        )
+    pairs: List[Tuple[Dict[str, Any], Route]] = catalog(ctx, agent_name)
+    if not pairs:
+        # Freeze discovery for the lifetime of one run. Connector/plugin schema
+        # projection can be expensive, and asking every manager again on every model
+        # step defeats deferred schema loading even though the catalog did not change.
+        for entry in MOUNTED_TYPES:
+            if not _projects(entry.type, agent, extra, include_agents):
+                continue
+            try:
+                discovered = await entry.manager().function_callings(
+                    extra.get(f"{entry.type}_allowlist"),
+                    **_projection_kwargs(entry.type, agent),
+                )
+                pairs.extend(
+                    (schema, route)
+                    for schema, route in discovered
+                    if isinstance(schema, dict)
+                    and isinstance(schema.get("function"), dict)
+                    and schema["function"].get("name")
+                )
+            except Exception as error:  # noqa: BLE001 - isolate one catalog source
+                logger.warning(
+                    f"| ⚠️ Capability schema discovery failed for {entry.type}: "
+                    f"{error}; the remaining capability types stay available"
+                )
+        remember_catalog(ctx, agent_name, pairs)
 
     all_pairs = list(pairs)
-    from agentevolver.agent.capability_index import remember_catalog, select
 
     pairs, deferred = select(
         pairs,
         ctx=ctx,
-        agent_name=getattr(agent, "name", "agent"),
+        agent_name=agent_name,
         threshold=int(getattr(agent, "defer_capabilities_after", 40) or 0),
     )
     # Dispatch needs the full index for a search call, but only `pairs` is serialized.
     if deferred:
-        remember_catalog(ctx, getattr(agent, "name", "agent"), all_pairs)
+        remember_catalog(ctx, agent_name, all_pairs)
 
     tools: List[_SchemaTool] = []
     for fc, route in pairs:

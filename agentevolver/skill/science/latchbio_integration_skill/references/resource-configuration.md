@@ -106,6 +106,7 @@ current docs or with Latch support before promising a specific model to users.
 Exact stable signature:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 custom_task(
     cpu,
     memory,

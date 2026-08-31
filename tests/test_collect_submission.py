@@ -39,8 +39,7 @@ REFERENCE_COPY = rpb.REFERENCE_COPY  # "reference_executable"
 
 
 def _git(workspace, *args):
-    subprocess.run(["git", "-C", str(workspace), *args], check=True,
-                   capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(workspace), *args], check=True, capture_output=True, text=True)
 
 
 def _repo(workspace):

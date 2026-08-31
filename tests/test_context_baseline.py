@@ -11,7 +11,8 @@ import importlib.util
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
-    "context_baseline", Path(__file__).resolve().parents[1] / "scripts" / "context_baseline.py")
+    "context_baseline", Path(__file__).resolve().parents[1] / "scripts" / "context_baseline.py"
+)
 baseline = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(baseline)
 
@@ -44,24 +45,28 @@ def test_a_step_without_usage_is_not_counted_as_free():
     Folding the first into the second makes a partial total read as authoritative, which
     is the failure mode a cost measurement can least afford.
     """
-    out = baseline._usage_by_agent([
-        _call("code_agent", {"input_tokens": 100, "cache_read_tokens": 100}),
-        _call("code_agent"),                       # provider reported nothing
-    ])["code_agent"]
+    out = baseline._usage_by_agent(
+        [
+            _call("code_agent", {"input_tokens": 100, "cache_read_tokens": 100}),
+            _call("code_agent"),  # provider reported nothing
+        ]
+    )["code_agent"]
 
     assert out["steps_with_usage"] == 1
     assert out["steps_without_usage"] == 1
-    assert out["input_tokens"] == 100              # not diluted by the missing step
+    assert out["input_tokens"] == 100  # not diluted by the missing step
     assert out["cache_hit_rate"] == 1.0
 
 
 def test_events_that_are_not_model_calls_are_ignored():
     """Tool events carry no usage and must not be counted as unreported model calls."""
-    out = baseline._usage_by_agent([
-        {"event_type": "tool_start", "agent_name": "code_agent"},
-        {"event_type": "tool_end", "agent_name": "code_agent"},
-        _call("code_agent", {"input_tokens": 10}),
-    ])["code_agent"]
+    out = baseline._usage_by_agent(
+        [
+            {"event_type": "tool_start", "agent_name": "code_agent"},
+            {"event_type": "tool_end", "agent_name": "code_agent"},
+            _call("code_agent", {"input_tokens": 10}),
+        ]
+    )["code_agent"]
     assert out["steps_with_usage"] == 1
     assert out["steps_without_usage"] == 0
 

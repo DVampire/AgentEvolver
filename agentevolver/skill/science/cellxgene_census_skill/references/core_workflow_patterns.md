@@ -12,6 +12,7 @@ multi-dataset integration.
 Always use the context manager to ensure proper resource cleanup:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 import cellxgene_census
 
 # Open latest stable version

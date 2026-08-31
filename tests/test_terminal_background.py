@@ -14,10 +14,9 @@ import asyncio
 
 import pytest
 
+from agentevolver.environment.default.terminal import TerminalEnvironment
 from agentevolver.job import job_manager
 from agentevolver.terminal import terminal_manager
-from agentevolver.environment.default.terminal import TerminalEnvironment
-from agentevolver.environment.default.terminal.environment import BACKGROUND_SEND_TIMEOUT
 
 
 class _Ctx:
@@ -27,6 +26,7 @@ class _Ctx:
 @pytest.fixture
 def session(tmp_path):
     from agentevolver.config import config
+
     previous = getattr(config, "workspace_root", None)
     config.workspace_root = str(tmp_path)
     yield
@@ -56,13 +56,15 @@ async def test_a_backgrounded_send_returns_before_the_command_does(session):
     """The whole point: typing costs a step, waiting does not."""
     terminal_id = await _open()
 
-    started = await TerminalEnvironment().send(terminal_id=terminal_id, text="sleep 20",
-                                       run_in_background=True, ctx=_Ctx())
+    started = await TerminalEnvironment().send(
+        terminal_id=terminal_id, text="sleep 20", run_in_background=True, ctx=_Ctx()
+    )
 
     assert started["success"]
     job = job_manager.get(started["job_id"])
     assert not job.status.is_final, (
-        "the call returned only after the command finished; it did not background it")
+        "the call returned only after the command finished; it did not background it"
+    )
 
 
 @pytest.mark.asyncio
@@ -70,8 +72,9 @@ async def test_a_pty_send_lands_in_the_same_registry_as_a_background_command(ses
     """One answer to "what is outstanding", not one per producer."""
     terminal_id = await _open()
 
-    await TerminalEnvironment().send(terminal_id=terminal_id, text="sleep 20",
-                             run_in_background=True, ctx=_Ctx())
+    await TerminalEnvironment().send(
+        terminal_id=terminal_id, text="sleep 20", run_in_background=True, ctx=_Ctx()
+    )
 
     kinds = {j.type for j in job_manager.list(_Ctx.id)}
     assert "terminal" in kinds, f"a backgrounded send is invisible to job_list; saw {kinds}"
@@ -82,12 +85,14 @@ async def test_the_output_arrives_in_the_job(session):
     """Collected rather than delivered, like every other job."""
     terminal_id = await _open()
 
-    started = await TerminalEnvironment().send(terminal_id=terminal_id, text="echo bg-marker",
-                                       run_in_background=True, ctx=_Ctx())
+    started = await TerminalEnvironment().send(
+        terminal_id=terminal_id, text="echo bg-marker", run_in_background=True, ctx=_Ctx()
+    )
     job_id = started["job_id"]
 
-    assert await _wait_until(lambda: "bg-marker" in (job_manager.output(job_id) or "")), \
+    assert await _wait_until(lambda: "bg-marker" in (job_manager.output(job_id) or "")), (
         f"the job never collected the output: {job_manager.output(job_id)!r}"
+    )
     assert await _wait_until(lambda: job_manager.get(job_id).status.is_final)
 
 
@@ -105,17 +110,23 @@ async def test_killing_the_job_stops_watching_and_not_the_command(session):
         terminal_id=terminal_id,
         # Writes a file after a delay: the file is how we tell whether it kept running.
         text="(sleep 1; echo alive > kept-running.txt)",
-        run_in_background=True, ctx=_Ctx())
+        run_in_background=True,
+        ctx=_Ctx(),
+    )
 
     from agentevolver.environment.default.job import JobEnvironment
+
     await JobEnvironment().kill(job_id=started["job_id"], ctx=_Ctx())
 
-    from agentevolver.config import config
     from pathlib import Path
+
+    from agentevolver.config import config
+
     marker = Path(config.workspace_root) / "kept-running.txt"
     assert await _wait_until(lambda: marker.exists()), (
         "killing the job also stopped the command; job__kill is supposed to stop "
-        "watching, and terminal_signal_tool is what stops the command")
+        "watching, and terminal_signal_tool is what stops the command"
+    )
 
 
 @pytest.mark.asyncio
@@ -127,11 +138,11 @@ async def test_the_screen_is_still_readable_while_the_job_watches(session):
     a terminal is usually that the job's transcript did not answer the question.
     """
     terminal_id = await _open()
-    started = await TerminalEnvironment().send(terminal_id=terminal_id, text="echo on-screen",
-                                       run_in_background=True, ctx=_Ctx())
+    started = await TerminalEnvironment().send(
+        terminal_id=terminal_id, text="echo on-screen", run_in_background=True, ctx=_Ctx()
+    )
 
-    assert await _wait_until(
-        lambda: "on-screen" in (job_manager.output(started["job_id"]) or ""))
+    assert await _wait_until(lambda: "on-screen" in (job_manager.output(started["job_id"]) or ""))
 
     read = await TerminalEnvironment().read(terminal_id=terminal_id, ctx=_Ctx())
     assert read["success"]
@@ -148,4 +159,5 @@ async def test_a_background_send_still_checks_permission(session):
     source = inspect.getsource(TerminalEnvironment.send)
     assert source.index("self._permitted(text)") < source.index("_send_in_background"), (
         "the background branch is taken before the permission check, so a command "
-        "refused in the foreground would run when backgrounded")
+        "refused in the foreground would run when backgrounded"
+    )

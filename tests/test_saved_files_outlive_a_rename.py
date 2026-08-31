@@ -47,14 +47,16 @@ def test_a_saved_flow_keeps_its_inputs_and_outputs():
     """
     from agentevolver.canvas.types import FlowGraph
 
-    flow = FlowGraph.model_validate({
-        "nodes": [
-            {"id": "in", "kind": "input", "name": "topic"},
-            {"id": "s1", "kind": "step", "step_type": "agent", "target": "code_agent"},
-            {"id": "out", "kind": "output", "name": "result"},
-        ],
-        "edges": [],
-    })
+    flow = FlowGraph.model_validate(
+        {
+            "nodes": [
+                {"id": "in", "kind": "input", "name": "topic"},
+                {"id": "s1", "kind": "step", "step_type": "agent", "target": "code_agent"},
+                {"id": "out", "kind": "output", "name": "result"},
+            ],
+            "edges": [],
+        }
+    )
     assert [node.type for node in flow.nodes] == ["input", "step", "output"]
 
 
@@ -67,10 +69,13 @@ def test_a_recorded_fold_is_still_recognised_as_one(spelling):
     derived history — so the model reads the same work twice, and the run pays for it
     in the context that compaction existed to reduce."""
     from agentevolver.trace.derive import derive_messages
-    from agentevolver.trace.types import TraceEvent, TraceEventType
-
     from agentevolver.trace.surface import replace_op
-    from agentevolver.trace.types import agent_call_event, agent_start_event
+    from agentevolver.trace.types import (
+        TraceEvent,
+        TraceEventType,
+        agent_call_event,
+        agent_start_event,
+    )
 
     # Built through the factories `trace_manager.emit` uses, so these carry the same
     # surface membership a real log has — a replacement may only cite what is on it.
@@ -80,11 +85,17 @@ def test_a_recorded_fold_is_still_recognised_as_one(spelling):
     ]
     for position, event in enumerate(events):
         event.seq_no = position
-    events.append(TraceEvent(
-        event_type=TraceEventType.CUSTOM, session_id="s", seq_no=2,
-        message="Earlier: ran the tests.", metadata={spelling: "compaction"},
-        surface_op=replace_op(0, 1), source_event_seqs=[0, 1],
-    ))
+    events.append(
+        TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id="s",
+            seq_no=2,
+            message="Earlier: ran the tests.",
+            metadata={spelling: "compaction"},
+            surface_op=replace_op(0, 1),
+            source_event_seqs=[0, 1],
+        )
+    )
     texts = [m.text for m in derive_messages(events)]
     assert texts == ["Earlier: ran the tests."], (
         f"a fold recorded with {spelling!r} left {texts} instead of only its summary"
@@ -108,12 +119,17 @@ def test_a_state_file_written_before_the_rename_is_still_resumable(tmp_path, spe
     path = projector._state_path("s1")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(json.dumps({
-            spelling: "trajectory_projection_state",
-            "schema_version": PROJECTION_STATE_VERSION,
-            "projector_version": PROJECTOR_VERSION,
-            "session_id": "s1",
-        }) + "\n")
+        handle.write(
+            json.dumps(
+                {
+                    spelling: "trajectory_projection_state",
+                    "schema_version": PROJECTION_STATE_VERSION,
+                    "projector_version": PROJECTOR_VERSION,
+                    "session_id": "s1",
+                }
+            )
+            + "\n"
+        )
 
     state = projector._load_state("s1")
     assert state is not None, f"a state file written with {spelling!r} was refused"

@@ -9,6 +9,7 @@ from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.registry import TOOL
 from agentevolver.config import config
+from agentevolver.session import resolve_workspace_root
 
 _DESCRIPTION = "Run git operations inside the project workspace_root."
 
@@ -77,9 +78,7 @@ class GitTool(Tool):
 
         Used to scope git operations to the session's workspace directory.
         """
-        # Working dir comes from the global config (set per-run by bind_session_roots),
-        # not from ctx — see BaseContext note on why workspace_root is config-owned.
-        return config.workspace_root or None
+        return resolve_workspace_root(ctx) or None
 
     async def __call__(
         self,

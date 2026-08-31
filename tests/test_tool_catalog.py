@@ -22,15 +22,13 @@ version of this file would pass alone and fail in a full run, or the reverse, fo
 that have nothing to do with the catalog.
 """
 
-from pathlib import Path
 import importlib.util
 import json
-import re
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "gen_tool_catalog.py"
@@ -38,16 +36,23 @@ SCRIPT = ROOT / "scripts" / "gen_tool_catalog.py"
 
 def _inventory() -> dict:
     """What one clean `import agentevolver.tool` registers, as data."""
-    result = subprocess.run([sys.executable, str(SCRIPT), "--inventory"],
-                            capture_output=True, text=True, cwd=ROOT, timeout=300)
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--inventory"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        timeout=300,
+    )
     assert result.returncode == 0, (
-        f"gen_tool_catalog.py --inventory failed:\n{result.stderr[-2000:]}")
+        f"gen_tool_catalog.py --inventory failed:\n{result.stderr[-2000:]}"
+    )
     return json.loads(result.stdout)
 
 
 INVENTORY = _inventory()
 TOOLS = INVENTORY["tools"]
 CATALOG = ROOT / "docs" / "tool-catalog.md"
+
 
 # --------------------------------------------------------------------------- #
 # The scan itself
@@ -68,7 +73,8 @@ def test_the_source_scan_finds_tools_outside_the_top_level_package():
     nested = {m for m in modules if m.count(".") > 3}
     assert nested, (
         f"no tool was found below agentevolver/tool/<pkg>/; the scan is looking in the "
-        f"wrong place. Found: {sorted(modules)}")
+        f"wrong place. Found: {sorted(modules)}"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -84,7 +90,8 @@ def test_every_tool_class_in_the_tree_is_reachable_from_an_import():
     would make the guard agree with itself.
     """
     assert not INVENTORY["gap"], "\n  ".join(
-        ["tool classes that never reach the registry:"] + INVENTORY["gap"])
+        ["tool classes that never reach the registry:"] + INVENTORY["gap"]
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -104,11 +111,19 @@ def test_the_committed_catalog_matches_what_the_registry_holds():
         return
 
     import difflib
-    diff = "".join(difflib.unified_diff(
-        committed.splitlines(keepends=True), generated.splitlines(keepends=True),
-        fromfile="committed", tofile="generated"))
-    pytest.fail(f"docs/tool-catalog.md no longer matches the tool registry. Run "
-                f"`python scripts/gen_tool_catalog.py` and commit the result.\n\n{diff}")
+
+    diff = "".join(
+        difflib.unified_diff(
+            committed.splitlines(keepends=True),
+            generated.splitlines(keepends=True),
+            fromfile="committed",
+            tofile="generated",
+        )
+    )
+    pytest.fail(
+        f"docs/tool-catalog.md no longer matches the tool registry. Run "
+        f"`python scripts/gen_tool_catalog.py` and commit the result.\n\n{diff}"
+    )
 
 
 def test_a_stale_catalog_is_detected(tmp_path: Path, monkeypatch):
@@ -125,8 +140,9 @@ def test_a_stale_catalog_is_detected(tmp_path: Path, monkeypatch):
     spec.loader.exec_module(generator)
 
     stale = tmp_path / "tool-catalog.md"
-    stale.write_text(generator.render().replace("Permission mode:", "Permission:", 1),
-                     encoding="utf-8")
+    stale.write_text(
+        generator.render().replace("Permission mode:", "Permission:", 1), encoding="utf-8"
+    )
     monkeypatch.setattr(generator, "CATALOG", stale)
     assert generator.drift(), "a doctored catalog was reported as up to date"
 
@@ -145,7 +161,8 @@ def test_every_registered_tool_appears_in_the_catalog(class_name):
     text = CATALOG.read_text(encoding="utf-8")
     name = TOOLS[class_name]["name"]
     assert f"## `{name}`" in text, (
-        f"{name} ({class_name}) is registered but has no section in docs/tool-catalog.md")
+        f"{name} ({class_name}) is registered but has no section in docs/tool-catalog.md"
+    )
 
 
 def test_the_catalog_says_it_is_generated():
@@ -155,7 +172,8 @@ def test_the_catalog_says_it_is_generated():
     """
     first_block = CATALOG.read_text(encoding="utf-8").split("\n\n")[0]
     assert "scripts/gen_tool_catalog.py" in first_block, (
-        "docs/tool-catalog.md does not open with a banner naming its generator")
+        "docs/tool-catalog.md does not open with a banner naming its generator"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -185,12 +203,14 @@ def test_every_parameter_the_model_can_send_is_documented(class_name):
     missing = [name for name in entry["parameters"] if name not in documented]
     assert not missing, (
         f"{entry['name']} accepts {missing} but the call schema has no such property; "
-        f"the model is being sent a contract that does not match the signature")
+        f"the model is being sent a contract that does not match the signature"
+    )
 
     undescribed = [name for name in entry["parameters"] if not documented.get(name, "").strip()]
     assert not undescribed, (
         f"{entry['name']} accepts {undescribed} with no description — add an `Args:` line "
-        f"for each in `__call__`'s docstring, which is what the schema is built from")
+        f"for each in `__call__`'s docstring, which is what the schema is built from"
+    )
 
 
 @pytest.mark.parametrize("class_name", sorted(TOOLS))
@@ -206,4 +226,5 @@ def test_every_tool_declares_a_permission_mode_the_manager_accepts(class_name):
     mode = TOOLS[class_name]["permission_mode"]
     assert mode in {m.value for m in PermissionMode}, (
         f"{TOOLS[class_name]['name']} declares permission_mode={mode!r}, which is not "
-        f"one of {sorted(m.value for m in PermissionMode)}")
+        f"one of {sorted(m.value for m in PermissionMode)}"
+    )

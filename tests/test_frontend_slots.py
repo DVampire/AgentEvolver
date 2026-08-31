@@ -80,7 +80,7 @@ def test_a_disposer_removes_its_own_registration():
     """A reload registers the replacement before disposing the old handle. Removing by
     id would then have the old cleanup delete the new panel."""
     source = _read("slots.ts")
-    body = source[source.index("export function registerSlot"):]
+    body = source[source.index("export function registerSlot") :]
     assert "e !== entry" in body, (
         "the disposer filters by id rather than by identity, so an old handle can delete "
         "a newer registration"

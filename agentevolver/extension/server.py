@@ -37,6 +37,11 @@ from agentevolver.paths import P, path_manager
 from agentevolver.utils import get_extension_root
 from agentevolver.utils.file_utils import file_lock
 from agentevolver.extension.types import Manifest, ManifestComponent
+from agentevolver.extension.rollout import (
+    RolloutController,
+    RolloutObservation,
+    RolloutPolicy,
+)
 
 # Six tables describing the same nine module types stood here, written out by hand. They
 # are the capability table's own fields now, because a seventh copy elsewhere had already
@@ -71,6 +76,7 @@ class ExtensionManagerServer(BaseModel):
 
     base_dir: str = Field(default="", description="Root directory of the extension tree")
     _change_listeners: set[ExtensionChangeListener] = PrivateAttr(default_factory=set)
+    _rollouts: RolloutController = PrivateAttr(default_factory=RolloutController)
 
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
@@ -270,6 +276,9 @@ class ExtensionManagerServer(BaseModel):
         if self._smoke_enabled(run_smoke):
             await self._smoke_gate_or_revert(module, name, prev_version)
 
+        if prev_version is not None:
+            await self._begin_rollout(module, name, prev_version, comp.version)
+
         await self._notify_change(
             "registered" if prev_version is None else "evolved",
             module,
@@ -277,6 +286,101 @@ class ExtensionManagerServer(BaseModel):
             version=comp.version,
         )
         return name
+
+    @staticmethod
+    def _rollout_key(module: str, name: str) -> str:
+        return f"{module}:{name}"
+
+    def _rollout_policy(self) -> RolloutPolicy:
+        try:
+            from agentevolver.config import config
+
+            extension = getattr(config, "extension", {}) or {}
+            values = extension.get("rollout", {}) if isinstance(extension, dict) else {}
+            return RolloutPolicy.model_validate(values or {})
+        except Exception as error:
+            logger.warning(f"| ⚠️ Invalid extension rollout policy; using defaults: {error}")
+            return RolloutPolicy()
+
+    async def _begin_rollout(
+        self, module: str, name: str, baseline_version: str, candidate_version: str,
+    ) -> None:
+        key = self._rollout_key(module, name)
+
+        # Smoke validation runs against the newly loaded candidate. Shadow/canary must
+        # then begin with the baseline actually serving normal traffic; leaving the
+        # candidate globally registered while reporting phase=shadow would invert the
+        # safety contract. The candidate remains archived and can be promoted atomically.
+        await self.rollback(module, name, baseline_version)
+
+        async def revert(reason: str) -> None:
+            await self.rollback(module, name, baseline_version)
+            try:
+                from agentevolver.extension.journal import journal
+                journal.fill_gating(
+                    module, name, "reverted",
+                    attribution={f"rollout:{reason}": False},
+                )
+            except Exception as error:  # observational only
+                logger.error(f"| ⚠️ Could not journal rollout rollback: {error}")
+
+        async def activate() -> None:
+            await self.rollback(module, name, candidate_version)
+            try:
+                from agentevolver.extension.journal import journal
+                journal.fill_gating(
+                    module, name, "promoted",
+                    attribution={"rollout:thresholds_passed": True},
+                )
+            except Exception as error:  # observational only
+                logger.error(f"| ⚠️ Could not journal rollout promotion: {error}")
+
+        self._rollouts.begin(
+            key, baseline_version, candidate_version, revert, self._rollout_policy(),
+            activate=activate,
+        )
+        logger.info(
+            f"| 🌓 ExtensionManager: rollout {key} v{baseline_version} → "
+            f"v{candidate_version} entered shadow"
+        )
+
+    def rollout_status(self, module: str, name: str) -> Optional[Dict[str, object]]:
+        rollout = self._rollouts.get(self._rollout_key(module, name))
+        return rollout.status() if rollout else None
+
+    def select_rollout_version(
+        self, module: str, name: str, traffic_key: str,
+    ) -> Optional[str]:
+        """Deterministically route one session according to the current rollout phase."""
+        return self._rollouts.select_version(
+            self._rollout_key(module, name), traffic_key,
+        )
+
+    async def record_shadow_observation(
+        self,
+        module: str,
+        name: str,
+        baseline: RolloutObservation | Dict,
+        candidate: RolloutObservation | Dict,
+    ) -> Dict[str, object]:
+        rollout = await self._rollouts.record_shadow(
+            self._rollout_key(module, name),
+            baseline if isinstance(baseline, RolloutObservation) else RolloutObservation.model_validate(baseline),
+            candidate if isinstance(candidate, RolloutObservation) else RolloutObservation.model_validate(candidate),
+        )
+        return rollout.status()
+
+    async def record_canary_observation(
+        self,
+        module: str,
+        name: str,
+        candidate: RolloutObservation | Dict,
+    ) -> Dict[str, object]:
+        rollout = await self._rollouts.record_canary(
+            self._rollout_key(module, name),
+            candidate if isinstance(candidate, RolloutObservation) else RolloutObservation.model_validate(candidate),
+        )
+        return rollout.status()
 
     def _smoke_enabled(self, run_smoke: Optional[bool]) -> bool:
         """Resolve the smoke gate; new/evolved code is verified by default."""

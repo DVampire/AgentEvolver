@@ -114,6 +114,7 @@ result = computation.compute()  # Runs in single thread
 
 **Debugging with IPython**:
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # In IPython/Jupyter
 %pdb on
 

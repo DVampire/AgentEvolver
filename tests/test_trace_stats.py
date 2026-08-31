@@ -1,3 +1,10 @@
+"""Trace statistics project append-only events without double counting.
+
+Run summaries repeat some step usage, and incremental projectors may see the same suffix
+more than once after a restart. These tests keep aggregation idempotent and ensure the
+default projection registry exposes the built-in consumer.
+"""
+
 from __future__ import annotations
 
 import pytest
@@ -24,7 +31,8 @@ class Reader:
 
     def read_from(self, session_id, *, after_seq=-1, limit=None):
         found = [
-            event for event in self.events
+            event
+            for event in self.events
             if event.get("session_id") == session_id and int(event["seq_no"]) > after_seq
         ]
         return found[:limit]
@@ -57,15 +65,32 @@ def payloads(*events: TraceEvent):
 def test_stats_projector_aggregates_without_double_counting_run_usage(tmp_path):
     request = model_request_event("s1", Snapshot(), task_id="t1", agent_name="a1")
     step = agent_call_event(
-        "s1", "t1", "a1", 1, duration_ms=12,
+        "s1",
+        "t1",
+        "a1",
+        1,
+        duration_ms=12,
         usage={"input_tokens": 10, "output_tokens": 3, "cost": 0.25},
     )
     tool = tool_call_event(
-        "s1", "t1", "a1", 1, 0, "bash", "ok", True, duration_ms=5,
+        "s1",
+        "t1",
+        "a1",
+        1,
+        0,
+        "bash",
+        "ok",
+        True,
+        duration_ms=5,
     )
     tool.metadata["execution"] = {"tool_name": "bash", "stage": "finalize"}
     end = agent_end_event(
-        "s1", "t1", "a1", True, "done", duration_ms=20,
+        "s1",
+        "t1",
+        "a1",
+        True,
+        "done",
+        duration_ms=20,
         usage={"input_tokens": 10, "output_tokens": 3, "cost": 0.25},
     )
     projector = TraceStatsProjector(Reader(payloads(request, step, tool, end)), tmp_path)
@@ -74,7 +99,10 @@ def test_stats_projector_aggregates_without_double_counting_run_usage(tmp_path):
 
     assert stats.event_count == 4
     assert stats.event_counts == {
-        "agent_call": 1, "agent_end": 1, "model_request": 1, "tool_call": 1,
+        "agent_call": 1,
+        "agent_end": 1,
+        "model_request": 1,
+        "tool_call": 1,
     }
     assert stats.model_routes == {"route-a": 1}
     assert stats.providers == {"openai": 1}
@@ -90,9 +118,15 @@ def test_stats_projector_aggregates_without_double_counting_run_usage(tmp_path):
 
 
 def test_stats_checkpoint_ahead_of_watermark_is_reconciled_without_double_count(tmp_path):
-    events = payloads(agent_call_event(
-        "s1", "t1", "a1", 1, usage={"input_tokens": 7, "output_tokens": 2},
-    ))
+    events = payloads(
+        agent_call_event(
+            "s1",
+            "t1",
+            "a1",
+            1,
+            usage={"input_tokens": 7, "output_tokens": 2},
+        )
+    )
     reader = Reader(events)
     projector = TraceStatsProjector(reader, tmp_path)
     first = projector.project("s1")
@@ -100,9 +134,15 @@ def test_stats_checkpoint_ahead_of_watermark_is_reconciled_without_double_count(
 
     # Simulate a crash after the state rename and before watermark replacement.
     projector.watermarks.reset("stats", "s1")
-    reader.events.extend(payloads(TraceEvent(
-        event_type=TraceEventType.ERROR, session_id="s1", error="boom",
-    )))
+    reader.events.extend(
+        payloads(
+            TraceEvent(
+                event_type=TraceEventType.ERROR,
+                session_id="s1",
+                error="boom",
+            )
+        )
+    )
     reader.events[-1]["seq_no"] = 1
 
     resumed = TraceStatsProjector(reader, tmp_path).project("s1")

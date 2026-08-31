@@ -106,14 +106,34 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _restore_parked_originals() -> None:
-    for backup in _REPO_ROOT.rglob(f"*{BACKUP_SUFFIX}"):
+    # Do not make every pytest process walk vendored checkouts, dependency trees and
+    # generated output twice. Mutation tests only edit repository-owned source/docs;
+    # pruning these trees keeps interrupted-run recovery while avoiding several seconds
+    # of fixed startup and teardown cost (multiplied again by every subprocess test).
+    skipped = {
+        ".git",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".venv",
+        "__pycache__",
+        "node_modules",
+        "others",
+        "output",
+        "site-packages",
+        "venv",
+    }
+    backups = []
+    for directory, child_dirs, files in os.walk(_REPO_ROOT):
+        child_dirs[:] = [name for name in child_dirs if name not in skipped]
+        backups.extend(Path(directory) / name for name in files if name.endswith(BACKUP_SUFFIX))
+
+    for backup in backups:
         target = Path(str(backup)[: -len(BACKUP_SUFFIX)])
         try:
             target.write_text(backup.read_text(encoding="utf-8"), encoding="utf-8")
             backup.unlink()
-            print(f"restored {target.relative_to(_REPO_ROOT)} "
-                  f"from an interrupted mutation run")
-        except OSError as error:                                    # noqa: PERF203
+            print(f"restored {target.relative_to(_REPO_ROOT)} from an interrupted mutation run")
+        except OSError as error:  # noqa: PERF203
             # Reported, never swallowed: a repair that fails silently leaves exactly the
             # state this exists to prevent, and the next failure looks unrelated.
             print(f"could not restore {target}: {error}")
@@ -183,9 +203,9 @@ def _coverage_plugin(config):
 
 def _selection_is_whole_suite(config) -> bool:
     """True when this run measured the default selection rather than a subset."""
-    if config.option.keyword:                    # -k
+    if config.option.keyword:  # -k
         return False
-    if config.option.markexpr != GATED_MARKEXPR:      # -m, overriding the lane
+    if config.option.markexpr != GATED_MARKEXPR:  # -m, overriding the lane
         return False
     # Explicit paths: `pytest tests/test_job.py` measures one file's worth of imports.
     # Compared as resolved paths, not strings — `tests`, `tests/`, and an absolute path
@@ -233,12 +253,18 @@ def pytest_runtestloop(session):
             reporter.write_line(text, **style)
 
     if not _selection_is_whole_suite(config):
-        say("coverage gate: skipped — this run measured a subset, and a file another "
-            "test would have covered looks identical to a dead one.", yellow=True)
+        say(
+            "coverage gate: skipped — this run measured a subset, and a file another "
+            "test would have covered looks identical to a dead one.",
+            yellow=True,
+        )
         return result
     if session.testsfailed:
-        say("coverage gate: skipped — the run had failures, so its zeroes are "
-            "unreached-because-broken, not unreached-because-dead.", yellow=True)
+        say(
+            "coverage gate: skipped — the run had failures, so its zeroes are "
+            "unreached-because-broken, not unreached-because-dead.",
+            yellow=True,
+        )
         return result
 
     # Generated here rather than trusting `--cov-report=json` to have been passed: the
@@ -249,7 +275,7 @@ def pytest_runtestloop(session):
     try:
         plugin.cov_controller.cov.json_report(outfile=str(report_path))
         report = json.loads(report_path.read_text(encoding="utf-8"))
-    except Exception as error:                                   # noqa: BLE001
+    except Exception as error:  # noqa: BLE001
         # Not re-raised: an exception out of this wrapper surfaces as an INTERNALERROR,
         # which reads like a broken pytest rather than a gate that could not run.
         say(f"coverage gate: could not read the report: {error}", red=True)
@@ -267,8 +293,11 @@ def pytest_runtestloop(session):
 
     problems = violations(covered, percent)
     if not problems:
-        say(f"coverage gate: passed — {percent:.1f}% overall (floor {FLOOR_PERCENT:.1f}%), "
-            f"no unregistered file left dark.", green=True)
+        say(
+            f"coverage gate: passed — {percent:.1f}% overall (floor {FLOOR_PERCENT:.1f}%), "
+            f"no unregistered file left dark.",
+            green=True,
+        )
         return result
 
     say("")

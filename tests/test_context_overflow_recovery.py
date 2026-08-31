@@ -57,6 +57,7 @@ def folds(monkeypatch):
         return answers["value"]
 
     from agentevolver.memory import memory_manager
+
     monkeypatch.setattr(memory_manager, "compact", compact)
     return calls, answers
 
@@ -110,10 +111,12 @@ async def test_an_agent_without_memory_has_nothing_to_fold(folds):
 async def test_a_failing_memory_does_not_replace_the_overflow_report(monkeypatch):
     """The run is already reporting something true. An error from the attempted repair
     must not become the thing the operator reads instead."""
+
     async def explode(memory_name, session_id):
         raise RuntimeError("memory backend is down")
 
     from agentevolver.memory import memory_manager
+
     monkeypatch.setattr(memory_manager, "compact", explode)
 
     assert await _Agent()._make_room(_Run()) is False
@@ -126,6 +129,7 @@ def test_the_loop_answers_an_overflow_before_counting_it_as_a_model_failure():
     identical rebuilds and report a model error, which is the behaviour this replaced.
     """
     import inspect
+
     from agentevolver.agent.types import Agent
 
     source = inspect.getsource(Agent)
@@ -168,8 +172,14 @@ def at_pressure(monkeypatch):
     ratio = {"value": 0.0}
 
     def events(session_id, *args, **kwargs):
-        return [TraceEvent(event_type=TraceEventType.MODEL_REQUEST, session_id="s", seq_no=0,
-                           input={"pressure": {"pressure_ratio_after": ratio["value"]}})]
+        return [
+            TraceEvent(
+                event_type=TraceEventType.MODEL_REQUEST,
+                session_id="s",
+                seq_no=0,
+                input={"pressure": {"pressure_ratio_after": ratio["value"]}},
+            )
+        ]
 
     monkeypatch.setattr(trace_manager, "events", events)
     return ratio
@@ -183,6 +193,7 @@ def test_folding_ahead_is_off_unless_a_deployment_sets_a_threshold():
     claim. Same reason `derive_context` pins its default this way.
     """
     import inspect
+
     from agentevolver.agent.types import Agent
 
     assert inspect.signature(Agent.__init__).parameters["fold_at_pressure"].default == 0.85
@@ -219,13 +230,14 @@ async def test_a_request_below_the_threshold_is_left_alone(folds, at_pressure):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("field,value,metric", [
-    ("compact_after_steps", 30, {"logical_steps": 30}),
-    ("compact_body_tokens", 100_000, {"body_after_prefix_tokens": 100_000}),
-])
-async def test_early_compaction_triggers_before_window_pressure(
-    folds, field, value, metric
-):
+@pytest.mark.parametrize(
+    "field,value,metric",
+    [
+        ("compact_after_steps", 30, {"logical_steps": 30}),
+        ("compact_body_tokens", 100_000, {"body_after_prefix_tokens": 100_000}),
+    ],
+)
+async def test_early_compaction_triggers_before_window_pressure(folds, field, value, metric):
     calls, _ = folds
     agent = _Ahead(fold_at_pressure=0.85)
     setattr(agent, field, value)
@@ -275,12 +287,14 @@ def test_the_fold_happens_before_the_prompt_is_rebuilt():
     """A fold after `_get_messages` would take effect one step late, which reads as the
     threshold being off by one rather than as an ordering mistake."""
     import inspect
+
     from agentevolver.agent.types import Agent
 
     # Scoped to the method that does both. `_get_messages` is called from more than one
     # place, and the earliest call in the class is not the one this orders against.
     body = next(
-        inspect.getsource(member) for _, member in inspect.getmembers(Agent, inspect.isfunction)
+        inspect.getsource(member)
+        for _, member in inspect.getmembers(Agent, inspect.isfunction)
         if "await self._fold_ahead(run)" in inspect.getsource(member)
     )
     assert body.index("await self._fold_ahead(run)") < body.index("await self._get_messages(")

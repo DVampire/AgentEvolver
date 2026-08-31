@@ -64,7 +64,7 @@ Two levers to steer Exa toward scholarly content:
 
 Combine both for strictly academic results. See `references/web-search.md` for the full pattern.
 
-When citing academic sources, include author names and publication year where available (e.g., [Smith et al., 2025](url)) in addition to the standard citation format. If a DOI is present, prefer the DOI link.
+When citing academic sources, include author names and publication year where available (e.g., `[Smith et al., 2025](https://example.invalid/paper)`), in addition to the standard citation format. If a DOI is present, prefer the DOI link.
 
 ---
 

@@ -33,6 +33,7 @@ from agentevolver.config import config
 from agentevolver.kernel import kernel_manager
 from agentevolver.logger import logger
 from agentevolver.registry import TOOL
+from agentevolver.session import resolve_workspace_root
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.types import Tool
 
@@ -148,7 +149,9 @@ class CodeInterpreterTool(Tool):
             import shlex
             import tempfile
 
-            directory = os.path.abspath(config.workspace_root or tempfile.gettempdir())
+            directory = os.path.abspath(
+                resolve_workspace_root(ctx, tempfile.gettempdir())
+            )
             os.makedirs(directory, exist_ok=True)
             path = os.path.join(directory, f".agentevolver_snippet.{suffix}")
             with open(path, "w", encoding="utf-8") as handle:
@@ -196,7 +199,7 @@ class CodeInterpreterTool(Tool):
             # than from `ctx`: neither context class declares `workspace_root` and
             # nothing assigns it, so `getattr(ctx, ...)` was always None and the kernel
             # fell through to this same value.
-            workspace=config.workspace_root, origin="agent")
+            workspace=resolve_workspace_root(ctx), origin="agent")
         logger.info(f"| {'✅' if result.success else '⚠️'} code_interpreter ran {language} code")
         return Response(
             type=ResponseType.TOOL,

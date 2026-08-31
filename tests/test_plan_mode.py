@@ -65,19 +65,22 @@ def hook_context(name, kind="tool", session_id="run-1"):
     return HookContext(
         id=session_id,
         name="plan_mode_hook",
-        input={"event": HookEvent.PRE_ACTION, "agent_name": "code_agent",
-               "action": {"index": 0, "type": kind, "name": name, "args": "{}"}},
+        input={
+            "event": HookEvent.PRE_ACTION,
+            "agent_name": "code_agent",
+            "action": {"index": 0, "type": kind, "name": name, "args": "{}"},
+        },
     )
 
 
-async def decide(hook, monkeypatch, name, *, kind="tool", declaration=None,
-                 session_id="run-1"):
+async def decide(hook, monkeypatch, name, *, kind="tool", declaration=None, session_id="run-1"):
     """Run the gate with a fixed declaration for the capability under test.
 
     The real lookup goes through four capability managers that a unit test has not
     initialized, so it would return ``None`` for everything and the gate would look
     correct while testing only its fallback.
     """
+
     async def fixed(_kind, _name):
         return declaration
 
@@ -90,9 +93,9 @@ async def answer_review(verdict, custom="", session_id="run-1"):
     for _ in range(200):
         pending = question_manager.pending(session_id)
         if pending:
-            question_manager.answer(pending[0].id,
-                                    [{"id": "plan-review", "selected": [verdict],
-                                      "custom": custom}])
+            question_manager.answer(
+                pending[0].id, [{"id": "plan-review", "selected": [verdict], "custom": custom}]
+            )
             return
         await asyncio.sleep(0.005)
     raise AssertionError("the plan review never opened")
@@ -118,8 +121,12 @@ def test_a_read_only_capability_runs_even_without_a_mutates_declaration():
     the search tools declare the reverse. Honouring only one would block half the
     capabilities that have already said they are safe.
     """
-    assert action_is_allowed("tool", "escalate_tool",
-                             {"mutates": None, "permission_mode": "read_only"}) is True
+    assert (
+        action_is_allowed(
+            "tool", "escalate_tool", {"mutates": None, "permission_mode": "read_only"}
+        )
+        is True
+    )
 
 
 def test_a_capability_that_declared_nothing_is_refused():
@@ -132,8 +139,12 @@ def test_a_capability_that_declared_nothing_is_refused():
     them.
     """
     assert action_is_allowed("tool", "bash_tool", None) is False
-    assert action_is_allowed("tool", "bash_tool", {"mutates": None,
-                                                   "permission_mode": "workspace_write"}) is False
+    assert (
+        action_is_allowed(
+            "tool", "bash_tool", {"mutates": None, "permission_mode": "workspace_write"}
+        )
+        is False
+    )
 
 
 def test_a_capability_that_declared_it_mutates_is_refused():
@@ -401,7 +412,10 @@ def test_every_transition_announces_itself():
     from agentevolver.plan import plan_manager
 
     seen = []
-    listener = lambda state: seen.append((state.session_id, state.active))
+
+    def listener(state):
+        seen.append((state.session_id, state.active))
+
     plan_manager.subscribe(listener)
     try:
         plan_manager.enter("announce-1")
@@ -412,8 +426,8 @@ def test_every_transition_announces_itself():
         plan_manager.forget("announce-1")
 
     assert [active for _, active in seen] == [True, False, False], (
-        "a transition did not announce; whichever one is missing is a state the UI "
-        "cannot follow")
+        "a transition did not announce; whichever one is missing is a state the UI cannot follow"
+    )
 
 
 def test_a_failing_listener_does_not_undo_the_transition():
@@ -450,10 +464,12 @@ def test_the_gateway_follows_the_manager_rather_than_its_own_command():
 
     source = inspect.getsource(service)
     assert "plan_manager.subscribe" in source, (
-        "the gateway no longer follows plan state, so an agent-approved plan reaches no UI")
+        "the gateway no longer follows plan state, so an agent-approved plan reaches no UI"
+    )
     assert source.count('_publish("plan.mode.changed"') == 1, (
         "plan.mode.changed is published from more than one place; the UI would see the "
-        "same transition twice")
+        "same transition twice"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -485,11 +501,16 @@ async def test_a_built_in_keeps_the_declaration_it_wrote_after_registration():
     from agentevolver.tool import tool_manager
 
     with contextlib.redirect_stdout(io.StringIO()):
-        await tool_manager.initialize(tool_names=["escalate_tool", "reply_tool",
-                                                  "read_file_tool", "bash_tool"])
+        await tool_manager.initialize(
+            tool_names=["escalate_tool", "reply_tool", "read_file_tool", "bash_tool"]
+        )
 
-    for name, declared in (("escalate_tool", "read_only"), ("reply_tool", "read_only"),
-                           ("read_file_tool", "read_only"), ("bash_tool", "workspace_write")):
+    for name, declared in (
+        ("escalate_tool", "read_only"),
+        ("reply_tool", "read_only"),
+        ("read_file_tool", "read_only"),
+        ("bash_tool", "workspace_write"),
+    ):
         info = await tool_manager.get_info(name)
         assert info is not None, f"{name} did not register"
         assert info.permission_mode == declared, (
@@ -511,8 +532,14 @@ async def test_the_gate_reads_a_real_declaration_and_lets_the_agent_speak():
 
     with contextlib.redirect_stdout(io.StringIO()):
         await tool_manager.initialize(
-            tool_names=["escalate_tool", "reply_tool", "report_tool", "bash_tool",
-                        "write_file_tool"])
+            tool_names=[
+                "escalate_tool",
+                "reply_tool",
+                "report_tool",
+                "bash_tool",
+                "write_file_tool",
+            ]
+        )
 
     for name in ("escalate_tool", "reply_tool", "report_tool"):
         assert action_is_allowed("tool", name, await declaration_of("tool", name)) is True, (
@@ -546,11 +573,13 @@ def test_the_agent_is_allowed_to_write_its_own_plan():
     workspace = path_manager.get(P.SESSION_WORKSPACE, owner="local", session_id="plan_probe")
     plan = path_manager.get(P.SESSION_PLAN, owner="local", session_id="plan_probe")
 
-    permission_manager.register(entity_name="plan_probe_tool",
-                                mode=PermissionMode.WORKSPACE_WRITE, workspace=str(workspace))
+    permission_manager.register(
+        entity_name="plan_probe_tool", mode=PermissionMode.WORKSPACE_WRITE, workspace=str(workspace)
+    )
     try:
         verdict = permission_manager.check(
-            "plan_probe_tool", PermissionRequest(op=Operation.WRITE, target=str(plan)))
+            "plan_probe_tool", PermissionRequest(op=Operation.WRITE, target=str(plan))
+        )
         assert verdict.allowed, (
             f"a workspace_write tool cannot write {plan}: {verdict.reason}. In auto mode "
             f"the agent maintains this file with write_file_tool."
@@ -614,7 +643,7 @@ async def test_in_auto_the_empty_plan_slot_still_says_what_to_do(tmp_path):
 
     plan_manager.set_mode("auto_slot_probe", PlanMode.AUTO)
     try:
-        slots = await CodeAgent(base_dir=str(tmp_path))._get_agent_context(task="t", ctx=_Ctx())     # noqa: SLF001
+        slots = await CodeAgent(base_dir=str(tmp_path))._get_agent_context(task="t", ctx=_Ctx())  # noqa: SLF001
         assert slots["plan"], "the plan slot is empty, so the template renders no block"
         assert AUTO_MODE_NOTICE in slots["plan"]
     finally:
@@ -638,7 +667,7 @@ async def test_a_written_plan_replaces_the_prompt_rather_than_joining_it(tmp_pat
     plan_manager.set_mode("auto_slot_written", PlanMode.AUTO)
     write_plan("## Goal\nmeasure the thing\n")
     try:
-        slots = await CodeAgent(base_dir=str(tmp_path))._get_agent_context(task="t", ctx=_Ctx())     # noqa: SLF001
+        slots = await CodeAgent(base_dir=str(tmp_path))._get_agent_context(task="t", ctx=_Ctx())  # noqa: SLF001
         assert "measure the thing" in slots["plan"]
         assert AUTO_MODE_NOTICE not in slots["plan"]
     finally:
@@ -658,7 +687,7 @@ def test_the_auto_notice_is_not_delivered_as_an_error():
 
     from agentevolver.agent.types import Agent
 
-    source = inspect.getsource(Agent._announce_plan_mode)            # noqa: SLF001
+    source = inspect.getsource(Agent._announce_plan_mode)  # noqa: SLF001
     assert "PLAN_MODE_NOTICE" in source
     assert "AUTO_MODE_NOTICE" not in source, (
         "the auto notice is being delivered through action_errors, which renders as "
@@ -682,9 +711,11 @@ def test_the_plan_follows_a_container_mount_override():
     try:
         path_manager.override(P.SESSION_WORKSPACE, "/workspace")
         assert plan_path() == Path("/workspace/plan.md"), (
-            f"the plan did not follow the workspace: {plan_path()}")
+            f"the plan did not follow the workspace: {plan_path()}"
+        )
         # And the boundary agrees, so the agent may write what it is told about.
         from agentevolver.sandbox.project import check_session_path
+
         assert check_session_path(path=str(plan_path()), write=True) is None
     finally:
         path_manager.unbind_session()

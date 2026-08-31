@@ -16,10 +16,10 @@ fires would take as long as the interval and flake under load anyway.
 
 import pytest
 
+from agentevolver.environment.default.job import JobEnvironment
 from agentevolver.job import job_manager
 from agentevolver.job.server import MAX_FINISHED_PER_SESSION
 from agentevolver.job.types import JobStatus, ScheduleError
-from agentevolver.environment.default.job import JobEnvironment
 from agentevolver.tool.default.schedule import ScheduleCreateTool
 
 #: A fixed instant to schedule from: 2026-08-15T09:00:00Z. Any constant would do;
@@ -68,8 +68,9 @@ def test_exactly_one_selector_is_required(clock):
     with pytest.raises(ScheduleError):
         job_manager.schedule(session_id=SESSION, prompt="check the deploy")
     with pytest.raises(ScheduleError):
-        job_manager.schedule(session_id=SESSION, prompt="check the deploy",
-                             after_seconds=60, every_seconds=600)
+        job_manager.schedule(
+            session_id=SESSION, prompt="check the deploy", after_seconds=60, every_seconds=600
+        )
 
 
 def test_a_delay_is_measured_from_the_registrys_clock(clock):
@@ -87,26 +88,25 @@ def test_a_delay_is_measured_from_the_registrys_clock(clock):
 
 
 def test_an_absolute_time_without_an_offset_names_no_instant(clock):
-    """"09:00" is an instant per time zone, not an instant.
+    """ "09:00" is an instant per time zone, not an instant.
 
     Guessing the host's zone is how a reminder set from a browser in Shanghai fires
     at breakfast in California — and the guess would look right in every test written
     on a UTC machine.
     """
     with pytest.raises(ScheduleError):
-        job_manager.schedule(session_id=SESSION, prompt="hand over",
-                             at="2026-08-15T10:00:00")
+        job_manager.schedule(session_id=SESSION, prompt="hand over", at="2026-08-15T10:00:00")
 
-    job = job_manager.schedule(session_id=SESSION, prompt="hand over",
-                               at="2026-08-15T18:00:00+08:00")
+    job = job_manager.schedule(
+        session_id=SESSION, prompt="hand over", at="2026-08-15T18:00:00+08:00"
+    )
     assert job.due_at == T0 + 3600
 
 
 def test_a_time_that_has_already_passed_is_refused_rather_than_fired_at_once(clock):
     """Silently making it due now turns a typo in the year into an immediate interrupt."""
     with pytest.raises(ScheduleError):
-        job_manager.schedule(session_id=SESSION, prompt="too late",
-                             at="2020-01-01T00:00:00Z")
+        job_manager.schedule(session_id=SESSION, prompt="too late", at="2020-01-01T00:00:00Z")
 
 
 def test_a_fixed_rate_faster_than_five_minutes_is_refused(clock):
@@ -175,8 +175,9 @@ def test_a_repeating_reminder_skips_what_it_missed(clock):
     occurrence was cancelled, after all — and it costs a turn per missed occurrence
     for information that was only ever worth one.
     """
-    job = job_manager.schedule(session_id=SESSION, prompt="re-read the build log",
-                               every_seconds=600)
+    job = job_manager.schedule(
+        session_id=SESSION, prompt="re-read the build log", every_seconds=600
+    )
     clock.advance(3600)
 
     claimed = job_manager.claim_due(SESSION)
@@ -224,7 +225,9 @@ def test_the_claim_reports_the_occurrence_it_delivered(clock):
     job_manager.schedule(session_id=SESSION, prompt="occurrence", every_seconds=600)
     clock.advance(1800)
     claimed = job_manager.claim_due(SESSION)
-    assert claimed[0].due_at == T0 + 600, "the snapshot moved with the record instead of pinning the occurrence"
+    assert claimed[0].due_at == T0 + 600, (
+        "the snapshot moved with the record instead of pinning the occurrence"
+    )
 
 
 def test_cancelling_a_reminder_stops_it_coming_due(clock):

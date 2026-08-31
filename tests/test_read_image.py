@@ -37,12 +37,20 @@ def _png_bytes(width=2, height=2):
     raw = b"".join(b"\x00" + b"\xff\x00\x00" * width for _ in range(height))
 
     def chunk(tag, payload):
-        return (struct.pack(">I", len(payload)) + tag + payload
-                + struct.pack(">I", zlib.crc32(tag + payload) & 0xFFFFFFFF))
+        return (
+            struct.pack(">I", len(payload))
+            + tag
+            + payload
+            + struct.pack(">I", zlib.crc32(tag + payload) & 0xFFFFFFFF)
+        )
 
     header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header)
-            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
 
 
 @pytest.fixture
@@ -58,8 +66,13 @@ def vision_model():
     registered = []
 
     def install(supports_vision):
-        config = ModelConfig(model_name="test/seer", model_type="chat/completions",
-                             model_id="seer", provider="test", supports_vision=supports_vision)
+        config = ModelConfig(
+            model_name="test/seer",
+            model_type="chat/completions",
+            model_id="seer",
+            provider="test",
+            supports_vision=supports_vision,
+        )
         model_manager.model_context_manager.models[config.model_name] = config
         registered.append(config.model_name)
         return config
@@ -84,7 +97,9 @@ def _read(path, ctx):
 # --------------------------------------------------------------------------- #
 # The route gate
 # --------------------------------------------------------------------------- #
-def test_a_model_without_image_input_refuses_before_the_file_is_touched(tmp_path, vision_model, ctx):
+def test_a_model_without_image_input_refuses_before_the_file_is_touched(
+    tmp_path, vision_model, ctx
+):
     """The gate must not be a post-hoc check on a file that was already read and stored.
 
     Order is the whole point: a refusal that happens after the read leaves a committed
@@ -209,7 +224,9 @@ def test_the_live_set_drops_the_oldest_image_not_the_newest(tmp_path, vision_mod
     assert not any(item.source_path.endswith("shot-0.png") for item in live)
 
 
-def test_an_image_over_the_size_limit_is_refused_with_the_number(tmp_path, vision_model, ctx, monkeypatch):
+def test_an_image_over_the_size_limit_is_refused_with_the_number(
+    tmp_path, vision_model, ctx, monkeypatch
+):
     """Above the provider's ceiling the request is rejected, so refusing early is cheaper.
 
     The message has to carry the actual size and the limit: "too large" alone leaves the

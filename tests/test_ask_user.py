@@ -77,8 +77,11 @@ async def wait_for_pending(manager, session_id, count=1):
 
 
 def one_question(**overrides):
-    fields = {"id": "q1", "question": "Which store?",
-              "options": [QuestionOption(label="SQLite"), QuestionOption(label="Postgres")]}
+    fields = {
+        "id": "q1",
+        "question": "Which store?",
+        "options": [QuestionOption(label="SQLite"), QuestionOption(label="Postgres")],
+    }
     fields.update(overrides)
     return UserQuestion(**fields)
 
@@ -151,8 +154,10 @@ async def test_a_question_the_person_passed_over_comes_back_as_an_explicit_skip(
     the difference is still known.
     """
     asking = asyncio.create_task(
-        questions.ask([one_question(), one_question(id="q2", question="Anything else?")],
-                      session_id="run-1"))
+        questions.ask(
+            [one_question(), one_question(id="q2", question="Anything else?")], session_id="run-1"
+        )
+    )
     [pending] = await wait_for_pending(questions, "run-1")
     questions.answer(pending.id, [{"id": "q1", "selected": ["Postgres"]}])
     answers = await asking
@@ -203,8 +208,7 @@ async def test_asking_announces_the_question_before_it_starts_waiting(questions,
 
 
 @pytest.mark.asyncio
-async def test_a_question_asked_before_a_client_connected_is_still_findable(questions,
-                                                                           announced):
+async def test_a_question_asked_before_a_client_connected_is_still_findable(questions, announced):
     """`pending()` exists for the browser that reloaded mid-question.
 
     The live event is gone by then. Without a listable record the agent stays
@@ -259,8 +263,13 @@ def test_an_intent_whose_approve_label_names_no_option_is_refused():
     with a label the asker then reads as a decline.
     """
     with pytest.raises(ValueError, match="names none of its options"):
-        validate([one_question(detail="the plan",
-                               intent=QuestionIntent(type="plan-review", approve="Yes"))])
+        validate(
+            [
+                one_question(
+                    detail="the plan", intent=QuestionIntent(type="plan-review", approve="Yes")
+                )
+            ]
+        )
 
 
 def test_a_plan_review_with_nothing_to_review_is_refused():
@@ -284,16 +293,19 @@ async def test_the_tool_returns_the_answer_as_json_the_model_can_read():
 
     async def answer_once():
         from agentevolver.conversation.question import question_manager
+
         [pending] = await wait_for_pending(question_manager, "run-1")
-        question_manager.answer(pending.id, [{"id": "db", "selected": ["SQLite"],
-                                              "custom": "and add an index"}])
+        question_manager.answer(
+            pending.id, [{"id": "db", "selected": ["SQLite"], "custom": "and add an index"}]
+        )
 
     asyncio.create_task(answer_once())
     response = await tool(questions=[{"id": "db", "question": "Which store?"}], ctx=ctx)
 
     assert response.success
-    assert response.data == {"answers": [{"id": "db", "selected": ["SQLite"],
-                                          "custom": "and add an index"}]}
+    assert response.data == {
+        "answers": [{"id": "db", "selected": ["SQLite"], "custom": "and add an index"}]
+    }
     assert '"selected"' in response.message  # the model reads the message, not `data`
 
 

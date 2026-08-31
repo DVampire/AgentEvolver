@@ -163,6 +163,7 @@ Works on any CPU with sufficient RAM. Expect 5–20× slower than GPU.
 ### Out of Memory (OOM)
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # Reduce batch size
 model.compile(timesfm.ForecastConfig(
     per_core_batch_size=4,  # Start very small
@@ -179,6 +180,7 @@ for i in range(0, len(inputs), 50):
 ### Slow Inference on CPU
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # Ensure matmul precision is set
 import torch
 torch.set_float32_matmul_precision("high")

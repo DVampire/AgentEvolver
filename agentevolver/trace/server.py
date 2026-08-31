@@ -460,6 +460,18 @@ class TraceManager(metaclass=Singleton):
             )
         return list(events)
 
+    def execution_checkpoint(
+        self, session_id: str, *, workspace_fingerprint: Optional[str] = None,
+    ):
+        """Return the conservative resume decision derived from durable history."""
+        from agentevolver.trace.execution_checkpoint import derive_execution_checkpoint
+
+        return derive_execution_checkpoint(
+            session_id,
+            self.rehydrate(session_id),
+            workspace_fingerprint=workspace_fingerprint,
+        )
+
     def read_from(
         self,
         session_id: str,

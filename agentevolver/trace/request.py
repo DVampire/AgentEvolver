@@ -40,11 +40,13 @@ _BEHAVIOUR_PARAMETERS = (
     "stream",
     "max_retries",
     "runtime_features",
+    "capability_resolution",
     "store",
     "prompt_cache_key",
     "prompt_cache_options",
     "previous_response_id",
     "background",
+    "background_response_id",
 )
 
 

@@ -29,8 +29,13 @@ def trajectories(tmp_path):
 
 
 def _traj(task_id: str, session_id: str) -> Trajectory:
-    return Trajectory(session_id=session_id, task_id=task_id, agent_name="a",
-                      task_description="t", steps=[TrajectoryStep(step_number=0)])
+    return Trajectory(
+        session_id=session_id,
+        task_id=task_id,
+        agent_name="a",
+        task_description="t",
+        steps=[TrajectoryStep(step_number=0)],
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -78,13 +83,15 @@ def test_the_benchmark_records_the_score_it_just_computed():
     source = inspect.getsource(bench)
     assert "_record_reward" in source, (
         "the benchmark computes a per-task score and no longer records it; every "
-        "trajectory it produces will read as reward 0")
+        "trajectory it produces will read as reward 0"
+    )
 
     recorder = inspect.getsource(bench._record_reward)
     assert "set_reward" in recorder
     assert "set_reward_by_session" in recorder, (
         "no session fallback: a benchmark that runs one session per task holds the "
-        "session id, not the run's task_id, and its rewards would be dropped silently")
+        "session id, not the run's task_id, and its rewards would be dropped silently"
+    )
 
 
 def test_recording_a_reward_never_costs_the_benchmark_its_answer():
@@ -153,8 +160,7 @@ def test_a_truncated_last_line_does_not_lose_the_whole_run(trajectories, tmp_pat
     trajectories._persist(original)
 
     path = tmp_path / "t11.jsonl"
-    path.write_text(path.read_text(encoding="utf-8") + '{"step_number": 2, "acti',
-                    encoding="utf-8")
+    path.write_text(path.read_text(encoding="utf-8") + '{"step_number": 2, "acti', encoding="utf-8")
 
     reloaded = trajectories.load(str(path))
 

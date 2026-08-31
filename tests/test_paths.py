@@ -75,9 +75,16 @@ def test_every_resolver_agrees_on_where_extension_lives(monkeypatch, tmp_path: P
     assert extension_root() == expected
     assert Path(SkillContextManager().extension_skills_dir) == expected / "skill"
     assert Path(ConnectorContextManager().extension_connectors_dir) == expected / "connector"
-    config = process_general(MMConfig(dict(
-        project_root="output/demo", workspace_root="output/demo/workspace",
-        log_root="output/demo/log", log_path="agent.log")))
+    config = process_general(
+        MMConfig(
+            dict(
+                project_root="output/demo",
+                workspace_root="output/demo/workspace",
+                log_root="output/demo/log",
+                log_path="agent.log",
+            )
+        )
+    )
     assert Path(config.extension_root) == expected
 
 
@@ -91,9 +98,15 @@ def test_every_declared_path_stays_inside_the_two_roots(monkeypatch, tmp_path: P
     monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
     monkeypatch.delenv("AGENTEVOLVER_EXTENSION_ROOT", raising=False)
     output, extension = path_manager.writable_roots()
-    sample = {"owner": "someone", "session_id": "sid", "run_id": "rid",
-              "project_key": "key", "module": "skill", "conversation_id": "cid",
-              "digest": "digest"}
+    sample = {
+        "owner": "someone",
+        "session_id": "sid",
+        "run_id": "rid",
+        "project_key": "key",
+        "module": "skill",
+        "conversation_id": "cid",
+        "digest": "digest",
+    }
 
     for key in P:
         if key in RELATIVE:
@@ -119,17 +132,24 @@ def test_a_relative_key_cannot_escape_the_root_it_is_joined_to() -> None:
         template = LAYOUT[key]
         assert not template.startswith(("/", "~")), f"{key.value} is absolute: {template}"
         assert ".." not in template.split("/"), f"{key.value} climbs out: {template}"
-        resolved = path_manager.under("/somewhere", key,
-                                      **{p: "x" for p in path_manager.params_for(key)})
+        resolved = path_manager.under(
+            "/somewhere", key, **{p: "x" for p in path_manager.params_for(key)}
+        )
         assert resolved.is_relative_to("/somewhere"), f"{key.value} escaped: {resolved}"
 
 
 def test_file_keys_create_their_parent_and_directory_keys_create_themselves(tmp_path) -> None:
     target = path_manager.under(
-        tmp_path, P.LOG_TASK_VIEW, filename="request.with.dots", create=True,
+        tmp_path,
+        P.LOG_TASK_VIEW,
+        filename="request.with.dots",
+        create=True,
     )
     directory = path_manager.under(
-        tmp_path, P.LOG_MODULE, module="directory.with.dots", create=True,
+        tmp_path,
+        P.LOG_MODULE,
+        module="directory.with.dots",
+        create=True,
     )
 
     assert P.LOG_TASK_VIEW in FILES
@@ -149,13 +169,16 @@ def test_every_layout_key_has_a_framework_caller() -> None:
         if path != root / "agentevolver" / "paths" / "types.py"
     ]
     unused = [
-        key.name for key in P
+        key.name
+        for key in P
         if not any(re.search(rf"\bP\.{key.name}\b", source) for source in sources)
     ]
     assert not unused, f"layout keys with no framework caller: {unused}"
 
 
-def test_missing_placeholder_is_rejected_rather_than_written_literally(monkeypatch, tmp_path: Path) -> None:
+def test_missing_placeholder_is_rejected_rather_than_written_literally(
+    monkeypatch, tmp_path: Path
+) -> None:
     """A forgotten parameter must fail loudly, not create a dir named '{session_id}'.
 
     ``str.format`` leaves an unfilled placeholder alone rather than complaining,
@@ -191,12 +214,16 @@ def test_runtime_output_is_relative_to_the_current_project(monkeypatch, tmp_path
     monkeypatch.delenv("AGENTEVOLVER_HOME", raising=False)
     monkeypatch.delenv("AGENTEVOLVER_EXTENSION_ROOT", raising=False)
 
-    config = process_general(MMConfig(dict(
-        project_root="output/demo",
-        workspace_root="output/demo/workspace",
-        log_root="output/demo/log",
-        log_path="agent.log",
-    )))
+    config = process_general(
+        MMConfig(
+            dict(
+                project_root="output/demo",
+                workspace_root="output/demo/workspace",
+                log_root="output/demo/log",
+                log_path="agent.log",
+            )
+        )
+    )
 
     assert Path(project_path("output/demo")) == project / "output" / "demo"
     assert Path(config.project_root) == project / "output" / "demo"
@@ -207,17 +234,20 @@ def test_runtime_output_is_relative_to_the_current_project(monkeypatch, tmp_path
 
 
 def test_tag_is_the_default_output_namespace_when_project_root_is_omitted(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     """A direct-run tag must not silently fall back to the unrelated ``local`` tree."""
     monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
-    resolved = process_general(MMConfig(dict(tag="swebench_pro_agent_baseline",
-                                             log_path="agent.log")))
+    resolved = process_general(
+        MMConfig(dict(tag="swebench_pro_agent_baseline", log_path="agent.log"))
+    )
 
     expected = path_manager.get(P.OWNER, owner="swebench_pro_agent_baseline")
     assert Path(resolved.project_root) == expected
     assert Path(resolved.workspace_root) == path_manager.under(
-        expected, P.PROJECT_WORKSPACE,
+        expected,
+        P.PROJECT_WORKSPACE,
     )
     assert Path(resolved.log_root) == path_manager.under(expected, P.PROJECT_LOG)
 
@@ -249,7 +279,9 @@ def test_swebench_launcher_has_no_local_session_owner_literal() -> None:
     assert 'os.path.join("output", "swebench_pro_runs"' not in swebench
 
 
-def test_the_sandbox_names_its_roots_the_same_way_the_table_does(monkeypatch, tmp_path: Path) -> None:
+def test_the_sandbox_names_its_roots_the_same_way_the_table_does(
+    monkeypatch, tmp_path: Path
+) -> None:
     """Two places decide where a session's workspace and log sit.
 
     The layout table says `output/{owner}/sessions/{id}/workspace`, and `ProjectSandbox`
@@ -269,8 +301,8 @@ def test_the_sandbox_names_its_roots_the_same_way_the_table_does(monkeypatch, tm
     ):
         declared = path_manager.get(key, owner="o", session_id="s").name
         assert built.name == declared, (
-            f"the table says a session's {name} is {declared!r}; "
-            f"the sandbox creates {built.name!r}")
+            f"the table says a session's {name} is {declared!r}; the sandbox creates {built.name!r}"
+        )
 
 
 def test_a_direct_runner_binds_its_roots_before_the_managers_start(monkeypatch) -> None:
@@ -281,7 +313,6 @@ def test_a_direct_runner_binds_its_roots_before_the_managers_start(monkeypatch) 
     `output/<owner>/log` and only the second half reaching the session. The evolution
     runners did exactly that: an agent's log landed outside the session it belonged to.
     """
-    import re
 
     root = Path(__file__).resolve().parents[1]
     offenders = []
@@ -312,18 +343,19 @@ def test_no_module_joins_its_own_directory_onto_a_root() -> None:
 
     project = Path(__file__).resolve().parents[1]
     pattern = re.compile(
-        r'os\.path\.join\(\s*(?:config\.)?(?:log_root|workspace_root|base_root|project_root)\s*,'
+        r"os\.path\.join\(\s*(?:config\.)?(?:log_root|workspace_root|base_root|project_root)\s*,"
         r'\s*["\'][\w.]+["\']\s*\)'
         r'|(?:log_root|workspace_root|base_root|project_root)\s*/\s*["\'][\w.]+["\']'
     )
     offenders = []
-    sources = sorted((project / "agentevolver").rglob("*.py")) + \
-              sorted((project / "examples").rglob("*.py"))
+    sources = sorted((project / "agentevolver").rglob("*.py")) + sorted(
+        (project / "examples").rglob("*.py")
+    )
     for path in sources:
         if "__pycache__" in str(path) or "/skill/" in str(path):
-            continue          # bundled skill scripts are documents, not framework code
+            continue  # bundled skill scripts are documents, not framework code
         if path.parent.name == "paths":
-            continue          # the authority itself, whose docs quote the shape it replaced
+            continue  # the authority itself, whose docs quote the shape it replaced
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if line.lstrip().startswith("#") or "path_manager" in line:
                 continue
@@ -331,7 +363,8 @@ def test_no_module_joins_its_own_directory_onto_a_root() -> None:
                 offenders.append(f"{path.relative_to(project)}:{number}: {line.strip()[:90]}")
     assert not offenders, (
         "these join a directory onto a root themselves; declare it in the layout table "
-        "and resolve it with `path_manager.under`:\n" + "\n".join(offenders))
+        "and resolve it with `path_manager.under`:\n" + "\n".join(offenders)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +382,8 @@ def test_a_session_scoped_key_needs_no_arguments_once_the_run_is_bound() -> None
     path_manager.bind_session("someone", "run7")
     try:
         assert path_manager.get(P.SESSION_EXTENSION) == path_manager.get(
-            P.SESSION_EXTENSION, owner="someone", session_id="run7")
+            P.SESSION_EXTENSION, owner="someone", session_id="run7"
+        )
     finally:
         path_manager.unbind_session()
 
@@ -404,16 +438,18 @@ def test_an_override_answers_for_this_run_however_it_is_named() -> None:
     path_manager.override(P.SESSION_WORKSPACE, "/workspace")
     try:
         assert path_manager.get(P.SESSION_WORKSPACE) == Path("/workspace")
-        assert path_manager.get(P.SESSION_WORKSPACE, owner="o",
-                                session_id="run9") == Path("/workspace")
+        assert path_manager.get(P.SESSION_WORKSPACE, owner="o", session_id="run9") == Path(
+            "/workspace"
+        )
 
         # A genuinely different run is a different question.
         other = path_manager.get(P.SESSION_WORKSPACE, owner="o", session_id="run10")
         assert other != Path("/workspace") and other.is_absolute()
 
         # And the host path for *this* run, asked for as such.
-        host = path_manager.under(path_manager.project_dir(), P.SESSION_WORKSPACE,
-                                  owner="o", session_id="run9")
+        host = path_manager.under(
+            path_manager.project_dir(), P.SESSION_WORKSPACE, owner="o", session_id="run9"
+        )
         assert host != Path("/workspace") and host.is_absolute()
     finally:
         path_manager.unbind_session()
@@ -430,8 +466,14 @@ def test_session_roots_name_the_staging_tree_apart_from_the_shared_library() -> 
     path_manager.bind_session("o", "run10")
     try:
         roots = path_manager.session_roots()
-        assert set(roots) == {"project", "workspace", "log", "extension",
-                              "shared_extension", "package"}
+        assert set(roots) == {
+            "project",
+            "workspace",
+            "log",
+            "extension",
+            "shared_extension",
+            "package",
+        }
         assert roots["extension"] != roots["shared_extension"]
         assert roots["extension"].is_relative_to(roots["project"])
         assert not roots["shared_extension"].is_relative_to(roots["project"])
@@ -472,16 +514,15 @@ def test_no_root_travels_through_a_context() -> None:
 
     root = Path(__file__).resolve().parents[1]
     roots = "project_root|workspace_root|log_root|extension_root|package_root|shared_extension_root"
-    pattern = re.compile(
-        rf"""(extra|roots)\s*(\.get\(\s*|\[\s*)["']({roots})["']"""
-    )
+    pattern = re.compile(rf"""(extra|roots)\s*(\.get\(\s*|\[\s*)["']({roots})["']""")
     offenders = []
-    for source in sorted((root / "agentevolver").rglob("*.py")) + \
-                  sorted((root / "examples").glob("*.py")):
+    for source in sorted((root / "agentevolver").rglob("*.py")) + sorted(
+        (root / "examples").glob("*.py")
+    ):
         for number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
             stripped = line.strip()
             if stripped.startswith("#") or "``" in line:
-                continue          # a comment or a docstring may name the old shape
+                continue  # a comment or a docstring may name the old shape
             if pattern.search(line):
                 offenders.append(f"{source.relative_to(root)}:{number}: {stripped}")
     assert not offenders, (

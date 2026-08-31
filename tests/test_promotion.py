@@ -81,7 +81,7 @@ def test_a_traversal_spelled_with_dot_dot_is_refused(staged: Path, tmp_path: Pat
 
 
 def test_a_directory_that_is_not_a_sandbox_extension_root_is_refused(tmp_path: Path):
-    """"The session staging root is never used as a durable extension directory."
+    """ "The session staging root is never used as a durable extension directory."
 
     Promotion rebuilds the sandbox from the staged root's *parent* and requires the
     reconstruction to agree. Without it, any directory containing the component could be
@@ -137,9 +137,7 @@ def test_a_promotion_that_moved_more_than_one_thing_is_an_error_not_a_result(
             promote_approved_component(str(staged), str(staged / "tool" / "promoted_tool.py"))
 
 
-def test_promoting_one_component_never_carries_its_neighbours_along(
-    staged: Path, shared: Path
-):
+def test_promoting_one_component_never_carries_its_neighbours_along(staged: Path, shared: Path):
     """`relative_paths` selects exactly one; the count check is what proves it did.
 
     Staged roots hold everything an agent produced during a session. A promotion that

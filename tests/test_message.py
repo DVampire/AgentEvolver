@@ -51,10 +51,12 @@ def test_content_parts_are_joined_into_one_newline_separated_string():
     Joining on the empty string would glue the last word of one part to the first of the
     next, and the result still passes every "is a string" check downstream.
     """
-    message = HumanMessage(content=[
-        ContentPartText(text="first"),
-        ContentPartText(text="second"),
-    ])
+    message = HumanMessage(
+        content=[
+            ContentPartText(text="first"),
+            ContentPartText(text="second"),
+        ]
+    )
     assert message.text == "first\nsecond"
 
 
@@ -67,13 +69,15 @@ def test_a_media_part_contributes_its_url_to_the_text():
     ``.text`` under-reports it. Each media part stringifies to its URL instead, so every
     part is represented in order.
     """
-    message = HumanMessage(content=[
-        ContentPartText(text="describe"),
-        ContentPartImage(image_url=ImageURL(url="file:///tmp/a.png")),
-        ContentPartAudio(audio_url=AudioURL(url="file:///tmp/a.mp3")),
-        ContentPartVideo(video_url=VideoURL(url="file:///tmp/a.mp4")),
-        ContentPartPdf(pdf_url=PdfURL(url="file:///tmp/a.pdf")),
-    ])
+    message = HumanMessage(
+        content=[
+            ContentPartText(text="describe"),
+            ContentPartImage(image_url=ImageURL(url="file:///tmp/a.png")),
+            ContentPartAudio(audio_url=AudioURL(url="file:///tmp/a.mp3")),
+            ContentPartVideo(video_url=VideoURL(url="file:///tmp/a.mp4")),
+            ContentPartPdf(pdf_url=PdfURL(url="file:///tmp/a.pdf")),
+        ]
+    )
     assert message.text.splitlines() == [
         "describe",
         "file:///tmp/a.png",
@@ -175,10 +179,12 @@ def test_messages_round_trip_through_the_model_dump_used_by_serializers():
     the fields the narrower one carried. ``detail`` is checked specifically because it is
     the field a re-validation drops without changing the shape of anything.
     """
-    original = HumanMessage(content=[
-        ContentPartText(text="hi"),
-        ContentPartImage(image_url=ImageURL(url="u", detail="high")),
-    ])
+    original = HumanMessage(
+        content=[
+            ContentPartText(text="hi"),
+            ContentPartImage(image_url=ImageURL(url="u", detail="high")),
+        ]
+    )
     restored = HumanMessage.model_validate(original.model_dump())
     assert restored.text == original.text
     assert restored.content[1].image_url.detail == "high"

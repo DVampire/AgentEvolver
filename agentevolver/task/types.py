@@ -19,6 +19,7 @@ class TaskStatus(str, Enum):
     """Lifecycle states for a Task."""
 
     PENDING = "pending"
+    WAITING_CONFIRMATION = "waiting_confirmation"
     RUNNING = "running"
     DONE = "done"
     FAILED = "failed"
@@ -101,6 +102,11 @@ class Task(BaseModel):
 
     def mark_running(self) -> None:
         self.status = TaskStatus.RUNNING
+        self.updated_at = datetime.now(timezone.utc)
+
+    def mark_waiting_confirmation(self) -> None:
+        """Park interrupted work until a human reconciles an uncertain effect."""
+        self.status = TaskStatus.WAITING_CONFIRMATION
         self.updated_at = datetime.now(timezone.utc)
 
     def mark_done(self) -> None:

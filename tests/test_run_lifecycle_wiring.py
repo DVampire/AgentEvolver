@@ -16,8 +16,6 @@ import inspect
 import textwrap
 from pathlib import Path
 
-import pytest
-
 from agentevolver.agent.types import Agent
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,10 +55,14 @@ def test_a_finished_run_releases_its_jobs_and_terminals():
     """
     assert "_release_session_resources" in _calls_in("_conclude"), (
         "_conclude no longer releases the run's resources; jobs and terminals will "
-        "survive the session that created them")
+        "survive the session that created them"
+    )
 
-    released = _calls_in("_release_session_resources") | _calls_in("_forget_jobs") \
+    released = (
+        _calls_in("_release_session_resources")
+        | _calls_in("_forget_jobs")
         | _calls_in("_forget_terminals")
+    )
     assert "forget" in released, "nothing in the release path actually calls forget()"
 
 
@@ -75,7 +77,8 @@ def test_a_finished_run_also_stops_the_sub_agents_it_started():
     # and invoked through the loop variable, so none of them appears as a call here.
     assert "_forget_delegated" in _source_of("_release_session_resources"), (
         "the release path no longer stops background sub-agents; one will keep running "
-        "after the run that started it has ended")
+        "after the run that started it has ended"
+    )
     assert "forget" in _calls_in("_forget_delegated")
 
 
@@ -100,7 +103,8 @@ def test_a_due_reminder_is_pushed_rather_than_waited_for():
     assert "_deliver_due_reminders" in _calls_in("_prepare_round")
     assert "claim_due" in _calls_in("_deliver_due_reminders"), (
         "the delivery path does not claim, so a reminder would either never arrive or "
-        "arrive on every step")
+        "arrive on every step"
+    )
 
 
 def test_a_reminder_is_claimed_so_it_arrives_once():
@@ -111,9 +115,8 @@ def test_a_reminder_is_claimed_so_it_arrives_once():
     from agentevolver.job import job_manager
 
     job_manager.clock = lambda: 1_000.0
-    job = job_manager.schedule(session_id="wiring", prompt="check the build",
-                               after_seconds=10)
-    job_manager.clock = lambda: 1_100.0          # past due
+    job = job_manager.schedule(session_id="wiring", prompt="check the build", after_seconds=10)
+    job_manager.clock = lambda: 1_100.0  # past due
 
     assert [j.id for j in job_manager.claim_due("wiring")] == [job.id]
     assert job_manager.claim_due("wiring") == [], "the same reminder came due twice"
@@ -138,7 +141,8 @@ def test_the_plan_notice_stays_out_of_the_cached_prefix():
     source = _source_of("_announce_plan_mode")
     assert "action_errors" in source, (
         "the notice no longer rides in the volatile section; if it moved into the system "
-        "prompt, toggling plan mode now costs the whole cached prefix")
+        "prompt, toggling plan mode now costs the whole cached prefix"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -174,7 +178,7 @@ def test_a_runtime_registered_tool_keeps_its_declarations():
     dropped = []
     for index, body in enumerate(constructions):
         if "instance=tool_instance" not in body:
-            continue                       # built from a class, not a live instance
+            continue  # built from a class, not a live instance
         for field in CARRIED:
             if f"{field}=" not in body:
                 dropped.append(f"construction #{index}: {field}")
@@ -183,7 +187,8 @@ def test_a_runtime_registered_tool_keeps_its_declarations():
         "a ToolConfig is built from a live instance without carrying:\n  "
         + "\n  ".join(dropped)
         + "\nThat tool reaches the plan gate or the executor describing itself as "
-          "something it is not.")
+        "something it is not."
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -224,13 +229,18 @@ def test_no_background_task_is_started_without_somewhere_for_its_error_to_go():
                 continue
             # The coroutine's own body may catch everything, which is equally good.
             called = node.value.args[0] if node.value.args else None
-            inner = getattr(getattr(called, "func", None), "attr", "") or \
-                getattr(getattr(called, "func", None), "id", "")
-            guarded = bool(inner) and f"async def {inner}" in source and \
-                "try:" in source.split(f"async def {inner}", 1)[1][:2000]
+            inner = getattr(getattr(called, "func", None), "attr", "") or getattr(
+                getattr(called, "func", None), "id", ""
+            )
+            guarded = (
+                bool(inner)
+                and f"async def {inner}" in source
+                and "try:" in source.split(f"async def {inner}", 1)[1][:2000]
+            )
             if not guarded:
                 unheard.append(f"{path.relative_to(root.parent)}:{node.lineno}")
 
     assert not unheard, (
         "these start a task and drop the handle, so a failure inside is reported only at "
-        "interpreter shutdown:\n  " + "\n  ".join(unheard))
+        "interpreter shutdown:\n  " + "\n  ".join(unheard)
+    )

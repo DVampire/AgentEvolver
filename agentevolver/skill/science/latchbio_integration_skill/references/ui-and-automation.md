@@ -197,6 +197,7 @@ LaunchPlan(
 Constructor:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 LaunchPlan(
     workflow,
     name,

@@ -43,8 +43,12 @@ def test_a_recorded_round_reads_back_with_every_field_intact(journal: Journal):
     rounds in it.
     """
     journal.append_round(
-        "tool", "search", hypothesis_id="h-1", lever="instruction",
-        predicted_flip=["task-a", "task-b"], note="Widen the query before falling back.",
+        "tool",
+        "search",
+        hypothesis_id="h-1",
+        lever="instruction",
+        predicted_flip=["task-a", "task-b"],
+        note="Widen the query before falling back.",
     )
 
     (recovered,) = journal.read("tool", "search")
@@ -131,7 +135,7 @@ def test_an_unrecognised_lever_is_recorded_rather_than_refused(journal: Journal)
 # Backfilling the verdict
 # --------------------------------------------------------------------------- #
 def test_gating_fills_the_latest_pending_round_and_leaves_decided_ones_alone(journal: Journal):
-    """"Latest pending", not "latest" — the distinction the whole backfill turns on.
+    """ "Latest pending", not "latest" — the distinction the whole backfill turns on.
 
     Rounds are gated after the *next* evaluation, so at any moment the file can hold
     already-decided rounds followed by a pending one. Targeting the latest round instead
@@ -161,10 +165,13 @@ def test_a_named_round_can_be_gated_out_of_order(journal: Journal):
     assert journal.read("tool", "search")[1].gating_outcome == "pending"
 
 
-@pytest.mark.parametrize("kwargs,why", [
-    ({}, "nothing recorded yet"),
-    ({"round_no": 99}, "a round number that does not exist"),
-])
+@pytest.mark.parametrize(
+    "kwargs,why",
+    [
+        ({}, "nothing recorded yet"),
+        ({"round_no": 99}, "a round number that does not exist"),
+    ],
+)
 def test_gating_something_that_is_not_there_returns_nothing(journal: Journal, kwargs, why):
     """`None` rather than an exception: a late or duplicated evaluation is ordinary, and
     the caller's only reasonable response is to move on."""
@@ -203,10 +210,10 @@ def test_the_optimizer_ribbon_contrasts_what_was_predicted_with_what_flipped(jou
     whether the lever works, and a result with no prediction says nothing about whether
     the hypothesis was the reason.
     """
-    journal.append_round("tool", "search", hypothesis_id="h-1", lever="action",
-                         predicted_flip=["task-a", "task-b"])
-    journal.fill_gating("tool", "search", "reverted",
-                        attribution={"task-a": True, "task-b": False})
+    journal.append_round(
+        "tool", "search", hypothesis_id="h-1", lever="action", predicted_flip=["task-a", "task-b"]
+    )
+    journal.fill_gating("tool", "search", "reverted", attribution={"task-a": True, "task-b": False})
 
     ribbon = journal.render_context("tool", "search")
 

@@ -20,14 +20,13 @@ Pairs are discovered from the filesystem, so a translation added later is checke
 file as it stands. Both `X_zh.md` (what this repository uses) and `X.zh.md` count.
 """
 
+import re
 from pathlib import Path
 from typing import Dict, List, Tuple
-import re
 
 import pytest
 
 from tests.test_doc_links import ROOT, SKIP_DIRS, documents, prose
-
 
 #: Both spellings, so the convention can change without the check going quiet.
 SUFFIXES = ("_zh.md", ".zh.md")
@@ -50,8 +49,7 @@ def translations() -> List[Path]:
     Discovered rather than listed: a list would have to be edited by the same person who
     forgot to update the translation, at the same moment.
     """
-    return [path for path in documents()
-            if any(path.name.endswith(suffix) for suffix in SUFFIXES)]
+    return [path for path in documents() if any(path.name.endswith(suffix) for suffix in SUFFIXES)]
 
 
 PAIRS = [(_source_of(path), path) for path in translations()]
@@ -67,8 +65,7 @@ def headings(text: str) -> List[int]:
     document has one top heading, two sections, and a subsection in the second — and that
     is the claim a translation has to keep.
     """
-    return [len(match.group(1))
-            for match in re.finditer(r"^(#{1,6})\s+\S", prose(text), re.M)]
+    return [len(match.group(1)) for match in re.finditer(r"^(#{1,6})\s+\S", prose(text), re.M)]
 
 
 def fence_languages(text: str) -> List[str]:
@@ -111,8 +108,7 @@ def link_targets(path: Path) -> List[str]:
     those to match would require the headings not to be translated.
     """
     targets = []
-    for match in re.finditer(r"\]\(\s*<?([^)>\s]+)",
-                             prose(path.read_text(encoding="utf-8"))):
+    for match in re.finditer(r"\]\(\s*<?([^)>\s]+)", prose(path.read_text(encoding="utf-8"))):
         target = match.group(1)
         if target.startswith(("#", "//")) or re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I):
             continue
@@ -123,9 +119,11 @@ def link_targets(path: Path) -> List[str]:
 def structure(path: Path) -> Dict[str, object]:
     """Everything a translation must preserve, as one comparable record."""
     text = path.read_text(encoding="utf-8")
-    return {"headings": headings(text),
-            "code blocks": fence_languages(text),
-            "links": link_targets(path)}
+    return {
+        "headings": headings(text),
+        "code blocks": fence_languages(text),
+        "links": link_targets(path),
+    }
 
 
 def divergences(source: Path, translation: Path) -> List[str]:
@@ -134,8 +132,10 @@ def divergences(source: Path, translation: Path) -> List[str]:
     out = []
     for key in left:
         if left[key] != right[key]:
-            out.append(f"{key} differ: {source.name} has {left[key]!r}, "
-                       f"{translation.name} has {right[key]!r}")
+            out.append(
+                f"{key} differ: {source.name} has {left[key]!r}, "
+                f"{translation.name} has {right[key]!r}"
+            )
     return out
 
 
@@ -179,7 +179,8 @@ def test_both_halves_of_a_pair_are_present(source: Path, translation: Path):
     """
     assert source.exists(), (
         f"{translation.relative_to(ROOT)} translates {source.name}, which does not "
-        f"exist; either the source was renamed or the translation was orphaned")
+        f"exist; either the source was renamed or the translation was orphaned"
+    )
 
 
 @pytest.mark.parametrize("source,translation", PAIRS, ids=IDS)
@@ -194,8 +195,8 @@ def test_a_translation_keeps_the_structure_of_its_source(source: Path, translati
         pytest.skip("reported by the presence check")
     problems = divergences(source, translation)
     assert not problems, "\n  ".join(
-        [f"{source.name} and {translation.name} are no longer the same document:"]
-        + problems)
+        [f"{source.name} and {translation.name} are no longer the same document:"] + problems
+    )
 
 
 @pytest.mark.parametrize("source,translation", PAIRS, ids=IDS)
@@ -214,9 +215,11 @@ def test_each_side_links_to_the_other(source: Path, translation: Path):
 
     assert f"({translation.name})" in raw(source), (
         f"{source.name} never links to {translation.name}; a reader who needs the "
-        f"translation cannot find it")
+        f"translation cannot find it"
+    )
     assert f"({source.name})" in raw(translation), (
-        f"{translation.name} never links back to {source.name}")
+        f"{translation.name} never links back to {source.name}"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -238,17 +241,26 @@ def test_a_faithful_translation_passes(tmp_path: Path):
     source, translation = _write_pair(
         tmp_path,
         "# Title\n\nSee [guide](guide.md).\n\n## Install\n\n```bash\nrun  # do it\n```\n",
-        "# 标题\n\n见 [指南](guide.md)。\n\n## 安装\n\n```bash\nrun  # 执行\n```\n")
+        "# 标题\n\n见 [指南](guide.md)。\n\n## 安装\n\n```bash\nrun  # 执行\n```\n",
+    )
     assert divergences(source, translation) == []
 
 
-@pytest.mark.parametrize("mutation,expected", [
-    ("# Title\n\nSee [guide](guide.md).\n\n## Install\n\n```bash\nrun\n```\n\n## Extra\n",
-     "headings"),
-    ("# Title\n\nSee [guide](guide.md).\n\n## Install\n\n```bash\nrun\n```\n"
-     "\n```python\nx\n```\n", "code blocks"),
-    ("# Title\n\nSee [guide](other.md).\n\n## Install\n\n```bash\nrun\n```\n", "links"),
-])
+@pytest.mark.parametrize(
+    "mutation,expected",
+    [
+        (
+            "# Title\n\nSee [guide](guide.md).\n\n## Install\n\n```bash\nrun\n```\n\n## Extra\n",
+            "headings",
+        ),
+        (
+            "# Title\n\nSee [guide](guide.md).\n\n## Install\n\n```bash\nrun\n```\n"
+            "\n```python\nx\n```\n",
+            "code blocks",
+        ),
+        ("# Title\n\nSee [guide](other.md).\n\n## Install\n\n```bash\nrun\n```\n", "links"),
+    ],
+)
 def test_drift_on_one_side_is_detected(tmp_path: Path, mutation: str, expected: str):
     """Each kind of drift, reintroduced, must go red.
 
@@ -258,8 +270,9 @@ def test_drift_on_one_side_is_detected(tmp_path: Path, mutation: str, expected: 
     which is worse than not checking.
     """
     source, translation = _write_pair(
-        tmp_path, mutation,
-        "# 标题\n\n见 [指南](guide.md)。\n\n## 安装\n\n```bash\nrun\n```\n")
+        tmp_path, mutation, "# 标题\n\n见 [指南](guide.md)。\n\n## 安装\n\n```bash\nrun\n```\n"
+    )
     problems = divergences(source, translation)
     assert any(problem.startswith(expected) for problem in problems), (
-        f"drift in {expected} was not reported; got {problems}")
+        f"drift in {expected} was not reported; got {problems}"
+    )

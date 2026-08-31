@@ -20,7 +20,7 @@ import pytest
 
 from agentevolver.conversation.server import ConversationManagerServer
 from agentevolver.conversation.types import TITLE_LIMIT, Conversation, title_from
-from agentevolver.paths import P, path_manager
+from agentevolver.paths import P
 
 OWNER = "tester"
 SESSION = "project-1"

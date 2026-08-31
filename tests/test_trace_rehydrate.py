@@ -1,17 +1,23 @@
+"""Persisted trace events rehydrate in order and rebuild the projected surface.
+
+Conflicting sequence numbers or histories beyond retention cannot be guessed safely, but
+a valid compacted log must restore its next sequence and visible events exactly. The
+tests exercise those restart boundaries against the real writer format.
+"""
+
 from pathlib import Path
 
 import pytest
 
-from agentevolver.memory.default.tiered import TieredMemory
 from agentevolver.trace.server import TraceManager
+from agentevolver.trace.surface import replace_op
 from agentevolver.trace.types import (
+    TraceEvent,
+    TraceEventType,
     agent_call_event,
     agent_start_event,
     tool_call_event,
-    TraceEvent,
-    TraceEventType,
 )
-from agentevolver.trace.surface import replace_op
 from agentevolver.trace.writer import TraceWriter
 from agentevolver.utils import AsyncQueue
 
@@ -25,6 +31,7 @@ def _manager(tmp_path, events):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
             import json
+
             handle.write(json.dumps(event.to_dict(), default=str) + "\n")
     return manager
 

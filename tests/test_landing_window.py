@@ -14,7 +14,7 @@ import asyncio
 import contextlib
 import io
 
-from agentevolver.agent.types import _in_landing_window, _LANDING_RESERVE_STEPS
+from agentevolver.agent.types import _LANDING_RESERVE_STEPS, _in_landing_window
 
 
 class TestLandingWindow:
@@ -76,8 +76,14 @@ def test_advance_once_flips_run_landing_inside_the_window():
     seen = {}  # step -> run.landing when the prompt was built
 
     async def fake_think(*a, **k):
-        return {"tool_calls": [], "routing": {}, "reasoning": "keep going",
-                "step_tokens": 0, "step_usage": None, "error": None}
+        return {
+            "tool_calls": [],
+            "routing": {},
+            "reasoning": "keep going",
+            "step_tokens": 0,
+            "step_usage": None,
+            "error": None,
+        }
 
     async def fake_messages(*a, **k):
         run = k.get("_run")

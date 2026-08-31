@@ -17,7 +17,6 @@ Nothing here starts a container: the acquire → upload → build → start path
 sandbox and is not exercised.
 """
 
-import json
 import os
 
 import pytest
@@ -113,11 +112,13 @@ def test_the_custom_profile_refuses_to_guess_a_start_command(manager):
 def test_the_custom_profile_takes_everything_from_overrides(manager):
     """The escape hatch has to be a complete one: image, build and start all come from
     the caller, or a Go binary would still be built by a Python profile's defaults."""
-    spec = manager._resolve_spec(DeployRequest(
-        site_id="s",
-        runtime="custom",
-        overrides={"image": "golang:1.22", "build": ["go build ."], "start": "./app"},
-    ))
+    spec = manager._resolve_spec(
+        DeployRequest(
+            site_id="s",
+            runtime="custom",
+            overrides={"image": "golang:1.22", "build": ["go build ."], "start": "./app"},
+        )
+    )
     assert spec.image == "golang:1.22"
     assert spec.build == ["go build ."]
     assert spec.start == "./app"
@@ -134,9 +135,13 @@ def test_an_explicit_port_beats_the_profile_default(manager):
 def test_request_env_is_merged_over_the_profile_env(manager):
     """Merged, not replaced: the profile's own variables have to survive alongside the
     caller's, or a request that passes one key would strip the rest of the environment."""
-    spec = manager._resolve_spec(DeployRequest(
-        site_id="s", runtime="static", env={"API_KEY": "secret"},
-    ))
+    spec = manager._resolve_spec(
+        DeployRequest(
+            site_id="s",
+            runtime="static",
+            env={"API_KEY": "secret"},
+        )
+    )
     assert spec.env["API_KEY"] == "secret"
 
 
@@ -156,9 +161,13 @@ def test_each_overridable_field_wins_over_the_profile(manager, field, value):
     A field left out of that list is not rejected — it is accepted and ignored, and the
     site runs the profile's version of whatever the caller thought they had changed.
     """
-    spec = manager._resolve_spec(DeployRequest(
-        site_id="s", runtime="static", overrides={field: value},
-    ))
+    spec = manager._resolve_spec(
+        DeployRequest(
+            site_id="s",
+            runtime="static",
+            overrides={field: value},
+        )
+    )
     assert getattr(spec, field) == value
 
 
@@ -169,9 +178,13 @@ def test_a_null_override_does_not_erase_the_profile_value(manager):
     with ``None``. Treating those as real values would blank the image, the start
     command and the workspace in one go.
     """
-    spec = manager._resolve_spec(DeployRequest(
-        site_id="s", runtime="static", overrides={"image": None},
-    ))
+    spec = manager._resolve_spec(
+        DeployRequest(
+            site_id="s",
+            runtime="static",
+            overrides={"image": None},
+        )
+    )
     assert spec.image == "python:3.11-slim"
 
 
@@ -179,9 +192,13 @@ def test_a_health_override_is_accepted_as_a_plain_dict(manager):
     """Overrides arrive as JSON, so the health check arrives as a dict rather than a
     ``HealthCheck``. Storing the dict unconverted would break the probe loop later, at
     the point where it reads ``health.type``."""
-    spec = manager._resolve_spec(DeployRequest(
-        site_id="s", runtime="static", overrides={"health": {"type": "command", "command": "true"}},
-    ))
+    spec = manager._resolve_spec(
+        DeployRequest(
+            site_id="s",
+            runtime="static",
+            overrides={"health": {"type": "command", "command": "true"}},
+        )
+    )
     assert isinstance(spec.health, HealthCheck)
     assert spec.health.type == "command"
     assert spec.health.command == "true"
@@ -198,11 +215,13 @@ def test_a_health_override_is_accepted_as_a_plain_dict(manager):
         ("sandbox", "opensandbox"),
         ("opensandbox", "opensandbox"),
         ("docker", "opensandbox"),
-        ("HOST", "host"),          # case-insensitive
-        ("  host  ", "host"),      # and whitespace-tolerant
+        ("HOST", "host"),  # case-insensitive
+        ("  host  ", "host"),  # and whitespace-tolerant
     ],
 )
-def test_every_spelling_of_the_backend_choice_lands_on_the_same_backend(manager, monkeypatch, choice, expected):
+def test_every_spelling_of_the_backend_choice_lands_on_the_same_backend(
+    manager, monkeypatch, choice, expected
+):
     """The value is typed into an env var by a person, so aliases and stray whitespace
     are the normal case rather than the exotic one.
 
@@ -274,8 +293,12 @@ def test_an_explicit_backend_beats_the_inline_host_default(manager, monkeypatch)
     """Lightweight-by-default, not lightweight-only: a caller who wants a page isolated in
     a container says so with ``backend``, and that choice wins over the inline default."""
     monkeypatch.delenv("DEPLOY_BACKEND", raising=False)
-    assert manager._backend_kind(
-        DeployRequest(site_id="s", content="<h1>hi</h1>", backend="opensandbox")) == "opensandbox"
+    assert (
+        manager._backend_kind(
+            DeployRequest(site_id="s", content="<h1>hi</h1>", backend="opensandbox")
+        )
+        == "opensandbox"
+    )
 
 
 def test_the_request_backend_beats_the_env(manager, monkeypatch):
@@ -382,8 +405,9 @@ def test_saving_without_a_registry_path_is_a_no_op():
 async def test_a_site_still_answering_is_reattached_as_running(manager, monkeypatch):
     """The handle is gone but the server is not: a detached host process or a container
     outlives the framework, so a restart must reattach rather than declare it dead."""
-    manager._sites["a"] = SiteRecord(site_id="a", runtime="static", url="http://x",
-                                     status=SiteStatus.RUNNING)
+    manager._sites["a"] = SiteRecord(
+        site_id="a", runtime="static", url="http://x", status=SiteStatus.RUNNING
+    )
     monkeypatch.setattr(manager, "_url_reachable", staticmethod(lambda url: _true()))
     await manager._reconcile_on_start()
     assert manager._sites["a"].status is SiteStatus.RUNNING
@@ -396,8 +420,9 @@ async def test_a_site_that_no_longer_answers_becomes_redeployable(manager, monke
     ``DETACHED`` is the state ``redeploy`` acts on. Leaving the record as ``RUNNING``
     would show a working site in every listing and give no way to bring it back.
     """
-    manager._sites["a"] = SiteRecord(site_id="a", runtime="static", url="http://x",
-                                     status=SiteStatus.RUNNING)
+    manager._sites["a"] = SiteRecord(
+        site_id="a", runtime="static", url="http://x", status=SiteStatus.RUNNING
+    )
     monkeypatch.setattr(manager, "_url_reachable", staticmethod(lambda url: _false()))
     await manager._reconcile_on_start()
     assert manager._sites["a"].status is SiteStatus.DETACHED

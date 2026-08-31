@@ -77,27 +77,57 @@ async def test_every_callable_manager_renders_both_projections_under_one_name(tm
         "additionalProperties": False,
     }
 
-    tool = _manager(ToolManagerServer, SimpleNamespace(
-        name="sample_tool", description="tool", type=None,
-        function_calling={"type": "function", "function": {
-            "name": "sample_tool", "description": "tool", "parameters": parameters,
-        }},
-    ))
+    tool = _manager(
+        ToolManagerServer,
+        SimpleNamespace(
+            name="sample_tool",
+            description="tool",
+            type=None,
+            function_calling={
+                "type": "function",
+                "function": {
+                    "name": "sample_tool",
+                    "description": "tool",
+                    "parameters": parameters,
+                },
+            },
+        ),
+    )
     agent = _manager(AgentManagerServer, SimpleNamespace(name="sample_agent", description="agent"))
-    skill = _manager(SkillManagerServer, SimpleNamespace(
-        name="sample_skill", description="skill", type="worker", type_tags=["worker"],
-        input_schema=parameters,
-    ))
-    connector = _manager(ConnectorManagerServer, SimpleNamespace(
-        name="sample_connector", description="connector", actions=["query"],
-        action_schemas={"query": parameters},
-    ))
-    action = SimpleNamespace(description="environment action", function_calling={
-        "type": "function", "function": {"parameters": parameters},
-    }, args_schema=None)
-    environment = _manager(EnvironmentManagerServer, SimpleNamespace(
-        name="sample_environment", actions={"act": action},
-    ))
+    skill = _manager(
+        SkillManagerServer,
+        SimpleNamespace(
+            name="sample_skill",
+            description="skill",
+            type="worker",
+            type_tags=["worker"],
+            input_schema=parameters,
+        ),
+    )
+    connector = _manager(
+        ConnectorManagerServer,
+        SimpleNamespace(
+            name="sample_connector",
+            description="connector",
+            actions=["query"],
+            action_schemas={"query": parameters},
+        ),
+    )
+    action = SimpleNamespace(
+        description="environment action",
+        function_calling={
+            "type": "function",
+            "function": {"parameters": parameters},
+        },
+        args_schema=None,
+    )
+    environment = _manager(
+        EnvironmentManagerServer,
+        SimpleNamespace(
+            name="sample_environment",
+            actions={"act": action},
+        ),
+    )
 
     # Connectors and environments are addressed per action, so their exposed function name
     # is `<capability>__<action>` — dispatch splits on that separator to route the call.
@@ -116,7 +146,8 @@ async def test_every_callable_manager_renders_both_projections_under_one_name(tm
         assert projected[0][0] == json_schema
 
     workflow = WorkflowContextManager(
-        builtin_dir=tmp_path / "missing", evaluation_path=tmp_path / "evaluations.json",
+        builtin_dir=tmp_path / "missing",
+        evaluation_path=tmp_path / "evaluations.json",
     )
     workflow.register("""
     <workflow name="complex_flow" description="complex">
@@ -131,7 +162,9 @@ async def test_every_callable_manager_renders_both_projections_under_one_name(tm
     _assert_formats(json_schema, markdown, "workflow__complex_flow")
     # A declared `<schema>` must survive whole. Collapsing it to a bare `array` would let
     # the model pass anything as an element and only fail once the workflow ran.
-    assert json_schema["function"]["parameters"]["properties"]["files"]["items"] == {"type": "string"}
+    assert json_schema["function"]["parameters"]["properties"]["files"]["items"] == {
+        "type": "string"
+    }
 
 
 def test_a_schema_a_provider_would_reject_is_refused_where_it_is_built():
@@ -144,10 +177,15 @@ def test_a_schema_a_provider_would_reject_is_refused_where_it_is_built():
     names the API, not the manager that produced the schema.
     """
     with pytest.raises(ValueError, match="required"):
-        CapabilitySchema(name="bad", parameters={
-            "type": "object", "properties": {}, "required": ["missing"],
-            "additionalProperties": False,
-        })
+        CapabilitySchema(
+            name="bad",
+            parameters={
+                "type": "object",
+                "properties": {},
+                "required": ["missing"],
+                "additionalProperties": False,
+            },
+        )
     with pytest.raises(ValueError, match="additionalProperties"):
         CapabilitySchema(name="bad", strict=True, parameters={"type": "object", "properties": {}})
 
@@ -162,6 +200,7 @@ def test_supplying_a_default_workspace_does_not_mutate_the_callers_config(tmp_pa
     agents would share a workspace and a `setdefault` on the second call would find the
     first one's value already there.
     """
+
     class SampleAgent:
         model_fields = {"name": SimpleNamespace(default="sample_agent")}
 
@@ -172,6 +211,10 @@ def test_supplying_a_default_workspace_does_not_mutate_the_callers_config(tmp_pa
     assert original == {"model_name": "test-model"}
     assert prepared["base_dir"] == str(tmp_path / "sample_agent")
     # An explicitly configured base_dir is a choice, not a gap: it must not be overridden.
-    assert manager._prepare_instance_config(
-        SampleAgent, {"base_dir": "/explicit"},
-    )["base_dir"] == "/explicit"
+    assert (
+        manager._prepare_instance_config(
+            SampleAgent,
+            {"base_dir": "/explicit"},
+        )["base_dir"]
+        == "/explicit"
+    )

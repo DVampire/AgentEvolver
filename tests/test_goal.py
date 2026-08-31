@@ -70,9 +70,14 @@ def test_an_agent_cannot_rewrite_the_objective_it_is_measured_against():
     """
     goal = _goal("g_edit")
     with pytest.raises(GoalAuthorityError):
-        goal_manager.update(session_id="g_edit", goal_id=goal.id, revision=goal.revision,
-                            action=GoalAction.EDIT, authority=AGENT,
-                            objective="Ship something smaller")
+        goal_manager.update(
+            session_id="g_edit",
+            goal_id=goal.id,
+            revision=goal.revision,
+            action=GoalAction.EDIT,
+            authority=AGENT,
+            objective="Ship something smaller",
+        )
     assert goal_manager.current("g_edit").objective == "Ship the migration"
 
 
@@ -80,8 +85,13 @@ def test_an_agent_cannot_pause_a_goal_to_get_out_from_under_it():
     """Pausing is not reporting; it is deciding the objective stops applying."""
     goal = _goal("g_pause")
     with pytest.raises(GoalAuthorityError):
-        goal_manager.update(session_id="g_pause", goal_id=goal.id, revision=goal.revision,
-                            action=GoalAction.PAUSE, authority=AGENT)
+        goal_manager.update(
+            session_id="g_pause",
+            goal_id=goal.id,
+            revision=goal.revision,
+            action=GoalAction.PAUSE,
+            authority=AGENT,
+        )
     assert goal_manager.current("g_pause").phase is GoalPhase.ACTIVE
 
 
@@ -93,25 +103,41 @@ def test_the_agent_is_the_one_who_reports_completion():
     which is the failure mode a blanket rule produces.
     """
     goal = _goal("g_complete")
-    done = goal_manager.update(session_id="g_complete", goal_id=goal.id, revision=goal.revision,
-                               action=GoalAction.COMPLETE, authority=AGENT)
+    done = goal_manager.update(
+        session_id="g_complete",
+        goal_id=goal.id,
+        revision=goal.revision,
+        action=GoalAction.COMPLETE,
+        authority=AGENT,
+    )
     assert done.phase is GoalPhase.COMPLETE
 
 
 def test_the_agent_may_report_blocked_but_must_name_the_condition():
-    """"Blocked" without a condition is indistinguishable from "this is hard".
+    """ "Blocked" without a condition is indistinguishable from "this is hard".
 
     Unchecked, it becomes the cheapest exit from any difficult goal, so the reason is
     required and is what a human reads to decide whether it is true.
     """
     goal = _goal("g_blocked")
     with pytest.raises(GoalStateError):
-        goal_manager.update(session_id="g_blocked", goal_id=goal.id, revision=goal.revision,
-                            action=GoalAction.BLOCKED, authority=AGENT, blocked_reason="   ")
+        goal_manager.update(
+            session_id="g_blocked",
+            goal_id=goal.id,
+            revision=goal.revision,
+            action=GoalAction.BLOCKED,
+            authority=AGENT,
+            blocked_reason="   ",
+        )
 
-    blocked = goal_manager.update(session_id="g_blocked", goal_id=goal.id, revision=goal.revision,
-                                  action=GoalAction.BLOCKED, authority=AGENT,
-                                  blocked_reason="The staging database has been unreachable since 14:02.")
+    blocked = goal_manager.update(
+        session_id="g_blocked",
+        goal_id=goal.id,
+        revision=goal.revision,
+        action=GoalAction.BLOCKED,
+        authority=AGENT,
+        blocked_reason="The staging database has been unreachable since 14:02.",
+    )
     assert blocked.phase is GoalPhase.BLOCKED
     assert "14:02" in blocked.blocked_reason
 
@@ -119,13 +145,25 @@ def test_the_agent_may_report_blocked_but_must_name_the_condition():
 def test_a_human_can_still_move_what_the_agent_reported():
     """A blocked goal is a claim, not a verdict; the human decides what happens to it."""
     goal = _goal("g_override")
-    blocked = goal_manager.update(session_id="g_override", goal_id=goal.id, revision=goal.revision,
-                                  action=GoalAction.BLOCKED, authority=AGENT,
-                                  blocked_reason="No credentials for the deploy target.")
-    resumed = goal_manager.update(session_id="g_override", goal_id=goal.id, revision=blocked.revision,
-                                  action=GoalAction.RESUME, authority=HUMAN)
+    blocked = goal_manager.update(
+        session_id="g_override",
+        goal_id=goal.id,
+        revision=goal.revision,
+        action=GoalAction.BLOCKED,
+        authority=AGENT,
+        blocked_reason="No credentials for the deploy target.",
+    )
+    resumed = goal_manager.update(
+        session_id="g_override",
+        goal_id=goal.id,
+        revision=blocked.revision,
+        action=GoalAction.RESUME,
+        authority=HUMAN,
+    )
     assert resumed.phase is GoalPhase.ACTIVE
-    assert resumed.blocked_reason is None, "a resumed goal still carrying its blocker reads as blocked"
+    assert resumed.blocked_reason is None, (
+        "a resumed goal still carrying its blocker reads as blocked"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -173,31 +211,61 @@ def test_a_change_written_against_a_stale_revision_is_refused():
     objective — so overwriting it is worse than failing.
     """
     goal = _goal("g_cas")
-    goal_manager.update(session_id="g_cas", goal_id=goal.id, revision=goal.revision,
-                        action=GoalAction.PAUSE, authority=HUMAN)
+    goal_manager.update(
+        session_id="g_cas",
+        goal_id=goal.id,
+        revision=goal.revision,
+        action=GoalAction.PAUSE,
+        authority=HUMAN,
+    )
     with pytest.raises(GoalRevisionError):
-        goal_manager.update(session_id="g_cas", goal_id=goal.id, revision=goal.revision,
-                            action=GoalAction.COMPLETE, authority=AGENT)
+        goal_manager.update(
+            session_id="g_cas",
+            goal_id=goal.id,
+            revision=goal.revision,
+            action=GoalAction.COMPLETE,
+            authority=AGENT,
+        )
 
 
 def test_every_accepted_change_advances_the_revision():
     """Without this the compare-and-set token is decoration and stale writes land."""
     goal = _goal("g_rev")
-    paused = goal_manager.update(session_id="g_rev", goal_id=goal.id, revision=goal.revision,
-                                 action=GoalAction.PAUSE, authority=HUMAN)
-    resumed = goal_manager.update(session_id="g_rev", goal_id=goal.id, revision=paused.revision,
-                                  action=GoalAction.RESUME, authority=HUMAN)
+    paused = goal_manager.update(
+        session_id="g_rev",
+        goal_id=goal.id,
+        revision=goal.revision,
+        action=GoalAction.PAUSE,
+        authority=HUMAN,
+    )
+    resumed = goal_manager.update(
+        session_id="g_rev",
+        goal_id=goal.id,
+        revision=paused.revision,
+        action=GoalAction.RESUME,
+        authority=HUMAN,
+    )
     assert [goal.revision, paused.revision, resumed.revision] == [1, 2, 3]
 
 
 def test_a_completed_goal_is_history_rather_than_something_to_reopen():
     """Reopening would make "complete" reversible, and a reversible claim is not one."""
     goal = _goal("g_closed")
-    goal_manager.update(session_id="g_closed", goal_id=goal.id, revision=goal.revision,
-                        action=GoalAction.COMPLETE, authority=AGENT)
+    goal_manager.update(
+        session_id="g_closed",
+        goal_id=goal.id,
+        revision=goal.revision,
+        action=GoalAction.COMPLETE,
+        authority=AGENT,
+    )
     with pytest.raises(GoalStateError):
-        goal_manager.update(session_id="g_closed", goal_id=goal.id, revision=2,
-                            action=GoalAction.RESUME, authority=HUMAN)
+        goal_manager.update(
+            session_id="g_closed",
+            goal_id=goal.id,
+            revision=2,
+            action=GoalAction.RESUME,
+            authority=HUMAN,
+        )
 
 
 def test_a_second_open_goal_is_refused_and_names_the_one_in_the_way():
@@ -208,7 +276,9 @@ def test_a_second_open_goal_is_refused_and_names_the_one_in_the_way():
     first = _goal("g_two", "Finish the migration")
     with pytest.raises(GoalStateError) as refusal:
         goal_manager.create(session_id="g_two", objective="Do something else", authority=HUMAN)
-    assert first.id in str(refusal.value), "a refusal that does not say what is in the way cannot be acted on"
+    assert first.id in str(refusal.value), (
+        "a refusal that does not say what is in the way cannot be acted on"
+    )
 
 
 def test_a_goal_outlives_the_process_that_set_it():
@@ -286,14 +356,20 @@ async def test_authority_written_into_the_arguments_buys_nothing():
     the model would have that authority. The kwarg below is accepted by the signature
     (every tool takes **kwargs) and must simply have no effect.
     """
-    created = await CreateGoalTool()(objective="Self-granted", ctx=_Ctx("t_claim"),
-                                     authority="human", human_turn=True)
+    created = await CreateGoalTool()(
+        objective="Self-granted", ctx=_Ctx("t_claim"), authority="human", human_turn=True
+    )
     assert not created.success
 
     goal = _goal("t_claim2")
-    result = await UpdateGoalTool()(goal_id=goal.id, revision=goal.revision, action="edit",
-                                    objective="Something easier", ctx=_Ctx("t_claim2"),
-                                    authority="human")
+    result = await UpdateGoalTool()(
+        goal_id=goal.id,
+        revision=goal.revision,
+        action="edit",
+        objective="Something easier",
+        ctx=_Ctx("t_claim2"),
+        authority="human",
+    )
     assert not result.success
     assert goal_manager.current("t_claim2").objective == "Ship the migration"
 
@@ -302,8 +378,9 @@ async def test_authority_written_into_the_arguments_buys_nothing():
 async def test_an_unknown_action_lists_the_ones_that_exist():
     """A bare rejection leaves the model guessing at a vocabulary it cannot see."""
     goal = _goal("t_action")
-    result = await UpdateGoalTool()(goal_id=goal.id, revision=goal.revision,
-                                    action="finish", ctx=_Ctx("t_action"))
+    result = await UpdateGoalTool()(
+        goal_id=goal.id, revision=goal.revision, action="finish", ctx=_Ctx("t_action")
+    )
     assert not result.success
     assert "complete" in result.message
 
@@ -318,12 +395,18 @@ async def test_a_human_turn_through_the_tools_can_do_the_whole_lifecycle():
 
     paused = await UpdateGoalTool()(goal_id=goal_id, revision=1, action="pause", ctx=ctx)
     resumed = await UpdateGoalTool()(goal_id=goal_id, revision=2, action="resume", ctx=ctx)
-    edited = await UpdateGoalTool()(goal_id=goal_id, revision=3, action="edit",
-                                    objective="Finish the audit and file it", ctx=ctx)
+    edited = await UpdateGoalTool()(
+        goal_id=goal_id,
+        revision=3,
+        action="edit",
+        objective="Finish the audit and file it",
+        ctx=ctx,
+    )
     assert [paused.data["goal"]["phase"], resumed.data["goal"]["phase"]] == ["paused", "active"]
     assert edited.data["goal"]["objective"] == "Finish the audit and file it"
 
     # The agent, with no stamp at all, still closes it.
-    done = await UpdateGoalTool()(goal_id=goal_id, revision=4, action="complete",
-                                  ctx=_Ctx("t_life"))
+    done = await UpdateGoalTool()(
+        goal_id=goal_id, revision=4, action="complete", ctx=_Ctx("t_life")
+    )
     assert done.success and done.data["goal"]["phase"] == "complete"

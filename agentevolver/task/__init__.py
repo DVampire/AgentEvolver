@@ -1,3 +1,14 @@
+from .goal import (
+    HUMAN_TURN_KEY,
+    GoalStore,
+    authority_of,
+    goal_manager,
+    owner_of,
+    session_of,
+)
+from .loader import TaskDocument, load_task_document
+from .run_input import add_task_args, resolve_task
+from .server import TaskCategory, TaskDeferred, TaskManager, TaskRecord, task_manager
 from .types import (
     Goal,
     GoalAction,
@@ -11,17 +22,6 @@ from .types import (
     TaskPriority,
     TaskStatus,
 )
-from .server import TaskManager, TaskRecord, TaskCategory, task_manager
-from .goal import (
-    HUMAN_TURN_KEY,
-    GoalStore,
-    authority_of,
-    goal_manager,
-    owner_of,
-    session_of,
-)
-from .loader import TaskDocument, load_task_document
-from .run_input import add_task_args, resolve_task
 
 __all__ = [
     "Task",
@@ -30,6 +30,7 @@ __all__ = [
     "TaskManager",
     "TaskRecord",
     "TaskCategory",
+    "TaskDeferred",
     "task_manager",
     "Goal",
     "GoalAction",

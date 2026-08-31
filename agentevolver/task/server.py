@@ -18,16 +18,15 @@ import json
 import os
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
-from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 from agentevolver.response.types import Response
 from agentevolver.task.types import Task, TaskPriority, TaskStatus
 from agentevolver.utils import Singleton, file_lock, make_id
-
 
 # ---------------------------------------------------------------------------
 # Extended task metadata
@@ -51,6 +50,21 @@ class TaskRecord(BaseModel):
 
     # Task IDs that must reach DONE before this task is eligible to run.
     depends_on: List[str] = Field(default_factory=list)
+
+    # Lightweight task-graph execution contract.  Resource declarations are explicit:
+    # an empty set preserves legacy scheduling, while declared paths prevent two workers
+    # from concurrently reading/writing overlapping state.
+    read_set: List[str] = Field(default_factory=list)
+    write_set: List[str] = Field(default_factory=list)
+    owner: Optional[str] = None
+    model: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    token_budget: Optional[int] = None
+    acceptance: List[str] = Field(default_factory=list)
+
+    # Set only while loading a task that was RUNNING when the process stopped. The
+    # handler must consult Trace/ExecutionCheckpoint before it may execute it again.
+    recovered_from_running: bool = False
 
     # Result / error surfaced after completion.
     result: Optional[Any] = Field(default=None)
@@ -77,6 +91,15 @@ class TaskRecord(BaseModel):
 # ---------------------------------------------------------------------------
 
 TaskHandler = Callable[[TaskRecord], Coroutine[Any, Any, Any]]
+
+
+class TaskDeferred(RuntimeError):
+    """A handler cannot safely continue until an external decision is recorded."""
+
+    def __init__(self, reason: str, details: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.details = dict(details or {})
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +140,10 @@ class TaskManager(metaclass=Singleton):
         self._log_root: Optional[str] = None
         self._persist_path: Optional[str] = None
         self._archive_path: Optional[str] = None
+        # Record identity → (active file, archive file). A Gateway process serves many
+        # session log roots at once; binding the next session must not move an already
+        # queued task's durable home or write every session's tasks into one file.
+        self._record_paths: Dict[int, Tuple[str, str]] = {}
 
         self._submission_counter: int = 0
         self._running: bool = False
@@ -213,6 +240,13 @@ class TaskManager(metaclass=Singleton):
         priority: TaskPriority = TaskPriority.NORMAL,
         entity_key: Optional[str] = None,
         depends_on: Optional[List[str]] = None,
+        read_set: Optional[List[str]] = None,
+        write_set: Optional[List[str]] = None,
+        owner: Optional[str] = None,
+        model: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
+        token_budget: Optional[int] = None,
+        acceptance: Optional[List[str]] = None,
         files: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         max_retries: int = 0,
@@ -249,9 +283,20 @@ class TaskManager(metaclass=Singleton):
                 category=category,
                 entity_key=entity_key,
                 depends_on=depends_on or [],
+                read_set=read_set or [],
+                write_set=write_set or [],
+                owner=owner,
+                model=model,
+                reasoning_effort=reasoning_effort,
+                token_budget=token_budget,
+                acceptance=acceptance or [],
                 max_retries=max_retries,
             )
             self._records[task.id] = record
+            if self._persist_path and self._archive_path:
+                self._record_paths[id(record)] = (
+                    self._persist_path, self._archive_path,
+                )
 
             self._submission_counter += 1
             await self._queue.put(
@@ -271,15 +316,37 @@ class TaskManager(metaclass=Singleton):
             return self._records.get(task_id)
 
     async def cancel(self, task_id: str) -> bool:
-        """Cancel a PENDING task.  Returns True if cancelled."""
+        """Cancel a queued or confirmation-waiting task. Returns True if cancelled."""
         async with self._lock:
             record = self._records.get(task_id)
-            if record is None or record.task.status != TaskStatus.PENDING:
+            if record is None or record.task.status not in (
+                TaskStatus.PENDING, TaskStatus.WAITING_CONFIRMATION,
+            ):
                 return False
             record.task.mark_cancelled()
             record.finished_at = datetime.now(timezone.utc)
             await self._save_unlocked()
         logger.info(f"| ❌ Task cancelled: {task_id}")
+        return True
+
+    async def resume_waiting(self, task_id: str) -> bool:
+        """Requeue a task after its durable reconciliation facts were recorded."""
+        async with self._lock:
+            record = self._records.get(task_id)
+            if (
+                record is None
+                or record.task.status is not TaskStatus.WAITING_CONFIRMATION
+            ):
+                return False
+            record.task.status = TaskStatus.PENDING
+            record.task.updated_at = datetime.now(timezone.utc)
+            record.error = None
+            self._submission_counter += 1
+            await self._queue.put(
+                (record.effective_priority(), self._submission_counter, task_id)
+            )
+            await self._save_unlocked()
+        logger.info(f"| ▶️ Task resumed after reconciliation: {task_id}")
         return True
 
     async def list(
@@ -359,6 +426,17 @@ class TaskManager(metaclass=Singleton):
                 )
                 return
 
+            conflict = self._resource_conflict_unlocked(task_id, record)
+            if conflict is not None:
+                self._submission_counter += 1
+                await self._queue.put(
+                    (record.effective_priority() + 300, self._submission_counter, task_id)
+                )
+                logger.debug(
+                    f"| ⏸️ Task {task_id} waits for resource owner {conflict}"
+                )
+                return
+
             # Evolver throttle (runtime check after deps)
             if record.category == TaskCategory.EVOLVER and record.entity_key:
                 if record.entity_key in self._running_evolver:
@@ -414,6 +492,19 @@ class TaskManager(metaclass=Singleton):
                 await self._save_unlocked()
             logger.info(f"| ⏹️  Task cancelled while running: {task_id}")
 
+        except TaskDeferred as deferred:
+            async with self._lock:
+                record.task.mark_waiting_confirmation()
+                record.error = deferred.reason
+                record.result = deferred.details
+                record.finished_at = None
+                self._clear_evolver_slot(record)
+                await self._save_unlocked()
+            logger.warning(
+                f"| ⏸️ Task waiting for effect reconciliation: {task_id} — "
+                f"{deferred.reason}"
+            )
+
         except Exception as e:
             async with self._lock:
                 if record.retry_count < record.max_retries:
@@ -462,6 +553,32 @@ class TaskManager(metaclass=Singleton):
                 return False
         return True
 
+    @staticmethod
+    def _resource_overlap(left: str, right: str) -> bool:
+        """Whether two normalized resource names denote the same path/subtree."""
+        left_parts = tuple(part for part in str(left).replace("\\", "/").split("/") if part not in ("", "."))
+        right_parts = tuple(part for part in str(right).replace("\\", "/").split("/") if part not in ("", "."))
+        if not left_parts or not right_parts:
+            return left_parts == right_parts
+        common = min(len(left_parts), len(right_parts))
+        return left_parts[:common] == right_parts[:common]
+
+    def _resource_conflict_unlocked(
+        self, task_id: str, candidate: TaskRecord,
+    ) -> Optional[str]:
+        """Return the running task whose declared read/write set conflicts."""
+        for other_id, other in self._records.items():
+            if other_id == task_id or other.task.status is not TaskStatus.RUNNING:
+                continue
+            pairs = [
+                *[(path, held) for path in candidate.write_set for held in other.write_set],
+                *[(path, held) for path in candidate.write_set for held in other.read_set],
+                *[(path, held) for path in candidate.read_set for held in other.write_set],
+            ]
+            if any(self._resource_overlap(left, right) for left, right in pairs):
+                return other_id
+        return None
+
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
@@ -475,31 +592,45 @@ class TaskManager(metaclass=Singleton):
         if not self._persist_path:
             return
         try:
-            active = {
-                tid: json.loads(rec.model_dump_json())
-                for tid, rec in self._records.items()
-                if rec.task.status in (TaskStatus.PENDING, TaskStatus.RUNNING)
-            }
-            done = {
-                tid: json.loads(rec.model_dump_json())
-                for tid, rec in self._records.items()
-                if rec.task.status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED)
-            }
-            data = {
-                "saved_at": datetime.now(timezone.utc).isoformat(),
-                "active": active,
-            }
-            os.makedirs(os.path.dirname(self._persist_path), exist_ok=True)
-            async with file_lock(self._persist_path):
-                with open(self._persist_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+            grouped: Dict[Tuple[str, str], Dict[str, Dict[str, Any]]] = {}
+            for tid, rec in self._records.items():
+                paths = self._record_paths.get(id(rec))
+                if paths is None:
+                    if not self._persist_path or not self._archive_path:
+                        continue
+                    paths = (self._persist_path, self._archive_path)
+                    self._record_paths[id(rec)] = paths
+                buckets = grouped.setdefault(paths, {"active": {}, "done": {}})
+                payload = json.loads(rec.model_dump_json())
+                if rec.task.status in (
+                    TaskStatus.PENDING,
+                    TaskStatus.WAITING_CONFIRMATION,
+                    TaskStatus.RUNNING,
+                ):
+                    buckets["active"][tid] = payload
+                elif rec.task.status in (
+                    TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED,
+                ):
+                    buckets["done"][tid] = payload
 
-            # Append completed tasks to archive (skip re-archiving existing)
-            if done and self._archive_path:
+            for (persist_path, archive_path), buckets in grouped.items():
+                data = {
+                    "saved_at": datetime.now(timezone.utc).isoformat(),
+                    "active": buckets["active"],
+                }
+                os.makedirs(os.path.dirname(persist_path), exist_ok=True)
+                async with file_lock(persist_path):
+                    with open(persist_path, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+
+                # Append completed tasks to their owning session archive.
+                done = buckets["done"]
+                if not done:
+                    continue
                 existing: Dict[str, Any] = {}
-                if os.path.exists(self._archive_path):
+                if os.path.exists(archive_path):
                     try:
-                        with open(self._archive_path, "r", encoding="utf-8") as f:
+                        with open(archive_path, "r", encoding="utf-8") as f:
                             existing = json.load(f).get("tasks", {})
                     except Exception:
                         pass
@@ -508,43 +639,68 @@ class TaskManager(metaclass=Singleton):
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                     "tasks": existing,
                 }
-                async with file_lock(self._archive_path):
-                    with open(self._archive_path, "w", encoding="utf-8") as f:
+                async with file_lock(archive_path):
+                    with open(archive_path, "w", encoding="utf-8") as f:
                         json.dump(archive_data, f, indent=2, ensure_ascii=False, default=str)
         except Exception as e:
             logger.warning(f"| ⚠️  TaskManager persist failed: {e}")
 
     async def _load(self) -> None:
         """Restore PENDING tasks from disk into the in-memory queue."""
-        if not self._persist_path or not os.path.exists(self._persist_path):
+        if not self._persist_path or not self._archive_path:
             return
+        await self._load_path(self._persist_path, self._archive_path)
+
+    async def restore_from(self, log_root: str) -> int:
+        """Merge pending tasks from one session log without rebinding other records."""
+        persist_path = str(path_manager.under(log_root, P.LOG_TASKS))
+        archive_path = str(path_manager.under(log_root, P.LOG_TASKS_ARCHIVE))
+        async with self._lock:
+            return await self._load_path(persist_path, archive_path)
+
+    async def _load_path(self, persist_path: str, archive_path: str) -> int:
+        if not os.path.exists(persist_path):
+            return 0
         try:
-            with open(self._persist_path, "r", encoding="utf-8") as f:
+            with open(persist_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             active = data.get("active", {})
             restored = 0
             for tid, raw in active.items():
                 try:
                     record = TaskRecord.model_validate(raw)
-                    # Only restore PENDING tasks; RUNNING ones from a crashed
-                    # session are reset to PENDING so they get retried.
+                    # RUNNING means the process died without a terminal record. Queue it
+                    # for the handler, but mark it so ExecutionCheckpoint must authorize
+                    # continuation before any provider/tool call is made.
                     if record.task.status == TaskStatus.RUNNING:
                         record.task.status = TaskStatus.PENDING
                         record.task.updated_at = datetime.now(timezone.utc)
                         record.started_at = None
-                    if record.task.status == TaskStatus.PENDING:
+                        record.recovered_from_running = True
+                    if record.task.status in (
+                        TaskStatus.PENDING, TaskStatus.WAITING_CONFIRMATION,
+                    ):
+                        if tid in self._records:
+                            logger.warning(
+                                f"| ⚠️ Duplicate persisted task id {tid}; keeping the first record"
+                            )
+                            continue
                         self._records[tid] = record
-                        self._submission_counter += 1
-                        await self._queue.put(
-                            (record.effective_priority(), self._submission_counter, tid)
-                        )
+                        self._record_paths[id(record)] = (persist_path, archive_path)
+                        if record.task.status is TaskStatus.PENDING:
+                            self._submission_counter += 1
+                            await self._queue.put(
+                                (record.effective_priority(), self._submission_counter, tid)
+                            )
                         restored += 1
                 except Exception as e:
                     logger.warning(f"| ⚠️  Failed to restore task {tid}: {e}")
             if restored:
                 logger.info(f"| 📂 Restored {restored} pending task(s) from disk")
+            return restored
         except Exception as e:
             logger.warning(f"| ⚠️  TaskManager load failed: {e}")
+            return 0
 
 
 # ---------------------------------------------------------------------------

@@ -6,10 +6,10 @@ import sqlite3
 
 import pytest
 
-from agentevolver.utils import AsyncQueue
 from agentevolver.trace.persistence import SQLiteTracePersistence, create_trace_persistence
 from agentevolver.trace.server import TraceManager
 from agentevolver.trace.types import TraceEvent, TraceEventType
+from agentevolver.utils import AsyncQueue
 
 
 def _event(session: str, seq: int, *, agent: str = "agent", task: str = "task"):
@@ -34,9 +34,14 @@ async def test_sqlite_persistence_appends_lists_and_reads_an_indexed_suffix(tmp_
     await persistence.stop()
 
     assert persistence.event_count("session") == 6
-    assert [row["seq_no"] for row in persistence.read_from(
-        "session", after_seq=2, limit=2,
-    )] == [3, 4]
+    assert [
+        row["seq_no"]
+        for row in persistence.read_from(
+            "session",
+            after_seq=2,
+            limit=2,
+        )
+    ] == [3, 4]
     summary = persistence.list_sessions()[0]
     assert summary["event_count"] == 6
     assert summary["agent_names"] == ["agent-0", "agent-1"]

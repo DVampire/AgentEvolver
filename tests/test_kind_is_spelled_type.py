@@ -75,8 +75,13 @@ _IDENTIFIER = re.compile(r"""(?x)
     | \b\w*Kind\b                   # ResultKind, CapabilityKind
 """)
 
-SOURCES = ("agentevolver/**/*.py", "frontend/src/**/*.ts", "frontend/src/**/*.tsx",
-           "tests/**/*.py", "scripts/**/*.py")
+SOURCES = (
+    "agentevolver/**/*.py",
+    "frontend/src/**/*.ts",
+    "frontend/src/**/*.tsx",
+    "tests/**/*.py",
+    "scripts/**/*.py",
+)
 
 
 def _allowed(relative: str) -> bool:
@@ -116,8 +121,7 @@ def test_the_register_lists_only_files_that_exist():
     on excusing a path nothing writes to any more.
     """
     missing = [
-        prefix for prefix in ALLOWED
-        if not prefix.endswith("/") and not (ROOT / prefix).exists()
+        prefix for prefix in ALLOWED if not prefix.endswith("/") and not (ROOT / prefix).exists()
     ]
     assert not missing, f"ALLOWED names files that no longer exist: {missing}"
 
@@ -133,10 +137,18 @@ def test_every_registered_exception_still_uses_the_word():
         if prefix == "tests/test_kind_is_spelled_type.py":
             continue
         target = ROOT / prefix
-        paths = ([p for p in target.rglob("*") if p.is_file()] if target.is_dir()
-                 else [target] if target.exists() else [])
-        if not any(_IDENTIFIER.search(p.read_text(errors="ignore")) for p in paths
-                   if p.suffix in {".py", ".ts", ".tsx", ".md"}):
+        paths = (
+            [p for p in target.rglob("*") if p.is_file()]
+            if target.is_dir()
+            else [target]
+            if target.exists()
+            else []
+        )
+        if not any(
+            _IDENTIFIER.search(p.read_text(errors="ignore"))
+            for p in paths
+            if p.suffix in {".py", ".ts", ".tsx", ".md"}
+        ):
             unused.append(f"{prefix} ({reason})")
     assert not unused, f"these no longer use `kind`; drop them from ALLOWED: {unused}"
 
@@ -160,8 +172,11 @@ def test_no_caller_passes_the_renamed_keyword():
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-            name = (node.func.attr if isinstance(node.func, ast.Attribute)
-                    else getattr(node.func, "id", ""))
+            name = (
+                node.func.attr
+                if isinstance(node.func, ast.Attribute)
+                else getattr(node.func, "id", "")
+            )
             if name in renamed and any(k.arg == "kind" for k in node.keywords):
                 offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}: {name}(kind=...)")
     assert not offenders, f"these pass the old keyword: {offenders}"

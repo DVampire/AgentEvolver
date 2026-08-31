@@ -44,7 +44,7 @@ class _Stream:
             yield TextDelta(text=f"{self.label}{index}")
         if self.fail:
             raise RuntimeError(f"{self.label}: connection reset")
-        yield StreamDone(stop_reason="end_turn")   # canonical, not the provider spelling
+        yield StreamDone(stop_reason="end_turn")  # canonical, not the provider spelling
 
     def set_api_key(self, _key):
         pass
@@ -53,14 +53,22 @@ class _Stream:
 def _manager(*, retries: int = 3, fallback: str = "") -> ModelContextManager:
     manager = ModelContextManager()
     manager.models["main"] = ModelConfig(
-        model_name="main", model_type="chat/completions", model_id="p/main",
-        provider="p", max_completion_tokens=500, context_window=200_000,
+        model_name="main",
+        model_type="chat/completions",
+        model_id="p/main",
+        provider="p",
+        max_completion_tokens=500,
+        context_window=200_000,
         fallback_model=fallback,
     )
     if fallback:
         manager.models[fallback] = ModelConfig(
-            model_name=fallback, model_type="chat/completions", model_id=f"p/{fallback}",
-            provider="p", max_completion_tokens=500, context_window=200_000,
+            model_name=fallback,
+            model_type="chat/completions",
+            model_id=f"p/{fallback}",
+            provider="p",
+            max_completion_tokens=500,
+            context_window=200_000,
         )
     return manager
 

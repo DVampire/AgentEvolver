@@ -22,14 +22,12 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import patch
 
-import pytest
-
 from agentevolver.extension.smoke_gate import (
     EvolutionRejected,
     ReplayReport,
     _default_probe,
-    _resolve_probe_model,
     _preflight_component,
+    _resolve_probe_model,
     replay_smoke,
 )
 
@@ -37,6 +35,7 @@ from agentevolver.extension.smoke_gate import (
 def _probe_returning(report: ReplayReport):
     async def probe(module, name, model_role, timeout_s):
         return report
+
     return probe
 
 
@@ -101,6 +100,7 @@ def test_component_preflight_rejects_a_candidate_missing_from_its_registry():
             class Manager:
                 async def get_info(self, name):
                     return None
+
             return Manager()
 
     with patch("agentevolver.capability.types.stored_type", return_value=Entry()):
@@ -119,6 +119,7 @@ def test_component_preflight_rejects_a_nonserializable_native_schema():
 
                 async def function_callings(self, allowlist):
                     return [({"bad": object()}, ("tool", "bad"))]
+
             return Manager()
 
     with patch("agentevolver.capability.types.stored_type", return_value=Entry()):
@@ -134,6 +135,7 @@ def test_component_preflight_accepts_a_registered_prompt_without_tool_schema():
             class Manager:
                 async def get_info(self, name):
                     return object()
+
             return Manager()
 
     with patch("agentevolver.capability.types.stored_type", return_value=Entry()):
@@ -185,6 +187,7 @@ def test_a_config_that_cannot_be_read_resolves_to_nothing():
     default and this test pass while never reaching the `except` it is named for. It was
     written that way first, and the coverage report is what showed the line still dark.
     """
+
     class Raising:
         def __getattr__(self, item):
             raise RuntimeError("no config in this process")
@@ -200,6 +203,7 @@ def test_an_agent_that_will_not_take_the_probe_model_is_still_smoke_tested():
     unusual agent shape, say. Letting that propagate would turn a cost optimisation into
     a rejection of a component that was never run.
     """
+
     class Stubborn(_Agent):
         def model_copy(self, update=None):
             raise TypeError("this agent will not be reconfigured")
@@ -210,8 +214,10 @@ def test_an_agent_that_will_not_take_the_probe_model_is_still_smoke_tested():
     with patch("agentevolver.config.config") as config:
         config.model_roles = {"smoke": "cheap-model"}
         with patch("agentevolver.agent.server.agent_manager") as manager:
+
             async def get(_name):
                 return Stubborn(clean)
+
             manager.get = get
 
             report = asyncio.run(_default_probe("tool", "t", "smoke", 5.0))
@@ -239,8 +245,10 @@ def test_a_probe_agent_that_will_not_load_is_a_failure_with_a_reason():
 def test_a_missing_probe_agent_is_distinguished_from_one_that_failed_to_load():
     """`None` and "raised" are different harness faults and read differently in a log."""
     with patch("agentevolver.agent.server.agent_manager") as manager:
+
         async def absent(_name):
             return None
+
         manager.get = absent
         report = asyncio.run(_default_probe("tool", "t", "smoke", 5.0))
 
@@ -256,12 +264,14 @@ def test_a_smoke_run_that_never_finishes_is_a_timeout_not_an_error():
     rather than fail it.
     """
     with patch("agentevolver.agent.server.agent_manager") as manager:
+
         async def hanging(*args, **kwargs):
             await asyncio.sleep(10)
 
         async def get(_name):
             agent = _Agent(hanging)
             return agent
+
         manager.get = get
 
         report = asyncio.run(_default_probe("tool", "t", "smoke", 0.05))
@@ -279,11 +289,13 @@ def test_a_run_stopped_by_a_constraint_is_not_a_pass_even_when_it_reports_succes
     trusting it would wave through exactly the runaway components this gate exists for.
     """
     with patch("agentevolver.agent.server.agent_manager") as manager:
+
         async def stopped(*args, **kwargs):
             return _Response(success=True, data={"stopped_by_constraint": True})
 
         async def get(_name):
             return _Agent(stopped)
+
         manager.get = get
 
         report = asyncio.run(_default_probe("tool", "t", "smoke", 5.0))
@@ -295,11 +307,13 @@ def test_a_run_stopped_by_a_constraint_is_not_a_pass_even_when_it_reports_succes
 def test_a_clean_synthetic_run_passes():
     """The green path through the real probe, not just through an injected one."""
     with patch("agentevolver.agent.server.agent_manager") as manager:
+
         async def clean(*args, **kwargs):
             return _Response(success=True, data={})
 
         async def get(_name):
             return _Agent(clean)
+
         manager.get = get
 
         report = asyncio.run(_default_probe("tool", "t", "smoke", 5.0))
@@ -312,11 +326,13 @@ def test_a_probe_run_that_raises_is_caught_inside_the_default_probe_too():
     """The outer guard in `replay_smoke` is not the only one; this path has its own,
     so the failure keeps its `exit_reason` instead of being flattened to "probe error"."""
     with patch("agentevolver.agent.server.agent_manager") as manager:
+
         async def blowing_up(*args, **kwargs):
             raise ValueError("bad schema")
 
         async def get(_name):
             return _Agent(blowing_up)
+
         manager.get = get
 
         report = asyncio.run(_default_probe("tool", "t", "smoke", 5.0))

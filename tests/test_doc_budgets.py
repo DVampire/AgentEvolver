@@ -46,7 +46,7 @@ ROOT = Path(__file__).resolve().parents[1]
 #: reader would have to trust a constant nobody could justify.
 BUDGETS: dict[str, int] = {
     "README.md": 3_500,
-    "README_zh.md": 5_800,          # ≈ the English ceiling in characters; see above
+    "README_zh.md": 5_800,  # ≈ the English ceiling in characters; see above
     "docs/DOC-STANDARD.md": 1_000,
     "docs/decisions/README.md": 650,
     "docs/postmortems/README.md": 400,
@@ -126,7 +126,7 @@ def test_the_standing_documents_are_all_budgeted():
     standing = {"README.md", "README_zh.md"}
     standing |= {f"docs/{path.name}" for path in (ROOT / "docs").glob("*.md")}
 
-    generated = {"docs/tool-catalog.md"}          # gated by test_tool_catalog.py instead
+    generated = {"docs/tool-catalog.md"}  # gated by test_tool_catalog.py instead
     missing = sorted(standing - set(BUDGETS) - generated)
 
     assert not missing, (
@@ -144,20 +144,20 @@ def test_chinese_prose_is_counted_by_character():
     Whitespace splitting scores an entire Chinese paragraph as one word, which would exempt
     every translated document in the repository from its own ceiling.
     """
-    assert word_count("这是一句没有空格的中文。") == 11        # 11 CJK chars, punctuation ignored
+    assert word_count("这是一句没有空格的中文。") == 11  # 11 CJK chars, punctuation ignored
     assert word_count("hello world") == 2
 
 
 def test_a_mixed_line_counts_both_scripts():
     """Our documents are mixed constantly — a Chinese sentence naming an English symbol."""
-    assert word_count("门禁 gate 通过") == 5                   # 门禁(2) + gate(1) + 通过(2)
+    assert word_count("门禁 gate 通过") == 5  # 门禁(2) + gate(1) + 通过(2)
 
 
 def test_code_blocks_do_not_count_against_the_ceiling():
     """A budget that taxed examples would push them out of the documents that need them."""
     with_code = "prose here\n```python\nx = 1\ny = 2\n```\nmore prose\n"
 
-    assert word_count(with_code) == 4                          # "prose here" + "more prose"
+    assert word_count(with_code) == 4  # "prose here" + "more prose"
 
 
 def test_punctuation_alone_is_not_a_word():

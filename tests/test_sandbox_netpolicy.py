@@ -106,11 +106,13 @@ def test_model_hosts_come_from_the_environment_not_a_hardcoded_provider():
     """A deployment that overrides the provider base URL is the case that matters: this
     one routes OpenRouter traffic to a private gateway, so an allowlist naming
     openrouter.ai would look correct and block every model call."""
-    hosts = model_endpoint_hosts({
-        "OPENROUTER_API_BASE": "https://api.private-gateway.example/v1",
-        "GOOGLE_API_BASE": "https://generativelanguage.googleapis.com",
-        "UNRELATED": "https://nope.example",
-    })
+    hosts = model_endpoint_hosts(
+        {
+            "OPENROUTER_API_BASE": "https://api.private-gateway.example/v1",
+            "GOOGLE_API_BASE": "https://generativelanguage.googleapis.com",
+            "UNRELATED": "https://nope.example",
+        }
+    )
     assert "api.private-gateway.example" in hosts
     assert "generativelanguage.googleapis.com" in hosts
     assert "nope.example" not in hosts
@@ -127,10 +129,18 @@ def test_both_proxy_request_forms_name_the_same_host():
     sees. The relative form is the third case, and it must yield nothing rather than
     guess: it names a path on a server the proxy was never told about.
     """
-    assert _parse_target("CONNECT api.example.com:443 HTTP/1.1") == ("api.example.com", 443, "CONNECT")
+    assert _parse_target("CONNECT api.example.com:443 HTTP/1.1") == (
+        "api.example.com",
+        443,
+        "CONNECT",
+    )
     assert _parse_target("CONNECT api.example.com HTTP/1.1") == ("api.example.com", 443, "CONNECT")
     assert _parse_target("GET http://api.example.com/x HTTP/1.1") == ("api.example.com", 80, "GET")
-    assert _parse_target("GET https://api.example.com/x HTTP/1.1") == ("api.example.com", 443, "GET")
+    assert _parse_target("GET https://api.example.com/x HTTP/1.1") == (
+        "api.example.com",
+        443,
+        "GET",
+    )
     assert _parse_target("GET /relative HTTP/1.1")[0] is None
 
 
@@ -167,6 +177,7 @@ def _serve_once(payload: bytes) -> tuple[str, int, socket.socket]:
 def test_relay_denies_an_unlisted_host_and_records_it():
     """The refusal has to reach the caller as an HTTP error it can read, and land in the
     audit trail. A denial that only appears in a log is not evidence."""
+
     async def scenario():
         policy = NetworkPolicy(allow=["allowed.example"], default_allow=False)
         relay = EgressRelay(default_socket_path("test-deny"), policy)
@@ -197,6 +208,7 @@ def test_relay_tunnels_an_allowed_host():
     rather than stopping at the 200, because a connection that establishes and then
     carries nothing looks identical to a working one until a request is made.
     """
+
     async def scenario():
         host, port, listener = _serve_once(b"")
         listener.setblocking(False)
@@ -233,6 +245,7 @@ def test_relay_tunnels_an_allowed_host():
 def test_relay_reports_an_unreachable_allowed_host_as_a_gateway_error():
     """A permitted host that is simply down must not be recorded as a policy denial, or
     the audit trail stops distinguishing 'we blocked this' from 'the network broke'."""
+
     async def scenario():
         # Port 1 on loopback: allowed by policy, nothing listening.
         policy = NetworkPolicy(allow=["127.0.0.1:1"], default_allow=False)
@@ -282,6 +295,7 @@ def test_forwarder_says_so_when_there_is_no_relay():
 # The policy is declared once in the run's config and the manager applies it to every
 # sandbox it hands out. An isolation mechanism that depends on each call site remembering
 # to wire it up is one that will be missing somewhere.
+
 
 class _StubSandbox:
     """Minimal registered backend: records the config it was handed."""

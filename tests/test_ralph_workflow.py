@@ -14,13 +14,9 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.workflow import WorkflowState, workflow_compiler
-
 from tests.test_workflow_runtime import FakeRuntime
-
 
 RALPH = Path(__file__).parents[1] / "agentevolver" / "workflow" / "default" / "ralph.html"
 
@@ -31,14 +27,22 @@ def _definition():
 
 def _agent_response(message="did a piece of work"):
     """What `agent_manager` hands back: `_normalize` turns this into {message, data, files}."""
-    return Response(type=ResponseType.AGENT, success=True, message=message,
-                    data={"done": True, "result": message, "step": 3})
+    return Response(
+        type=ResponseType.AGENT,
+        success=True,
+        message=message,
+        data={"done": True, "result": message, "step": 3},
+    )
 
 
 def _bash_response(exit_code):
     """What `bash_tool` hands back. `test` reports 0 when the sentinel file exists."""
-    return Response(type=ResponseType.TOOL, success=True, message="",
-                    data={"exit_code": exit_code, "command": "test -f .ralph/COMPLETE"})
+    return Response(
+        type=ResponseType.TOOL,
+        success=True,
+        message="",
+        data={"exit_code": exit_code, "command": "test -f .ralph/COMPLETE"},
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -104,17 +108,20 @@ def test_every_round_is_a_separate_agent_call(tmp_path):
     with a fresh worker" and "iterated inside one worker's context", and the two are
     indistinguishable from the workflow's output.
     """
+
     # The fake stands in for the shell, so it reports "not complete" forever and the
     # `-ge` half of the real command never fires: the run goes the document's full 20.
     def handler(target, task, args):
         return _agent_response() if target == "general_agent" else _bash_response(1)
 
     runtime = FakeRuntime(handler)
-    run = asyncio.run(runtime.run(
-        _definition(),
-        input={"objective": "make the build green"},
-        ctx=SimpleNamespace(workspace_root=str(tmp_path)),
-    ))
+    run = asyncio.run(
+        runtime.run(
+            _definition(),
+            input={"objective": "make the build green"},
+            ctx=SimpleNamespace(workspace_root=str(tmp_path)),
+        )
+    )
 
     assert run.state == WorkflowState.SUCCEEDED
     agent_calls = [call for call in runtime.calls if call[0] == "general_agent"]
@@ -136,11 +143,13 @@ def test_a_zero_exit_from_the_sentinel_check_ends_the_run(tmp_path):
         return _bash_response(0 if rounds["n"] >= 2 else 1)
 
     runtime = FakeRuntime(handler)
-    run = asyncio.run(runtime.run(
-        _definition(),
-        input={"objective": "make the build green"},
-        ctx=SimpleNamespace(workspace_root=str(tmp_path)),
-    ))
+    run = asyncio.run(
+        runtime.run(
+            _definition(),
+            input={"objective": "make the build green"},
+            ctx=SimpleNamespace(workspace_root=str(tmp_path)),
+        )
+    )
 
     assert run.state == WorkflowState.SUCCEEDED
     assert rounds["n"] == 2
@@ -148,7 +157,7 @@ def test_a_zero_exit_from_the_sentinel_check_ends_the_run(tmp_path):
 
 
 def test_the_worker_prompt_carries_the_objective_verbatim_every_round(tmp_path):
-    """"Immutable objective" means the same words reach round 5 as reached round 1.
+    """ "Immutable objective" means the same words reach round 5 as reached round 1.
 
     The prompt is assembled from `${inputs.objective}` inside the loop body, so a scope bug
     that let a round's own output shadow the input would rewrite the goal mid-run — the
@@ -159,14 +168,18 @@ def test_the_worker_prompt_carries_the_objective_verbatim_every_round(tmp_path):
     def handler(target, task, args):
         if target == "general_agent":
             return _agent_response()
-        return _bash_response(0 if len([c for c in runtime.calls if c[0] == "general_agent"]) >= 3 else 1)
+        return _bash_response(
+            0 if len([c for c in runtime.calls if c[0] == "general_agent"]) >= 3 else 1
+        )
 
     runtime = FakeRuntime(handler)
-    asyncio.run(runtime.run(
-        _definition(),
-        input={"objective": objective},
-        ctx=SimpleNamespace(workspace_root=str(tmp_path)),
-    ))
+    asyncio.run(
+        runtime.run(
+            _definition(),
+            input={"objective": objective},
+            ctx=SimpleNamespace(workspace_root=str(tmp_path)),
+        )
+    )
 
     prompts = [task for target, task, _ in runtime.calls if target == "general_agent"]
     assert len(prompts) == 3
@@ -182,18 +195,22 @@ def test_the_callers_cap_is_enforced_by_the_check_step_not_the_document(tmp_path
     argument. If the argument stops interpolating `${inputs.max_rounds}`, the cap silently
     becomes the document's ceiling of 20 and a caller asking for 3 rounds pays for 20.
     """
+
     def handler(target, task, args):
         if target == "bash_tool":
             handler.commands.append(args["command"])
         return _agent_response() if target == "general_agent" else _bash_response(1)
+
     handler.commands = []
 
     runtime = FakeRuntime(handler)
-    asyncio.run(runtime.run(
-        _definition(),
-        input={"objective": "finish the migration", "max_rounds": 5},
-        ctx=SimpleNamespace(workspace_root=str(tmp_path)),
-    ))
+    asyncio.run(
+        runtime.run(
+            _definition(),
+            input={"objective": "finish the migration", "max_rounds": 5},
+            ctx=SimpleNamespace(workspace_root=str(tmp_path)),
+        )
+    )
 
     assert handler.commands[0] == "test -f .ralph/COMPLETE || test 1 -ge 5"
     assert handler.commands[4] == "test -f .ralph/COMPLETE || test 5 -ge 5"
@@ -207,11 +224,13 @@ def test_a_cap_outside_the_declared_range_is_refused_before_any_agent_starts(tmp
     before the first round rather than after N agents have already run.
     """
     runtime = FakeRuntime(lambda *_: _agent_response())
-    run = asyncio.run(runtime.run(
-        _definition(),
-        input={"objective": "finish the migration", "max_rounds": 99},
-        ctx=SimpleNamespace(workspace_root=str(tmp_path)),
-    ))
+    run = asyncio.run(
+        runtime.run(
+            _definition(),
+            input={"objective": "finish the migration", "max_rounds": 99},
+            ctx=SimpleNamespace(workspace_root=str(tmp_path)),
+        )
+    )
 
     assert run.state == WorkflowState.REJECTED
     assert runtime.calls == []

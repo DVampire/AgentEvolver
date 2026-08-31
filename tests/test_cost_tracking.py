@@ -10,8 +10,8 @@ import importlib.util
 import json
 import os
 
-from agentevolver.model.types import compute_cost, price_usage_dict, TokenUsage
 from agentevolver.model.config import llm_hub_models
+from agentevolver.model.types import TokenUsage, compute_cost, price_usage_dict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OPUS_PRICE = {"input": 5e-6, "output": 2.5e-5, "cache_write": 6.25e-6, "cache_read": 5e-7}
@@ -19,7 +19,8 @@ OPUS_PRICE = {"input": 5e-6, "output": 2.5e-5, "cache_write": 6.25e-6, "cache_re
 
 def _load_launcher():
     spec = importlib.util.spec_from_file_location(
-        "rpb_cost", os.path.join(ROOT, "examples", "run_programbench.py"))
+        "rpb_cost", os.path.join(ROOT, "examples", "run_programbench.py")
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -27,10 +28,15 @@ def _load_launcher():
 
 # --------------------------------------------------------------------------- pricing
 
+
 def test_compute_cost_prices_each_token_class():
     cost = compute_cost(
-        {"input_tokens": 1000, "output_tokens": 500,
-         "cache_write_tokens": 200, "cache_read_tokens": 400},
+        {
+            "input_tokens": 1000,
+            "output_tokens": 500,
+            "cache_write_tokens": 200,
+            "cache_read_tokens": 400,
+        },
         OPUS_PRICE,
     )
     # 1000*5e-6 + 500*2.5e-5 + 200*6.25e-6 + 400*5e-7
@@ -39,7 +45,12 @@ def test_compute_cost_prices_each_token_class():
 
 def test_cache_prices_default_to_multiples_of_input():
     cost = compute_cost(
-        {"input_tokens": 0, "output_tokens": 0, "cache_write_tokens": 1000, "cache_read_tokens": 1000},
+        {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_write_tokens": 1000,
+            "cache_read_tokens": 1000,
+        },
         {"input": 1e-5, "output": 1e-5},  # no cache prices → write 1.25x, read 0.1x
     )
     assert cost == 1000 * (1e-5 * 1.25) + 1000 * (1e-5 * 0.1)
@@ -52,7 +63,9 @@ def test_no_pricing_means_no_cost():
 
 def test_provider_cost_is_kept_over_the_estimate():
     # OpenRouter-style: a top-level cost in the raw usage wins, no estimate applied.
-    priced = price_usage_dict({"prompt_tokens": 1000, "completion_tokens": 500, "cost": 0.99}, OPUS_PRICE)
+    priced = price_usage_dict(
+        {"prompt_tokens": 1000, "completion_tokens": 500, "cost": 0.99}, OPUS_PRICE
+    )
     assert priced["cost"] == 0.99
 
 
@@ -89,32 +102,71 @@ def test_openai_total_input_is_split_from_its_cached_subset():
 
 
 def test_anthropic_uncached_input_is_added_to_cache_for_context_size():
-    usage = TokenUsage.from_raw({
-        "input_tokens": 2_000,
-        "output_tokens": 50,
-        "cache_read_input_tokens": 8_000,
-    })
+    usage = TokenUsage.from_raw(
+        {
+            "input_tokens": 2_000,
+            "output_tokens": 50,
+            "cache_read_input_tokens": 8_000,
+        }
+    )
     assert usage.input_tokens == 2_000
     assert usage.context_input_tokens == 10_000
     assert usage.total == 10_050
 
 
 def test_normalising_canonical_usage_is_idempotent():
-    once = TokenUsage.from_raw({
-        "prompt_tokens": 10_000,
-        "prompt_tokens_details": {"cached_tokens": 8_000},
-    })
+    once = TokenUsage.from_raw(
+        {
+            "prompt_tokens": 10_000,
+            "prompt_tokens_details": {"cached_tokens": 8_000},
+        }
+    )
     twice = TokenUsage.from_raw(once.model_dump())
     assert twice == once
 
 
+def test_reasoning_and_provider_total_are_preserved_without_double_counting():
+    usage = TokenUsage.from_raw(
+        {
+            "input_tokens": 100,
+            "output_tokens": 40,
+            "output_tokens_details": {"reasoning_tokens": 30},
+            "total_tokens": 140,
+        }
+    )
+
+    assert usage.reasoning_tokens == 30
+    assert usage.provider_reported_total == 140
+    assert usage.total == 140  # reasoning is already included in provider output
+    assert usage.cost_status == "unknown"
+
+
+def test_cost_provenance_distinguishes_reported_estimated_and_unknown():
+    reported = TokenUsage.from_raw(
+        {"prompt_tokens": 1, "completion_tokens": 1, "cost": 0.25}
+    )
+    estimated = price_usage_dict(
+        {"prompt_tokens": 1, "completion_tokens": 1}, OPUS_PRICE,
+    )
+
+    assert reported.cost_status == "reported"
+    assert estimated["cost_status"] == "estimated"
+    assert TokenUsage.from_raw({"prompt_tokens": 1}).cost_status == "unknown"
+
+
 def test_opus_catalog_carries_the_price_table():
-    opus = next(m for m in llm_hub_models(max_tokens=8000, default_temperature=None, default_timeout=600)["chat"]
-                if m["model_id"] == "claude-opus-5")
+    opus = next(
+        m
+        for m in llm_hub_models(max_tokens=8000, default_temperature=None, default_timeout=600)[
+            "chat"
+        ]
+        if m["model_id"] == "claude-opus-5"
+    )
     assert opus.get("cost") == OPUS_PRICE
 
 
 # --------------------------------------------------------------------------- per-task rollup
+
 
 def _write_trace(tmp_path, lines):
     trace_dir = tmp_path / "log" / "trace"
@@ -127,15 +179,27 @@ def _write_trace(tmp_path, lines):
 
 def test_summarise_spend_rolls_up_the_trace(tmp_path):
     launcher = _load_launcher()
-    root = _write_trace(tmp_path, [
-        {"event_type": "agent_call", "duration_ms": 1200,
-         "usage": {"input_tokens": 1000, "output_tokens": 500, "cost": 0.0175}},
-        {"event_type": "agent_call", "duration_ms": 800,
-         "usage": {"input_tokens": 2000, "output_tokens": 100, "cost": 0.0125}},
-        {"event_type": "agent_end", "duration_ms": 2000,
-         "usage": {"input_tokens": 3000, "output_tokens": 600, "cost": 0.03}},
-        {"event_type": "tool_call"},  # no usage → not a call
-    ])
+    root = _write_trace(
+        tmp_path,
+        [
+            {
+                "event_type": "agent_call",
+                "duration_ms": 1200,
+                "usage": {"input_tokens": 1000, "output_tokens": 500, "cost": 0.0175},
+            },
+            {
+                "event_type": "agent_call",
+                "duration_ms": 800,
+                "usage": {"input_tokens": 2000, "output_tokens": 100, "cost": 0.0125},
+            },
+            {
+                "event_type": "agent_end",
+                "duration_ms": 2000,
+                "usage": {"input_tokens": 3000, "output_tokens": 600, "cost": 0.03},
+            },
+            {"event_type": "tool_call"},  # no usage → not a call
+        ],
+    )
     s = launcher._summarise_spend(root, "inst")
     assert s["n_llm_calls"] == 2
     assert s["input_tokens"] == 3000 and s["output_tokens"] == 600
@@ -145,9 +209,12 @@ def test_summarise_spend_rolls_up_the_trace(tmp_path):
 
 def test_summarise_spend_reports_none_cost_when_never_priced(tmp_path):
     launcher = _load_launcher()
-    root = _write_trace(tmp_path, [
-        {"event_type": "agent_call", "usage": {"input_tokens": 10, "output_tokens": 5}},
-    ])
+    root = _write_trace(
+        tmp_path,
+        [
+            {"event_type": "agent_call", "usage": {"input_tokens": 10, "output_tokens": 5}},
+        ],
+    )
     s = launcher._summarise_spend(root, "inst")
     assert s["n_llm_calls"] == 1
     assert s["total_cost_usd"] is None  # no price table anywhere → don't imply a real $0

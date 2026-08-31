@@ -32,6 +32,7 @@ from liteparse import LiteParse, ParseResult, ParsedPage, TextItem, ScreenshotRe
 **Returns:** `ParseResult`
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 @dataclass
 class ParseResult:
     pages: List[ParsedPage]

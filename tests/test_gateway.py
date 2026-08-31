@@ -24,8 +24,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from agentevolver.canvas.types import FlowGraph, GraphNode
-from agentevolver.gateway.types import GatewayCommand, PROTOCOL_VERSION
 from agentevolver.gateway.service import AgentGateway
+from agentevolver.gateway.types import PROTOCOL_VERSION, GatewayCommand
 from agentevolver.model import model_manager
 from agentevolver.model.types import ModelConfig
 
@@ -64,9 +64,7 @@ async def _events_are_numbered_and_replayable() -> None:
     gateway = AgentGateway(event_history_size=10)
     queue = await gateway.subscribe()
 
-    created = await gateway.handle(
-        GatewayCommand(id="create", method="session.create", params={})
-    )
+    created = await gateway.handle(GatewayCommand(id="create", method="session.create", params={}))
     assert created.ok
     session_id = created.result["session_id"]
     assert isinstance(session_id, str)
@@ -158,7 +156,9 @@ def test_a_workspace_the_server_did_not_offer_is_refused(tmp_path: Path) -> None
     asyncio.run(run())
 
 
-def test_a_session_gets_its_own_workspace_and_leaves_nothing_on_disk_until_used(tmp_path: Path) -> None:
+def test_a_session_gets_its_own_workspace_and_leaves_nothing_on_disk_until_used(
+    tmp_path: Path,
+) -> None:
     """Opening a session must be free, and must not touch the source project.
 
     Clients open one the moment they connect and most never run anything, so a
@@ -211,7 +211,9 @@ def test_a_session_reports_the_extension_staging_area_it_mounts() -> None:
             GatewayCommand(id="create", method="session.create", params={})
         )
         assert created.ok
-        assert created.result["extension_root"] == str(Path(created.result["project_root"]) / "extension")
+        assert created.result["extension_root"] == str(
+            Path(created.result["project_root"]) / "extension"
+        )
 
         stage = await gateway.handle(
             GatewayCommand(
@@ -224,8 +226,16 @@ def test_a_session_reports_the_extension_staging_area_it_mounts() -> None:
         assert stage.result["staging"]["valid"] is True
         assert stage.result["staging"]["components"] == []
         assert stage.result["mounts"][:2] == [
-            {"source": str(Path(created.result["project_root"]) / "workspace"), "target": "/workspace", "mode": "rw"},
-            {"source": str(Path(created.result["project_root"]) / "extension"), "target": "/extension", "mode": "rw"},
+            {
+                "source": str(Path(created.result["project_root"]) / "workspace"),
+                "target": "/workspace",
+                "mode": "rw",
+            },
+            {
+                "source": str(Path(created.result["project_root"]) / "extension"),
+                "target": "/extension",
+                "mode": "rw",
+            },
         ]
 
     asyncio.run(run())
@@ -275,24 +285,41 @@ def test_a_project_is_named_by_what_was_first_asked_of_it() -> None:
 
     async def run() -> None:
         gateway = AgentGateway()
-        created = await gateway.handle(GatewayCommand(
-            id="c", method="session.create", params={"name": "New project"}))
+        created = await gateway.handle(
+            GatewayCommand(id="c", method="session.create", params={"name": "New project"})
+        )
         session_id = created.result["session_id"]
 
-        await gateway.handle(GatewayCommand(id="t1", method="task.submit", params={
-            "session_id": session_id, "content": "Plot the revenue by quarter"}))
-        await gateway.handle(GatewayCommand(id="t2", method="task.submit", params={
-            "session_id": session_id, "content": "Now do it by region"}))
+        await gateway.handle(
+            GatewayCommand(
+                id="t1",
+                method="task.submit",
+                params={"session_id": session_id, "content": "Plot the revenue by quarter"},
+            )
+        )
+        await gateway.handle(
+            GatewayCommand(
+                id="t2",
+                method="task.submit",
+                params={"session_id": session_id, "content": "Now do it by region"},
+            )
+        )
 
         listed = await gateway.handle(GatewayCommand(id="l", method="session.list", params={}))
-        project = next(item for item in listed.result["sessions"] if item["session_id"] == session_id)
+        project = next(
+            item for item in listed.result["sessions"] if item["session_id"] == session_id
+        )
         assert project["name"] == "Plot the revenue by quarter"
         # The title survives a restart: it is in the manifest, not just in memory.
         restarted = AgentGateway()
         await restarted._restore_sessions()  # noqa: SLF001
         reopened = await restarted.handle(GatewayCommand(id="l2", method="session.list", params={}))
-        assert next(item for item in reopened.result["sessions"]
-                    if item["session_id"] == session_id)["name"] == "Plot the revenue by quarter"
+        assert (
+            next(item for item in reopened.result["sessions"] if item["session_id"] == session_id)[
+                "name"
+            ]
+            == "Plot the revenue by quarter"
+        )
 
     asyncio.run(run())
 
@@ -304,21 +331,37 @@ def test_projects_are_listed_most_recently_worked_in_first() -> None:
         gateway = AgentGateway()
         ids = []
         for content in ("first project", "second project", "third project"):
-            created = await gateway.handle(GatewayCommand(id=f"c{content}", method="session.create", params={}))
+            created = await gateway.handle(
+                GatewayCommand(id=f"c{content}", method="session.create", params={})
+            )
             session_id = created.result["session_id"]
             ids.append(session_id)
-            await gateway.handle(GatewayCommand(id=f"t{content}", method="task.submit", params={
-                "session_id": session_id, "content": content}))
+            await gateway.handle(
+                GatewayCommand(
+                    id=f"t{content}",
+                    method="task.submit",
+                    params={"session_id": session_id, "content": content},
+                )
+            )
 
         # Touch the oldest again; it should climb to the top.
-        await gateway.handle(GatewayCommand(id="again", method="task.submit", params={
-            "session_id": ids[0], "content": "back to the first"}))
+        await gateway.handle(
+            GatewayCommand(
+                id="again",
+                method="task.submit",
+                params={"session_id": ids[0], "content": "back to the first"},
+            )
+        )
 
         # Asserting the whole order, not just the head: sessions are stored in
         # creation order, so "ids[0] is first" would also hold with no sorting
         # at all — the touched-oldest-climbs case is the one that discriminates.
         listed = await gateway.handle(GatewayCommand(id="l", method="session.list", params={}))
-        assert [item["session_id"] for item in listed.result["sessions"]] == [ids[0], ids[2], ids[1]]
+        assert [item["session_id"] for item in listed.result["sessions"]] == [
+            ids[0],
+            ids[2],
+            ids[1],
+        ]
 
     asyncio.run(run())
 
@@ -335,12 +378,19 @@ def test_an_untouched_session_is_listed_but_marked_as_having_no_work() -> None:
 
     async def run() -> None:
         gateway = AgentGateway()
-        empty = (await gateway.handle(GatewayCommand(
-            id="c1", method="session.create", params={}))).result["session_id"]
-        used = (await gateway.handle(GatewayCommand(
-            id="c2", method="session.create", params={}))).result["session_id"]
-        await gateway.handle(GatewayCommand(id="t", method="task.submit", params={
-            "session_id": used, "content": "Fit the model"}))
+        empty = (
+            await gateway.handle(GatewayCommand(id="c1", method="session.create", params={}))
+        ).result["session_id"]
+        used = (
+            await gateway.handle(GatewayCommand(id="c2", method="session.create", params={}))
+        ).result["session_id"]
+        await gateway.handle(
+            GatewayCommand(
+                id="t",
+                method="task.submit",
+                params={"session_id": used, "content": "Fit the model"},
+            )
+        )
 
         listed = await gateway.handle(GatewayCommand(id="l", method="session.list", params={}))
         by_id = {item["session_id"]: item for item in listed.result["sessions"]}
@@ -482,7 +532,9 @@ def test_a_command_is_listed_with_readable_help_and_runs_in_a_session() -> None:
         assert "inspect" in [item["name"] for item in catalog.result["commands"]]
 
         detail = await gateway.handle(
-            GatewayCommand(id="detail", method="capability.get", params={"kind": "commands", "name": "inspect"})
+            GatewayCommand(
+                id="detail", method="capability.get", params={"kind": "commands", "name": "inspect"}
+            )
         )
         assert detail.ok
         assert detail.result["usage"] == "/inspect <type> <name>"
@@ -518,7 +570,9 @@ def test_tool_and_agent_details_are_human_readable_guides() -> None:
     guide = AgentGateway._capability_usage_document(
         "tools",
         "example_tool",
-        SimpleNamespace(description="Perform an example action.", instruction="Run this only when needed."),
+        SimpleNamespace(
+            description="Perform an example action.", instruction="Run this only when needed."
+        ),
     )
     assert "## What it does" in guide
     assert "## How to use it" in guide
@@ -554,17 +608,21 @@ def test_the_model_catalog_groups_by_provider_and_carries_no_api_key() -> None:
             )
             response = await AgentGateway().handle(GatewayCommand(id="models", method="model.list"))
             assert response.ok
-            assert response.result["providers"] == [{
-                "name": "openai",
-                "models": [{
-                    "name": "openai/demo",
-                    "id": "demo-1",
-                    "type": "chat/completions",
-                    "streaming": True,
-                    "functions": True,
-                    "vision": False,
-                }],
-            }]
+            assert response.result["providers"] == [
+                {
+                    "name": "openai",
+                    "models": [
+                        {
+                            "name": "openai/demo",
+                            "id": "demo-1",
+                            "type": "chat/completions",
+                            "streaming": True,
+                            "functions": True,
+                            "vision": False,
+                        }
+                    ],
+                }
+            ]
         finally:
             # The model registry is process-global; restore it or every later
             # test in this session runs against an emptied one.
@@ -603,7 +661,9 @@ def test_editing_a_model_keeps_its_stored_key_without_ever_returning_it() -> Non
             )
             gateway = AgentGateway()
             detail = await gateway.handle(
-                GatewayCommand(id="model-detail", method="model.get", params={"name": "openai/demo"})
+                GatewayCommand(
+                    id="model-detail", method="model.get", params={"name": "openai/demo"}
+                )
             )
             assert detail.ok
             assert detail.result["has_api_key"] is True
@@ -660,7 +720,12 @@ def test_an_uploaded_file_is_assembled_from_chunks_and_can_be_taken_back() -> No
             GatewayCommand(
                 id="begin",
                 method="file.upload.begin",
-                params={"session_id": session_id, "name": "task.html", "size": len(content), "mime_type": "text/html"},
+                params={
+                    "session_id": session_id,
+                    "name": "task.html",
+                    "size": len(content),
+                    "mime_type": "text/html",
+                },
             )
         )
         assert begun.ok
@@ -669,23 +734,37 @@ def test_an_uploaded_file_is_assembled_from_chunks_and_can_be_taken_back() -> No
             GatewayCommand(
                 id="chunk",
                 method="file.upload.chunk",
-                params={"session_id": session_id, "file_id": file_id, "data": base64.b64encode(content).decode()},
+                params={
+                    "session_id": session_id,
+                    "file_id": file_id,
+                    "data": base64.b64encode(content).decode(),
+                },
             )
         )
         assert chunk.ok
         completed = await gateway.handle(
-            GatewayCommand(id="complete", method="file.upload.complete", params={"session_id": session_id, "file_id": file_id})
+            GatewayCommand(
+                id="complete",
+                method="file.upload.complete",
+                params={"session_id": session_id, "file_id": file_id},
+            )
         )
         assert completed.ok
         path = completed.result["file"]["path"]
         assert open(path, "rb").read() == content
 
-        listed = await gateway.handle(GatewayCommand(id="list", method="file.list", params={"session_id": session_id}))
+        listed = await gateway.handle(
+            GatewayCommand(id="list", method="file.list", params={"session_id": session_id})
+        )
         assert listed.ok
         assert [item["name"] for item in listed.result["files"]] == ["task.html"]
 
         removed = await gateway.handle(
-            GatewayCommand(id="remove", method="file.remove", params={"session_id": session_id, "file_id": file_id})
+            GatewayCommand(
+                id="remove",
+                method="file.remove",
+                params={"session_id": session_id, "file_id": file_id},
+            )
         )
         assert removed.ok
         assert not Path(path).exists()
@@ -708,7 +787,9 @@ def test_the_file_browser_reads_inside_the_session_and_nowhere_else(tmp_path: Pa
         source = tmp_path / "source"
         source.mkdir()
         gateway = AgentGateway(workspace_source=source)
-        created = await gateway.handle(GatewayCommand(id="create", method="session.create", params={}))
+        created = await gateway.handle(
+            GatewayCommand(id="create", method="session.create", params={})
+        )
         session_id = created.result["session_id"]
         workspace = Path(created.result["workspace"])
         # Workspace is lazily materialized, so create the tree the way first real use would.
@@ -716,30 +797,44 @@ def test_the_file_browser_reads_inside_the_session_and_nowhere_else(tmp_path: Pa
         (workspace / "src" / "app.py").write_text("print('sandbox')\n", encoding="utf-8")
         (workspace / ".secret").write_text("hidden", encoding="utf-8")
 
-        tree = await gateway.handle(GatewayCommand(
-            id="tree", method="workspace.tree", params={"session_id": session_id, "path": ""},
-        ))
+        tree = await gateway.handle(
+            GatewayCommand(
+                id="tree",
+                method="workspace.tree",
+                params={"session_id": session_id, "path": ""},
+            )
+        )
         assert tree.ok
         assert [entry["name"] for entry in tree.result["entries"]] == ["src"]
 
-        nested = await gateway.handle(GatewayCommand(
-            id="nested", method="workspace.tree", params={"session_id": session_id, "path": "src"},
-        ))
+        nested = await gateway.handle(
+            GatewayCommand(
+                id="nested",
+                method="workspace.tree",
+                params={"session_id": session_id, "path": "src"},
+            )
+        )
         assert nested.result["entries"][0]["path"] == "src/app.py"
 
-        opened = await gateway.handle(GatewayCommand(
-            id="read", method="workspace.file.read",
-            params={"session_id": session_id, "path": "src/app.py"},
-        ))
+        opened = await gateway.handle(
+            GatewayCommand(
+                id="read",
+                method="workspace.file.read",
+                params={"session_id": session_id, "path": "src/app.py"},
+            )
+        )
         assert opened.ok
         assert opened.result["content"] == "print('sandbox')\n"
         assert opened.result["language"] == "python"
         assert len(opened.result["etag"]) == 64
 
-        escaped = await gateway.handle(GatewayCommand(
-            id="escape", method="workspace.file.read",
-            params={"session_id": session_id, "path": "../source/.secret"},
-        ))
+        escaped = await gateway.handle(
+            GatewayCommand(
+                id="escape",
+                method="workspace.file.read",
+                params={"session_id": session_id, "path": "../source/.secret"},
+            )
+        )
         assert not escaped.ok
         assert escaped.error is not None
         assert escaped.error.code == "invalid_request"
@@ -763,26 +858,55 @@ def test_a_follow_up_stays_in_the_same_state_scope() -> None:
         created = await gateway.handle(GatewayCommand(id="c", method="session.create", params={}))
         session_id = created.result["session_id"]
 
-        first = await gateway.handle(GatewayCommand(id="t1", method="task.submit", params={
-            "session_id": session_id, "view": "chat", "content": "write an add function"}))
+        first = await gateway.handle(
+            GatewayCommand(
+                id="t1",
+                method="task.submit",
+                params={
+                    "session_id": session_id,
+                    "view": "chat",
+                    "content": "write an add function",
+                },
+            )
+        )
         conversation = first.result["conversation_id"]
 
-        second = await gateway.handle(GatewayCommand(id="t2", method="task.submit", params={
-            "session_id": session_id, "view": "chat", "content": "make it subtract instead",
-            "conversation_id": conversation}))
+        second = await gateway.handle(
+            GatewayCommand(
+                id="t2",
+                method="task.submit",
+                params={
+                    "session_id": session_id,
+                    "view": "chat",
+                    "content": "make it subtract instead",
+                    "conversation_id": conversation,
+                },
+            )
+        )
         assert second.result["conversation_id"] == conversation
 
-        listed = await gateway.handle(GatewayCommand(
-            id="l", method="conversation.list", params={"session_id": session_id, "view": "chat"}))
+        listed = await gateway.handle(
+            GatewayCommand(
+                id="l",
+                method="conversation.list",
+                params={"session_id": session_id, "view": "chat"},
+            )
+        )
         assert len(listed.result["conversations"]) == 1, "one thread, not one per message"
         assert listed.result["conversations"][0]["task_count"] == 2
 
         # Both turns are in one transcript, so a reload shows the exchange.
-        events = await gateway.handle(GatewayCommand(
-            id="e", method="conversation.events",
-            params={"session_id": session_id, "conversation_id": conversation}))
-        assert [item["payload"]["content"] for item in events.result["events"]] == \
-            ["write an add function", "make it subtract instead"]
+        events = await gateway.handle(
+            GatewayCommand(
+                id="e",
+                method="conversation.events",
+                params={"session_id": session_id, "conversation_id": conversation},
+            )
+        )
+        assert [item["payload"]["content"] for item in events.result["events"]] == [
+            "write an add function",
+            "make it subtract instead",
+        ]
 
     asyncio.run(run())
 
@@ -802,23 +926,40 @@ def test_two_conversations_in_one_project_stay_apart() -> None:
         second = gateway._resolve_conversation(session, {"view": "science"})  # noqa: SLF001
         assert first.id != second.id
 
-        await gateway._publish("task.submitted", {"content": "one"},  # noqa: SLF001
-                               session_id=session_id, conversation_id=first.id)
-        await gateway._publish("task.submitted", {"content": "two"},  # noqa: SLF001
-                               session_id=session_id, conversation_id=second.id)
+        await gateway._publish(
+            "task.submitted",
+            {"content": "one"},  # noqa: SLF001
+            session_id=session_id,
+            conversation_id=first.id,
+        )
+        await gateway._publish(
+            "task.submitted",
+            {"content": "two"},  # noqa: SLF001
+            session_id=session_id,
+            conversation_id=second.id,
+        )
 
         async def transcript(cid):
-            response = await gateway.handle(GatewayCommand(
-                id=f"e{cid}", method="conversation.events",
-                params={"session_id": session_id, "conversation_id": cid}))
+            response = await gateway.handle(
+                GatewayCommand(
+                    id=f"e{cid}",
+                    method="conversation.events",
+                    params={"session_id": session_id, "conversation_id": cid},
+                )
+            )
             return [event["payload"]["content"] for event in response.result["events"]]
 
         assert await transcript(first.id) == ["one"]
         assert await transcript(second.id) == ["two"]
 
         # A view can list only its own.
-        science = await gateway.handle(GatewayCommand(
-            id="ls", method="conversation.list", params={"session_id": session_id, "view": "science"}))
+        science = await gateway.handle(
+            GatewayCommand(
+                id="ls",
+                method="conversation.list",
+                params={"session_id": session_id, "view": "science"},
+            )
+        )
         assert [item["conversation_id"] for item in science.result["conversations"]] == [second.id]
 
     asyncio.run(run())
@@ -844,12 +985,20 @@ def test_a_restarted_gateway_reopens_the_conversation() -> None:
         gateway._write_session_manifest(session)  # noqa: SLF001
 
         conversation = gateway._resolve_conversation(session, {"view": "chat"})  # noqa: SLF001
-        await gateway._publish("task.submitted", {"content": "hi"},  # noqa: SLF001
-                               session_id=session_id, conversation_id=conversation.id)
+        await gateway._publish(
+            "task.submitted",
+            {"content": "hi"},  # noqa: SLF001
+            session_id=session_id,
+            conversation_id=conversation.id,
+        )
 
-        before = await gateway.handle(GatewayCommand(
-            id="e1", method="conversation.events",
-            params={"session_id": session_id, "conversation_id": conversation.id}))
+        before = await gateway.handle(
+            GatewayCommand(
+                id="e1",
+                method="conversation.events",
+                params={"session_id": session_id, "conversation_id": conversation.id},
+            )
+        )
         assert before.ok and before.result["events"], "the conversation recorded nothing"
 
         # A fresh gateway over the same tree — the restart.
@@ -857,22 +1006,34 @@ def test_a_restarted_gateway_reopens_the_conversation() -> None:
         await restarted._restore_sessions()  # noqa: SLF001
         assert session_id in restarted._sessions  # noqa: SLF001
 
-        listed = await restarted.handle(GatewayCommand(
-            id="l", method="conversation.list", params={"session_id": session_id}))
-        assert [item["conversation_id"] for item in listed.result["conversations"]] == [conversation.id]
+        listed = await restarted.handle(
+            GatewayCommand(id="l", method="conversation.list", params={"session_id": session_id})
+        )
+        assert [item["conversation_id"] for item in listed.result["conversations"]] == [
+            conversation.id
+        ]
 
-        after = await restarted.handle(GatewayCommand(
-            id="e2", method="conversation.events",
-            params={"session_id": session_id, "conversation_id": conversation.id}))
-        assert [event["type"] for event in after.result["events"]] == \
-               [event["type"] for event in before.result["events"]]
+        after = await restarted.handle(
+            GatewayCommand(
+                id="e2",
+                method="conversation.events",
+                params={"session_id": session_id, "conversation_id": conversation.id},
+            )
+        )
+        assert [event["type"] for event in after.result["events"]] == [
+            event["type"] for event in before.result["events"]
+        ]
 
         # New events continue the numbering rather than colliding with replayed ones.
         highest = max(event["seq_no"] for event in after.result["events"])
         restored_session = restarted._sessions[session_id]  # noqa: SLF001
         restarted._resolve_conversation(restored_session, {"conversation_id": conversation.id})  # noqa: SLF001
-        published = await restarted._publish("test.marker", {}, session_id=session_id,  # noqa: SLF001
-                                             conversation_id=conversation.id)
+        published = await restarted._publish(
+            "test.marker",
+            {},
+            session_id=session_id,  # noqa: SLF001
+            conversation_id=conversation.id,
+        )
         assert published.seq_no > highest
 
     asyncio.run(run())
@@ -896,21 +1057,30 @@ def test_an_older_project_keeps_its_transcript() -> None:
         gateway._write_session_manifest(session)  # noqa: SLF001
 
         # A transcript in the old shape, beside the manifest.
-        legacy = path_manager.get(P.SESSION, owner=session.owner, session_id=session_id) / "events.jsonl"
-        legacy.write_text('{"type": "task.submitted", "seq_no": 1, "payload": {"content": "old work"}}\n',
-                          encoding="utf-8")
+        legacy = (
+            path_manager.get(P.SESSION, owner=session.owner, session_id=session_id) / "events.jsonl"
+        )
+        legacy.write_text(
+            '{"type": "task.submitted", "seq_no": 1, "payload": {"content": "old work"}}\n',
+            encoding="utf-8",
+        )
 
         restarted = AgentGateway()
         await restarted._restore_sessions()  # noqa: SLF001
 
-        listed = await restarted.handle(GatewayCommand(
-            id="l", method="conversation.list", params={"session_id": session_id}))
+        listed = await restarted.handle(
+            GatewayCommand(id="l", method="conversation.list", params={"session_id": session_id})
+        )
         assert len(listed.result["conversations"]) == 1
         adopted = listed.result["conversations"][0]["conversation_id"]
 
-        events = await restarted.handle(GatewayCommand(
-            id="e", method="conversation.events",
-            params={"session_id": session_id, "conversation_id": adopted}))
+        events = await restarted.handle(
+            GatewayCommand(
+                id="e",
+                method="conversation.events",
+                params={"session_id": session_id, "conversation_id": adopted},
+            )
+        )
         assert [event["payload"]["content"] for event in events.result["events"]] == ["old work"]
         # The original is kept, renamed, so the rewrite is visible.
         assert not legacy.exists() and legacy.with_suffix(".jsonl.migrated").is_file()
@@ -933,14 +1103,22 @@ def test_canvas_run_history_outlives_the_runtime() -> None:
         flows = path_manager.get(P.SESSION_FLOWS, owner=owner, session_id=session_id)
         runs = path_manager.get(P.SESSION_RUNS, owner=owner, session_id=session_id)
         graph = canvas_manager.save_flow(
-            FlowGraph(name="history", nodes=[GraphNode(id="a", type="step", step_type="tool", target="bash_tool")]),
+            FlowGraph(
+                name="history",
+                nodes=[GraphNode(id="a", type="step", step_type="tool", target="bash_tool")],
+            ),
             flows,
         )
         canvas_manager.record_run(graph.id, "run-one", runs)
         canvas_manager.record_run(graph.id, "run-two", runs)
 
-        listed = await gateway.handle(GatewayCommand(
-            id="l", method="canvas.run.list", params={"session_id": session_id, "flow_id": graph.id}))
+        listed = await gateway.handle(
+            GatewayCommand(
+                id="l",
+                method="canvas.run.list",
+                params={"session_id": session_id, "flow_id": graph.id},
+            )
+        )
         assert listed.ok
         # Newest first, and a run whose record is gone is reported, not hidden.
         assert [item["run_id"] for item in listed.result["runs"]] == ["run-two", "run-one"]
@@ -976,27 +1154,40 @@ def test_a_vnc_live_view_never_hands_the_client_the_raw_socket() -> None:
 
         gateway._publish = capture  # type: ignore[method-assign]  # noqa: SLF001
 
-        await gateway._on_environment_view(EnvironmentView(  # noqa: SLF001
-            env_name="browser", type="vnc", url="ws://172.17.0.5:41293/websockify"))
+        await gateway._on_environment_view(
+            EnvironmentView(  # noqa: SLF001
+                env_name="browser", type="vnc", url="ws://172.17.0.5:41293/websockify"
+            )
+        )
         assert published[-1][1]["url"] == "/env/vnc/browser"
         assert gateway._vnc_targets["browser"] == "ws://172.17.0.5:41293/websockify"  # noqa: SLF001
 
         # A second VNC environment must not displace the first: one shared slot meant the
         # view opened earlier silently started pointing at the other one's endpoint.
-        await gateway._on_environment_view(EnvironmentView(  # noqa: SLF001
-            env_name="computer_environment", type="vnc", url="ws://172.17.0.9:5555/websockify"))
+        await gateway._on_environment_view(
+            EnvironmentView(  # noqa: SLF001
+                env_name="computer_environment", type="vnc", url="ws://172.17.0.9:5555/websockify"
+            )
+        )
         assert published[-1][1]["url"] == "/env/vnc/computer_environment"
         assert gateway._vnc_targets["browser"] == "ws://172.17.0.5:41293/websockify"  # noqa: SLF001
 
         # The other exit — what `environment.open` hands back, which is what the panel uses.
-        returned = gateway._relayed_view({  # noqa: SLF001
-            "env_name": "computer_environment", "type": "vnc",
-            "url": "ws://172.17.0.9:5555/websockify"})
+        returned = gateway._relayed_view(
+            {  # noqa: SLF001
+                "env_name": "computer_environment",
+                "type": "vnc",
+                "url": "ws://172.17.0.9:5555/websockify",
+            }
+        )
         assert returned["url"] == "/env/vnc/computer_environment"
 
         # An iframe view is a plain page; it is passed through untouched.
-        await gateway._on_environment_view(EnvironmentView(  # noqa: SLF001
-            env_name="ide", type="iframe", url="http://localhost:8080/"))
+        await gateway._on_environment_view(
+            EnvironmentView(  # noqa: SLF001
+                env_name="ide", type="iframe", url="http://localhost:8080/"
+            )
+        )
         assert published[-1][1]["url"] == "http://localhost:8080/"
 
     asyncio.run(run())

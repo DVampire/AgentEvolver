@@ -337,6 +337,7 @@ ln.Artifact.values("suffix").annotate(avg_size=Avg("size"))
 ## Caching and Performance
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # Check cache location
 ln.settings.cache_dir
 

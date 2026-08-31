@@ -4,26 +4,27 @@ Contains all model registration, client lifecycle, and invocation logic.
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
-load_dotenv(verbose=True)
-
-from pydantic import BaseModel
-
-from agentevolver.model.types import ModelContext, ModelConfig
-from agentevolver.response.types import Response, ResponseType
-from agentevolver.model.openai.chat import ChatOpenAI
-from agentevolver.model.openai.response import ResponseOpenAI
-from agentevolver.model.openai.transcribe import TranscribeOpenAI
-from agentevolver.model.openai.embedding import EmbeddingOpenAI
-from agentevolver.model.openrouter.chat import ChatOpenRouter
+from agentevolver.logger import logger
+from agentevolver.message.types import Message
+from agentevolver.model.anthropic.chat import ChatAnthropic
+from agentevolver.model.capabilities import (
+    CapabilityRoute,
+    CapabilityState,
+    ProviderCapabilityRegistry,
+)
+from agentevolver.model.google.chat import ChatGoogle
 from agentevolver.model.llm_hub.chat import ChatLLMHub
 from agentevolver.model.llm_hub.response import NativeFeatureUnavailable, ResponseLLMHub
-from agentevolver.model.anthropic.chat import ChatAnthropic
-from agentevolver.model.google.chat import ChatGoogle
-from agentevolver.message.types import Message
+from agentevolver.model.openai.chat import ChatOpenAI
+from agentevolver.model.openai.embedding import EmbeddingOpenAI
+from agentevolver.model.openai.response import ResponseOpenAI
+from agentevolver.model.openai.transcribe import TranscribeOpenAI
+from agentevolver.model.openrouter.chat import ChatOpenRouter
 from agentevolver.model.pressure import (
     DEFAULT_CONTEXT_WINDOW,
     ContextOverflowError,
@@ -31,11 +32,11 @@ from agentevolver.model.pressure import (
     provider_rejected_for_length,
     resolve_request_token_estimator,
 )
-from agentevolver.logger import logger
+from agentevolver.model.types import ModelConfig, ModelContext
+from agentevolver.response.types import Response, ResponseType
 from agentevolver.utils import hvac_client
 
-if TYPE_CHECKING:
-    from agentevolver.tool.types import Tool
+load_dotenv(verbose=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -276,7 +277,10 @@ async def _record_request_snapshot(
             # Observational only: render from the immutable snapshot after it entered
             # the trace queue, and keep file I/O off the provider's hot path.
             try:
-                from agentevolver.visual.request_viewer import request_log_root, schedule_request_html
+                from agentevolver.visual.request_viewer import (
+                    request_log_root,
+                    schedule_request_html,
+                )
 
                 schedule_request_html(event, request_log_root(trace_manager.log_root))
             except Exception as render_error:  # noqa: BLE001 - never affect dispatch
@@ -309,6 +313,82 @@ async def _record_request_snapshot(
         },
     )
     return snapshot.snapshot_id
+
+
+async def _record_background_result(
+    *,
+    session_id: Optional[str],
+    operation: str,
+    response_id: str,
+    response: Response,
+    request_snapshot_id: Optional[str] = None,
+    profile: Any = None,
+) -> None:
+    """Pair a provider-side background effect with its durable request fact.
+
+    Training/high-risk sessions require this receipt to be durable. Once the provider
+    has accepted a create/cancel operation, losing the receipt would make a restart
+    unable to distinguish "not executed" from "executed but not recorded".
+    """
+    if not session_id:
+        return
+    try:
+        from agentevolver.trace.server import trace_manager
+        from agentevolver.trace.types import TraceEvent, TraceEventType
+
+        background = dict((response.data or {}).get("background") or {})
+        await trace_manager.emit(TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id=session_id,
+            label=f"responses background {operation}",
+            output={
+                "response_id": background.get("response_id") or response_id,
+                "status": background.get("status"),
+            },
+            success=response.success,
+            metadata={
+                "type": "responses_background_effect",
+                "phase": "result",
+                "operation": operation,
+                "response_id": background.get("response_id") or response_id,
+                "request_snapshot_id": request_snapshot_id,
+            },
+        ))
+        from agentevolver.trace.checkpoint import (
+            TraceCheckpointBoundary,
+            checkpoint_trace,
+        )
+
+        await checkpoint_trace(
+            session_id,
+            TraceCheckpointBoundary.EXTERNAL_EFFECT,
+            profile=profile,
+            metadata={
+                "operation": operation,
+                "response_id": background.get("response_id") or response_id,
+                "request_snapshot_id": request_snapshot_id,
+            },
+        )
+    except Exception as error:
+        from agentevolver.trace.checkpoint import (
+            TraceCheckpointBoundary,
+            TraceIntegrityError,
+            report_trace_integrity_failure,
+        )
+
+        if isinstance(error, TraceIntegrityError):
+            raise
+        await report_trace_integrity_failure(
+            session_id,
+            TraceCheckpointBoundary.EXTERNAL_EFFECT,
+            error,
+            profile=profile,
+            metadata={
+                "operation": operation,
+                "response_id": response_id,
+                "request_snapshot_id": request_snapshot_id,
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +463,7 @@ class ModelContextManager:
         self._key_pool = ApiKeyPool()
         self._current_caller: Optional[str] = None
         self._disabled_route_features: Dict[str, set[str]] = {}
+        self.capability_registry = ProviderCapabilityRegistry()
 
         # Defaults
         self.max_tokens: int = 32768
@@ -400,6 +481,19 @@ class ModelContextManager:
     # ------------------------------------------------------------------
 
     async def initialize(self):
+        # Provider capability evidence is route-scoped and useful across runs. Keep it
+        # with the server's durable project state, while an explicit config path can
+        # relocate or disable it. Tests that instantiate the manager without initializing
+        # remain isolated and purely in-memory.
+        from agentevolver.config import config as runtime_config
+
+        cache_path = getattr(runtime_config, "provider_capability_cache", None)
+        if cache_path is None and getattr(runtime_config, "project_root", None):
+            cache_path = str(
+                Path(str(runtime_config.project_root))
+                / "state" / "provider_capabilities.json"
+            )
+        self.capability_registry.set_persist_path(cache_path)
         (
             self._key_pool.register("openai", "OPENAI_API_KEY", "OPENAI_API_BASE", "")
             .register("openrouter", "OPENROUTER_API_KEY", "OPENROUTER_API_BASE", "")
@@ -622,9 +716,7 @@ class ModelContextManager:
                 reasoning=m.get("reasoning") or None,
                 max_output_tokens=m.get("max_output_tokens"),
                 timeout=m.get("timeout", self.default_timeout),
-                # No token stream of its own; `stream()` buffers one call and replays it
-                # as canonical events. Functions are the reason this surface is used.
-                supports_streaming=False, supports_functions=True, supports_vision=True,
+                supports_streaming=True, supports_functions=True, supports_vision=True,
                 output_version=None, fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"), max_retries=m.get("max_retries"),
                 native_compaction=bool(m.get("native_compaction", False)),
@@ -678,7 +770,6 @@ class ModelContextManager:
             await self._create_client(cfg)
 
     async def _initialize_google_models(self):
-        _r = lambda: {"reasoning": {"enabled": True}}
         from agentevolver.model.config import google_models
         specs = google_models(max_tokens=self.max_tokens, default_temperature=self.default_temperature, default_timeout=self.default_timeout, default_plugins=self.default_plugins, default_reasoning=self.default_reasoning)
         chat_models = specs["chat"]
@@ -909,6 +1000,10 @@ class ModelContextManager:
         stable framework implementation remains authoritative.
         """
         config = self.models.get(model)
+        client = self.model_clients.get(model)
+        route = CapabilityRoute.capture(config, client)
+        if self.capability_registry.consume_expired(route, "compaction"):
+            self._disabled_route_features.get(model, set()).discard("compaction")
         disabled_route = self._disabled_route_features.get(model, set())
         requested = requested or {}
         modes: Dict[str, Any] = {
@@ -917,7 +1012,9 @@ class ModelContextManager:
             ),
             "compaction": (
                 "native" if config and config.native_compaction
-                and "compaction" not in disabled_route else "portable_checkpoint"
+                and "compaction" not in disabled_route
+                and self.capability_registry.allows(route, "compaction")
+                else "portable_checkpoint"
             ),
             "programmatic_tool_calling": "direct_tools",
             "multi_agent": "local_meta_agent",
@@ -931,11 +1028,13 @@ class ModelContextManager:
             and config.model_type == "responses"
             and config.supports_functions
             and config.native_programmatic_tool_calling
+            and self.capability_registry.allows(route, "programmatic_tool_calling")
         ):
             modes["programmatic_tool_calling"] = "native"
         if (
             requested.get("multi_agent") and config
             and config.model_type == "responses" and config.native_multi_agent
+            and self.capability_registry.allows(route, "multi_agent")
         ):
             modes["multi_agent"] = "native"
             modes["max_concurrent_subagents"] = int(
@@ -945,7 +1044,7 @@ class ModelContextManager:
 
     def _runtime_call_kwargs(
         self, model: str, client: Any, request_input: Dict[str, Any],
-        call_kwargs: Dict[str, Any],
+        call_kwargs: Dict[str, Any], tools: Optional[List[Any]] = None,
     ) -> tuple[Dict[str, Any], Dict[str, Any]]:
         """Return (wire kwargs, snapshot kwargs) for resolved runtime features."""
         resolved = self.resolve_runtime_features(
@@ -959,7 +1058,15 @@ class ModelContextManager:
             if resolved.get("multi_agent") == "native":
                 resolved["multi_agent"] = "local_meta_agent"
                 resolved.pop("max_concurrent_subagents", None)
+        config = self.models.get(model)
+        route = CapabilityRoute.capture(config, client)
         disabled = getattr(client, "_disabled_features", set())
+        # Adapter-local suppression prevents the immediate retry from sending the same
+        # rejected parameter.  The registry owns its lifetime; once TTL expires the
+        # adapter is permitted to probe the feature again.
+        for feature in list(disabled):
+            if self.capability_registry.consume_expired(route, feature):
+                disabled.discard(feature)
         if "programmatic_tool_calling" in disabled:
             resolved["programmatic_tool_calling"] = "direct_tools"
         if "multi_agent" in disabled:
@@ -967,8 +1074,36 @@ class ModelContextManager:
             resolved.pop("max_concurrent_subagents", None)
         if "prompt_cache" in disabled:
             resolved["prompt_cache"] = "disabled"
-        snapshot_kwargs = {**call_kwargs, "runtime_features": resolved}
+        requested = dict(request_input.get("runtime_features") or {})
+        snapshot_kwargs = {
+            **call_kwargs,
+            "runtime_features": resolved,
+            "capability_resolution": {
+                "requested": requested,
+                "actual": dict(resolved),
+                "route": {
+                    "provider": route.provider,
+                    "endpoint_fingerprint": route.endpoint_fingerprint,
+                    "model": route.model,
+                    "api_version": route.api_version,
+                },
+                "status": {},
+            },
+        }
         wire_kwargs = dict(call_kwargs)
+        reasoning_effort = request_input.get("reasoning_effort")
+        if reasoning_effort is not None:
+            reasoning_effort = str(reasoning_effort)
+            snapshot_kwargs["reasoning_effort"] = reasoning_effort
+            if isinstance(client, ResponseLLMHub):
+                wire_kwargs["reasoning"] = {"effort": reasoning_effort}
+            elif config and config.provider in ("openai", "openrouter"):
+                wire_kwargs["reasoning_effort"] = reasoning_effort
+        if isinstance(client, ResponseLLMHub):
+            for option in ("background", "store", "previous_response_id"):
+                if option in request_input:
+                    wire_kwargs[option] = request_input[option]
+                    snapshot_kwargs[option] = request_input[option]
         if (
             getattr(self.models.get(model), "model_type", None) == "responses"
             and "prompt_cache" not in disabled
@@ -996,7 +1131,68 @@ class ModelContextManager:
         # generic chat adapter would leak an unknown field into provider JSON.
         if isinstance(client, ResponseLLMHub):
             wire_kwargs["runtime_features"] = resolved
+        attempted: List[str] = []
+        if wire_kwargs.get("prompt_cache_key"):
+            attempted.append("prompt_cache")
+        if resolved.get("multi_agent") == "native":
+            attempted.append("multi_agent")
+        if (
+            resolved.get("programmatic_tool_calling") == "native"
+            and any(
+                bool((getattr(tool, "metadata", None) or {}).get("programmatic"))
+                for tool in tools or []
+            )
+        ):
+            attempted.append("programmatic_tool_calling")
+        snapshot_kwargs["attempted_native_features"] = attempted
+        snapshot_kwargs["capability_resolution"]["status"] = (
+            self.capability_registry.snapshot(route, attempted)
+        )
         return wire_kwargs, snapshot_kwargs
+
+    @staticmethod
+    def _active_native_features(snapshot_kwargs: Dict[str, Any]) -> List[str]:
+        attempted = snapshot_kwargs.get("attempted_native_features")
+        if attempted is not None:
+            return [str(feature) for feature in attempted]
+        resolved = snapshot_kwargs.get("runtime_features") or {}
+        return [
+            feature for feature, mode in resolved.items()
+            if (feature == "prompt_cache" and mode == "automatic") or mode == "native"
+        ]
+
+    def _observe_capability_attempt(
+        self, model: str, client: Any, snapshot_kwargs: Dict[str, Any],
+    ) -> None:
+        route = CapabilityRoute.capture(self.models.get(model), client)
+        for feature in self._active_native_features(snapshot_kwargs):
+            self.capability_registry.observe(route, feature, CapabilityState.PROBING)
+        resolution = snapshot_kwargs.get("capability_resolution")
+        if isinstance(resolution, dict):
+            resolution["status"] = self.capability_registry.snapshot(
+                route, self._active_native_features(snapshot_kwargs),
+            )
+
+    def _observe_capability_success(
+        self, model: str, client: Any, snapshot_kwargs: Dict[str, Any],
+    ) -> None:
+        route = CapabilityRoute.capture(self.models.get(model), client)
+        for feature in self._active_native_features(snapshot_kwargs):
+            self.capability_registry.observe(route, feature, CapabilityState.VERIFIED)
+
+    def _observe_capability_error(
+        self, model: str, client: Any, snapshot_kwargs: Dict[str, Any], error: Exception,
+    ) -> None:
+        route = CapabilityRoute.capture(self.models.get(model), client)
+        rejected = set(
+            error.features if isinstance(error, NativeFeatureUnavailable) else ()
+        )
+        for feature in self._active_native_features(snapshot_kwargs):
+            state = (
+                CapabilityState.REJECTED if feature in rejected
+                else CapabilityState.DEGRADED
+            )
+            self.capability_registry.observe(route, feature, state, error)
 
     @staticmethod
     def _native_feature_attempt(
@@ -1028,12 +1224,16 @@ class ModelContextManager:
         text checkpoint path.
         """
         config = self.models.get(name)
-        if (
-            config is None or not config.native_compaction
-            or "compaction" in self._disabled_route_features.get(name, set())
-        ):
+        if config is None or not config.native_compaction:
             return None
         client = await self._get_client(name)
+        route = CapabilityRoute.capture(config, client)
+        if self.capability_registry.consume_expired(route, "compaction"):
+            self._disabled_route_features.get(name, set()).discard("compaction")
+        if "compaction" in self._disabled_route_features.get(name, set()):
+            return None
+        if not self.capability_registry.allows(route, "compaction"):
+            return None
         compact = getattr(client, "compact_history", None)
         if compact is None:
             return None
@@ -1066,6 +1266,9 @@ class ModelContextManager:
             route_index=0,
         )
         try:
+            self.capability_registry.observe(
+                route, "compaction", CapabilityState.PROBING,
+            )
             result = await compact(messages)
         except Exception as error:
             status = getattr(error, "status_code", None)
@@ -1086,14 +1289,27 @@ class ModelContextManager:
             )
             if rejected:
                 self._disabled_route_features.setdefault(name, set()).add("compaction")
+                self.capability_registry.observe(
+                    route, "compaction", CapabilityState.REJECTED, error,
+                )
                 logger.warning(
                     f"| ⚠️ {name}: native compaction probe rejected; portable "
                     "checkpoint will be used for this process"
                 )
                 return None
+            self.capability_registry.observe(
+                route, "compaction", CapabilityState.DEGRADED, error,
+            )
             raise
         if not result:
+            self.capability_registry.observe(
+                route, "compaction", CapabilityState.DEGRADED,
+                "native compaction returned no result",
+            )
             return None
+        self.capability_registry.observe(
+            route, "compaction", CapabilityState.VERIFIED,
+        )
         answer = {
             **result,
             "model": name,
@@ -1140,6 +1356,80 @@ class ModelContextManager:
                 logger.debug(f"| native compaction HTML was not refreshed: {render_error}")
         return answer
 
+    async def _background_lifecycle(
+        self,
+        name: str,
+        response_id: str,
+        operation: str,
+        *,
+        session_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
+        step_number: Optional[int] = None,
+        trace_integrity_profile: Any = None,
+    ) -> Response:
+        """Retrieve or cancel a background response with a durable request fact."""
+        if not response_id:
+            return Response(
+                type=ResponseType.LLM, success=False, message="response_id is required",
+            )
+        config = self.models.get(name)
+        client = await self._get_client(name)
+        method = getattr(client, f"{operation}_background", None) if client else None
+        if config is None or config.model_type != "responses" or method is None:
+            return Response(
+                type=ResponseType.LLM,
+                success=False,
+                message=f"Model {name} does not support background {operation}",
+            )
+        request_input = {
+            "operation": f"background.{operation}",
+            "background_response_id": response_id,
+            "trace_context": {
+                "task_id": task_id,
+                "agent_name": agent_name,
+                "step_number": step_number,
+            },
+            **({
+                "trace_integrity_profile": trace_integrity_profile,
+            } if trace_integrity_profile is not None else {}),
+        }
+        snapshot_id = await _record_request_snapshot(
+            session_id=session_id,
+            requested_model=name,
+            routed_model=name,
+            model_config=config,
+            client=client,
+            messages=[],
+            tools=None,
+            response_format=None,
+            request_input=request_input,
+            call_kwargs=request_input,
+            stream=False,
+            attempt=1,
+            route_index=0,
+        )
+        response = await method(response_id)
+        await _record_background_result(
+            session_id=session_id,
+            operation=operation,
+            response_id=response_id,
+            response=response,
+            request_snapshot_id=snapshot_id,
+            profile=trace_integrity_profile,
+        )
+        return response
+
+    async def retrieve_background(self, name: str, response_id: str, **trace: Any) -> Response:
+        return await self._background_lifecycle(
+            name, response_id, "retrieve", **trace,
+        )
+
+    async def cancel_background(self, name: str, response_id: str, **trace: Any) -> Response:
+        return await self._background_lifecycle(
+            name, response_id, "cancel", **trace,
+        )
+
     # ------------------------------------------------------------------
     # Invocation
     # ------------------------------------------------------------------
@@ -1165,8 +1455,12 @@ class ModelContextManager:
             normalised = TokenUsage.from_raw(raw)
             if normalised is not None:
                 raw["cost"] = compute_cost(normalised.model_dump(), pricing)
+                if raw["cost"] is not None:
+                    raw["cost_status"] = "estimated"
         if result.usage is not None and result.usage.cost is None:
             result.usage.cost = compute_cost(result.usage.model_dump(), pricing)
+            if result.usage.cost is not None:
+                result.usage.cost_status = "estimated"
 
     def _log_usage(self, model_name: str, result: Response) -> None:
         if not result.success:
@@ -1244,6 +1538,7 @@ class ModelContextManager:
             ctx:   Optional ModelContext (carries id, name, workspace_root, timeout, extra).
         """
         import time as _t
+
         import httpx
 
         # ``from_context(None)`` creates an id for local bookkeeping. It must not turn a
@@ -1289,6 +1584,11 @@ class ModelContextManager:
             else:
                 kwargs.setdefault("max_completion_tokens", per_call_output)
         max_retries = _resolve_max_retries(max_retries, model_config)
+        if input.get("background"):
+            # A timeout after create may mean the provider accepted the job. An ordinary
+            # retry could create it twice; only the reserved, explicitly-attributed
+            # NativeFeatureUnavailable downgrade may add another attempt below.
+            max_retries = 1
         last_exc: Exception = None
         try:
             primary_request = _prepare_request_messages(
@@ -1316,12 +1616,15 @@ class ModelContextManager:
         native_downgraded = False
         for attempt in range(attempt_budget if primary_request is not None else 0):
             _start = _t.time()
+            client = None
+            snapshot_kwargs: Dict[str, Any] = {}
             try:
                 client = await self._get_client(name)
                 wire_kwargs, snapshot_kwargs = self._runtime_call_kwargs(
-                    name, client, input, kwargs,
+                    name, client, input, kwargs, tools,
                 )
-                await _record_request_snapshot(
+                self._observe_capability_attempt(name, client, snapshot_kwargs)
+                snapshot_id = await _record_request_snapshot(
                     session_id=session_id,
                     requested_model=name,
                     routed_model=name,
@@ -1355,14 +1658,28 @@ class ModelContextManager:
                     "transcriptions",
                     "embeddings",
                 )
-                if is_chat and not result.message:
+                if is_chat and not result.message and not input.get("background"):
                     raise Exception("Model returned empty message")
+                self._observe_capability_success(name, client, snapshot_kwargs)
+                if input.get("background"):
+                    await _record_background_result(
+                        session_id=session_id,
+                        operation="create",
+                        response_id=str(
+                            ((result.data or {}).get("background") or {}).get("response_id") or ""
+                        ),
+                        response=result,
+                        request_snapshot_id=snapshot_id,
+                        profile=input.get("trace_integrity_profile"),
+                    )
                 return result
             except (
                 httpx.TimeoutException,
                 httpx.ReadTimeout,
                 httpx.ConnectTimeout,
             ) as e:
+                if client is not None and snapshot_kwargs:
+                    self._observe_capability_error(name, client, snapshot_kwargs, e)
                 last_exc = e
                 logger.error(
                     f"| ❌ Model {name} timed out ({_t.time()-_start:.0f}s): {e}"
@@ -1374,6 +1691,8 @@ class ModelContextManager:
                     # Retrying or falling back cannot repair a missing source fact, and
                     # must never turn a fail-closed profile into another provider route.
                     raise
+                if client is not None and snapshot_kwargs:
+                    self._observe_capability_error(name, client, snapshot_kwargs, e)
                 # The provider stated its own limit. Retrying sends the identical
                 # request into the identical rejection; the answer is a smaller
                 # conversation, which only the caller can produce. Re-typed so the
@@ -1431,6 +1750,21 @@ class ModelContextManager:
                     )
                     break
 
+        if input.get("background"):
+            # Any non-definitive failure after dispatch may mean the provider accepted
+            # the job and only the acknowledgement was lost. Retrying another model (or
+            # another route) can duplicate the external job, so background creation is
+            # reconciled through Trace/provider state instead of automatic fallback.
+            return Response(
+                type=ResponseType.LLM,
+                success=False,
+                message=(
+                    "Background creation was not acknowledged and was not retried; "
+                    f"reconcile the recorded request before trying again. Error: {last_exc}"
+                ),
+                data={"background": {"status": "unknown", "requires_reconciliation": True}},
+            )
+
         if model_config and model_config.fallback_model:
             fallback = model_config.fallback_model
             logger.warning(
@@ -1464,12 +1798,17 @@ class ModelContextManager:
             ))
             fallback_error: Optional[Exception] = None
             for fallback_attempt in range(fallback_attempts):
+                fb_client = None
+                snapshot_kwargs = {}
                 try:
                     fb_client = await self._get_client(fallback)
                     wire_kwargs, snapshot_kwargs = self._runtime_call_kwargs(
-                        fallback, fb_client, input, kwargs,
+                        fallback, fb_client, input, kwargs, tools,
                     )
-                    await _record_request_snapshot(
+                    self._observe_capability_attempt(
+                        fallback, fb_client, snapshot_kwargs,
+                    )
+                    snapshot_id = await _record_request_snapshot(
                         session_id=session_id,
                         requested_model=name,
                         routed_model=fallback,
@@ -1503,14 +1842,32 @@ class ModelContextManager:
                         "transcriptions",
                         "embeddings",
                     )
-                    if is_chat and not result.message:
+                    if is_chat and not result.message and not input.get("background"):
                         raise Exception("Fallback returned empty message")
+                    self._observe_capability_success(
+                        fallback, fb_client, snapshot_kwargs,
+                    )
+                    if input.get("background"):
+                        await _record_background_result(
+                            session_id=session_id,
+                            operation="create",
+                            response_id=str(
+                                ((result.data or {}).get("background") or {}).get("response_id") or ""
+                            ),
+                            response=result,
+                            request_snapshot_id=snapshot_id,
+                            profile=input.get("trace_integrity_profile"),
+                        )
                     logger.info(f"| Fallback model {fallback} succeeded")
                     return result
                 except Exception as error:
                     from agentevolver.trace.checkpoint import TraceIntegrityError
                     if isinstance(error, TraceIntegrityError):
                         raise
+                    if fb_client is not None and snapshot_kwargs:
+                        self._observe_capability_error(
+                            fallback, fb_client, snapshot_kwargs, error,
+                        )
                     fallback_error = error
                     # Only a definite native-capability rejection earns the reserved
                     # downgrade attempt. Ordinary fallback failures retain the original
@@ -1557,7 +1914,6 @@ class ModelContextManager:
         longer restart safely (it would duplicate output), so a mid-stream failure
         propagates to the caller.
         """
-        import httpx
         from agentevolver.model.types import buffered_response_to_events
 
         session_id = getattr(ctx, "id", None)
@@ -1572,7 +1928,8 @@ class ModelContextManager:
         if name not in self.model_clients:
             raise ValueError(f"Model {name} not found. Available: {list(self.models.keys())}")
 
-        from agentevolver.model.types import StreamDone as _StreamDone, compute_cost as _compute_cost
+        from agentevolver.model.types import StreamDone as _StreamDone
+        from agentevolver.model.types import compute_cost as _compute_cost
 
         def _price_event(target: str, ev: Any) -> Any:
             """Fill a computed cost onto a StreamDone's usage when the provider gave none.
@@ -1592,11 +1949,15 @@ class ModelContextManager:
                 normalised = TokenUsage.from_raw(ev.usage)
                 if normalised is not None:
                     ev.usage["cost"] = _compute_cost(normalised.model_dump(), pricing)
+                    if ev.usage["cost"] is not None:
+                        ev.usage["cost_status"] = "estimated"
             return ev
 
         async def _events(target: str, client: Any, effective_messages: List[Any]):
             """Canonical events for one model (true stream, or buffered→events)."""
-            wire_kwargs, _ = self._runtime_call_kwargs(target, client, input, kwargs)
+            wire_kwargs, _ = self._runtime_call_kwargs(
+                target, client, input, kwargs, tools,
+            )
             if hasattr(client, "stream"):
                 async for ev in client.stream(
                     messages=effective_messages, tools=tools, response_format=response_format, **wire_kwargs
@@ -1637,10 +1998,12 @@ class ModelContextManager:
             native_downgraded = False
             for attempt in range(attempts):
                 started = False
+                client = None
+                snapshot_kwargs = {}
                 try:
                     client = await self._get_client(target)
                     _, snapshot_kwargs = self._runtime_call_kwargs(
-                        target, client, input, kwargs,
+                        target, client, input, kwargs, tools,
                     )
                     effective = _prepare_request_messages(
                         messages=messages,
@@ -1651,6 +2014,9 @@ class ModelContextManager:
                         call_kwargs=snapshot_kwargs,
                         model_name=target,
                         default_output_tokens=self.max_tokens,
+                    )
+                    self._observe_capability_attempt(
+                        target, client, snapshot_kwargs,
                     )
                     await _record_request_snapshot(
                         session_id=session_id,
@@ -1671,6 +2037,9 @@ class ModelContextManager:
                     async for ev in _events(target, client, effective.messages):
                         started = True
                         yield ev
+                    self._observe_capability_success(
+                        target, client, snapshot_kwargs,
+                    )
                     return  # stream completed cleanly
                 except ContextOverflowError as overflow:
                     # Not a failed attempt: the request was never sent, and re-sending it
@@ -1684,6 +2053,10 @@ class ModelContextManager:
                     from agentevolver.trace.checkpoint import TraceIntegrityError
                     if isinstance(e, TraceIntegrityError):
                         raise
+                    if client is not None and snapshot_kwargs:
+                        self._observe_capability_error(
+                            target, client, snapshot_kwargs, e,
+                        )
                     # Same reasoning as the branch above: the provider's own limit is
                     # the authority, and it just stated it. Give up this candidate's
                     # remaining attempts so the next model — which may have a larger

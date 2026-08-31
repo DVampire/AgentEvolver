@@ -74,14 +74,19 @@ class ReplayModel:
 
     def __init__(self, script: Sequence[Step]):
         self.script = list(script)
-        self.calls: List[Dict[str, Any]] = []      # what the loop actually sent
+        self.calls: List[Dict[str, Any]] = []  # what the loop actually sent
 
     @property
     def consumed(self) -> int:
         return len(self.calls)
 
-    def stream(self, name: Optional[str] = None, input: Optional[Dict[str, Any]] = None,
-               ctx: Any = None, **kwargs: Any):
+    def stream(
+        self,
+        name: Optional[str] = None,
+        input: Optional[Dict[str, Any]] = None,
+        ctx: Any = None,
+        **kwargs: Any,
+    ):
         """Stand in for `model_manager.stream`, returning the next step as an event stream.
 
         The request is retained before anything is yielded, so a test can assert what the
@@ -103,6 +108,7 @@ class ReplayModel:
         model, and pydantic refuses an attribute the model does not declare, so patching
         the singleton instance raises instead of taking effect.
         """
+
         def _stream(_manager_self, *args, **kwargs):
             return self.stream(*args, **kwargs)
 
@@ -166,13 +172,17 @@ def script_from_events(events: Sequence[Any]) -> List[Step]:
         if event.event_type != TraceEventType.AGENT_CALL:
             continue
         number = getattr(event, "step_number", 0) or 0
-        steps.append(Step(
-            reasoning=getattr(event, "reasoning", None) or getattr(event, "message", None) or "",
-            tool_calls=[
-                Call(name=start.action_name or "", args=start.input or {})
-                for start in calls_by_step.get(number, [])
-            ],
-        ))
+        steps.append(
+            Step(
+                reasoning=getattr(event, "reasoning", None)
+                or getattr(event, "message", None)
+                or "",
+                tool_calls=[
+                    Call(name=start.action_name or "", args=start.input or {})
+                    for start in calls_by_step.get(number, [])
+                ],
+            )
+        )
     return steps
 
 

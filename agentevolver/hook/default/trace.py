@@ -66,12 +66,29 @@ class TraceHook(Hook):
         inp_event = inp.get("event")
 
         if inp_event == HookEvent.ON_START:
-            event = agent_start_event(
-                session_id=ctx.id,
-                task_id=self._task_id(ctx),
-                agent_name=agent_name,
-                task_content=self._task_content(ctx),
-            )
+            if inp.get("resume_execution"):
+                # Do not append the original task as a second user turn. This custom
+                # boundary causes Memory to rehydrate the durable surface while keeping
+                # the conversation semantically unchanged.
+                event = TraceEvent(
+                    event_type=TraceEventType.CUSTOM,
+                    session_id=ctx.id,
+                    task_id=self._task_id(ctx),
+                    agent_name=agent_name,
+                    label=f"Execution resumed: {agent_name}",
+                    metadata={
+                        "type": "execution_resume",
+                        "source_last_seq": inp.get("resume_source_seq"),
+                    },
+                    ignorable=False,
+                )
+            else:
+                event = agent_start_event(
+                    session_id=ctx.id,
+                    task_id=self._task_id(ctx),
+                    agent_name=agent_name,
+                    task_content=self._task_content(ctx),
+                )
             parent_session_id = inp.get("parent_session_id")
             if parent_session_id:
                 event = event.model_copy(update={"metadata": {

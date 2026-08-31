@@ -16,6 +16,8 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from agentevolver.config import config
 from agentevolver.permission import PermissionMode
 from agentevolver.permission.types import check_file_write, validate_command
@@ -35,14 +37,14 @@ def test_a_sibling_sharing_the_workspace_prefix_is_still_outside_it(tmp_path: Pa
     workspace = tmp_path / "work"
     workspace.mkdir()
 
-    inside = check_file_write(str(workspace / "ok.txt"), "x",
-                              PermissionMode.WORKSPACE_WRITE, str(workspace))
+    inside = check_file_write(
+        str(workspace / "ok.txt"), "x", PermissionMode.WORKSPACE_WRITE, str(workspace)
+    )
     assert inside.allowed
 
     # Not a subdirectory: it merely begins with the same characters.
     sibling = tmp_path / "workspace-escape" / "bad.txt"
-    outside = check_file_write(str(sibling), "x",
-                               PermissionMode.WORKSPACE_WRITE, str(workspace))
+    outside = check_file_write(str(sibling), "x", PermissionMode.WORKSPACE_WRITE, str(workspace))
     assert not outside.allowed
 
 
@@ -59,8 +61,7 @@ def test_a_general_purpose_interpreter_is_never_assumed_read_only() -> None:
     """
     from agentevolver.permission.types import CommandIntent, _classify_intent
 
-    for command in ("python -c pass", "node script.js",
-                    "curl https://example.com", "tee output"):
+    for command in ("python -c pass", "node script.js", "curl https://example.com", "tee output"):
         assert _classify_intent(command) is CommandIntent.UNKNOWN, command
         assert not validate_command(command, PermissionMode.READ_ONLY).allowed, command
 
@@ -84,14 +85,18 @@ def test_destructive_commands_require_approval_even_with_full_access() -> None:
     assert "irreversible" in (result.warning or "")
 
 
-@pytest.mark.parametrize("command", [
-    "echo ready && rm -rf build-cache",
-    "sudo rm -rf build-cache",
-    "VALUE=1 rm -rf build-cache",
-])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo ready && rm -rf build-cache",
+        "sudo rm -rf build-cache",
+        "VALUE=1 rm -rf build-cache",
+    ],
+)
 def test_nested_destructive_commands_still_require_approval(command: str) -> None:
     assert validate_command(
-        command, PermissionMode.DANGER_FULL_ACCESS,
+        command,
+        PermissionMode.DANGER_FULL_ACCESS,
     ).requires_approval
 
 
@@ -131,10 +136,32 @@ def test_direct_declared_workspace_mode_uses_the_bound_session_root(tmp_path) ->
     assert "outside" in (result.reason or "")
 
 
+def test_direct_workspace_mode_is_never_upgraded_to_full_access_without_session():
+    from agentevolver.paths import path_manager
+    from agentevolver.permission import permission_manager
+    from agentevolver.permission.types import Operation, PermissionRequest
+
+    owner, session = path_manager._owner, path_manager._session_id
+    try:
+        path_manager.unbind_session()
+        result = permission_manager.check_declared(
+            "direct-terminal",
+            PermissionRequest(op=Operation.BASH, target="sudo systemctl stop sshd"),
+            mode=PermissionMode.WORKSPACE_WRITE,
+        )
+    finally:
+        path_manager._owner, path_manager._session_id = owner, session
+
+    assert not result.allowed
+    assert "workspace_write" in (result.reason or "")
+
+
 # --------------------------------------------------------------------------- #
 # The unrestricted mode still has to work
 # --------------------------------------------------------------------------- #
-def test_full_access_runs_the_command_here_rather_than_reaching_for_a_sandbox(tmp_path: Path) -> None:
+def test_full_access_runs_the_command_here_rather_than_reaching_for_a_sandbox(
+    tmp_path: Path,
+) -> None:
     """The agent already runs inside the project container, so "here" is the sandbox.
 
     There is no separate box to reach into any more. The assertion on `sandboxed` is the
@@ -179,11 +206,12 @@ def test_an_omitted_workspace_falls_back_to_the_bound_session():
     path_manager.bind_session("local", "fence_fallback")
     try:
         workspace = str(path_manager.session_roots()["workspace"])
-        assert check_file_write(f"{workspace}/inside.txt", "x",
-                                PermissionMode.WORKSPACE_WRITE).allowed
-        assert not check_file_write("/etc/hosts", "x",
-                                    PermissionMode.WORKSPACE_WRITE).allowed, (
-            "an omitted workspace left the write unfenced")
+        assert check_file_write(
+            f"{workspace}/inside.txt", "x", PermissionMode.WORKSPACE_WRITE
+        ).allowed
+        assert not check_file_write("/etc/hosts", "x", PermissionMode.WORKSPACE_WRITE).allowed, (
+            "an omitted workspace left the write unfenced"
+        )
     finally:
         path_manager.unbind_session()
 
@@ -208,11 +236,10 @@ def test_with_no_bound_session_the_config_still_fences():
     workspace = str(getattr(config, "workspace_root", "") or "")
     assert workspace, "this test needs a configured workspace to be about anything"
 
-    assert check_file_write(f"{workspace}/inside.txt", "x",
-                            PermissionMode.WORKSPACE_WRITE).allowed
-    assert not check_file_write("/etc/hosts", "x",
-                                PermissionMode.WORKSPACE_WRITE).allowed, (
-        "with no session bound the config workspace is the only fence, and it is gone")
+    assert check_file_write(f"{workspace}/inside.txt", "x", PermissionMode.WORKSPACE_WRITE).allowed
+    assert not check_file_write("/etc/hosts", "x", PermissionMode.WORKSPACE_WRITE).allowed, (
+        "with no session bound the config workspace is the only fence, and it is gone"
+    )
 
 
 def test_the_bound_run_outranks_the_config():
@@ -229,9 +256,9 @@ def test_the_bound_run_outranks_the_config():
     path_manager.bind_session("local", "outranks")
     try:
         path_manager.override(P.SESSION_WORKSPACE, "/workspace")
-        assert check_file_write("/workspace/x.c", "x",
-                                PermissionMode.WORKSPACE_WRITE).allowed, (
-            "the config's stale workspace won over the bound run's")
+        assert check_file_write("/workspace/x.c", "x", PermissionMode.WORKSPACE_WRITE).allowed, (
+            "the config's stale workspace won over the bound run's"
+        )
     finally:
         path_manager.unbind_session()
 
@@ -257,14 +284,15 @@ def test_a_container_mount_is_fenced_by_both_boundaries():
     try:
         path_manager.override(P.SESSION_WORKSPACE, "/workspace")
         assert check_session_path(path="/workspace/cmatrix.c", write=True) is None, (
-            "the sandbox boundary ignores the container mount override")
-        assert check_file_write("/workspace/cmatrix.c", "int main(){}",
-                                PermissionMode.WORKSPACE_WRITE).allowed, (
-            "the permission fence ignores the container mount override")
+            "the sandbox boundary ignores the container mount override"
+        )
+        assert check_file_write(
+            "/workspace/cmatrix.c", "int main(){}", PermissionMode.WORKSPACE_WRITE
+        ).allowed, "the permission fence ignores the container mount override"
         for escape in ("/etc/passwd", "/workspace/../etc/passwd"):
             assert check_session_path(path=escape, write=True), f"sandbox allows {escape}"
-            assert not check_file_write(escape, "x",
-                                        PermissionMode.WORKSPACE_WRITE).allowed, (
-                f"permission fence allows {escape}")
+            assert not check_file_write(escape, "x", PermissionMode.WORKSPACE_WRITE).allowed, (
+                f"permission fence allows {escape}"
+            )
     finally:
         path_manager.unbind_session()

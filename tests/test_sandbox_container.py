@@ -43,14 +43,18 @@ REPO = str(__import__("pathlib").Path(__file__).resolve().parents[1])
 def _docker_ok() -> bool:
     if shutil.which("docker") is None:
         return False
-    return subprocess.run(
-        ["docker", "image", "inspect", IMAGE],
-        capture_output=True,
-    ).returncode == 0
+    return (
+        subprocess.run(
+            ["docker", "image", "inspect", IMAGE],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
 
 
 requires_docker = pytest.mark.skipif(
-    not _docker_ok(), reason=f"needs a Docker daemon and the {IMAGE} image",
+    not _docker_ok(),
+    reason=f"needs a Docker daemon and the {IMAGE} image",
 )
 
 
@@ -65,7 +69,8 @@ def _internet_ok() -> bool:
 
 
 requires_internet = pytest.mark.skipif(
-    not _internet_ok(), reason="needs outbound internet to tell allow from deny",
+    not _internet_ok(),
+    reason="needs outbound internet to tell allow from deny",
 )
 
 
@@ -77,9 +82,14 @@ def a_key(label: str) -> str:
 @pytest_asyncio.fixture
 async def box():
     """A started, network-less container, destroyed however the test ends."""
-    handle = DockerSandbox(SandboxConfig(
-        image=IMAGE, network=False, sandbox_key=a_key("box"), workdir="/workspace",
-    ))
+    handle = DockerSandbox(
+        SandboxConfig(
+            image=IMAGE,
+            network=False,
+            sandbox_key=a_key("box"),
+            workdir="/workspace",
+        )
+    )
     await handle.start()
     try:
         yield handle
@@ -112,7 +122,8 @@ async def test_destroying_removes_the_container(box):
     assert await box.is_alive() is False
     listed = subprocess.run(
         ["docker", "ps", "-aq", "--filter", f"name=^{box.container_name}$"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     assert listed == ""
 
@@ -122,9 +133,13 @@ async def test_destroying_removes_the_container(box):
 async def test_the_container_survives_an_image_whose_entrypoint_would_exit():
     """The sandbox is a place to exec into; the image's own entrypoint must not
     be able to take it down."""
-    handle = DockerSandbox(SandboxConfig(
-        image=IMAGE, network=False, sandbox_key=a_key("entrypoint"),
-    ))
+    handle = DockerSandbox(
+        SandboxConfig(
+            image=IMAGE,
+            network=False,
+            sandbox_key=a_key("entrypoint"),
+        )
+    )
     await handle.start()
     try:
         for _ in range(3):
@@ -272,10 +287,15 @@ async def test_a_mounted_directory_is_visible_inside(tmp_path):
     container that is about to be destroyed only survives if the writes land on the
     host — which is how a task's deliverable gets out at all."""
     (tmp_path / "given.txt").write_text("from the host", encoding="utf-8")
-    handle = DockerSandbox(SandboxConfig(
-        image=IMAGE, network=False, sandbox_key=a_key("mount"),
-        mounts={str(tmp_path): "/mounted"}, workdir="/mounted",
-    ))
+    handle = DockerSandbox(
+        SandboxConfig(
+            image=IMAGE,
+            network=False,
+            sandbox_key=a_key("mount"),
+            mounts={str(tmp_path): "/mounted"},
+            workdir="/mounted",
+        )
+    )
     await handle.start()
     try:
         assert (await handle.read_file("/mounted/given.txt")) == "from the host"
@@ -312,13 +332,18 @@ async def test_an_open_network_can_reach_the_internet():
     """The control for the two above: a backend that had broken *all* networking would
     pass every isolation test in this file and fail nothing, until a task that legitimately
     needs to fetch something quietly could not."""
-    handle = DockerSandbox(SandboxConfig(
-        image=IMAGE, network=True, sandbox_key=a_key("open"),
-    ))
+    handle = DockerSandbox(
+        SandboxConfig(
+            image=IMAGE,
+            network=True,
+            sandbox_key=a_key("open"),
+        )
+    )
     await handle.start()
     try:
         result = await handle.run_command(
-            "curl -sS -o /dev/null -w '%{http_code}' -m 30 http://example.com/", timeout=60,
+            "curl -sS -o /dev/null -w '%{http_code}' -m 30 http://example.com/",
+            timeout=60,
         )
         assert result.stdout.strip() == "200"
     finally:
@@ -335,8 +360,11 @@ async def gated():
     """
     key = a_key("egress")
     handle = await sandbox_manager.acquire(
-        "docker", reuse_key=key,
-        image=IMAGE, network=False, allow_hosts=["example.com"],
+        "docker",
+        reuse_key=key,
+        image=IMAGE,
+        network=False,
+        allow_hosts=["example.com"],
         mounts={REPO: "/AgentEvolver", sys.prefix: sys.prefix},
         workdir="/workspace",
     )
@@ -348,7 +376,8 @@ async def gated():
 
 async def _status(handle, url):
     result = await handle.run_command(
-        f"curl -sS -o /dev/null -w '%{{http_code}}' -m 30 {url}", timeout=60,
+        f"curl -sS -o /dev/null -w '%{{http_code}}' -m 30 {url}",
+        timeout=60,
     )
     return result.stdout.strip()
 
@@ -401,8 +430,11 @@ async def test_a_policy_without_a_mounted_checkout_fails_loudly():
     key = a_key("no-checkout")
     with pytest.raises(Exception, match="framework checkout"):
         await sandbox_manager.acquire(
-            "docker", reuse_key=key,
-            image=IMAGE, network=False, allow_hosts=["example.com"],
+            "docker",
+            reuse_key=key,
+            image=IMAGE,
+            network=False,
+            allow_hosts=["example.com"],
         )
 
 
@@ -415,14 +447,18 @@ async def test_a_failed_start_leaves_no_container_behind():
     key = a_key("failed-start")
     with pytest.raises(Exception, match="framework checkout"):
         await sandbox_manager.acquire(
-            "docker", reuse_key=key,
-            image=IMAGE, network=False, allow_hosts=["example.com"],
+            "docker",
+            reuse_key=key,
+            image=IMAGE,
+            network=False,
+            allow_hosts=["example.com"],
         )
     # Asked of the daemon, not of the handle: the point is that nothing was left running
     # under a name nothing holds a reference to any more.
     listed = subprocess.run(
         ["docker", "ps", "-aq", "--filter", f"name=^{_container_name(key)}$"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     assert listed == ""
 
@@ -436,8 +472,11 @@ async def test_a_failed_start_leaves_no_relay_socket_behind():
     key = a_key("failed-relay")
     with pytest.raises(Exception, match="framework checkout"):
         await sandbox_manager.acquire(
-            "docker", reuse_key=key,
-            image=IMAGE, network=False, allow_hosts=["example.com"],
+            "docker",
+            reuse_key=key,
+            image=IMAGE,
+            network=False,
+            allow_hosts=["example.com"],
         )
     assert not os.path.exists(str(default_socket_path(key)))
 
@@ -475,7 +514,9 @@ async def test_different_keys_get_different_containers():
         ]
         assert a is not b
         await a.run_command("echo only-in-a > /tmp/marker")
-        assert (await b.run_command("cat /tmp/marker 2>/dev/null || echo absent")).stdout.strip() == "absent"
+        assert (
+            await b.run_command("cat /tmp/marker 2>/dev/null || echo absent")
+        ).stdout.strip() == "absent"
     finally:
         for k in keys:
             await sandbox_manager.release("docker", reuse_key=k)
@@ -514,9 +555,14 @@ async def test_a_dead_container_is_not_handed_back_from_the_cache():
 async def test_the_requested_user_is_who_the_command_runs_as():
     """An image whose files are readable only by its own user relies on this; a
     sandbox that silently runs as root hands back access the image withheld."""
-    handle = DockerSandbox(SandboxConfig(
-        image=IMAGE, network=False, sandbox_key=a_key("identity"), user="1000:1000",
-    ))
+    handle = DockerSandbox(
+        SandboxConfig(
+            image=IMAGE,
+            network=False,
+            sandbox_key=a_key("identity"),
+            user="1000:1000",
+        )
+    )
     await handle.start()
     try:
         assert (await handle.run_command("id -u")).stdout.strip() == "1000"
@@ -530,9 +576,14 @@ async def test_the_workdir_is_where_a_command_starts():
     """Every relative path an agent writes is resolved against this. If it silently
     defaults to the image's own directory, `make` builds elsewhere and the files the
     agent then looks for are not there — with nothing in the output saying why."""
-    handle = DockerSandbox(SandboxConfig(
-        image=IMAGE, network=False, sandbox_key=a_key("workdir"), workdir="/tmp",
-    ))
+    handle = DockerSandbox(
+        SandboxConfig(
+            image=IMAGE,
+            network=False,
+            sandbox_key=a_key("workdir"),
+            workdir="/tmp",
+        )
+    )
     await handle.start()
     try:
         assert (await handle.run_command("pwd")).stdout.strip() == "/tmp"
@@ -546,9 +597,7 @@ async def test_the_workdir_is_where_a_command_starts():
 async def test_orphaned_processes_are_reaped_rather_than_left_as_zombies(box):
     """51 zombies accumulated in the first 13 minutes of one measured task; a
     long run would eventually exhaust the pid limit."""
-    await box.run_command(
-        "sh -c '(sleep 30 &) ; exit 0'"
-    )
+    await box.run_command("sh -c '(sleep 30 &) ; exit 0'")
     await box.run_command("sleep 1")
     result = await box.run_command("ps -eo stat= | grep -c '^Z' || true")
     assert int(result.stdout.strip() or 0) == 0

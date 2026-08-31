@@ -37,11 +37,20 @@ from agentevolver.model.types import accumulate_stream, buffered_response_to_eve
 
 def _tool(name="read_file_tool"):
     return _SchemaTool(
-        name=name, description="Read a file.",
-        function_calling={"type": "function", "function": {
-            "name": name, "description": "Read a file.",
-            "parameters": {"type": "object", "properties": {"path": {"type": "string"}},
-                           "required": ["path"]}}},
+        name=name,
+        description="Read a file.",
+        function_calling={
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": "Read a file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"],
+                },
+            },
+        },
     )
 
 
@@ -71,7 +80,8 @@ def test_direct_openai_catalog_declares_the_same_protocol_with_a_tool_safe_fallb
     from agentevolver.model.config import openai_models
 
     specs = openai_models(
-        max_tokens=8192, default_temperature=0.7,
+        max_tokens=8192,
+        default_temperature=0.7,
         default_reasoning={"reasoning": {"effort": "low"}},
     )
     sol = next(model for model in specs["response"] if model["model_name"] == "openai/gpt-5.6-sol")
@@ -125,15 +135,17 @@ async def test_llm_hub_builds_opus_5_with_the_native_anthropic_client():
     from agentevolver.model.context import ModelContextManager
     from agentevolver.model.types import ModelConfig
 
-    client = await ModelContextManager()._build_client(ModelConfig(
-        model_name="llm_hub/claude-opus-5",
-        model_id="claude-opus-5",
-        model_type="anthropic/messages",
-        provider="llm_hub",
-        api_key="key",
-        api_base="https://relay.invalid/v1",
-        reasoning={"thinking": {"type": "adaptive"}},
-    ))
+    client = await ModelContextManager()._build_client(
+        ModelConfig(
+            model_name="llm_hub/claude-opus-5",
+            model_id="claude-opus-5",
+            model_type="anthropic/messages",
+            provider="llm_hub",
+            api_key="key",
+            api_base="https://relay.invalid/v1",
+            reasoning={"thinking": {"type": "adaptive"}},
+        )
+    )
 
     assert isinstance(client, ChatAnthropic)
     assert client.model == "claude-opus-5"
@@ -148,18 +160,29 @@ def test_native_anthropic_stream_keeps_the_signed_thinking_block():
             return dict(vars(self))
 
     async def raw():
-        yield SimpleNamespace(type="content_block_start", index=0,
-                              content_block=Block(type="thinking", thinking=""))
-        yield SimpleNamespace(type="content_block_delta", index=0,
-                              delta=SimpleNamespace(type="thinking_delta", thinking="why"))
-        yield SimpleNamespace(type="content_block_delta", index=0,
-                              delta=SimpleNamespace(type="signature_delta", signature="sig"))
+        yield SimpleNamespace(
+            type="content_block_start", index=0, content_block=Block(type="thinking", thinking="")
+        )
+        yield SimpleNamespace(
+            type="content_block_delta",
+            index=0,
+            delta=SimpleNamespace(type="thinking_delta", thinking="why"),
+        )
+        yield SimpleNamespace(
+            type="content_block_delta",
+            index=0,
+            delta=SimpleNamespace(type="signature_delta", signature="sig"),
+        )
 
     acc = asyncio.run(accumulate_stream(ChatAnthropic(model="claude-opus-5")._parse_stream(raw())))
     assert acc["thinking"] == "why"
-    assert acc["provider_state"]["anthropic"]["thinking_blocks"] == [{
-        "type": "thinking", "thinking": "why", "signature": "sig",
-    }]
+    assert acc["provider_state"]["anthropic"]["thinking_blocks"] == [
+        {
+            "type": "thinking",
+            "thinking": "why",
+            "signature": "sig",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -170,23 +193,27 @@ async def test_native_anthropic_compaction_returns_a_round_trippable_block(monke
 
     async def create(**kwargs):
         captured.update(kwargs)
-        return SimpleNamespace(model_dump=lambda: {
-            "stop_reason": "compaction",
-            "content": [{"type": "compaction", "content": "summary"}],
-            "usage": {"iterations": [
-                {"type": "compaction", "input_tokens": 50_000, "output_tokens": 800},
-            ]},
-        })
+        return SimpleNamespace(
+            model_dump=lambda: {
+                "stop_reason": "compaction",
+                "content": [{"type": "compaction", "content": "summary"}],
+                "usage": {
+                    "iterations": [
+                        {"type": "compaction", "input_tokens": 50_000, "output_tokens": 800},
+                    ]
+                },
+            }
+        )
 
-    fake = SimpleNamespace(beta=SimpleNamespace(
-        messages=SimpleNamespace(create=create)
-    ))
+    fake = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(create=create)))
     monkeypatch.setattr(ChatAnthropic, "get_client", lambda self: fake)
     client = ChatAnthropic(model="claude-opus-5")
 
-    result = await client.compact_history([
-        HumanMessage(content="task" + ("x" * 220_000)),
-    ])
+    result = await client.compact_history(
+        [
+            HumanMessage(content="task" + ("x" * 220_000)),
+        ]
+    )
 
     edit = captured["context_management"]["edits"][0]
     assert captured["betas"] == ["compact-2026-01-12"]
@@ -202,9 +229,11 @@ def test_anthropic_native_compaction_waits_until_the_beta_minimum():
     from agentevolver.model.anthropic.chat import ChatAnthropic
 
     assert not ChatAnthropic.compaction_ready([HumanMessage(content="short")])
-    assert ChatAnthropic.compaction_ready([
-        HumanMessage(content="x" * 220_000),
-    ])
+    assert ChatAnthropic.compaction_ready(
+        [
+            HumanMessage(content="x" * 220_000),
+        ]
+    )
 
 
 @pytest.mark.asyncio
@@ -213,13 +242,24 @@ async def test_native_compaction_replay_keeps_context_management_enabled():
 
     checkpoint = CompactionMessage(
         content="portable",
-        provider_state={"anthropic": {"compaction_blocks": [{
-            "type": "compaction", "content": "canonical summary",
-        }]}},
+        provider_state={
+            "anthropic": {
+                "compaction_blocks": [
+                    {
+                        "type": "compaction",
+                        "content": "canonical summary",
+                    }
+                ]
+            }
+        },
     )
-    built = await ChatAnthropic(model="claude-opus-5", temperature=None)._build_params([
-        HumanMessage(content="task"), checkpoint, HumanMessage(content="continue"),
-    ])
+    built = await ChatAnthropic(model="claude-opus-5", temperature=None)._build_params(
+        [
+            HumanMessage(content="task"),
+            checkpoint,
+            HumanMessage(content="continue"),
+        ]
+    )
 
     assert built["use_beta_api"] is True
     assert "compact-2026-01-12" in built["params"]["betas"]
@@ -252,13 +292,22 @@ def test_llm_hub_stream_keeps_claude_reasoning_extensions():
 
     async def raw():
         delta = SimpleNamespace(
-            content=None, reasoning_content="why", tool_calls=[],
+            content=None,
+            reasoning_content="why",
+            tool_calls=[],
             reasoning_details=[{"type": "reasoning.text", "text": "why"}],
-            reasoning_signature="sig", model_extra={},
+            reasoning_signature="sig",
+            model_extra={},
         )
-        yield SimpleNamespace(usage=None, choices=[SimpleNamespace(
-            delta=delta, finish_reason="stop",
-        )])
+        yield SimpleNamespace(
+            usage=None,
+            choices=[
+                SimpleNamespace(
+                    delta=delta,
+                    finish_reason="stop",
+                )
+            ],
+        )
 
     acc = asyncio.run(accumulate_stream(ChatLLMHub(model="claude-opus-5")._parse_stream(raw())))
     assert acc["provider_state"]["llm_hub"]["reasoning_signature"] == "sig"
@@ -280,15 +329,27 @@ def test_tool_schemas_are_flattened():
 
 def test_a_tool_turn_becomes_separate_call_and_output_items():
     """The two APIs disagree about what a turn is; `tool_call_id` is the hinge."""
-    items = serialize_input([
-        HumanMessage(content="read it"),
-        AssistantMessage(content="looking", tool_calls=[ToolCall(
-            id="call_1", function=Function(name="read_file_tool", arguments='{"path":"a.py"}'))]),
-        ToolMessage(content="contents", tool_call_id="call_1"),
-    ])
+    items = serialize_input(
+        [
+            HumanMessage(content="read it"),
+            AssistantMessage(
+                content="looking",
+                tool_calls=[
+                    ToolCall(
+                        id="call_1",
+                        function=Function(name="read_file_tool", arguments='{"path":"a.py"}'),
+                    )
+                ],
+            ),
+            ToolMessage(content="contents", tool_call_id="call_1"),
+        ]
+    )
 
     assert [i.get("type") or i.get("role") for i in items] == [
-        "user", "assistant", "function_call", "function_call_output",
+        "user",
+        "assistant",
+        "function_call",
+        "function_call_output",
     ]
     assert items[2]["call_id"] == items[3]["call_id"] == "call_1"
     assert json.loads(items[2]["arguments"]) == {"path": "a.py"}
@@ -297,29 +358,38 @@ def test_a_tool_turn_becomes_separate_call_and_output_items():
 
 def test_an_assistant_turn_with_no_text_still_carries_its_calls():
     """A model that calls a tool without narrating must not lose the call."""
-    items = serialize_input([AssistantMessage(content="", tool_calls=[ToolCall(
-        id="call_1", function=Function(name="t", arguments="{}"))])])
+    items = serialize_input(
+        [
+            AssistantMessage(
+                content="",
+                tool_calls=[ToolCall(id="call_1", function=Function(name="t", arguments="{}"))],
+            )
+        ]
+    )
 
     assert [i.get("type") for i in items] == ["function_call"]
 
 
 def test_system_messages_stay_as_items():
     """`instructions` is a single field, so several system turns would collapse into one."""
-    items = serialize_input([SystemMessage(content="a"), SystemMessage(content="b"),
-                             HumanMessage(content="c")])
+    items = serialize_input(
+        [SystemMessage(content="a"), SystemMessage(content="b"), HumanMessage(content="c")]
+    )
 
     assert [i["role"] for i in items] == ["system", "system", "user"]
 
 
 def test_a_native_compaction_item_is_replayed_without_flattening_to_user_text():
     opaque = {"type": "compaction", "encrypted_content": "opaque-1"}
-    items = serialize_input([
-        CompactionMessage(
-            content="readable fallback",
-            provider_state={"responses": {"compaction_items": [opaque]}},
-        ),
-        HumanMessage(content="continue"),
-    ])
+    items = serialize_input(
+        [
+            CompactionMessage(
+                content="readable fallback",
+                provider_state={"responses": {"compaction_items": [opaque]}},
+            ),
+            HumanMessage(content="continue"),
+        ]
+    )
 
     assert items == [opaque, {"role": "user", "content": "continue"}]
 
@@ -329,15 +399,17 @@ def test_native_compaction_replaces_user_history_but_keeps_system_instructions()
         {"type": "message", "role": "user", "content": "task"},
         {"type": "compaction", "encrypted_content": "opaque"},
     ]
-    items = serialize_input([
-        SystemMessage(content="agent contract"),
-        HumanMessage(content="task"),
-        CompactionMessage(
-            content="portable",
-            provider_state={"responses": {"compaction_items": canonical}},
-        ),
-        HumanMessage(content="continue"),
-    ])
+    items = serialize_input(
+        [
+            SystemMessage(content="agent contract"),
+            HumanMessage(content="task"),
+            CompactionMessage(
+                content="portable",
+                provider_state={"responses": {"compaction_items": canonical}},
+            ),
+            HumanMessage(content="continue"),
+        ]
+    )
 
     assert items == [
         {"role": "system", "content": "agent contract"},
@@ -350,23 +422,25 @@ def test_native_compaction_replaces_user_history_but_keeps_system_instructions()
 async def test_native_compaction_keeps_the_canonical_output_verbatim():
     async def compact(**kwargs):
         assert kwargs["input"][0] == {"role": "user", "content": "task"}
-        return SimpleNamespace(model_dump=lambda: {
-            "output": [
-                {"type": "message", "role": "user", "content": "task"},
-                {"type": "message", "role": "user", "content": "Error: retry"},
-                {"type": "compaction", "encrypted_content": "opaque-2"},
-            ],
-            "usage": {"input_tokens": 12},
-        })
+        return SimpleNamespace(
+            model_dump=lambda: {
+                "output": [
+                    {"type": "message", "role": "user", "content": "task"},
+                    {"type": "message", "role": "user", "content": "Error: retry"},
+                    {"type": "compaction", "encrypted_content": "opaque-2"},
+                ],
+                "usage": {"input_tokens": 12},
+            }
+        )
 
     client = _client()
-    client._client = lambda: SimpleNamespace(
-        responses=SimpleNamespace(compact=compact)
+    client._client = lambda: SimpleNamespace(responses=SimpleNamespace(compact=compact))
+    result = await client.compact_history(
+        [
+            HumanMessage(content="task"),
+            HumanMessage(content="Error: retry"),
+        ]
     )
-    result = await client.compact_history([
-        HumanMessage(content="task"),
-        HumanMessage(content="Error: retry"),
-    ])
 
     saved = result["provider_state"]["responses"]["compaction_items"]
     assert [item["type"] for item in saved] == ["message", "message", "compaction"]
@@ -377,21 +451,30 @@ async def test_native_compaction_keeps_the_canonical_output_verbatim():
 
 def test_reasoning_is_accepted_in_either_catalog_shape():
     """One catalog entry can move between the two surfaces without being rewritten."""
-    responses_shape = _client(reasoning={"effort": "low"})._build_params([HumanMessage(content="x")])
+    responses_shape = _client(reasoning={"effort": "low"})._build_params(
+        [HumanMessage(content="x")]
+    )
     chat_shape = _client(reasoning={"reasoning": {"effort": "high"}})._build_params(
-        [HumanMessage(content="x")])
+        [HumanMessage(content="x")]
+    )
 
     assert responses_shape["reasoning"] == {"effort": "low"}
     assert chat_shape["reasoning"] == {"effort": "high"}
 
 
 def test_persisted_reasoning_options_are_forwarded_without_chat_vocabulary():
-    params = _client(reasoning={
-        "effort": "low", "context": "all_turns", "mode": "pro",
-    })._build_params([HumanMessage(content="x")])
+    params = _client(
+        reasoning={
+            "effort": "low",
+            "context": "all_turns",
+            "mode": "pro",
+        }
+    )._build_params([HumanMessage(content="x")])
 
     assert params["reasoning"] == {
-        "effort": "low", "context": "all_turns", "mode": "pro",
+        "effort": "low",
+        "context": "all_turns",
+        "mode": "pro",
     }
 
 
@@ -402,7 +485,8 @@ def test_programmatic_tool_calling_only_opts_read_only_tools_in():
     client = _client(native_programmatic_tool_calling=True)
 
     params = client._build_params(
-        [HumanMessage(content="inspect")], [direct, read],
+        [HumanMessage(content="inspect")],
+        [direct, read],
         runtime_features={"programmatic_tool_calling": "native"},
     )
 
@@ -437,20 +521,26 @@ def test_feature_resolution_has_a_named_fallback_for_every_optimization():
 
     manager = ModelContextManager()
     manager.models["plain"] = ModelConfig(
-        model_name="plain", model_id="plain", model_type="chat/completions",
+        model_name="plain",
+        model_id="plain",
+        model_type="chat/completions",
         provider="test",
     )
-    resolved = manager.resolve_runtime_features("plain", {
-        "programmatic_tool_calling": True, "multi_agent": True,
-    })
+    resolved = manager.resolve_runtime_features(
+        "plain",
+        {
+            "programmatic_tool_calling": True,
+            "multi_agent": True,
+        },
+    )
 
     assert resolved == {
         "persisted_reasoning": "message_replay",
         "compaction": "portable_checkpoint",
-            "programmatic_tool_calling": "direct_tools",
-            "multi_agent": "local_meta_agent",
-            "prompt_cache": "provider_prefix",
-        }
+        "programmatic_tool_calling": "direct_tools",
+        "multi_agent": "local_meta_agent",
+        "prompt_cache": "provider_prefix",
+    }
 
 
 def test_responses_client_serializes_structured_output():
@@ -464,11 +554,13 @@ def test_responses_client_serializes_structured_output():
 
     async def create(**kwargs):
         captured.update(kwargs)
-        return SimpleNamespace(model_dump=lambda **_kwargs: {
-            "status": "completed",
-            "output": [{"type": "message", "content": [{"text": '{"value":1}'}]}],
-            "usage": {"input_tokens": 1, "output_tokens": 1},
-        })
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "status": "completed",
+                "output": [{"type": "message", "content": [{"text": '{"value":1}'}]}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        )
 
     client._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
     response = asyncio.run(client([HumanMessage(content="x")], response_format=Answer))
@@ -482,7 +574,8 @@ def test_rejected_prompt_cache_is_removed_on_fallback():
     client = _client()
     client._disabled_features.add("prompt_cache")
     params = client._build_params(
-        [HumanMessage(content="x")], prompt_cache_key="stable",
+        [HumanMessage(content="x")],
+        prompt_cache_key="stable",
         prompt_cache_options={"ttl": "30m"},
     )
     assert "prompt_cache_key" not in params
@@ -495,13 +588,18 @@ def test_manager_records_the_same_automatic_cache_contract_it_sends():
 
     manager = ModelContextManager()
     manager.models["main"] = ModelConfig(
-        model_name="main", model_id="gpt-5.6-sol", model_type="responses",
-        provider="llm_hub", supports_functions=True,
+        model_name="main",
+        model_id="gpt-5.6-sol",
+        model_type="responses",
+        provider="llm_hub",
+        supports_functions=True,
     )
     client = _client()
     wire, snapshot = manager._runtime_call_kwargs(
-        "main", client,
-        {"trace_context": {"agent_name": "meta_agent"}}, {},
+        "main",
+        client,
+        {"trace_context": {"agent_name": "meta_agent"}},
+        {},
     )
 
     assert wire["prompt_cache_key"] == snapshot["prompt_cache_key"]
@@ -510,8 +608,10 @@ def test_manager_records_the_same_automatic_cache_contract_it_sends():
 
     client._disabled_features.add("prompt_cache")
     wire, snapshot = manager._runtime_call_kwargs(
-        "main", client,
-        {"trace_context": {"agent_name": "meta_agent"}}, {},
+        "main",
+        client,
+        {"trace_context": {"agent_name": "meta_agent"}},
+        {},
     )
     assert "prompt_cache_key" not in wire and "prompt_cache_key" not in snapshot
     assert snapshot["runtime_features"]["prompt_cache"] == "disabled"
@@ -520,7 +620,8 @@ def test_manager_records_the_same_automatic_cache_contract_it_sends():
 def test_a_reasoning_toggle_with_no_effort_is_not_sent():
     """`{"enabled": true}` is the chat vocabulary; sending it here would be a 400."""
     params = _client(reasoning={"reasoning": {"enabled": True}})._build_params(
-        [HumanMessage(content="x")])
+        [HumanMessage(content="x")]
+    )
 
     assert "reasoning" not in params
 
@@ -532,8 +633,13 @@ _RAW_TOOL_CALL = {
     "status": "completed",
     "output": [
         {"type": "reasoning", "summary": [{"text": "need to read it"}]},
-        {"type": "function_call", "id": "fc_9", "call_id": "call_7",
-         "name": "read_file_tool", "arguments": '{"path": "/tmp/a.py"}'},
+        {
+            "type": "function_call",
+            "id": "fc_9",
+            "call_id": "call_7",
+            "name": "read_file_tool",
+            "arguments": '{"path": "/tmp/a.py"}',
+        },
     ],
     "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
 }
@@ -554,12 +660,20 @@ def test_a_function_call_is_parsed_with_its_call_id():
 def test_responses_reasoning_items_are_replayed_before_the_next_call():
     parsed = _client()._parse(_RAW_TOOL_CALL)
     state = parsed.data["provider_state"]
-    items = serialize_input([AssistantMessage(
-        content="",
-        provider_state=state,
-        tool_calls=[ToolCall(id="call_7", function=Function(
-            name="read_file_tool", arguments='{"path":"/tmp/a.py"}'))],
-    )])
+    items = serialize_input(
+        [
+            AssistantMessage(
+                content="",
+                provider_state=state,
+                tool_calls=[
+                    ToolCall(
+                        id="call_7",
+                        function=Function(name="read_file_tool", arguments='{"path":"/tmp/a.py"}'),
+                    )
+                ],
+            )
+        ]
+    )
 
     assert [item["type"] for item in items] == ["reasoning", "function_call"]
 
@@ -567,7 +681,9 @@ def test_responses_reasoning_items_are_replayed_before_the_next_call():
 def test_complete_response_output_is_replayed_without_reconstruction():
     program = {"type": "program", "call_id": "prog_1", "code": "text('ok')"}
     call = {
-        "type": "function_call", "call_id": "call_1", "name": "read_file_tool",
+        "type": "function_call",
+        "call_id": "call_1",
+        "name": "read_file_tool",
         "arguments": '{"path":"a"}',
         "caller": {"type": "program", "caller_id": "prog_1"},
     }
@@ -576,15 +692,19 @@ def test_complete_response_output_is_replayed_without_reconstruction():
         provider_state={"responses": {"output_items": [program, call]}},
     )
     output = ToolMessage(
-        content="contents", tool_call_id="call_1", caller=call["caller"],
+        content="contents",
+        tool_call_id="call_1",
+        caller=call["caller"],
     )
 
     assert serialize_input([message, output]) == [
         program,
         call,
         {
-            "type": "function_call_output", "call_id": "call_1",
-            "output": "contents", "caller": call["caller"],
+            "type": "function_call_output",
+            "call_id": "call_1",
+            "output": "contents",
+            "caller": call["caller"],
         },
     ]
 
@@ -621,7 +741,9 @@ async def test_hosted_continuation_preserves_every_native_output_item():
     assert response.success and response.message == "done"
     state = response.data["provider_state"]["responses"]
     assert [item["type"] for item in state["output_items"]] == [
-        "program", "reasoning", "message",
+        "program",
+        "reasoning",
+        "message",
     ]
     assert state["reasoning_items"][0]["id"] == "reason_2"
     assert requests[1]["input"][-1]["type"] == "program"
@@ -630,12 +752,25 @@ async def test_hosted_continuation_preserves_every_native_output_item():
 
 
 def test_multi_agent_parser_exposes_only_the_root_final_answer():
-    parsed = _client()._parse({"status": "completed", "output": [
-        {"type": "message", "agent": {"agent_name": "/root/a"},
-         "phase": "final_answer", "content": [{"text": "worker"}]},
-        {"type": "message", "agent": {"agent_name": "/root"},
-         "phase": "final_answer", "content": [{"text": "root"}]},
-    ]})
+    parsed = _client()._parse(
+        {
+            "status": "completed",
+            "output": [
+                {
+                    "type": "message",
+                    "agent": {"agent_name": "/root/a"},
+                    "phase": "final_answer",
+                    "content": [{"text": "worker"}],
+                },
+                {
+                    "type": "message",
+                    "agent": {"agent_name": "/root"},
+                    "phase": "final_answer",
+                    "content": [{"text": "root"}],
+                },
+            ],
+        }
+    )
 
     assert parsed.message == "root"
     assert len(parsed.data["provider_state"]["responses"]["output_items"]) == 2
@@ -650,24 +785,24 @@ async def test_rejected_native_feature_is_disabled_for_the_route():
     read = _tool()
     read.metadata = {"programmatic": True}
     client._client = lambda: SimpleNamespace(
-        responses=SimpleNamespace(create=create), beta=SimpleNamespace(),
+        responses=SimpleNamespace(create=create),
+        beta=SimpleNamespace(),
     )
 
     with pytest.raises(NativeFeatureUnavailable):
         await client(
-            messages=[HumanMessage(content="inspect")], tools=[read],
+            messages=[HumanMessage(content="inspect")],
+            tools=[read],
             runtime_features={"programmatic_tool_calling": "native"},
         )
 
     assert "programmatic_tool_calling" in client._disabled_features
     fallback = client._build_params(
-        [HumanMessage(content="inspect")], [read],
+        [HumanMessage(content="inspect")],
+        [read],
         runtime_features={"programmatic_tool_calling": "native"},
     )
-    assert not any(
-        tool.get("type") == "programmatic_tool_calling"
-        for tool in fallback["tools"]
-    )
+    assert not any(tool.get("type") == "programmatic_tool_calling" for tool in fallback["tools"])
 
 
 @pytest.mark.asyncio
@@ -679,12 +814,14 @@ async def test_rejection_disables_only_the_named_feature_on_a_shared_request():
     read = _tool()
     read.metadata = {"programmatic": True}
     client._client = lambda: SimpleNamespace(
-        responses=SimpleNamespace(create=create), beta=SimpleNamespace(),
+        responses=SimpleNamespace(create=create),
+        beta=SimpleNamespace(),
     )
 
     with pytest.raises(NativeFeatureUnavailable) as caught:
         await client(
-            messages=[HumanMessage(content="inspect")], tools=[read],
+            messages=[HumanMessage(content="inspect")],
+            tools=[read],
             runtime_features={"programmatic_tool_calling": "native"},
             prompt_cache_key="stable-prefix",
         )
@@ -717,7 +854,8 @@ async def test_transient_failure_does_not_change_the_capability_catalog():
 
     with pytest.raises(TimeoutError):
         await client(
-            messages=[HumanMessage(content="inspect")], tools=[read],
+            messages=[HumanMessage(content="inspect")],
+            tools=[read],
             runtime_features={"programmatic_tool_calling": "native"},
         )
 
@@ -734,17 +872,18 @@ async def test_manager_records_native_rejection_then_retries_the_named_fallback(
 
     async def create(**params):
         native = any(
-            tool.get("type") == "programmatic_tool_calling"
-            for tool in params.get("tools") or []
+            tool.get("type") == "programmatic_tool_calling" for tool in params.get("tools") or []
         )
         wire_modes.append("native" if native else "direct_tools")
         if native:
             raise RuntimeError("programmatic tool calling is unavailable")
-        return SimpleNamespace(model_dump=lambda **_kwargs: {
-            "status": "completed",
-            "output": [{"type": "message", "content": [{"text": "OK"}]}],
-            "usage": {"input_tokens": 1, "output_tokens": 1},
-        })
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "status": "completed",
+                "output": [{"type": "message", "content": [{"text": "OK"}]}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        )
 
     async def record(**kwargs):
         snapshots.append(kwargs["call_kwargs"]["runtime_features"])
@@ -753,8 +892,11 @@ async def test_manager_records_native_rejection_then_retries_the_named_fallback(
     client._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
     manager = ModelContextManager()
     manager.models["main"] = ModelConfig(
-        model_name="main", model_id="gpt-5.6-sol", model_type="responses",
-        provider="llm_hub", supports_functions=True,
+        model_name="main",
+        model_id="gpt-5.6-sol",
+        model_type="responses",
+        provider="llm_hub",
+        supports_functions=True,
         native_programmatic_tool_calling=True,
     )
     manager.model_clients["main"] = client
@@ -765,7 +907,8 @@ async def test_manager_records_native_rejection_then_retries_the_named_fallback(
     result = await manager(
         name="main",
         input={
-            "messages": [HumanMessage(content="inspect")], "tools": [read],
+            "messages": [HumanMessage(content="inspect")],
+            "tools": [read],
             "max_retries": 1,
             "runtime_features": {"programmatic_tool_calling": True},
         },
@@ -775,7 +918,8 @@ async def test_manager_records_native_rejection_then_retries_the_named_fallback(
     assert result.success and result.message == "OK"
     assert wire_modes == ["native", "direct_tools"]
     assert [item["programmatic_tool_calling"] for item in snapshots] == [
-        "native", "direct_tools",
+        "native",
+        "direct_tools",
     ]
 
 
@@ -793,23 +937,26 @@ async def test_fallback_route_can_itself_downgrade_a_rejected_native_feature(mon
 
     async def create(**params):
         native = any(
-            tool.get("type") == "programmatic_tool_calling"
-            for tool in params.get("tools") or []
+            tool.get("type") == "programmatic_tool_calling" for tool in params.get("tools") or []
         )
         wire_modes.append("native" if native else "direct_tools")
         if native:
             raise RuntimeError("programmatic tool calling is unavailable")
-        return SimpleNamespace(model_dump=lambda **_kwargs: {
-            "status": "completed",
-            "output": [{"type": "message", "content": [{"text": "fallback OK"}]}],
-            "usage": {"input_tokens": 1, "output_tokens": 1},
-        })
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "status": "completed",
+                "output": [{"type": "message", "content": [{"text": "fallback OK"}]}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        )
 
     async def record(**kwargs):
-        snapshots.append((
-            kwargs["routed_model"],
-            kwargs["call_kwargs"]["runtime_features"]["programmatic_tool_calling"],
-        ))
+        snapshots.append(
+            (
+                kwargs["routed_model"],
+                kwargs["call_kwargs"]["runtime_features"]["programmatic_tool_calling"],
+            )
+        )
 
     fallback_client = _client(native_programmatic_tool_calling=True)
     fallback_client._client = lambda: SimpleNamespace(
@@ -817,13 +964,19 @@ async def test_fallback_route_can_itself_downgrade_a_rejected_native_feature(mon
     )
     manager = ModelContextManager()
     manager.models["primary"] = ModelConfig(
-        model_name="primary", model_id="primary", model_type="responses",
-        provider="test", fallback_model="fallback",
+        model_name="primary",
+        model_id="primary",
+        model_type="responses",
+        provider="test",
+        fallback_model="fallback",
     )
     manager.model_clients["primary"] = unavailable_primary
     manager.models["fallback"] = ModelConfig(
-        model_name="fallback", model_id="gpt-5.6-sol", model_type="responses",
-        provider="llm_hub", supports_functions=True,
+        model_name="fallback",
+        model_id="gpt-5.6-sol",
+        model_type="responses",
+        provider="llm_hub",
+        supports_functions=True,
         native_programmatic_tool_calling=True,
     )
     manager.model_clients["fallback"] = fallback_client
@@ -834,7 +987,8 @@ async def test_fallback_route_can_itself_downgrade_a_rejected_native_feature(mon
     result = await manager(
         name="primary",
         input={
-            "messages": [HumanMessage(content="inspect")], "tools": [read],
+            "messages": [HumanMessage(content="inspect")],
+            "tools": [read],
             "max_retries": 1,
             "runtime_features": {"programmatic_tool_calling": True},
         },
@@ -866,8 +1020,11 @@ async def test_native_declaration_does_not_add_an_ordinary_retry(monkeypatch):
     client._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
     manager = ModelContextManager()
     manager.models["main"] = ModelConfig(
-        model_name="main", model_id="gpt-5.6-sol", model_type="responses",
-        provider="llm_hub", supports_functions=True,
+        model_name="main",
+        model_id="gpt-5.6-sol",
+        model_type="responses",
+        provider="llm_hub",
+        supports_functions=True,
         native_programmatic_tool_calling=True,
     )
     manager.model_clients["main"] = client
@@ -881,7 +1038,8 @@ async def test_native_declaration_does_not_add_an_ordinary_retry(monkeypatch):
     result = await manager(
         name="main",
         input={
-            "messages": [HumanMessage(content="inspect")], "tools": [read],
+            "messages": [HumanMessage(content="inspect")],
+            "tools": [read],
             "max_retries": 1,
             "runtime_features": {"programmatic_tool_calling": True},
         },
@@ -890,6 +1048,74 @@ async def test_native_declaration_does_not_add_an_ordinary_retry(monkeypatch):
 
     assert not result.success
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_background_create_timeout_is_not_retried_or_fallen_back(monkeypatch):
+    import httpx
+
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig, ModelContext
+
+    primary_calls = 0
+    fallback_calls = 0
+
+    async def primary_create(**_params):
+        nonlocal primary_calls
+        primary_calls += 1
+        raise httpx.ReadTimeout("acknowledgement lost")
+
+    async def fallback_create(**_params):
+        nonlocal fallback_calls
+        fallback_calls += 1
+        raise AssertionError("an uncertain background create must not fall back")
+
+    primary = _client()
+    primary._client = lambda: SimpleNamespace(
+        responses=SimpleNamespace(create=primary_create),
+    )
+    fallback = ResponseLLMHub(
+        model="fallback",
+        api_key="k",
+        base_url="http://x/v1",
+    )
+    fallback._client = lambda: SimpleNamespace(
+        responses=SimpleNamespace(create=fallback_create),
+    )
+    manager = ModelContextManager()
+    manager.models["main"] = ModelConfig(
+        model_name="main",
+        model_id="main",
+        model_type="responses",
+        provider="llm_hub",
+        fallback_model="fallback",
+    )
+    manager.models["fallback"] = ModelConfig(
+        model_name="fallback",
+        model_id="fallback",
+        model_type="responses",
+        provider="llm_hub",
+    )
+    manager.model_clients.update({"main": primary, "fallback": fallback})
+    monkeypatch.setattr(
+        "agentevolver.model.context._record_request_snapshot",
+        lambda **_kwargs: asyncio.sleep(0, result="snapshot-1"),
+    )
+
+    result = await manager(
+        name="main",
+        input={
+            "messages": [HumanMessage(content="long task")],
+            "background": True,
+            "max_retries": 3,
+        },
+        ctx=ModelContext(id="session"),
+    )
+
+    assert not result.success
+    assert result.data["background"]["requires_reconciliation"] is True
+    assert primary_calls == 1
+    assert fallback_calls == 0
 
 
 @pytest.mark.asyncio
@@ -906,18 +1132,23 @@ async def test_prompt_cache_rejection_gets_one_reserved_fallback_attempt(monkeyp
         calls.append(dict(params))
         if params.get("prompt_cache_key"):
             raise UnsupportedCache("unknown parameter prompt_cache_key")
-        return SimpleNamespace(model_dump=lambda **_kwargs: {
-            "status": "completed",
-            "output": [{"type": "message", "content": [{"text": "ok"}]}],
-            "usage": {"input_tokens": 1, "output_tokens": 1},
-        })
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "status": "completed",
+                "output": [{"type": "message", "content": [{"text": "ok"}]}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        )
 
     client = _client()
     client._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
     manager = ModelContextManager()
     manager.models["main"] = ModelConfig(
-        model_name="main", model_id="gpt-5.6-sol", model_type="responses",
-        provider="llm_hub", supports_functions=True,
+        model_name="main",
+        model_id="gpt-5.6-sol",
+        model_type="responses",
+        provider="llm_hub",
+        supports_functions=True,
     )
     manager.model_clients["main"] = client
     monkeypatch.setattr(
@@ -939,20 +1170,183 @@ async def test_prompt_cache_rejection_gets_one_reserved_fallback_attempt(monkeyp
 
 def test_malformed_arguments_are_kept_rather_than_dropped():
     """A model that emits broken JSON should surface it, not silently call with {}."""
-    raw = {"status": "completed", "output": [
-        {"type": "function_call", "call_id": "c", "name": "t", "arguments": "{not json"}]}
+    raw = {
+        "status": "completed",
+        "output": [
+            {"type": "function_call", "call_id": "c", "name": "t", "arguments": "{not json"}
+        ],
+    }
 
     assert _client()._parse(raw).data["functions"][0]["args"] == {"__raw__": "{not json"}
 
 
 def test_a_text_answer_parses_to_text():
-    raw = {"status": "completed", "output": [
-        {"type": "message", "content": [{"type": "output_text", "text": "OK"}]}]}
+    raw = {
+        "status": "completed",
+        "output": [{"type": "message", "content": [{"type": "output_text", "text": "OK"}]}],
+    }
     parsed = _client()._parse(raw)
 
     assert parsed.data["text"] == "OK"
     assert parsed.data["functions"] == []
     assert parsed.data["finish_reason"] == "end_turn"
+
+
+@pytest.mark.asyncio
+async def test_background_create_retrieve_and_cancel_are_explicit_lifecycle_calls():
+    calls = []
+
+    async def create(**params):
+        calls.append(("create", params))
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "id": "resp_1",
+                "status": "queued",
+                "output": [],
+            }
+        )
+
+    async def retrieve(response_id):
+        calls.append(("retrieve", response_id))
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "id": response_id,
+                "status": "completed",
+                "output": [{"type": "message", "content": [{"text": "done"}]}],
+            }
+        )
+
+    async def cancel(response_id):
+        calls.append(("cancel", response_id))
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "id": response_id,
+                "status": "cancelled",
+                "output": [],
+            }
+        )
+
+    client = _client()
+    client._client = lambda: SimpleNamespace(
+        responses=SimpleNamespace(
+            create=create,
+            retrieve=retrieve,
+            cancel=cancel,
+        )
+    )
+
+    queued = await client.create_background([HumanMessage(content="long task")])
+    completed = await client.retrieve_background("resp_1")
+    cancelled = await client.cancel_background("resp_1")
+
+    assert queued.success and queued.data["background"] == {
+        "response_id": "resp_1",
+        "status": "queued",
+    }
+    assert calls[0][1]["background"] is True and calls[0][1]["store"] is True
+    assert completed.message == "done"
+    assert cancelled.success and cancelled.data["background"]["status"] == "cancelled"
+    assert [item[0] for item in calls] == ["create", "retrieve", "cancel"]
+
+
+@pytest.mark.asyncio
+async def test_native_responses_stream_emits_incremental_canonical_events():
+    from agentevolver.model.types import (
+        ProviderState,
+        StreamDone,
+        TextDelta,
+        ThinkingDelta,
+        ToolCallArgsDelta,
+        ToolCallStart,
+    )
+
+    payloads = [
+        {
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": {"type": "reasoning", "id": "r1"},
+        },
+        {"type": "response.reasoning_summary_text.delta", "output_index": 0, "delta": "checking"},
+        {
+            "type": "response.output_item.added",
+            "output_index": 1,
+            "item": {"type": "function_call", "call_id": "c1", "name": "read_file_tool"},
+        },
+        {"type": "response.function_call_arguments.delta", "output_index": 1, "delta": '{"path":'},
+        {"type": "response.function_call_arguments.delta", "output_index": 1, "delta": '"a.py"}'},
+        {
+            "type": "response.completed",
+            "response": {
+                "status": "completed",
+                "output": [
+                    {"type": "reasoning", "id": "r1", "summary": [{"text": "checking"}]},
+                    {
+                        "type": "function_call",
+                        "call_id": "c1",
+                        "name": "read_file_tool",
+                        "arguments": '{"path":"a.py"}',
+                    },
+                ],
+                "usage": {"input_tokens": 4, "output_tokens": 2},
+            },
+        },
+    ]
+
+    class Events:
+        def __aiter__(self):
+            async def values():
+                for payload in payloads:
+                    yield payload
+
+            return values()
+
+    async def create(**params):
+        assert params["stream"] is True
+        return Events()
+
+    client = _client()
+    client._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
+    events = [
+        event
+        async for event in client.stream(
+            [HumanMessage(content="inspect")],
+            tools=[_tool()],
+        )
+    ]
+
+    assert any(isinstance(event, ThinkingDelta) and event.text == "checking" for event in events)
+    assert any(isinstance(event, ToolCallStart) and event.id == "c1" for event in events)
+    assert (
+        "".join(event.partial_json for event in events if isinstance(event, ToolCallArgsDelta))
+        == '{"path":"a.py"}'
+    )
+    state = next(event for event in events if isinstance(event, ProviderState))
+    assert state.data["responses"]["output_items"][1]["call_id"] == "c1"
+    done = next(event for event in events if isinstance(event, StreamDone))
+    assert done.stop_reason == "tool_use" and done.usage["input_tokens"] == 4
+    assert not any(isinstance(event, TextDelta) for event in events)
+
+
+def test_explicit_previous_response_id_is_sent_and_snapshotted():
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig
+
+    manager = ModelContextManager()
+    manager.models["main"] = ModelConfig(
+        model_name="main",
+        model_id="model",
+        model_type="responses",
+        provider="llm_hub",
+    )
+    client = _client()
+    wire, snapshot = manager._runtime_call_kwargs(
+        "main",
+        client,
+        {"previous_response_id": "resp_previous"},
+        {},
+    )
+    assert wire["previous_response_id"] == "resp_previous"
+    assert snapshot["previous_response_id"] == "resp_previous"
 
 
 # --------------------------------------------------------------------------- #
@@ -973,6 +1367,7 @@ def test_the_result_replays_as_canonical_stream_events():
 
 def test_response_format_is_refused_loudly_rather_than_reinterpreted():
     """Quietly turning a schema into a text hint yields output that looks checked and is not."""
+
     async def run():
         client = _client()
         client._client = lambda: (_ for _ in ()).throw(RuntimeError("must not reach the network"))
@@ -994,27 +1389,42 @@ def test_a_derived_history_becomes_valid_response_items():
     Responses makes the call and its result separate items. `tool_call_id` is the hinge,
     and it is the same value on both sides.
     """
-    from agentevolver.message.types import (AssistantMessage, Function, HumanMessage,
-                                            ToolCall, ToolMessage)
+    from agentevolver.message.types import (
+        AssistantMessage,
+        Function,
+        HumanMessage,
+        ToolCall,
+        ToolMessage,
+    )
     from agentevolver.model.llm_hub.response import serialize_input
 
     history = [
         HumanMessage(content="write hello.py"),
-        AssistantMessage(content="I'll write it.", tool_calls=[ToolCall(
-            id="call_1",
-            function=Function(name="write_file_tool", arguments='{"path": "hello.py"}'))]),
-        ToolMessage(content="Created hello.py", tool_call_id="call_1",
-                    name="write_file_tool"),
+        AssistantMessage(
+            content="I'll write it.",
+            tool_calls=[
+                ToolCall(
+                    id="call_1",
+                    function=Function(name="write_file_tool", arguments='{"path": "hello.py"}'),
+                )
+            ],
+        ),
+        ToolMessage(content="Created hello.py", tool_call_id="call_1", name="write_file_tool"),
     ]
     items = serialize_input(history)
 
     assert [i.get("type") or i.get("role") for i in items] == [
-        "user", "assistant", "function_call", "function_call_output"]
+        "user",
+        "assistant",
+        "function_call",
+        "function_call_output",
+    ]
 
     call = next(i for i in items if i.get("type") == "function_call")
     result = next(i for i in items if i.get("type") == "function_call_output")
-    assert call["call_id"] == result["call_id"] == "call_1", \
+    assert call["call_id"] == result["call_id"] == "call_1", (
         "the result must echo the call_id, which is what pairs them"
+    )
     assert result["output"] == "Created hello.py"
 
 
@@ -1027,8 +1437,14 @@ def test_an_assistant_turn_with_no_text_contributes_only_its_calls():
     from agentevolver.message.types import AssistantMessage, Function, ToolCall
     from agentevolver.model.llm_hub.response import serialize_input
 
-    items = serialize_input([AssistantMessage(content="", tool_calls=[ToolCall(
-        id="call_1", function=Function(name="t", arguments="{}"))])])
+    items = serialize_input(
+        [
+            AssistantMessage(
+                content="",
+                tool_calls=[ToolCall(id="call_1", function=Function(name="t", arguments="{}"))],
+            )
+        ]
+    )
 
     assert [i.get("type") for i in items] == ["function_call"]
 
@@ -1042,10 +1458,13 @@ def test_the_responses_surface_reports_its_cache_counts_under_a_different_name()
     """
     from agentevolver.model.types import TokenUsage
 
-    usage = TokenUsage.from_raw({
-        "input_tokens": 57, "output_tokens": 29,
-        "input_tokens_details": {"cached_tokens": 40, "cache_write_tokens": 17},
-    })
+    usage = TokenUsage.from_raw(
+        {
+            "input_tokens": 57,
+            "output_tokens": 29,
+            "input_tokens_details": {"cached_tokens": 40, "cache_write_tokens": 17},
+        }
+    )
     assert usage.cache_read_tokens == 40
     assert usage.cache_write_tokens == 17
 
@@ -1059,12 +1478,15 @@ def test_canonical_usage_can_be_repriced_without_losing_cache_counts():
         cache_write_tokens=7,
         cache_read_tokens=11,
     ).model_dump()
-    priced = price_usage_dict(canonical, {
-        "input": 1.0,
-        "output": 1.0,
-        "cache_write": 1.0,
-        "cache_read": 1.0,
-    })
+    priced = price_usage_dict(
+        canonical,
+        {
+            "input": 1.0,
+            "output": 1.0,
+            "cache_write": 1.0,
+            "cache_read": 1.0,
+        },
+    )
 
     assert priced["cache_write_tokens"] == 7
     assert priced["cache_read_tokens"] == 11

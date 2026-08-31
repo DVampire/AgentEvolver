@@ -81,9 +81,7 @@ def test_evolving_is_off_unless_explicitly_declared():
     silently treating it as no would leave a prompt out of evolution with no sign of it.
     """
     assert parse_prompt_text("<html><head></head><body></body></html>").enable_evolving is False
-    assert parse_prompt_text(
-        '<meta name="enable_evolving" content="TRUE">'
-    ).enable_evolving is True
+    assert parse_prompt_text('<meta name="enable_evolving" content="TRUE">').enable_evolving is True
 
 
 def test_a_missing_version_falls_back_to_a_first_version():
@@ -98,9 +96,7 @@ def test_nested_markup_inside_a_section_is_preserved():
     reconstructs the inner tags verbatim rather than flattening them to text. Flattening
     would leave the prompt readable and the preview unstyled.
     """
-    config = parse_prompt_text(
-        '<div class="system">a<div class="rule"><b>bold</b></div>z</div>'
-    )
+    config = parse_prompt_text('<div class="system">a<div class="rule"><b>bold</b></div>z</div>')
     assert config.system_template == 'a<div class="rule"><b>bold</b></div>z'
 
 
@@ -190,7 +186,8 @@ def test_a_nested_module_resolves_against_its_own_directory(tmp_path):
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "inner.html").write_text("<body>inner</body>", encoding="utf-8")
     (tmp_path / "sub" / "outer.html").write_text(
-        '<body>[<module src="inner.html"></module>]</body>', encoding="utf-8",
+        '<body>[<module src="inner.html"></module>]</body>',
+        encoding="utf-8",
     )
     assert expand_modules('<module src="sub/outer.html"></module>', str(tmp_path)) == "[inner]"
 
@@ -200,7 +197,8 @@ def test_several_slots_are_all_expanded(tmp_path):
     for name in ("a", "b"):
         (tmp_path / f"{name}.html").write_text(f"<body>{name}</body>", encoding="utf-8")
     expanded = expand_modules(
-        '<module src="a.html"></module>|<module src="b.html"></module>', str(tmp_path),
+        '<module src="a.html"></module>|<module src="b.html"></module>',
+        str(tmp_path),
     )
     assert expanded == "a|b"
 
@@ -222,7 +220,8 @@ def test_a_cyclic_module_is_refused_rather_than_recursing_forever(tmp_path):
     startup never returns and there is nothing in the log to say why.
     """
     (tmp_path / "loop.html").write_text(
-        '<body><module src="loop.html"></module></body>', encoding="utf-8",
+        '<body><module src="loop.html"></module></body>',
+        encoding="utf-8",
     )
     with pytest.raises(ValueError, match="max depth"):
         expand_modules('<module src="loop.html"></module>', str(tmp_path))
@@ -366,8 +365,14 @@ def test_a_config_round_trips_through_its_serialised_form():
     methods is dropped on the way through, and the loss shows up as a prompt that reverted
     to its defaults after being saved.
     """
-    original = PromptConfig(name="p", version="2.0.0", enable_evolving=True,
-                            system_template="s", user_template="u", metadata={"k": "v"})
+    original = PromptConfig(
+        name="p",
+        version="2.0.0",
+        enable_evolving=True,
+        system_template="s",
+        user_template="u",
+        metadata={"k": "v"},
+    )
     restored = PromptConfig.model_validate(original.model_dump())
     assert restored.model_dump() == original.model_dump()
 

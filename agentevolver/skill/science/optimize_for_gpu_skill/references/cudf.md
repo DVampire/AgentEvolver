@@ -64,6 +64,7 @@ The fastest path from pandas to GPU — no code changes required.
 ### Activation
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # Jupyter/IPython (MUST be before any pandas import)
 %load_ext cudf.pandas
 import pandas as pd  # Now GPU-accelerated
@@ -91,6 +92,7 @@ import pandas as pd  # Now GPU-accelerated
 ### Profiling GPU vs CPU Execution
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 %%cudf.pandas.profile        # Shows GPU vs CPU operation breakdown per cell
 %%cudf.pandas.line_profile   # Per-line GPU/CPU timing
 ```
@@ -687,6 +689,7 @@ Key differences from cuDF: `.iloc` not supported, must call `.compute()` to mate
 
 ### Pattern 1: Zero-Effort (cudf.pandas)
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 %load_ext cudf.pandas
 import pandas as pd
 # Everything else stays exactly the same

@@ -310,10 +310,14 @@ async def test_records_survive_a_local_save_and_load(data):
     """
     pytest.importorskip("datasets")
 
-    saved = await data("dataset_save", {
-        "repo": "org/ds", "target": "local",
-        "records": [{"a": 1, "b": "x"}, {"a": 2}],
-    })
+    saved = await data(
+        "dataset_save",
+        {
+            "repo": "org/ds",
+            "target": "local",
+            "records": [{"a": 1, "b": "x"}, {"a": 2}],
+        },
+    )
     assert saved.success is True, saved.message
     assert saved.data["count"] == 2
 
@@ -346,5 +350,7 @@ async def test_a_saved_dataset_reports_its_path_as_a_produced_file(data):
     """
     pytest.importorskip("datasets")
 
-    result = await data("dataset_save", {"repo": "org/ds", "target": "local", "records": [{"a": 1}]})
+    result = await data(
+        "dataset_save", {"repo": "org/ds", "target": "local", "records": [{"a": 1}]}
+    )
     assert result.files == [result.data["path"]]

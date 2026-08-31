@@ -7,12 +7,13 @@ same handle, the way Claude Code names a task's output file by the task id) and 
 timestamp for a one-shot foreground call that has no such handle. Archiving never fails
 the command: a command that ran is a command that ran.
 """
+
 import os
 
 import pytest
 
-from agentevolver.paths import P, path_manager
 import agentevolver.tool.default.bash as bash
+from agentevolver.paths import P, path_manager
 
 
 @pytest.fixture
@@ -28,8 +29,8 @@ def test_foreground_output_is_archived_verbatim(session):
     path = bash._write_bash_archive("echo hi", text)
     assert path is not None
     body = open(path, encoding="utf-8").read()
-    assert body.startswith("$ echo hi\n")          # header names the command
-    assert text in body                            # complete — nothing dropped
+    assert body.startswith("$ echo hi\n")  # header names the command
+    assert text in body  # complete — nothing dropped
     # under the session's bash log, and a timestamp name (no handle to refer to it by)
     assert os.path.dirname(path) == str(path_manager.get(P.SESSION_BASH))
     assert path.endswith(".txt") and os.path.basename(path)[0].isdigit()
@@ -53,6 +54,7 @@ def test_archive_note_is_appended_only_when_archived():
 def test_archiving_never_raises_when_path_unresolvable(monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("no bound session")
+
     monkeypatch.setattr(bash.path_manager, "get", _boom)
     assert bash._bash_archive_path() is None
     assert bash._write_bash_archive("cmd", "some output") is None

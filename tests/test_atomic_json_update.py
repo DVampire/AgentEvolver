@@ -15,7 +15,6 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 from agentevolver.utils.file_utils import atomic_json_update
 
@@ -71,8 +70,9 @@ def test_concurrent_processes_do_not_lose_each_others_writes(tmp_path):
         "    return sorted(set(cur + [sys.argv[2]]))\n"
         "atomic_json_update(sys.argv[1], mutate, default=[])\n"
     )
-    procs = [subprocess.Popen([sys.executable, str(worker), str(path), f"id{i:02d}"])
-             for i in range(20)]
+    procs = [
+        subprocess.Popen([sys.executable, str(worker), str(path), f"id{i:02d}"]) for i in range(20)
+    ]
     for p in procs:
         assert p.wait() == 0
 

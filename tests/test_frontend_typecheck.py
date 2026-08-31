@@ -36,9 +36,11 @@ _ERROR = re.compile(r"^(?P<file>[^(]+)\((?P<line>\d+),\d+\): error (?P<code>TS\d
 #: Entries may only leave. A registered error that stops occurring fails too, so a fix
 #: cannot quietly leave a stale excuse behind that would cover the next one.
 KNOWN: dict[tuple[str, str], str] = {
-    ("src/vnc/VncView.tsx", "TS2339"):
-        "@types/novnc-core omits resizeSession/qualityLevel/compressionLevel, which the "
-        "runtime RFB does have; the alternative is casting away the type entirely",
+    (
+        "src/vnc/VncView.tsx",
+        "TS2339",
+    ): "@types/novnc-core omits resizeSession/qualityLevel/compressionLevel, which the "
+    "runtime RFB does have; the alternative is casting away the type entirely",
 }
 
 
@@ -60,7 +62,9 @@ _RUNNABLE = _NODE is not None and TSC.exists()
 def _errors() -> list[dict]:
     result = subprocess.run(
         [str(_NODE), str(TSC), "--noEmit", "-p", "tsconfig.json"],
-        cwd=FRONTEND, capture_output=True, text=True,
+        cwd=FRONTEND,
+        capture_output=True,
+        text=True,
     )
     out = []
     for line in (result.stdout + result.stderr).splitlines():
@@ -75,7 +79,8 @@ def test_the_frontend_has_no_unregistered_type_errors():
     """The gate. A new type error fails here rather than in someone's browser."""
     unregistered = [
         f"{e['file']}:{e['line']} {e['code']}: {e['msg']}"
-        for e in _errors() if (e["file"], e["code"]) not in KNOWN
+        for e in _errors()
+        if (e["file"], e["code"]) not in KNOWN
     ]
     assert not unregistered, (
         "these are new; fix them, or register the pair in tests/test_frontend_typecheck.py "
@@ -108,8 +113,9 @@ def test_the_generated_contract_is_reachable_as_a_value_and_not_only_a_type():
     source = (FRONTEND / "src" / "controllers" / "gateway.ts").read_text(encoding="utf-8")
     uses = "PROTOCOL_VERSION" in source.split("} from '../protocol/gateway';", 1)[-1]
     if uses:
-        assert re.search(r"^import \{[^}]*PROTOCOL_VERSION[^}]*\} from '\.\./protocol/gateway';",
-                         source, re.M), (
+        assert re.search(
+            r"^import \{[^}]*PROTOCOL_VERSION[^}]*\} from '\.\./protocol/gateway';", source, re.M
+        ), (
             "gateway.ts uses PROTOCOL_VERSION as a value but only re-exports it; a "
             "re-export forwards a name without binding it locally"
         )

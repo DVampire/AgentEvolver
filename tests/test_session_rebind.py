@@ -61,7 +61,8 @@ async def test_the_directory_is_the_one_the_layout_table_names(trajectory):
 
     path_manager.bind_session("local", "sess_layout")
     expected = path_manager.under(
-        path_manager.session_roots()["log"], P.LOG_MODULE, module="trajectory")
+        path_manager.session_roots()["log"], P.LOG_MODULE, module="trajectory"
+    )
     assert trajectory.base_dir == str(expected)
 
 
@@ -93,6 +94,7 @@ async def test_a_failing_listener_does_not_stop_the_rebind(trajectory):
     Refusing to finish because one manager raised would leave every other manager bound to
     a session the caller believes it has left — the worst of both states.
     """
+
     def _explode():
         raise RuntimeError("this listener is broken")
 
@@ -116,8 +118,12 @@ def test_the_gateway_no_longer_names_managers_one_by_one():
     from agentevolver.gateway.service import AgentGateway
 
     source = inspect.getsource(AgentGateway._bind_runtime_to_session)
-    for named in ("trace_manager.rebind", "memory_manager.rebind",
-                  "trajectory_manager.rebind", "task_manager.rebind"):
+    for named in (
+        "trace_manager.rebind",
+        "memory_manager.rebind",
+        "trajectory_manager.rebind",
+        "task_manager.rebind",
+    ):
         assert named not in source, f"{named} is still called by name on session change"
     assert "path_manager.bind_session" in source
 
@@ -173,19 +179,24 @@ def test_a_container_mount_override_reaches_the_sandbox_boundary():
     path_manager.bind_session("local", "mount_probe")
     try:
         assert check_session_path(path="/workspace/deliverable.c", write=True), (
-            "without the override the mount point must still be outside the boundary")
+            "without the override the mount point must still be outside the boundary"
+        )
 
         path_manager.override(P.SESSION_WORKSPACE, "/workspace")
 
         assert session_writable_roots()[0] == Path("/workspace"), (
-            f"session_roots() ignored the override: {session_writable_roots()[0]}")
+            f"session_roots() ignored the override: {session_writable_roots()[0]}"
+        )
         assert check_session_path(path="/workspace/deliverable.c", write=True) is None, (
-            "the agent still cannot write the deliverable at the path it is told to use")
+            "the agent still cannot write the deliverable at the path it is told to use"
+        )
         # The point is a mount alias, not a wider boundary.
         assert check_session_path(path="/etc/passwd", write=True), (
-            "honouring the override opened the boundary instead of relocating it")
+            "honouring the override opened the boundary instead of relocating it"
+        )
         assert check_session_path(path="/workspace/../etc/passwd", write=True), (
-            "a traversal out of the mount point is still outside it")
+            "a traversal out of the mount point is still outside it"
+        )
     finally:
         path_manager.unbind_session()
 
@@ -217,7 +228,8 @@ def test_an_override_moves_what_lives_inside_it():
         # Only what is inside. A sibling of the overridden key is a different directory.
         log = path_manager.get(P.SESSION_LOG)
         assert not str(log).startswith("/workspace"), (
-            f"the cascade escaped the directory it was declared about: {log}")
+            f"the cascade escaped the directory it was declared about: {log}"
+        )
     finally:
         path_manager.unbind_session()
 
@@ -231,7 +243,8 @@ def test_asking_about_another_session_is_not_answered_by_this_ones_override():
         path_manager.override(P.SESSION_WORKSPACE, "/workspace")
         other = path_manager.get(P.SESSION_PLAN, owner="local", session_id="someone_else")
         assert not str(other).startswith("/workspace"), (
-            f"another run's plan was answered from this run's mount point: {other}")
+            f"another run's plan was answered from this run's mount point: {other}"
+        )
     finally:
         path_manager.unbind_session()
 
@@ -253,8 +266,9 @@ def test_naming_the_bound_run_is_the_same_question_as_naming_nothing():
         named = path_manager.get(P.SESSION_PLAN, owner="local", session_id="same_question")
         assert bare == named == Path("/workspace/plan.md")
         # `notebooks` gets this without a line of its own.
-        assert path_manager.get(P.SESSION_NOTEBOOKS, owner="local",
-                                session_id="same_question") == Path("/workspace/notebooks")
+        assert path_manager.get(
+            P.SESSION_NOTEBOOKS, owner="local", session_id="same_question"
+        ) == Path("/workspace/notebooks")
         # A parameter the bound session does not know keeps it a different question.
         module_path = path_manager.get(P.LOG_MODULE, module="trace")
         assert not str(module_path).startswith("/workspace")

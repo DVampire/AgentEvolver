@@ -40,6 +40,7 @@ class ConstraintHook(Hook):
     description: str = "Enforces per-step resource budgets and reports the remaining budget."
     events: list = []
     priority: int = 1
+    fail_closed: bool = True
 
     async def handle(self, ctx: HookContext) -> HookResult:
         """Check every declared resource budget on PRE_STEP and gate the step.

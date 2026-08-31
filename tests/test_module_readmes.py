@@ -1,22 +1,34 @@
 """Keep module documentation discoverable and machine-readable."""
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 import yaml
-
 
 PACKAGE_ROOT = Path(__file__).parents[1] / "agentevolver"
 PLUGIN_ROOT = PACKAGE_ROOT / "plugins" / "default"
 REQUIRED_FRONTMATTER = {
-    "name", "description", "version", "type", "category", "requirements", "metadata",
+    "name",
+    "description",
+    "version",
+    "type",
+    "category",
+    "requirements",
+    "metadata",
 }
 #: What a generated PLUGIN.md must declare. ``metadata`` is deliberately absent:
 #: a plugin manifest carries concrete facts (tools, credentials) rather than a
 #: free-form bag.
 REQUIRED_PLUGIN_FRONTMATTER = {
-    "id", "name", "category", "type", "tools", "implemented", "credentials",
-    "requirements", "version",
+    "id",
+    "name",
+    "category",
+    "type",
+    "tools",
+    "implemented",
+    "credentials",
+    "requirements",
+    "version",
 }
 
 
@@ -26,7 +38,7 @@ def _frontmatter(path: Path):
     assert match, f"{path} must start with YAML frontmatter"
     data = yaml.safe_load(match.group(1))
     assert isinstance(data, dict), f"{path} frontmatter must be a mapping"
-    return data, text[match.end():]
+    return data, text[match.end() :]
 
 
 def _is_plugin_package(path: Path) -> bool:
@@ -64,8 +76,11 @@ def test_every_managed_python_module_has_a_readme():
             continue
         module_dirs.append(directory)
 
-    missing = [str(path.relative_to(PACKAGE_ROOT)) for path in module_dirs
-               if not (path / "README.md").is_file()]
+    missing = [
+        str(path.relative_to(PACKAGE_ROOT))
+        for path in module_dirs
+        if not (path / "README.md").is_file()
+    ]
     assert not missing, f"Modules missing README.md: {missing}"
 
 
@@ -91,8 +106,9 @@ def test_all_package_readmes_have_versioned_frontmatter():
 
 
 def test_every_plugin_package_has_a_manifest():
-    packages = sorted(path for path in PLUGIN_ROOT.iterdir()
-                      if path.is_dir() and (path / "__init__.py").is_file())
+    packages = sorted(
+        path for path in PLUGIN_ROOT.iterdir() if path.is_dir() and (path / "__init__.py").is_file()
+    )
     assert packages, "no plugin packages found"
 
     missing = [path.name for path in packages if not (path / "PLUGIN.md").is_file()]
@@ -111,15 +127,20 @@ def test_every_plugin_package_has_a_manifest():
 
 def test_plugin_manifests_match_the_code():
     """A manifest that drifts from its package is worse than none at all."""
-    from agentevolver.plugins import plugin_manager  # noqa: PLC0415 — import cost
     import asyncio
+
+    from agentevolver.plugins import plugin_manager  # noqa: PLC0415 — import cost
 
     async def infos():
         await plugin_manager.initialize()
         try:
-            return {config.name: (len(config.tools),
-                                  sum(1 for tool in config.tools.values() if tool.implemented))
-                    for config in await plugin_manager.list_infos()}
+            return {
+                config.name: (
+                    len(config.tools),
+                    sum(1 for tool in config.tools.values() if tool.implemented),
+                )
+                for config in await plugin_manager.list_infos()
+            }
         finally:
             await plugin_manager.cleanup()
 
@@ -159,8 +180,11 @@ def test_the_module_reference_page_lists_exactly_the_modules_that_exist():
     # one leaves its `__pycache__` behind whenever the bytecode was written by another
     # user — a container run as root, here — and `rm` cannot clear it. Counting that as a
     # live module would report an undocumented module that is gone.
-    on_disk = {p.name for p in PACKAGE_ROOT.iterdir()
-               if p.is_dir() and p.name != "__pycache__" and any(p.glob("*.py"))}
+    on_disk = {
+        p.name
+        for p in PACKAGE_ROOT.iterdir()
+        if p.is_dir() and p.name != "__pycache__" and any(p.glob("*.py"))
+    }
 
     assert not listed - on_disk, (
         f"documented but deleted: {sorted(listed - on_disk)} — remove the card and its "
@@ -184,8 +208,7 @@ def test_every_documented_module_is_translated_in_both_languages():
     page = (Path(__file__).parents[1] / "docs" / "modules.html").read_text(encoding="utf-8")
     listed = set(re.findall(r'class="mod-h"><b>([a-z_]+)</b>', page))
 
-    untranslated = sorted(name for name in listed
-                          if len(re.findall(rf'"m_{name}"\s*:', page)) != 2)
+    untranslated = sorted(name for name in listed if len(re.findall(rf'"m_{name}"\s*:', page)) != 2)
     assert not untranslated, (
         f"modules without exactly one English and one Chinese string: {untranslated}"
     )

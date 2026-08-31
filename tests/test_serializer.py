@@ -13,18 +13,25 @@ produces the type is off by default, so the gap sat there until the switch was t
 — and then failed on every step after the first while the run reported success.
 """
 
-from pathlib import Path
 import importlib
 import inspect
 import pkgutil
+from pathlib import Path
+
 import pytest
 
 import agentevolver.message.types as message_types
 import agentevolver.model as model_package
-from agentevolver.message.types import (AssistantMessage, CompactionMessage, Function,
-                                        HumanMessage, Message, SystemMessage, ToolCall,
-                                        ToolMessage)
-
+from agentevolver.message.types import (
+    AssistantMessage,
+    CompactionMessage,
+    Function,
+    HumanMessage,
+    Message,
+    SystemMessage,
+    ToolCall,
+    ToolMessage,
+)
 
 # ---------------------------------------------------------------------------
 # from test_serializers_cover_every_message_type.py
@@ -37,16 +44,24 @@ SAMPLES = {
     SystemMessage: SystemMessage(content="rules"),
     HumanMessage: HumanMessage(content="do the thing"),
     CompactionMessage: CompactionMessage(content="checkpoint"),
-    AssistantMessage: AssistantMessage(content="on it", tool_calls=[ToolCall(
-        id="call_1", function=Function(name="write_file_tool", arguments='{"path": "a"}'))]),
-    ToolMessage: ToolMessage(content="wrote a", tool_call_id="call_1",
-                             name="write_file_tool"),
+    AssistantMessage: AssistantMessage(
+        content="on it",
+        tool_calls=[
+            ToolCall(
+                id="call_1", function=Function(name="write_file_tool", arguments='{"path": "a"}')
+            )
+        ],
+    ),
+    ToolMessage: ToolMessage(content="wrote a", tool_call_id="call_1", name="write_file_tool"),
 }
 
 
 def _message_subclasses():
-    return {v for v in vars(message_types).values()
-            if inspect.isclass(v) and issubclass(v, Message) and v is not Message}
+    return {
+        v
+        for v in vars(message_types).values()
+        if inspect.isclass(v) and issubclass(v, Message) and v is not Message
+    }
 
 
 def _serializers():
@@ -62,17 +77,18 @@ def _serializers():
         if not module_info.ispkg:
             continue
         try:
-            module = importlib.import_module(
-                f"agentevolver.model.{module_info.name}.serializer")
+            module = importlib.import_module(f"agentevolver.model.{module_info.name}.serializer")
         except ModuleNotFoundError:
             continue
         for name, obj in vars(module).items():
             if not (inspect.isclass(obj) and name.endswith("Serializer")):
                 continue
             if obj.__module__ != module.__name__:
-                continue          # re-exported from elsewhere; covered at its own module
-            entry = next((f for f in ("serialize_message", "serialize")
-                          if callable(getattr(obj, f, None))), None)
+                continue  # re-exported from elsewhere; covered at its own module
+            entry = next(
+                (f for f in ("serialize_message", "serialize") if callable(getattr(obj, f, None))),
+                None,
+            )
             if entry:
                 found.append((f"{module_info.name}.{name}", obj, entry))
     return found
@@ -96,18 +112,20 @@ def test_every_subclass_has_a_sample():
     missing = _message_subclasses() - set(SAMPLES)
     assert not missing, (
         f"no sample for {sorted(c.__name__ for c in missing)} — add one to SAMPLES so "
-        f"every serializer is checked against it")
+        f"every serializer is checked against it"
+    )
 
 
-@pytest.mark.parametrize("label,serializer,entry", SERIALIZERS,
-                         ids=[label for label, _, _ in SERIALIZERS])
+@pytest.mark.parametrize(
+    "label,serializer,entry", SERIALIZERS, ids=[label for label, _, _ in SERIALIZERS]
+)
 def test_a_serializer_handles_every_message_type(label, serializer, entry):
     serialize = getattr(serializer, entry)
     failures = []
     for cls, sample in SAMPLES.items():
         try:
             result = serialize(sample)
-        except Exception as error:                                  # noqa: BLE001
+        except Exception as error:  # noqa: BLE001
             failures.append(f"{cls.__name__}: {type(error).__name__}: {error}")
             continue
         if not result:
@@ -115,8 +133,9 @@ def test_a_serializer_handles_every_message_type(label, serializer, entry):
     assert not failures, f"{label} cannot serialize:\n  " + "\n  ".join(failures)
 
 
-@pytest.mark.parametrize("label,serializer,entry", SERIALIZERS,
-                         ids=[label for label, _, _ in SERIALIZERS])
+@pytest.mark.parametrize(
+    "label,serializer,entry", SERIALIZERS, ids=[label for label, _, _ in SERIALIZERS]
+)
 def test_a_tool_result_keeps_whatever_pairs_it(label, serializer, entry):
     """Serializing without error is not enough; the pairing has to survive.
 
@@ -134,23 +153,25 @@ def test_a_tool_result_keeps_whatever_pairs_it(label, serializer, entry):
     result = repr(getattr(serializer, entry)(sample))
     assert sample.tool_call_id in result or (sample.name and sample.name in result), (
         f"{label} kept neither the call id nor the tool name; nothing pairs the result "
-        f"to the call that produced it")
+        f"to the call that produced it"
+    )
+
 
 # ---------------------------------------------------------------------------
 # from test_tool_message_roundtrip.py
 # ---------------------------------------------------------------------------
-RESULT = ToolMessage(content="wrote 2 files", tool_call_id="call_1",
-                     name="write_file_tool")
+RESULT = ToolMessage(content="wrote 2 files", tool_call_id="call_1", name="write_file_tool")
 
 
 def _serializer(module, cls):
-    return getattr(__import__(f"agentevolver.model.{module}.serializer",
-                              fromlist=[cls]), cls)
+    return getattr(__import__(f"agentevolver.model.{module}.serializer", fromlist=[cls]), cls)
 
 
-CHAT = [("llm_hub", "LLMHubChatSerializer", "serialize_message"),
-        ("openrouter", "OpenRouterChatSerializer", "serialize_message"),
-        ("openai", "OpenAIChatSerializer", "serialize")]
+CHAT = [
+    ("llm_hub", "LLMHubChatSerializer", "serialize_message"),
+    ("openrouter", "OpenRouterChatSerializer", "serialize_message"),
+    ("openai", "OpenAIChatSerializer", "serialize"),
+]
 
 
 @pytest.mark.parametrize("module,cls,fn", CHAT)
@@ -164,8 +185,7 @@ def test_chat_providers_use_the_tool_role(module, cls, fn):
 def test_the_responses_api_echoes_the_call_id_as_an_item():
     """Not a `tool` role — that surface has none — and `call_id`, not the item's `id`."""
     out = _serializer("openai", "OpenAIResponseSerializer").serialize(RESULT)
-    assert out == {"type": "function_call_output", "call_id": "call_1",
-                   "output": "wrote 2 files"}
+    assert out == {"type": "function_call_output", "call_id": "call_1", "output": "wrote 2 files"}
 
 
 def test_anthropic_carries_the_result_on_a_user_turn():
@@ -187,14 +207,19 @@ def test_anthropic_coalesces_parallel_results_and_honours_rolling_cache():
     serializer = _serializer("anthropic", "AnthropicChatSerializer")
     first = ToolMessage(content="one", tool_call_id="c1", name="t")
     second = ToolMessage(content="two", tool_call_id="c2", name="t", cache=True)
-    _, messages = serializer.serialize_messages([
-        AssistantMessage(content="", tool_calls=[
-            ToolCall(id="c1", function=Function(name="t", arguments="{}")),
-            ToolCall(id="c2", function=Function(name="t", arguments="{}")),
-        ]),
-        first,
-        second,
-    ])
+    _, messages = serializer.serialize_messages(
+        [
+            AssistantMessage(
+                content="",
+                tool_calls=[
+                    ToolCall(id="c1", function=Function(name="t", arguments="{}")),
+                    ToolCall(id="c2", function=Function(name="t", arguments="{}")),
+                ],
+            ),
+            first,
+            second,
+        ]
+    )
     assert [message["role"] for message in messages] == ["assistant", "user"]
     assert len(messages[1]["content"]) == 2
     assert messages[1]["content"][-1]["cache_control"]["type"] == "ephemeral"
@@ -203,11 +228,13 @@ def test_anthropic_coalesces_parallel_results_and_honours_rolling_cache():
 def test_anthropic_replays_signed_thinking_before_tool_use():
     serializer = _serializer("anthropic", "AnthropicChatSerializer")
     thinking = {"type": "thinking", "thinking": "private", "signature": "signed"}
-    out = serializer.serialize(AssistantMessage(
-        content="",
-        provider_state={"anthropic": {"thinking_blocks": [thinking]}},
-        tool_calls=[ToolCall(id="c1", function=Function(name="t", arguments="{}"))],
-    ))
+    out = serializer.serialize(
+        AssistantMessage(
+            content="",
+            provider_state={"anthropic": {"thinking_blocks": [thinking]}},
+            tool_calls=[ToolCall(id="c1", function=Function(name="t", arguments="{}"))],
+        )
+    )
 
     assert out["content"][0] == thinking
     assert out["content"][1]["type"] == "tool_use"
@@ -216,11 +243,13 @@ def test_anthropic_replays_signed_thinking_before_tool_use():
 def test_anthropic_replays_a_native_compaction_block_as_assistant_state():
     serializer = _serializer("anthropic", "AnthropicChatSerializer")
     block = {"type": "compaction", "content": "canonical summary"}
-    out = serializer.serialize(CompactionMessage(
-        content="portable fallback",
-        cache=True,
-        provider_state={"anthropic": {"compaction_blocks": [block]}},
-    ))
+    out = serializer.serialize(
+        CompactionMessage(
+            content="portable fallback",
+            cache=True,
+            provider_state={"anthropic": {"compaction_blocks": [block]}},
+        )
+    )
 
     assert out["role"] == "assistant"
     assert out["content"][0]["type"] == "compaction"
@@ -239,13 +268,17 @@ def test_anthropic_uses_the_portable_checkpoint_when_no_native_block_exists():
 
 def test_llm_hub_replays_claude_reasoning_extensions():
     serializer = _serializer("llm_hub", "LLMHubChatSerializer")
-    out = serializer.serialize_message(AssistantMessage(
-        content="",
-        provider_state={"llm_hub": {
-            "reasoning_content": "private",
-            "reasoning_signature": "signed",
-        }},
-    ))
+    out = serializer.serialize_message(
+        AssistantMessage(
+            content="",
+            provider_state={
+                "llm_hub": {
+                    "reasoning_content": "private",
+                    "reasoning_signature": "signed",
+                }
+            },
+        )
+    )
 
     assert out["reasoning_content"] == "private"
     assert out["reasoning_signature"] == "signed"
@@ -253,13 +286,20 @@ def test_llm_hub_replays_claude_reasoning_extensions():
 
 def test_responses_api_replays_assistant_function_calls_before_outputs():
     serializer = _serializer("openai", "OpenAIResponseSerializer")
-    call = ToolCall(id="call_1", function=Function(name="write_file_tool", arguments='{"path":"a"}'))
-    out = serializer.serialize_messages([
-        AssistantMessage(content="", tool_calls=[call]), RESULT,
-    ])
+    call = ToolCall(
+        id="call_1", function=Function(name="write_file_tool", arguments='{"path":"a"}')
+    )
+    out = serializer.serialize_messages(
+        [
+            AssistantMessage(content="", tool_calls=[call]),
+            RESULT,
+        ]
+    )
     assert out[0] == {
-        "type": "function_call", "call_id": "call_1",
-        "name": "write_file_tool", "arguments": '{"path":"a"}',
+        "type": "function_call",
+        "call_id": "call_1",
+        "name": "write_file_tool",
+        "arguments": '{"path":"a"}',
     }
     assert out[1]["type"] == "function_call_output"
 
@@ -281,12 +321,16 @@ def test_a_derived_history_serializes_end_to_end_on_every_provider():
     """The actual failing shape: what `derive_messages` builds, through each serializer."""
     from agentevolver.message.types import AssistantMessage, HumanMessage
 
-    history = [HumanMessage(content="reverse a string"),
-               AssistantMessage(content="I'll write the files."),
-               RESULT]
+    history = [
+        HumanMessage(content="reverse a string"),
+        AssistantMessage(content="I'll write the files."),
+        RESULT,
+    ]
 
-    for module, cls, fn in CHAT + [("anthropic", "AnthropicChatSerializer", "serialize"),
-                                   ("google", "GoogleChatSerializer", "serialize")]:
+    for module, cls, fn in CHAT + [
+        ("anthropic", "AnthropicChatSerializer", "serialize"),
+        ("google", "GoogleChatSerializer", "serialize"),
+    ]:
         serialize = getattr(_serializer(module, cls), fn)
         for message in history:
-            serialize(message)          # must not raise
+            serialize(message)  # must not raise

@@ -23,12 +23,12 @@ wrong, or what would go wrong and how it would look. Not a restatement of the
 assertions.>
 """
 
-import asyncio                      # stdlib
+import asyncio  # stdlib
 from pathlib import Path
 
-import pytest                       # third-party
+import pytest  # third-party
 
-from agentevolver.job import job_manager        # first-party
+from agentevolver.job import job_manager  # first-party
 
 
 # --------------------------------------------------------------------------- #
@@ -93,8 +93,9 @@ fail reports the invariant as held, which is worse than no check and silent fore
 ## The coverage lane
 
 ```sh
-pytest                # the ordinary run — no measurement, no gate
-pytest --cov          # the gated run: measures, then applies tests/coverage_gate.py
+pytest                # ordinary run — no integration, mutation meta-gate, or coverage
+pytest -m slow        # prove consistency gates go red when their real defects return
+pytest --cov          # gated run: measures, then applies tests/coverage_gate.py
 ```
 
 The second one adds roughly 30% wall-clock, which is why it is not the default. What it

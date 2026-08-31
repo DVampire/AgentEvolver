@@ -11,12 +11,14 @@ Filter molecules by multiple medicinal chemistry rules. Returns a **pandas DataF
 **Constructor:**
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 RuleFilters(rule_list: List[Union[str, Callable]], rule_list_names: Optional[List[str]] = None)
 ```
 
 **Call signature:**
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 __call__(
     mols: Sequence[Union[str, Mol]],
     n_jobs: int = -1,
@@ -100,6 +102,7 @@ CommonAlertsFilters()
 **Methods:**
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 list_default_available_alerts()  # DataFrame of alert definitions
 __call__(mols, n_jobs=-1, progress=False, ...) -> pd.DataFrame
 ```
@@ -190,6 +193,7 @@ ChemicalGroup(groups=None, n_jobs=None, groups_db=None)
 **Methods:**
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 has_match(mol, exact_match=False, terminal_only=False) -> bool
 get_matches(mol, use_smiles=True, exact_match=False, terminal_only=False) -> dict
 filter(mols) -> list[Mol]
@@ -246,6 +250,7 @@ For batch filtering, use `mc.functional.complexity_filter()`.
 Scaffold-based substructure matching with per-atom constraint functions — **not** simple property-range filters.
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 Constraints(core: Mol, constraint_fns: Dict[str, Callable], prop_name: str = "query")
 constraints(mol)  # -> bool or match details
 ```
@@ -261,6 +266,7 @@ Use `RuleFilters` or the query language for MW/LogP/TPSA bounds.
 Parse and evaluate the medchem query language.
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 QueryFilter(query: str, grammar: Optional[str] = None, parser: str = "lalr")
 qf(mols, n_jobs=-1, progress=True, scheduler="processes") -> list[bool]
 ```

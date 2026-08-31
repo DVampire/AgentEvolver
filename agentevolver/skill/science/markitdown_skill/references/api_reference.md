@@ -32,6 +32,7 @@ from markitdown.converters import (
 ### Constructor
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 MarkItDown(
     *,
     enable_builtins: bool | None = None,
@@ -68,6 +69,7 @@ The public signature uses `**kwargs`; spell these names exactly.
 #### `convert()`
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 convert(
     source: str | Path | requests.Response | BinaryIO,
     *,
@@ -89,6 +91,7 @@ This convenience method is broad. Prefer a narrower method for untrusted or appl
 #### `convert_local()`
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 convert_local(
     path: str | Path,
     *,
@@ -114,6 +117,7 @@ Path("experiment.md").write_text(result.markdown, encoding="utf-8")
 #### `convert_stream()`
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 convert_stream(
     stream: BinaryIO,
     *,
@@ -152,6 +156,7 @@ print(result.markdown)
 #### `convert_uri()`
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 convert_uri(
     uri: str,
     *,
@@ -176,6 +181,7 @@ HTTP(S) conversion uses the configured `requests.Session`, follows Requests defa
 #### `convert_response()`
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 convert_response(
     response: requests.Response,
     *,
@@ -191,6 +197,7 @@ The method derives hints from `Content-Type`, `Content-Disposition`, and the res
 ## `StreamInfo`
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 StreamInfo(
     *,
     mimetype: str | None = None,
@@ -224,6 +231,7 @@ Hints are merged with extension, HTTP header, and Magika content-detection guess
 ## `DocumentConverterResult`
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 DocumentConverterResult(
     markdown: str,
     *,
@@ -305,6 +313,7 @@ except FileConversionException as exc:
 ## Converter Registration
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 register_converter(
     converter: DocumentConverter,
     *,

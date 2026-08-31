@@ -12,6 +12,7 @@ from agentevolver.config import config
 from agentevolver.sandbox.project import check_session_path
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
+from agentevolver.session import isolated_workspace_root
 
 _DESCRIPTION = "Write content to a file, creating it (and any missing parent directories) if it does not exist, or overwriting it if it does."
 
@@ -71,6 +72,7 @@ class WriteFileTool(Tool):
                 self.name,
                 PermissionRequest(op=Operation.WRITE, target=path, content=content),
                 mode=self.permission_mode,
+                workspace=isolated_workspace_root(kwargs.get("ctx")),
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")

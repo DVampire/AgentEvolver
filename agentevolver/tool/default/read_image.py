@@ -12,6 +12,7 @@ from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.sandbox.project import check_session_path
 from agentevolver.tool.types import Tool
+from agentevolver.session import isolated_workspace_root
 
 _DESCRIPTION = "Look at an image file. Requires a model that accepts image input."
 
@@ -120,6 +121,7 @@ class ReadImageTool(Tool):
                 self.name,
                 PermissionRequest(op=Operation.READ, target=path, allow_binary=True),
                 mode=self.permission_mode,
+                workspace=isolated_workspace_root(kwargs.get("ctx")),
             )
             if not result.allowed:
                 return Response(type=ResponseType.TOOL, success=False, message=f"Permission denied: {result.reason}")

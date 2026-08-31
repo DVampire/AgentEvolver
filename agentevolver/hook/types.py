@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -195,6 +194,10 @@ class Hook(BaseModel):
     name: str = Field(description="Unique name for this hook.")
     description: str = Field(default="", description="What this hook does.")
     enabled: bool = Field(default=True)
+    # Observability hooks normally fail open so logging cannot stop work. Enforcement
+    # hooks opt into fail-closed behavior, preventing an exception from silently
+    # disabling a permission or resource boundary.
+    fail_closed: bool = Field(default=False)
     # Execution priority — lower number runs first.
     priority: int = Field(default=100)
 

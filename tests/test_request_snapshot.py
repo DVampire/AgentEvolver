@@ -19,8 +19,8 @@ from agentevolver.response import Response, ResponseType
 from agentevolver.trace.request import REQUEST_SNAPSHOT_VERSION, RequestSnapshot
 from agentevolver.trace.types import (
     TRACE_FORMAT_VERSION,
-    UnsupportedTraceEvent,
     TraceEventType,
+    UnsupportedTraceEvent,
     model_request_event,
     parse_trace_event,
 )
@@ -72,11 +72,13 @@ def test_changing_the_tool_schema_changes_the_snapshot_identity():
 
 def test_compaction_protocol_parameters_are_part_of_the_snapshot_identity():
     normal = _snapshot()
-    compact = _snapshot(request_input={
-        "operation": "compact",
-        "betas": ["compact-2026-01-12"],
-        "context_management": {"edits": [{"type": "compact_20260112"}]},
-    })
+    compact = _snapshot(
+        request_input={
+            "operation": "compact",
+            "betas": ["compact-2026-01-12"],
+            "context_management": {"edits": [{"type": "compact_20260112"}]},
+        }
+    )
 
     assert compact.parameters["operation"] == "compact"
     assert compact.parameters["betas"] == ["compact-2026-01-12"]
@@ -110,7 +112,11 @@ def test_the_snapshot_keeps_effective_values_without_credentials_or_endpoint_tex
 def test_a_request_event_is_non_ignorable_and_carries_the_trace_envelope_version():
     """Skipping an unknown request event would silently sever training provenance."""
     event = model_request_event(
-        "session-1", _snapshot(), task_id="task-1", agent_name="agent", step_number=2,
+        "session-1",
+        _snapshot(),
+        task_id="task-1",
+        agent_name="agent",
+        step_number=2,
     )
     assert event.event_type is TraceEventType.MODEL_REQUEST
     assert event.schema_version == TRACE_FORMAT_VERSION
@@ -120,23 +126,36 @@ def test_a_request_event_is_non_ignorable_and_carries_the_trace_envelope_version
 
 def test_an_unknown_ignorable_event_can_be_skipped_but_a_required_one_cannot():
     """Forward-compatible readers may skip telemetry, never missing training facts."""
-    assert parse_trace_event({
-        "schema_version": 1, "event_type": "future_metric", "ignorable": True,
-    }) is None
+    assert (
+        parse_trace_event(
+            {
+                "schema_version": 1,
+                "event_type": "future_metric",
+                "ignorable": True,
+            }
+        )
+        is None
+    )
     with pytest.raises(UnsupportedTraceEvent, match="non-ignorable"):
-        parse_trace_event({
-            "schema_version": 1, "event_type": "future_request", "ignorable": False,
-        })
+        parse_trace_event(
+            {
+                "schema_version": 1,
+                "event_type": "future_request",
+                "ignorable": False,
+            }
+        )
 
 
 def test_a_future_trace_envelope_is_refused_even_when_the_event_claims_ignorable():
     """A reader cannot trust compatibility flags in an envelope it does not understand."""
     with pytest.raises(UnsupportedTraceEvent, match="envelope"):
-        parse_trace_event({
-            "schema_version": TRACE_FORMAT_VERSION + 1,
-            "event_type": "future_metric",
-            "ignorable": True,
-        })
+        parse_trace_event(
+            {
+                "schema_version": TRACE_FORMAT_VERSION + 1,
+                "event_type": "future_metric",
+                "ignorable": True,
+            }
+        )
 
 
 @pytest.mark.asyncio
@@ -149,7 +168,9 @@ async def test_recording_happens_before_dispatch_and_flushes_the_trace_queue():
 
     with (
         patch("agentevolver.trace.server.trace_manager.emit", side_effect=capture),
-        patch("agentevolver.trace.server.trace_manager.flush", new=AsyncMock(return_value=True)) as flush,
+        patch(
+            "agentevolver.trace.server.trace_manager.flush", new=AsyncMock(return_value=True)
+        ) as flush,
     ):
         snapshot_id = await _record_request_snapshot(
             session_id="session-1",
@@ -162,7 +183,9 @@ async def test_recording_happens_before_dispatch_and_flushes_the_trace_queue():
             response_format=None,
             request_input={
                 "trace_context": {
-                    "task_id": "task-1", "agent_name": "agent", "step_number": 4,
+                    "task_id": "task-1",
+                    "agent_name": "agent",
+                    "step_number": 4,
                 },
             },
             call_kwargs={},
@@ -237,9 +260,7 @@ async def test_compaction_requires_declared_route_capability_and_client_support(
     manager.models["main"] = _config(provider="anthropic", native_compaction=True)
     manager.model_clients["main"] = Client()
     with patch("agentevolver.model.context._record_request_snapshot", side_effect=record):
-        result = await manager.compact_history(
-            "main", [HumanMessage(content="history")]
-        )
+        result = await manager.compact_history("main", [HumanMessage(content="history")])
 
     assert result["summary"] == "checkpoint"
     assert result["provider"] == "anthropic"
@@ -323,9 +344,13 @@ async def test_explicit_compaction_rejection_disables_only_that_route_feature():
     manager.models["main"] = _config(native_compaction=True)
     manager.model_clients["main"] = Client()
 
-    assert await manager.compact_history(
-        "main", [HumanMessage(content="history")],
-    ) is None
+    assert (
+        await manager.compact_history(
+            "main",
+            [HumanMessage(content="history")],
+        )
+        is None
+    )
     assert manager._disabled_route_features["main"] == {"compaction"}
 
 
@@ -349,11 +374,14 @@ async def test_the_streaming_path_records_before_the_first_provider_event():
     manager.models["main"] = _config()
     manager.model_clients["main"] = Client()
     with patch("agentevolver.model.context._record_request_snapshot", side_effect=record):
-        events = [event async for event in manager.stream(
-            name="main",
-            input={"messages": [HumanMessage(content="hello")], "max_retries": 1},
-            ctx=ModelContext(id="session-1"),
-        )]
+        events = [
+            event
+            async for event in manager.stream(
+                name="main",
+                input={"messages": [HumanMessage(content="hello")], "max_retries": 1},
+                ctx=ModelContext(id="session-1"),
+            )
+        ]
 
     assert events == ["event"]
     assert order == ["snapshot", "provider"]

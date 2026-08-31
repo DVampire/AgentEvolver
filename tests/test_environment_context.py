@@ -179,8 +179,11 @@ def test_every_shipped_prompt_carries_the_environment_block():
     from pathlib import Path
 
     prompts = Path(__file__).resolve().parents[1] / "agentevolver" / "prompt" / "default"
-    missing = [p.name for p in sorted(prompts.glob("*.html"))
-               if "module/environment_context.html" not in p.read_text(encoding="utf-8")]
+    missing = [
+        p.name
+        for p in sorted(prompts.glob("*.html"))
+        if "module/environment_context.html" not in p.read_text(encoding="utf-8")
+    ]
     assert not missing, f"prompts with no environment-context block: {missing}"
 
 
@@ -191,9 +194,13 @@ def test_every_shipped_prompt_can_render_the_state():
 
     root = Path(__file__).resolve().parents[1] / "agentevolver" / "prompt"
     assert "{% if environment_state %}" in (root / "module" / "agent_context.html").read_text(
-        encoding="utf-8")
-    missing = [p.name for p in sorted((root / "default").glob("*.html"))
-               if "module/agent_context.html" not in p.read_text(encoding="utf-8")]
+        encoding="utf-8"
+    )
+    missing = [
+        p.name
+        for p in sorted((root / "default").glob("*.html"))
+        if "module/agent_context.html" not in p.read_text(encoding="utf-8")
+    ]
     assert not missing, f"prompts that cannot render environment-state: {missing}"
 
 
@@ -233,9 +240,11 @@ def test_every_environment_accepts_the_get_state_call_the_manager_makes():
             continue
         parameters = inspect.signature(method).parameters
         takes_ctx = "ctx" in parameters or any(
-            p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
+            p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
+        )
         if not takes_ctx:
             wrong.append(f"{name}.get_state{inspect.signature(method)} cannot take `ctx=`")
 
-    assert not wrong, ("these environments reject the call the manager makes:\n  "
-                       + "\n  ".join(wrong))
+    assert not wrong, "these environments reject the call the manager makes:\n  " + "\n  ".join(
+        wrong
+    )

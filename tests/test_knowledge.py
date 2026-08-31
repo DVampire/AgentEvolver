@@ -17,8 +17,6 @@ Ranking itself is stubbed here. The backends return positions, so every assertio
 about the plumbing — reading, writing, dispatch, and what happens when a ranker fails.
 """
 
-import json
-
 import pytest
 
 from agentevolver.knowledge.server import KnowledgeManager, _coerce_documents
@@ -138,7 +136,8 @@ def test_items_that_are_neither_strings_nor_records_are_dropped():
     """A ragged list is normal output from a model. The usable entries are kept and the
     rest skipped, so one stray ``None`` does not cost the whole batch."""
     assert _coerce_documents(["a", 42, None, {"text": "b"}], None, "text") == [
-        {"text": "a"}, {"text": "b"},
+        {"text": "a"},
+        {"text": "b"},
     ]
 
 
@@ -305,10 +304,13 @@ async def test_the_query_may_arrive_as_a_task_from_an_upstream_node(knowledge):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("payload, expected", [
-    ({"query": "x"}, "'base' is required"),
-    ({"base": "notes"}, "'query' is required"),
-])
+@pytest.mark.parametrize(
+    "payload, expected",
+    [
+        ({"query": "x"}, "'base' is required"),
+        ({"base": "notes"}, "'query' is required"),
+    ],
+)
 async def test_retrieval_states_which_argument_is_missing(knowledge, payload, expected):
     """The message goes back to the model that made the call, and is all it has to work
     from; "invalid arguments" would leave it guessing which one."""

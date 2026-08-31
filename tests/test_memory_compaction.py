@@ -95,7 +95,7 @@ def test_a_failed_summary_puts_its_records_back():
 
     assert [r.event for r in state.recent] == before
     assert not list(state.working)
-    assert state.compaction is None          # the bracket still closed
+    assert state.compaction is None  # the bracket still closed
 
 
 def test_an_empty_summary_also_puts_its_records_back():
@@ -121,9 +121,11 @@ async def test_a_native_claude_summary_replaces_the_window_without_resummarising
     async def native(*args, **kwargs):
         return {
             "summary": "claude checkpoint",
-            "provider_state": {"anthropic": {"compaction_blocks": [
-                {"type": "compaction", "content": "claude checkpoint"}
-            ]}},
+            "provider_state": {
+                "anthropic": {
+                    "compaction_blocks": [{"type": "compaction", "content": "claude checkpoint"}]
+                }
+            },
             "format": "anthropic.compact_20260112",
             "native": True,
         }
@@ -153,9 +155,11 @@ async def test_an_opaque_native_checkpoint_still_gets_a_portable_text_companion(
     memory, state = _memory(), _state()
     _fill(state, 9)
     native_checkpoint = {
-        "provider_state": {"responses": {"compaction_items": [
-            {"type": "compaction", "encrypted_content": "opaque"}
-        ]}},
+        "provider_state": {
+            "responses": {
+                "compaction_items": [{"type": "compaction", "encrypted_content": "opaque"}]
+            }
+        },
         "format": "openai.responses.compaction",
         "native": True,
     }
@@ -272,12 +276,13 @@ def test_memory_truncation_keeps_the_spill_locator():
     locator = "[The full output is saved at `/output/.runtime/spill/s/abc-bash_tool.txt`.]"
     detail = ("X" * 30_000) + "\n\n" + locator
 
-    TieredMemory._append_recent(memory, state, MemoryRecord(
-        ts="t", event="bash_tool result", detail=detail))
+    TieredMemory._append_recent(
+        memory, state, MemoryRecord(ts="t", event="bash_tool result", detail=detail)
+    )
 
     stored = state.recent[0].detail
     assert "saved at" in stored, "the way back to the full output was cut off"
-    assert stored.startswith("XXX")                       # head still leads
+    assert stored.startswith("XXX")  # head still leads
     assert "more characters not kept in memory" in stored  # and says what it dropped
     assert len(stored) < _RECORD_DETAIL_MAX + 200
 
@@ -372,10 +377,11 @@ def test_folding_on_demand_does_not_wait_for_the_record_count(monkeypatch):
     """The count says there is nothing to do; the caller has measured otherwise."""
     memory, state = _memory(), _state()
     memory._sessions["s1"] = state
-    _fill(state, memory.recent_max)          # at the threshold, so `_compact` would idle
+    _fill(state, memory.recent_max)  # at the threshold, so `_compact` would idle
 
-    monkeypatch.setattr(TieredMemory, "_summarise",
-                        staticmethod(lambda items, existing: _resolved("a summary")))
+    monkeypatch.setattr(
+        TieredMemory, "_summarise", staticmethod(lambda items, existing: _resolved("a summary"))
+    )
     assert asyncio.run(memory.compact("s1")) is True
     assert len(state.recent) < memory.recent_max
 
@@ -390,8 +396,9 @@ def test_folding_stops_at_what_the_next_step_will_read(monkeypatch):
     memory._sessions["s1"] = state
     _fill(state, memory.recent_fetch + 1)
 
-    monkeypatch.setattr(TieredMemory, "_summarise",
-                        staticmethod(lambda items, existing: _resolved("a summary")))
+    monkeypatch.setattr(
+        TieredMemory, "_summarise", staticmethod(lambda items, existing: _resolved("a summary"))
+    )
     asyncio.run(memory.compact("s1"))
 
     assert len(state.recent) >= memory.recent_fetch
@@ -403,12 +410,18 @@ def test_step_retention_keeps_complete_recent_steps(monkeypatch):
     state.recent.append(MemoryRecord(ts="t", event="start", detail="task"))
     for step, calls in ((1, 2), (2, 1), (3, 3), (4, 2)):
         for call in range(calls):
-            state.recent.append(MemoryRecord(
-                ts="t", event=f"step {step} call {call}", detail="d", step=step,
-            ))
+            state.recent.append(
+                MemoryRecord(
+                    ts="t",
+                    event=f"step {step} call {call}",
+                    detail="d",
+                    step=step,
+                )
+            )
 
-    monkeypatch.setattr(TieredMemory, "_summarise",
-                        staticmethod(lambda items, existing: _resolved("a summary")))
+    monkeypatch.setattr(
+        TieredMemory, "_summarise", staticmethod(lambda items, existing: _resolved("a summary"))
+    )
     assert asyncio.run(memory.compact("s1", keep_steps=2)) is True
 
     assert {record.step for record in state.recent} == {3, 4}
@@ -493,8 +506,10 @@ def _folded(monkeypatch, records: int = 4, summary: str = "a short summary"):
     _fill(state, records)
 
     from agentevolver.trace import trace_manager
-    monkeypatch.setattr(TieredMemory, "_summarise",
-                        staticmethod(lambda items, existing: _resolved(summary)))
+
+    monkeypatch.setattr(
+        TieredMemory, "_summarise", staticmethod(lambda items, existing: _resolved(summary))
+    )
     monkeypatch.setattr(trace_manager, "surface_span", lambda *a, **k: [0, 1])
 
     async def emit(event, *a, **k):
@@ -550,9 +565,13 @@ def test_the_stats_projection_totals_folds_without_recomputing_them(monkeypatch)
     state = TraceStats(session_id="s1")
     for saved in (120, -30):
         TraceStatsProjector._reduce(
-            TraceStatsProjector.__new__(TraceStatsProjector), state,
-            TraceEvent(event_type=TraceEventType.CUSTOM, session_id="s1",
-                       metadata={"type": "compaction", "records": 4, "tokens_saved": saved}),
+            TraceStatsProjector.__new__(TraceStatsProjector),
+            state,
+            TraceEvent(
+                event_type=TraceEventType.CUSTOM,
+                session_id="s1",
+                metadata={"type": "compaction", "records": 4, "tokens_saved": saved},
+            ),
         )
 
     assert state.compactions == 2
@@ -578,7 +597,7 @@ def test_two_compactions_at_once_do_not_trip_over_each_other(monkeypatch):
     failures = []
 
     async def _summary(items, existing):
-        await asyncio.sleep(0)          # the yield the real summariser takes
+        await asyncio.sleep(0)  # the yield the real summariser takes
         return "a summary"
 
     def _warn(message):
@@ -589,8 +608,9 @@ def test_two_compactions_at_once_do_not_trip_over_each_other(monkeypatch):
     monkeypatch.setattr("agentevolver.memory.default.tiered.logger.warning", _warn)
 
     async def _both():
-        await asyncio.gather(TieredMemory._compact(memory, state),
-                             TieredMemory._compact(memory, state))
+        await asyncio.gather(
+            TieredMemory._compact(memory, state), TieredMemory._compact(memory, state)
+        )
 
     asyncio.run(_both())
 
@@ -614,8 +634,9 @@ def test_the_second_arrival_leaves_the_first_alone(monkeypatch):
     monkeypatch.setattr(TieredMemory, "_summarise", staticmethod(_summary))
 
     async def _both():
-        await asyncio.gather(TieredMemory._compact(memory, state),
-                             TieredMemory._compact(memory, state))
+        await asyncio.gather(
+            TieredMemory._compact(memory, state), TieredMemory._compact(memory, state)
+        )
 
     asyncio.run(_both())
     solo, solo_state = _memory(), _state()
@@ -630,7 +651,8 @@ def test_the_second_arrival_leaves_the_first_alone(monkeypatch):
     asyncio.run(TieredMemory._compact(solo, solo_state))
 
     assert calls == calls_solo, (
-        f"two concurrent calls folded differently from one: {calls} vs {calls_solo}")
+        f"two concurrent calls folded differently from one: {calls} vs {calls_solo}"
+    )
 
 
 # --------------------------------------------------------------------------- #

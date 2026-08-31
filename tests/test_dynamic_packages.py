@@ -25,7 +25,7 @@ import textwrap
 import pytest
 
 from agentevolver.dynamic import dynamic_manager
-from agentevolver.plugins.types import Plugin, PluginTool
+from agentevolver.plugins.types import Plugin
 from agentevolver.tool.types import Tool
 
 
@@ -34,9 +34,9 @@ def plugin_tree(tmp_path):
     """The shape the generate skill tells a run to produce."""
     root = tmp_path / "text_metrics"
     (root / "tools").mkdir(parents=True)
-    (root / "tools" / "_shared.py").write_text(
-        "SEPARATOR = '::'\n", encoding="utf-8")
-    (root / "tools" / "readability.py").write_text(textwrap.dedent('''
+    (root / "tools" / "_shared.py").write_text("SEPARATOR = '::'\n", encoding="utf-8")
+    (root / "tools" / "readability.py").write_text(
+        textwrap.dedent("""
         from agentevolver.plugins.types import PluginTool
         from ._shared import SEPARATOR
 
@@ -44,8 +44,11 @@ def plugin_tree(tmp_path):
             name: str = "readability"
             description: str = "Reports how hard a text is to read."
             marker: str = SEPARATOR
-    '''), encoding="utf-8")
-    (root / "plugin.py").write_text(textwrap.dedent('''
+    """),
+        encoding="utf-8",
+    )
+    (root / "plugin.py").write_text(
+        textwrap.dedent("""
         from agentevolver.plugins.types import Plugin
         from .tools.readability import ReadabilityTool
 
@@ -53,7 +56,9 @@ def plugin_tree(tmp_path):
             name: str = "text_metrics"
             description: str = "Measurable properties of a piece of text."
             child: str = ReadabilityTool.model_fields["name"].default
-    '''), encoding="utf-8")
+    """),
+        encoding="utf-8",
+    )
     yield root
     for name in [m for m in sys.modules if m.startswith("ext.")]:
         sys.modules.pop(name, None)
@@ -62,8 +67,11 @@ def plugin_tree(tmp_path):
 def test_a_directory_component_can_import_its_own_files(plugin_tree):
     """The failure this file exists for, at the layer that produced it."""
     cls = dynamic_manager.load_class_from_path(
-        str(plugin_tree / "plugin.py"), base_class=Plugin, context="plugin",
-        module_name="ext.plugin.text_metrics", package_dir=str(plugin_tree),
+        str(plugin_tree / "plugin.py"),
+        base_class=Plugin,
+        context="plugin",
+        module_name="ext.plugin.text_metrics",
+        package_dir=str(plugin_tree),
     )
     assert cls.__name__ == "TextMetricsPlugin"
     assert cls.model_fields["child"].default == "readability"
@@ -76,8 +84,11 @@ def test_a_sibling_can_import_a_sibling(plugin_tree):
     package, this second-level relative import would fail exactly as the first one did.
     """
     dynamic_manager.load_class_from_path(
-        str(plugin_tree / "plugin.py"), base_class=Plugin, context="plugin",
-        module_name="ext.plugin.text_metrics", package_dir=str(plugin_tree),
+        str(plugin_tree / "plugin.py"),
+        base_class=Plugin,
+        context="plugin",
+        module_name="ext.plugin.text_metrics",
+        package_dir=str(plugin_tree),
     )
     loaded = sys.modules["ext.plugin.text_metrics.tools.readability"]
     assert loaded.ReadabilityTool.model_fields["marker"].default == "::"
@@ -86,8 +97,11 @@ def test_a_sibling_can_import_a_sibling(plugin_tree):
 def test_the_invented_parent_packages_are_created(plugin_tree):
     """`ext` and `ext.plugin` exist nowhere on disk, so this manager has to make them."""
     dynamic_manager.load_class_from_path(
-        str(plugin_tree / "plugin.py"), base_class=Plugin, context="plugin",
-        module_name="ext.plugin.text_metrics", package_dir=str(plugin_tree),
+        str(plugin_tree / "plugin.py"),
+        base_class=Plugin,
+        context="plugin",
+        module_name="ext.plugin.text_metrics",
+        package_dir=str(plugin_tree),
     )
     for parent in ("ext", "ext.plugin"):
         assert parent in sys.modules, f"{parent} was never created"
@@ -102,8 +116,11 @@ def test_the_module_is_visible_to_the_imports_inside_it(plugin_tree):
     reported while the module of that exact name is being built.
     """
     dynamic_manager.load_class_from_path(
-        str(plugin_tree / "plugin.py"), base_class=Plugin, context="plugin",
-        module_name="ext.plugin.text_metrics", package_dir=str(plugin_tree),
+        str(plugin_tree / "plugin.py"),
+        base_class=Plugin,
+        context="plugin",
+        module_name="ext.plugin.text_metrics",
+        package_dir=str(plugin_tree),
     )
     module = sys.modules["ext.plugin.text_metrics"]
     assert module.__path__ == [str(plugin_tree)]
@@ -117,16 +134,20 @@ def test_a_single_file_component_is_not_made_a_package(tmp_path):
     directory it happened to be read from.
     """
     source = tmp_path / "adder_tool.py"
-    source.write_text(textwrap.dedent('''
+    source.write_text(
+        textwrap.dedent("""
         from agentevolver.tool.types import Tool
 
         class AdderTool(Tool):
             name: str = "adder_tool"
             description: str = "Adds numbers."
-    '''), encoding="utf-8")
+    """),
+        encoding="utf-8",
+    )
     try:
         dynamic_manager.load_class_from_path(
-            str(source), base_class=Tool, context="tool", module_name="ext.tool.adder_tool")
+            str(source), base_class=Tool, context="tool", module_name="ext.tool.adder_tool"
+        )
         module = sys.modules["ext.tool.adder_tool"]
         assert not hasattr(module, "__path__")
     finally:
@@ -146,7 +167,8 @@ def test_code_that_fails_to_execute_leaves_nothing_behind(tmp_path):
 
     with pytest.raises(RuntimeError):
         dynamic_manager.load_class_from_path(
-            str(source), base_class=Tool, context="tool", module_name="ext.tool.broken")
+            str(source), base_class=Tool, context="tool", module_name="ext.tool.broken"
+        )
 
     assert "ext.tool.broken" not in sys.modules, (
         "a module that failed to execute stayed registered; the next load would reuse it"
@@ -190,8 +212,11 @@ def _package_dir_for(module: str, path) -> object:
     from agentevolver.extension import extension_manager
 
     try:
-        asyncio.run(extension_manager._load_class_component(
-            module, str(path), version=None, config=None, return_version=False))
+        asyncio.run(
+            extension_manager._load_class_component(
+                module, str(path), version=None, config=None, return_version=False
+            )
+        )
     except _Captured as captured:
         return captured.kwargs.get("package_dir")
     raise AssertionError("the loader was never called")

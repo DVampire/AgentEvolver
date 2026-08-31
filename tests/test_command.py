@@ -59,8 +59,8 @@ def commands():
     "raw, name, args",
     [
         ("/rollback tool foo 1.2", "rollback", ["tool", "foo", "1.2"]),
-        ("rollback tool foo", "rollback", ["tool", "foo"]),   # the slash is optional
-        ("  /echo   a   b  ", "echo", ["a", "b"]),            # runs of spaces collapse
+        ("rollback tool foo", "rollback", ["tool", "foo"]),  # the slash is optional
+        ("  /echo   a   b  ", "echo", ["a", "b"]),  # runs of spaces collapse
         ("/echo", "echo", []),
     ],
 )
@@ -188,7 +188,7 @@ async def test_help_groups_by_type_and_sorts_within_a_group(commands):
     lines = (await commands.help()).splitlines()
     assert lines[0] == "[control]"
     assert "[skill]" in lines
-    control = [line for line in lines[1:lines.index("[skill]")]]
+    control = [line for line in lines[1 : lines.index("[skill]")]]
     names = [line.strip().split()[0] for line in control]
     assert names == sorted(names)
 
@@ -271,6 +271,7 @@ def test_the_convenience_builders_carry_the_command_response_type():
 @pytest.mark.asyncio
 async def test_the_base_command_refuses_to_run_unimplemented():
     """A base `__call__` that returned would make a half-written command report success."""
+
     class Bare(Command):
         name: str = "bare"
         description: str = "no body"

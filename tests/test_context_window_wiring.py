@@ -18,7 +18,7 @@ together, so they are tested together.
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import List
 from unittest.mock import patch
 
 import pytest
@@ -27,17 +27,22 @@ from agentevolver.message import HumanMessage
 from agentevolver.model import config as catalog
 from agentevolver.model.context import ModelContextManager
 from agentevolver.model.pressure import (
-    ContextOverflowError,
     DEFAULT_CONTEXT_WINDOW,
+    ContextOverflowError,
     provider_rejected_for_length,
 )
-from agentevolver.model.types import ModelConfig, ModelContext, StreamDone, TextDelta
+from agentevolver.model.types import ModelConfig, ModelContext
 
 
 def _specs() -> List[dict]:
     """Every catalog entry, from every provider, flattened."""
-    kwargs = dict(max_tokens=4096, default_temperature=0.7, default_timeout=600.0,
-                  default_plugins=None, default_reasoning={"reasoning_effort": "high"})
+    kwargs = dict(
+        max_tokens=4096,
+        default_temperature=0.7,
+        default_timeout=600.0,
+        default_plugins=None,
+        default_reasoning={"reasoning_effort": "high"},
+    )
     entries: List[dict] = []
     for name in dir(catalog):
         if not name.endswith("_models"):
@@ -46,6 +51,7 @@ def _specs() -> List[dict]:
         if not callable(fn):
             continue
         import inspect
+
         accepted = set(inspect.signature(fn).parameters)
         result = fn(**{k: v for k, v in kwargs.items() if k in accepted})
         groups = result.values() if isinstance(result, dict) else [result]
@@ -61,8 +67,7 @@ def test_a_declared_context_window_reaches_the_model_config():
     without the keyword is the exact regression, and only a test that walks real specs
     would see it.
     """
-    declared = {s["model_name"]: s["context_window"]
-                for s in _specs() if s.get("context_window")}
+    declared = {s["model_name"]: s["context_window"] for s in _specs() if s.get("context_window")}
     assert declared, "no catalog entry declares a context window; the test has nothing to check"
 
     manager = ModelContextManager()
@@ -70,20 +75,23 @@ def test_a_declared_context_window_reaches_the_model_config():
 
     async def _register():
         with patch.object(manager, "_create_client", side_effect=_noop_client):
-            for init in (manager._initialize_openai_models,
-                         manager._initialize_openrouter_models,
-                         manager._initialize_llm_hub_models,
-                         manager._initialize_anthropic_models,
-                         manager._initialize_google_models):
+            for init in (
+                manager._initialize_openai_models,
+                manager._initialize_openrouter_models,
+                manager._initialize_llm_hub_models,
+                manager._initialize_anthropic_models,
+                manager._initialize_google_models,
+            ):
                 try:
                     await init()
-                except Exception:      # a provider with no key registers nothing; fine
+                except Exception:  # a provider with no key registers nothing; fine
                     pass
 
     asyncio.run(_register())
 
-    seen = {name: manager.models[name].context_window
-            for name in declared if name in manager.models}
+    seen = {
+        name: manager.models[name].context_window for name in declared if name in manager.models
+    }
     assert seen, "no declared model registered; cannot tell wiring from absence"
     for name, window in seen.items():
         assert window == declared[name], (
@@ -106,7 +114,8 @@ def test_the_two_models_actually_configured_declare_their_window():
 def test_only_verified_llm_hub_routes_declare_native_compaction():
     declared = {
         spec["model_name"]: bool(spec.get("native_compaction", False))
-        for spec in _specs() if spec["model_name"].startswith("llm_hub/")
+        for spec in _specs()
+        if spec["model_name"].startswith("llm_hub/")
     }
 
     assert declared["llm_hub/claude-opus-5"] is True
@@ -123,25 +132,31 @@ def test_the_default_is_not_below_what_the_configured_models_accept():
     assert DEFAULT_CONTEXT_WINDOW >= 1_000_000
 
 
-@pytest.mark.parametrize("message", [
-    "Error code: 400 - {'error': {'code': 'context_length_exceeded'}}",
-    "This model's maximum context length is 128000 tokens, however you requested 200000",
-    "prompt is too long: 1048577 tokens > 1048576 maximum",
-    "The input token count exceeds the maximum number of tokens allowed",
-    "Provider returned error: context length exceeded for this model",
-    "Please reduce the length of the messages and try again",
-])
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Error code: 400 - {'error': {'code': 'context_length_exceeded'}}",
+        "This model's maximum context length is 128000 tokens, however you requested 200000",
+        "prompt is too long: 1048577 tokens > 1048576 maximum",
+        "The input token count exceeds the maximum number of tokens allowed",
+        "Provider returned error: context length exceeded for this model",
+        "Please reduce the length of the messages and try again",
+    ],
+)
 def test_every_provider_way_of_saying_too_long_is_recognised(message):
     assert provider_rejected_for_length(RuntimeError(message)), message
 
 
-@pytest.mark.parametrize("message", [
-    "max_tokens is too large: 200000 > 128000",       # output reservation, not history
-    "rate limit exceeded",
-    "connection reset by peer",
-    "invalid api key",
-    "no candidate channel serves this model",
-])
+@pytest.mark.parametrize(
+    "message",
+    [
+        "max_tokens is too large: 200000 > 128000",  # output reservation, not history
+        "rate limit exceeded",
+        "connection reset by peer",
+        "invalid api key",
+        "no candidate channel serves this model",
+    ],
+)
 def test_errors_that_folding_history_would_not_fix_are_left_alone(message):
     """The failure mode of a loose matcher.
 
@@ -160,10 +175,8 @@ class _RejectsForLength:
 
     async def stream(self, **_kwargs):
         self.attempts += 1
-        raise RuntimeError(
-            "Error code: 400 - This model's maximum context length is 200000 tokens"
-        )
-        yield   # pragma: no cover  — makes this an async generator
+        raise RuntimeError("Error code: 400 - This model's maximum context length is 200000 tokens")
+        yield  # pragma: no cover  — makes this an async generator
 
     def set_api_key(self, _key):
         pass
@@ -180,8 +193,12 @@ async def test_a_provider_length_rejection_becomes_a_recoverable_overflow():
     """
     manager = ModelContextManager()
     manager.models["main"] = ModelConfig(
-        model_name="main", model_type="chat/completions", model_id="p/main",
-        provider="p", max_completion_tokens=500, context_window=1_000_000,
+        model_name="main",
+        model_type="chat/completions",
+        model_id="p/main",
+        provider="p",
+        max_completion_tokens=500,
+        context_window=1_000_000,
     )
     manager.model_clients["main"] = client = _RejectsForLength()
 

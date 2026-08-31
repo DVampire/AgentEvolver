@@ -1,7 +1,7 @@
 """The model-request viewer is a safe side view of the canonical trace snapshot."""
 
-from datetime import datetime, timezone
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -46,11 +46,13 @@ def _event() -> TraceEvent:
                     "role": "assistant",
                     "cache": False,
                     "content": "I will inspect it.",
-                    "tool_calls": [{
-                        "id": "call-1",
-                        "type": "function",
-                        "function": {"name": "bash", "arguments": '{"command":"pwd"}'},
-                    }],
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": "bash", "arguments": '{"command":"pwd"}'},
+                        }
+                    ],
                     "provider_state": {"anthropic": {"signature": "opaque"}},
                 },
                 {
@@ -62,14 +64,16 @@ def _event() -> TraceEvent:
                     "content": "/workspace",
                 },
             ],
-            "tools": [{
-                "type": "function",
-                "function": {
-                    "name": "bash",
-                    "description": "run a command",
-                    "parameters": {"type": "object"},
-                },
-            }],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "bash",
+                        "description": "run a command",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
             "response_format": None,
             "pressure": {
                 "tier": "normal",
@@ -195,8 +199,20 @@ def test_visual_pages_share_one_palette_and_type_system():
     css_dir = Path(__file__).resolve().parents[1] / "agentevolver" / "visual" / "css"
     pages = ["memory.css", "plan.css", "prompt.css", "request.css", "task.css"]
     tokens = (
-        "ground", "surface", "surface-2", "surface-3", "text", "text-mid",
-        "text-faint", "green", "amber", "red", "blue", "border", "border-hi", "mono",
+        "ground",
+        "surface",
+        "surface-2",
+        "surface-3",
+        "text",
+        "text-mid",
+        "text-faint",
+        "green",
+        "amber",
+        "red",
+        "blue",
+        "border",
+        "border-hi",
+        "mono",
     )
 
     values = {}
@@ -213,11 +229,11 @@ def test_visual_pages_share_one_palette_and_type_system():
 
 @pytest.mark.asyncio
 async def test_post_step_refreshes_the_matching_request_with_provider_usage(monkeypatch):
+    import agentevolver.visual.request_viewer as viewer
     from agentevolver.hook.default.trace import TraceHook
     from agentevolver.hook.types import HookContext, HookEvent
     from agentevolver.memory import memory_manager
     from agentevolver.trace import trace_manager
-    import agentevolver.visual.request_viewer as viewer
 
     request = _event()
     retained = [request]
@@ -242,18 +258,20 @@ async def test_post_step_refreshes_the_matching_request_with_provider_usage(monk
     )
 
     usage = {"input_tokens": 100, "output_tokens": 5, "cache_read_tokens": 900}
-    await TraceHook().handle(HookContext(
-        id="session-1",
-        name="trace_hook",
-        input={
-            "event": HookEvent.POST_STEP,
-            "agent_name": "code/agent",
-            "task_id": "task-1",
-            "step_number": 7,
-            "step_usage": usage,
-            "use_memory": False,
-        },
-    ))
+    await TraceHook().handle(
+        HookContext(
+            id="session-1",
+            name="trace_hook",
+            input={
+                "event": HookEvent.POST_STEP,
+                "agent_name": "code/agent",
+                "task_id": "task-1",
+                "step_number": 7,
+                "step_usage": usage,
+                "use_memory": False,
+            },
+        )
+    )
 
     assert scheduled and scheduled[0][0] is request
     assert scheduled[0][2]["usage"] == usage

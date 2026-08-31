@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -13,7 +12,6 @@ from agentevolver.config.validate import validate_assembly
 from agentevolver.message import HumanMessage
 from agentevolver.model.context import ModelContextManager
 from agentevolver.model.types import ModelConfig, ModelContext
-from agentevolver.utils import AsyncQueue
 from agentevolver.response import Response, ResponseType
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.types import Tool, ToolContext
@@ -27,6 +25,7 @@ from agentevolver.trace.checkpoint import (
 from agentevolver.trace.persistence import SQLiteTracePersistence
 from agentevolver.trace.types import TraceEvent, TraceEventType
 from agentevolver.trace.writer import TraceWriter
+from agentevolver.utils import AsyncQueue
 
 
 @pytest.fixture
@@ -35,8 +34,15 @@ def isolated_trace_manager():
     from agentevolver.trace.server import trace_manager
 
     names = (
-        "_running", "_queue", "_writer", "_log_root", "_dropped_events",
-        "_reported_integrity_gaps", "_next_seq", "_surface", "_events",
+        "_running",
+        "_queue",
+        "_writer",
+        "_log_root",
+        "_dropped_events",
+        "_reported_integrity_gaps",
+        "_next_seq",
+        "_surface",
+        "_events",
     )
     saved = {name: getattr(trace_manager, name) for name in names}
     trace_manager._running = False
@@ -64,8 +70,7 @@ def test_config_validation_refuses_an_unknown_integrity_profile():
     config = SimpleNamespace(trace_integrity_profile="train-ish")
     problems = validate_assembly(config)
     assert problems == [
-        "trace_integrity_profile must be one of: interactive, training, high_risk "
-        "(got 'train-ish')"
+        "trace_integrity_profile must be one of: interactive, training, high_risk (got 'train-ish')"
     ]
     with pytest.raises(ValueError, match="trace_integrity_profile"):
         validate_assembly(config, strict=True)
@@ -73,9 +78,13 @@ def test_config_validation_refuses_an_unknown_integrity_profile():
 
 @pytest.mark.parametrize("profile", ["interactive", "training", "high_risk"])
 def test_config_validation_accepts_supported_integrity_profiles(profile):
-    assert validate_assembly(
-        SimpleNamespace(trace_integrity_profile=profile), strict=True,
-    ) == []
+    assert (
+        validate_assembly(
+            SimpleNamespace(trace_integrity_profile=profile),
+            strict=True,
+        )
+        == []
+    )
 
 
 def _agent() -> Agent:
@@ -142,7 +151,8 @@ async def test_interactive_timeout_records_one_degradation_and_continues(
 
 @pytest.mark.asyncio
 async def test_queue_overflow_permanently_marks_the_session_incomplete(
-    isolated_trace_manager, tmp_path,
+    isolated_trace_manager,
+    tmp_path,
 ):
     class Writer:
         def next_seq(self, session_id):
@@ -155,12 +165,20 @@ async def test_queue_overflow_permanently_marks_the_session_incomplete(
     isolated_trace_manager._log_root = str(tmp_path)
     isolated_trace_manager._queue = AsyncQueue(maxsize=1)
     isolated_trace_manager._writer = Writer()
-    first = await isolated_trace_manager.emit(TraceEvent(
-        event_type=TraceEventType.CUSTOM, session_id="s1", label="first",
-    ))
-    second = await isolated_trace_manager.emit(TraceEvent(
-        event_type=TraceEventType.CUSTOM, session_id="s1", label="dropped",
-    ))
+    first = await isolated_trace_manager.emit(
+        TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id="s1",
+            label="first",
+        )
+    )
+    second = await isolated_trace_manager.emit(
+        TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id="s1",
+            label="dropped",
+        )
+    )
     assert first is True and second is False
     assert [event.label for event in isolated_trace_manager.events("s1")] == ["first"]
     assert "dropped 1 event" in isolated_trace_manager.integrity_issue("s1")
@@ -168,7 +186,9 @@ async def test_queue_overflow_permanently_marks_the_session_incomplete(
     with patch.object(isolated_trace_manager, "flush", AsyncMock(return_value=True)):
         with pytest.raises(TraceIntegrityError, match="dropped 1 event"):
             await checkpoint_trace(
-                "s1", TraceCheckpointBoundary.STEP_END, profile="training",
+                "s1",
+                TraceCheckpointBoundary.STEP_END,
+                profile="training",
             )
 
     # The gap is a durable invalidation record, not merely process memory. A restarted
@@ -180,14 +200,19 @@ async def test_queue_overflow_permanently_marks_the_session_incomplete(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("writer_type", [TraceWriter, SQLiteTracePersistence])
 async def test_persistence_write_failure_survives_a_drained_queue(
-    writer_type, tmp_path,
+    writer_type,
+    tmp_path,
 ):
     queue = AsyncQueue(maxsize=4)
     writer = writer_type(str(tmp_path), queue)
     writer._write_event = Mock(side_effect=OSError("disk unavailable"))
-    queue.emit(TraceEvent(
-        event_type=TraceEventType.CUSTOM, session_id="broken", label="lost",
-    ))
+    queue.emit(
+        TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id="broken",
+            label="lost",
+        )
+    )
     await queue.stop()
     await writer._run()
 
@@ -211,7 +236,9 @@ async def test_model_provider_is_not_called_when_training_snapshot_cannot_commit
 
     manager = ModelContextManager()
     manager.models["main"] = ModelConfig(
-        model_name="main", model_type="chat/completions", model_id="test-model",
+        model_name="main",
+        model_type="chat/completions",
+        model_id="test-model",
         provider="test",
     )
     manager.model_clients["main"] = Client()
@@ -244,7 +271,9 @@ async def test_direct_training_model_call_requires_a_real_session_id():
 
     manager = ModelContextManager()
     manager.models["main"] = ModelConfig(
-        model_name="main", model_type="chat/completions", model_id="test-model",
+        model_name="main",
+        model_type="chat/completions",
+        model_id="test-model",
         provider="test",
     )
     manager.model_clients["main"] = Client()
@@ -283,9 +312,11 @@ async def test_mutating_tool_is_blocked_but_read_only_tool_is_not(
 
         manager.get_info = get_info
         return await manager(
-            name="probe_tool", input={},
+            name="probe_tool",
+            input={},
             ctx=ToolContext(
-                id="strict-tool-session", name="probe",
+                id="strict-tool-session",
+                name="probe",
                 extra={"trace_integrity_profile": "high_risk"},
             ),
         )
@@ -314,7 +345,9 @@ async def test_strict_checkpoint_requires_a_real_session_id(isolated_trace_manag
     isolated_trace_manager._queue = AsyncQueue(maxsize=1)
     with pytest.raises(TraceIntegrityError, match="requires a real session id"):
         await checkpoint_trace(
-            "", TraceCheckpointBoundary.EXTERNAL_EFFECT, profile="high_risk",
+            "",
+            TraceCheckpointBoundary.EXTERNAL_EFFECT,
+            profile="high_risk",
         )
 
 
@@ -329,8 +362,14 @@ async def test_post_step_flushes_after_all_step_hooks():
         patch("agentevolver.trace.checkpoint.checkpoint_trace", checkpoint),
     ):
         await agent._post_step(
-            "task-1", 4, ctx, [],
-            reasoning="reason", plan=[], step_tokens=3, done=False,
+            "task-1",
+            4,
+            ctx,
+            [],
+            reasoning="reason",
+            plan=[],
+            step_tokens=3,
+            done=False,
             step_usage={"output_tokens": 3},
         )
 
@@ -349,7 +388,8 @@ async def test_agent_propagates_integrity_profile_to_the_model_boundary():
 
     agent = _agent()
     ctx = AgentContext(
-        id="model-session", extra={"trace_integrity_profile": "training"},
+        id="model-session",
+        extra={"trace_integrity_profile": "training"},
     )
     captured = []
 
@@ -370,5 +410,7 @@ async def test_agent_propagates_integrity_profile_to_the_model_boundary():
 
     assert captured[0]["input"]["trace_integrity_profile"] == "training"
     assert captured[0]["input"]["trace_context"] == {
-        "task_id": "task-1", "agent_name": "probe", "step_number": 2,
+        "task_id": "task-1",
+        "agent_name": "probe",
+        "step_number": 2,
     }

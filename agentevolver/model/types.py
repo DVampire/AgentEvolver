@@ -1,16 +1,17 @@
+"""Provider-neutral model configuration, streaming events, usage, and adapters."""
+
 from __future__ import annotations
+
 import json as _json
 from abc import ABC, abstractmethod
-from html.parser import HTMLParser as _HTMLParser
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Optional, Type, Union, TYPE_CHECKING
+from html.parser import HTMLParser as _HTMLParser
+from typing import Any, AsyncIterator, Dict, List, Literal, Optional
+
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
-from agentevolver.session import BaseContext
 
-if TYPE_CHECKING:
-    from agentevolver.message.types import Message
-    from agentevolver.tool.types import Tool
+from agentevolver.session import BaseContext
 
 
 class ModelContext(BaseContext):
@@ -199,9 +200,12 @@ class TokenUsage(BaseModel):
     input_tokens: int = 0
     context_input_tokens: int = 0
     output_tokens: int = 0
+    reasoning_tokens: int = 0
     cache_write_tokens: int = 0
     cache_read_tokens: int = 0
+    provider_reported_total: Optional[int] = None
     cost: Optional[float] = None
+    cost_status: Literal["reported", "estimated", "unknown"] = "unknown"
 
     @property
     def total(self) -> int:
@@ -238,9 +242,18 @@ class TokenUsage(BaseModel):
                 input_tokens=int(raw.get("input_tokens") or 0),
                 context_input_tokens=int(raw.get("context_input_tokens") or 0),
                 output_tokens=int(raw.get("output_tokens") or 0),
+                reasoning_tokens=int(raw.get("reasoning_tokens") or 0),
                 cache_write_tokens=int(raw.get("cache_write_tokens") or 0),
                 cache_read_tokens=int(raw.get("cache_read_tokens") or 0),
+                provider_reported_total=(
+                    int(raw["provider_reported_total"])
+                    if raw.get("provider_reported_total") is not None else None
+                ),
                 cost=float(raw["cost"]) if raw.get("cost") is not None else None,
+                cost_status=str(
+                    raw.get("cost_status")
+                    or ("reported" if raw.get("cost") is not None else "unknown")
+                ),
             )
 
         prompt_details = raw.get("prompt_tokens_details") or {}
@@ -260,6 +273,8 @@ class TokenUsage(BaseModel):
         # cost: OpenRouter returns top-level cost field
         cost_raw = raw.get("cost")
         cost = float(cost_raw) if cost_raw is not None else None
+        output_details = raw.get("output_tokens_details") or {}
+        completion_details = raw.get("completion_tokens_details") or {}
         raw_input = int(
             raw.get("prompt_tokens") or raw.get("input_tokens") or
             raw.get("prompt_token_count") or 0
@@ -284,9 +299,22 @@ class TokenUsage(BaseModel):
                 raw.get("completion_tokens") or raw.get("output_tokens") or
                 raw.get("candidates_token_count") or 0
             ),
+            reasoning_tokens=int(
+                raw.get("reasoning_tokens")
+                or output_details.get("reasoning_tokens")
+                or completion_details.get("reasoning_tokens")
+                or 0
+            ),
             cache_write_tokens=cache_write,
             cache_read_tokens=cache_read,
+            provider_reported_total=(
+                int(raw.get("total_tokens") or raw.get("total_token_count"))
+                if raw.get("total_tokens") is not None
+                or raw.get("total_token_count") is not None
+                else None
+            ),
             cost=cost,
+            cost_status="reported" if cost is not None else "unknown",
         )
 
     def summary_line(self, model: str = "") -> str:
@@ -294,12 +322,16 @@ class TokenUsage(BaseModel):
             f"in={self.input_tokens}", f"context_in={self.context_input_tokens}",
             f"out={self.output_tokens}",
         ]
+        if self.reasoning_tokens:
+            parts.append(f"reasoning={self.reasoning_tokens}")
         if self.cache_write_tokens:
             parts.append(f"cache_write={self.cache_write_tokens}")
         if self.cache_read_tokens:
             parts.append(f"cache_read={self.cache_read_tokens}")
         if self.cost is not None:
             parts.append(f"cost=${self.cost:.6f}")
+        else:
+            parts.append("cost=unknown")
         prefix = f"[{model}] " if model else ""
         return f"{prefix}tokens: {', '.join(parts)}"
 
@@ -345,6 +377,8 @@ def price_usage_dict(raw_usage: Optional[Dict[str, Any]], pricing: Optional[Dict
     priced = normalised.model_dump()
     if priced.get("cost") is None:
         priced["cost"] = compute_cost(priced, pricing)
+        if priced["cost"] is not None:
+            priced["cost_status"] = "estimated"
     return priced
 
 
@@ -556,7 +590,7 @@ async def build_response_from_stream(
                                     data={**common, "content": c.input})
                 model_name = response_format.__name__
                 field_lines = [f"{k}={v!r}" for k, v in parsed.model_dump().items()]
-                msg = f"Response result:\n\n{model_name}(\n" + ",\n".join(f"    {l}" for l in field_lines) + "\n)"
+                msg = f"Response result:\n\n{model_name}(\n" + ",\n".join(f"    {line}" for line in field_lines) + "\n)"
                 return Response(type=ResponseType.LLM, success=True, message=msg,
                                 data=common, usage=usage, parsed_model=parsed)
 
@@ -594,7 +628,7 @@ async def build_response_from_stream(
                             message=msg, data={**common, "content": text})
         model_name = response_format.__name__
         field_lines = [f"{k}={v!r}" for k, v in parsed.model_dump().items()]
-        msg = f"Response result:\n\n{model_name}(\n" + ",\n".join(f"    {l}" for l in field_lines) + "\n)"
+        msg = f"Response result:\n\n{model_name}(\n" + ",\n".join(f"    {line}" for line in field_lines) + "\n)"
         return Response(type=ResponseType.LLM, success=True, message=msg,
                         data=common, usage=usage, parsed_model=parsed)
 
@@ -791,7 +825,7 @@ class BaseChatModel(BaseModel, ABC):
                                 data={**(response.data or {}), "content": args})
             field_lines = [f"{k}={v!r}" for k, v in parsed.model_dump().items()]
             msg = (f"Response result:\n\n{model.__name__}(\n"
-                   + ",\n".join(f"    {l}" for l in field_lines) + "\n)")
+                   + ",\n".join(f"    {line}" for line in field_lines) + "\n)")
             data = {k: v for k, v in (response.data or {}).items() if k != "functions"}
             return Response(type=ResponseType.LLM, success=True, message=msg,
                             data=data, usage=response.usage, parsed_model=parsed)

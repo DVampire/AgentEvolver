@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import Field
 
 from agentevolver.code import BATCH_CALL_TOOL, GuardedDispatch, code_runtime
+from agentevolver.session import resolve_workspace_root
 from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.registry import TOOL
@@ -131,7 +132,7 @@ class BatchCallTool(Tool):
             code,
             bindings,
             timeout=self.timeout,
-            workspace=config.workspace_root,
+            workspace=resolve_workspace_root(ctx),
             max_parallel=self.max_parallel_sub_calls,
         )
 

@@ -85,7 +85,7 @@ def test_an_unannotated_parameter_is_treated_as_a_string(dynamic):
         (List[int], {"type": "integer"}),
         (Optional[List[str]], {"type": "string"}),
         (List[List[int]], {"type": "array", "items": {"type": "integer"}}),
-        (list, {"type": "string"}),   # unparametrized falls back rather than omitting items
+        (list, {"type": "string"}),  # unparametrized falls back rather than omitting items
     ],
 )
 def test_an_array_always_declares_its_element_type(dynamic, annotation, expected):
@@ -101,12 +101,18 @@ def test_an_array_always_declares_its_element_type(dynamic, annotation, expected
 @pytest.mark.parametrize(
     "text, expected",
     [
-        ("str", str), ("string", str),
-        ("int", int), ("integer", int),
-        ("float", float), ("number", float),
-        ("bool", bool), ("boolean", bool),
-        ("dict", dict), ("object", dict),
-        ("list", list), ("array", list),
+        ("str", str),
+        ("string", str),
+        ("int", int),
+        ("integer", int),
+        ("float", float),
+        ("number", float),
+        ("bool", bool),
+        ("boolean", bool),
+        ("dict", dict),
+        ("object", dict),
+        ("list", list),
+        ("array", list),
         ("typing.str", str),
         ("  str  ", str),
     ],
@@ -197,6 +203,7 @@ def test_a_signature_becomes_a_parameter_schema(dynamic):
     require it; without it the same tool is accepted by one provider and refused by
     another for reasons that never mention the schema.
     """
+
     def search(query: str, limit: int = 10):
         """Search things.
 
@@ -215,6 +222,7 @@ def test_a_signature_becomes_a_parameter_schema(dynamic):
 def test_a_list_parameter_carries_its_items_into_the_schema(dynamic):
     """The element type is worked out correctly in isolation elsewhere; this checks it
     actually reaches the emitted schema, which is the part a provider sees."""
+
     def tag(names: List[str]):
         """Tag things.
 
@@ -231,6 +239,7 @@ def test_varargs_are_left_out_of_the_schema(dynamic):
     Emitted as properties they become arguments named ``args`` and ``kwargs`` that the
     model dutifully supplies and the call then rejects.
     """
+
     def flexible(a: str, *args, **kwargs):
         pass
 
@@ -240,6 +249,7 @@ def test_varargs_are_left_out_of_the_schema(dynamic):
 def test_a_parameterless_callable_gets_the_empty_schema(dynamic):
     """Providers still require a schema object for a no-argument tool, so this cannot
     come back as ``None`` or an empty dict."""
+
     def nothing():
         pass
 
@@ -252,6 +262,7 @@ def test_a_class_is_described_by_its_call_signature(dynamic):
     ``self`` is the trap: it is the first parameter of every one of them, and emitting it
     would make every generated tool ask the model for an argument only Python supplies.
     """
+
     class Tool:
         async def __call__(self, path: str, recursive: bool = False):
             """Read.
@@ -301,7 +312,9 @@ def test_the_function_calling_shape_is_what_providers_expect(dynamic):
     """The OpenAI-style envelope — ``type``, then name/description/parameters nested
     under ``function`` — is what every provider adapter in the repo assumes. A flattened
     variant is accepted nowhere and fails identically for all of them."""
-    fc = dynamic.build_function_calling("bash", "Run a command", dynamic.default_parameters_schema())
+    fc = dynamic.build_function_calling(
+        "bash", "Run a command", dynamic.default_parameters_schema()
+    )
     assert fc["type"] == "function"
     assert fc["function"]["name"] == "bash"
     assert fc["function"]["description"] == "Run a command"
@@ -318,14 +331,17 @@ def test_a_schema_becomes_a_validating_model(dynamic):
     a model that accepts ``Model()`` here lets a call with no query through to code that
     assumes there is one.
     """
-    Model = dynamic.build_args_schema("search_tool", {
-        "type": "object",
-        "properties": {
-            "query": {"type": "string", "description": "What to find"},
-            "limit": {"type": "integer", "default": 5},
+    Model = dynamic.build_args_schema(
+        "search_tool",
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to find"},
+                "limit": {"type": "integer", "default": 5},
+            },
+            "required": ["query"],
         },
-        "required": ["query"],
-    })
+    )
     assert Model.__name__ == "SearchToolInput"
     assert Model(query="x").limit == 5
     with pytest.raises(Exception):
@@ -339,11 +355,14 @@ def test_the_recorded_python_type_beats_the_json_type(dynamic):
     would rebuild the parameter as a bare ``list`` and drop the element validation the
     original signature had.
     """
-    Model = dynamic.build_args_schema("t", {
-        "type": "object",
-        "properties": {"names": {"type": "array", PYTHON_TYPE_FIELD: "List[str]"}},
-        "required": ["names"],
-    })
+    Model = dynamic.build_args_schema(
+        "t",
+        {
+            "type": "object",
+            "properties": {"names": {"type": "array", PYTHON_TYPE_FIELD: "List[str]"}},
+            "required": ["names"],
+        },
+    )
     assert Model(names=["a"]).names == ["a"]
 
 
@@ -361,6 +380,7 @@ def test_a_model_survives_serialization_and_rebuild(dynamic):
     default turns an optional argument into a required one, and the tool starts refusing
     calls it accepted before the restart.
     """
+
     class Original(BaseModel):
         query: str = Field(description="What to find")
         limit: int = Field(default=5)
@@ -387,6 +407,7 @@ def test_the_class_is_found_by_its_base_when_unnamed(dynamic):
     The base class is the reliable handle — the loader looks for the one subclass in the
     module rather than requiring the caller to have parsed the source first.
     """
+
     class Base:
         pass
 
@@ -402,6 +423,7 @@ def test_code_with_no_matching_class_is_rejected(dynamic):
     """A model that answered with prose, or with a bare function, produces source that
     executes fine and defines nothing usable. Saying so at load time beats registering a
     tool that is ``None``."""
+
     class Base:
         pass
 
@@ -415,6 +437,7 @@ def test_a_class_that_does_not_extend_the_base_is_rejected(dynamic):
     Without the subclass check the object is registered as a tool and fails later on a
     missing base-class method, at which point the source that produced it is long gone.
     """
+
     class Base:
         pass
 
@@ -651,7 +674,8 @@ def test_a_method_on_a_loaded_class_can_report_its_source(dynamic, tmp_path):
 
     assert "def act" in inspect.getsource(cls.act)
     assert cls.act.__code__.co_filename == str(path), (
-        "the method still carries the filename exec compiled it under")
+        "the method still carries the filename exec compiled it under"
+    )
     assert dynamic.get_source_code(cls.act)
 
 

@@ -4,16 +4,26 @@ from __future__ import annotations
 
 import os
 import stat
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from agentevolver.paths import path_manager
-
 
 PROJECT_CONTEXT_FILES = (
     "AGENTS.override.md", "AGENTS.md", "CLAUDE.md", "MEMORY.md",
 )
 MAX_PROJECT_CONTEXT_CHARS = 32_000
+
+
+@dataclass(frozen=True)
+class _ContextBlock:
+    """One instruction source in the order the model must read it."""
+
+    directory: Path
+    filename: str
+    text: str
+    order: int
 
 
 def _read_direct_file(root: Path, filename: str, limit: int) -> Optional[str]:
@@ -37,37 +47,107 @@ def _read_direct_file(root: Path, filename: str, limit: int) -> Optional[str]:
         os.close(descriptor)
 
 
-def load_project_context(workspace_root: str) -> str:
-    """Load only root-scoped project files; never import host/user instructions."""
+def _scoped_directories(root: Path, active_paths: Optional[Iterable[str]]) -> List[Path]:
+    """Return root-to-leaf instruction scopes for files involved in this task.
+
+    Resolving first is intentional: a task attachment reached through a symlink outside
+    the workspace must not make that external directory an instruction authority.
+    """
+    scopes = {root}
+    for value in active_paths or ():
+        try:
+            candidate = Path(value)
+            if not candidate.is_absolute():
+                candidate = root / candidate
+            resolved = candidate.resolve()
+            relative = resolved.relative_to(root)
+        except (OSError, ValueError):
+            continue
+        directory = resolved if resolved.is_dir() else resolved.parent
+        current = root
+        for part in relative.parts[:len(directory.relative_to(root).parts)]:
+            current = current / part
+            scopes.add(current)
+    return sorted(scopes, key=lambda path: (len(path.relative_to(root).parts), str(path)))
+
+
+def load_project_context(
+    workspace_root: str, active_paths: Optional[Iterable[str]] = None,
+) -> str:
+    """Load root memory plus root/path-scoped project instructions.
+
+    Root ``MEMORY.md`` and ``CLAUDE.md`` remain project-wide.  ``AGENTS.md`` (or its
+    same-directory override) is then layered from the repository root down to every
+    active task path, matching the closest-scope-wins convention without importing
+    host/user instructions.
+    """
     if not workspace_root:
         return ""
     root = Path(workspace_root).resolve()
     if not root.is_dir():
         return ""
-    blocks: List[str] = []
-    # Override replaces the ordinary AGENTS file at the same scope.
-    override = _read_direct_file(root, PROJECT_CONTEXT_FILES[0], MAX_PROJECT_CONTEXT_CHARS)
-    selected = (
-        [(PROJECT_CONTEXT_FILES[0], override)] if override is not None
-        else [(PROJECT_CONTEXT_FILES[1], None)]
-    )
-    selected.extend((filename, None) for filename in PROJECT_CONTEXT_FILES[2:])
-    for filename, prefetched in selected:
-        remaining = MAX_PROJECT_CONTEXT_CHARS - len("\n\n".join(blocks))
-        if remaining <= 0:
-            break
+    blocks: List[_ContextBlock] = []
+
+    def append(directory: Path, filename: str, prefetched: Optional[str] = None) -> None:
         text = prefetched if prefetched is not None else _read_direct_file(
-            root, filename, remaining,
+            directory, filename, MAX_PROJECT_CONTEXT_CHARS,
         )
         if text:
-            blocks.append(f"### {filename}\n{text}")
-    combined = "\n\n".join(blocks)
-    if len(combined) > MAX_PROJECT_CONTEXT_CHARS:
-        combined = (
-            combined[:MAX_PROJECT_CONTEXT_CHARS]
-            + f"\n\n[project context clipped after {MAX_PROJECT_CONTEXT_CHARS:,} characters]"
+            blocks.append(_ContextBlock(directory, filename, text, len(blocks)))
+
+    # Durable project knowledge is deliberately separate from path rules.
+    append(root, "CLAUDE.md")
+    append(root, "MEMORY.md")
+    for directory in _scoped_directories(root, active_paths):
+        override = _read_direct_file(
+            directory, "AGENTS.override.md", MAX_PROJECT_CONTEXT_CHARS,
         )
-    return combined
+        if override is not None:
+            append(directory, "AGENTS.override.md", override)
+        else:
+            append(directory, "AGENTS.md")
+    def render(block: _ContextBlock, text: Optional[str] = None) -> str:
+        scope = (
+            "." if block.directory == root
+            else block.directory.relative_to(root).as_posix()
+        )
+        return f"### {block.filename} (scope: {scope})\n{block.text if text is None else text}"
+
+    # The model resolves project rules closest-scope-last, so capacity pressure must
+    # preserve that same authority order.  Building from the tail keeps the deepest
+    # active-path rules first; the old prefix slice did the opposite and could retain
+    # generic root memory while silently deleting the only rules governing the file
+    # being edited.  Selected blocks are put back into root-to-leaf order afterwards.
+    selected: List[tuple[int, str]] = []
+    remaining = MAX_PROJECT_CONTEXT_CHARS
+    separator = "\n\n"
+    clip_notice = "\n[project context source clipped to fit the context budget]"
+    for block in reversed(blocks):
+        separator_cost = len(separator) if selected else 0
+        available = remaining - separator_cost
+        if available <= 0:
+            break
+        rendered = render(block)
+        if len(rendered) <= available:
+            selected.append((block.order, rendered))
+            remaining -= separator_cost + len(rendered)
+            continue
+
+        header = render(block, "")
+        if len(header) >= available:
+            # Even the source header does not fit. Lower-priority sources cannot fit
+            # either, and emitting a severed header would not be actionable.
+            break
+        body_room = available - len(header)
+        if body_room > len(clip_notice):
+            clipped = block.text[: body_room - len(clip_notice)] + clip_notice
+        else:
+            clipped = block.text[:body_room]
+        selected.append((block.order, render(block, clipped)))
+        remaining = 0
+        break
+
+    return separator.join(text for _, text in sorted(selected))
 
 
 __all__ = ["load_project_context"]

@@ -121,6 +121,7 @@ Seaborn 0.12 and 0.13 changed several common plotting patterns:
 Each variable is a column, each observation is a row. This "tidy" format provides maximum flexibility:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # Long-form structure
    subject  condition  measurement
 0        1    control         10.5
@@ -140,6 +141,7 @@ Each variable is a column, each observation is a row. This "tidy" format provide
 Variables are spread across columns. Useful for simple rectangular data:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # Wide-form structure
    control  treatment
 0     10.5       12.3

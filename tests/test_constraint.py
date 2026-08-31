@@ -72,7 +72,14 @@ def test_a_time_budget_reads_in_seconds():
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(
     "used, tier",
-    [(10, "NORMAL"), (59, "NORMAL"), (60, "TIGHT"), (84, "TIGHT"), (85, "CRITICAL"), (200, "CRITICAL")],
+    [
+        (10, "NORMAL"),
+        (59, "NORMAL"),
+        (60, "TIGHT"),
+        (84, "TIGHT"),
+        (85, "CRITICAL"),
+        (200, "CRITICAL"),
+    ],
 )
 def test_urgency_escalates_with_the_most_consumed_budget(used, tier):
     """The values sit either side of the 0.6 and 0.85 thresholds, one step apart.
@@ -90,10 +97,12 @@ def test_the_worst_budget_drives_the_tier_not_the_average():
     Averaging is the tempting reading and here it would report NORMAL — 50% across the
     two — for a task that is one token check away from being killed.
     """
-    text = render_status_text([
-        ConstraintStatus(name="steps", used=1, limit=100),
-        ConstraintStatus(name="tokens", used=99, limit=100),
-    ])
+    text = render_status_text(
+        [
+            ConstraintStatus(name="steps", used=1, limit=100),
+            ConstraintStatus(name="tokens", used=99, limit=100),
+        ]
+    )
     assert "Status: CRITICAL" in text
 
 
@@ -130,10 +139,12 @@ def test_the_model_is_told_that_hitting_a_limit_loses_the_answer():
 def test_every_budget_gets_its_own_line():
     """A tier without the underlying numbers gives the model nothing to plan against —
     "TIGHT" says to hurry, "3 of 10 steps" says how much room is left."""
-    text = render_status_text([
-        ConstraintStatus(name="steps", used=1, limit=10, unit="steps"),
-        ConstraintStatus(name="tokens", used=2, limit=20, unit="tokens"),
-    ])
+    text = render_status_text(
+        [
+            ConstraintStatus(name="steps", used=1, limit=10, unit="steps"),
+            ConstraintStatus(name="tokens", used=2, limit=20, unit="tokens"),
+        ]
+    )
     assert "- steps:" in text and "- tokens:" in text
 
 

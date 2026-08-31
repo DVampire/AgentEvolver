@@ -20,12 +20,8 @@ import asyncio
 
 import pytest
 
-from pydantic import ConfigDict, Field
-from typing import Any, Dict
-
 from agentevolver.agent.types import Agent
 from agentevolver.model.types import accumulate_stream
-from agentevolver.session.types import SessionContext
 from tests.replay import (
     Call,
     ScriptExhausted,
@@ -53,7 +49,7 @@ def test_a_recorded_step_folds_into_the_decision_the_loop_reads():
     """
     script = [Step(reasoning="look at the file", tool_calls=[Call("read", {"path": "a.py"})])]
 
-    with replaying(script) as model:
+    with replaying(script):
         result = _accumulate(name="any", input={"messages": []})
 
     assert result["thinking"] == "look at the file"
@@ -65,7 +61,7 @@ def test_a_step_with_no_tool_calls_is_a_final_answer():
 
     A harness that always produced a tool call could never replay a run that finished.
     """
-    with replaying([Step(reasoning="done, the answer is 4")]) as model:
+    with replaying([Step(reasoning="done, the answer is 4")]):
         result = _accumulate(name="any", input={"messages": []})
 
     assert result["tool_calls"] == []
@@ -80,7 +76,7 @@ def test_steps_are_returned_in_order_not_repeated():
     """
     script = [Step(reasoning="first"), Step(reasoning="second")]
 
-    with replaying(script) as model:
+    with replaying(script):
         first = _accumulate(name="any", input={"messages": []})
         second = _accumulate(name="any", input={"messages": []})
 
@@ -94,7 +90,7 @@ def test_asking_for_more_steps_than_the_script_has_is_an_error():
     the harness answered it with an empty step, the run would end quietly and the test would
     pass — reporting the runaway as success.
     """
-    with replaying([Step(reasoning="only one")]) as model:
+    with replaying([Step(reasoning="only one")]):
         _accumulate(name="any", input={"messages": []})
 
         with pytest.raises(ScriptExhausted, match="step 2"):
@@ -122,7 +118,7 @@ def test_recorded_usage_reaches_the_fold():
     """
     usage = {"input_tokens": 10, "output_tokens": 3}
 
-    with replaying([Step(reasoning="x", usage=usage)]) as model:
+    with replaying([Step(reasoning="x", usage=usage)]):
         result = _accumulate(name="any", input={"messages": []})
 
     assert result["usage"] == usage
@@ -134,15 +130,21 @@ def test_recorded_usage_reaches_the_fold():
 def _agent_call(step: int, reasoning: str):
     from agentevolver.trace.types import TraceEvent, TraceEventType
 
-    return TraceEvent(event_type=TraceEventType.AGENT_CALL, session_id="s",
-                      step_number=step, reasoning=reasoning)
+    return TraceEvent(
+        event_type=TraceEventType.AGENT_CALL, session_id="s", step_number=step, reasoning=reasoning
+    )
 
 
 def _tool_start(step: int, name: str, args: dict):
-    from agentevolver.trace.types import TraceEventType, TraceEvent
+    from agentevolver.trace.types import TraceEvent, TraceEventType
 
-    return TraceEvent(event_type=TraceEventType.TOOL_START, session_id="s",
-                      step_number=step, action_name=name, input=args)
+    return TraceEvent(
+        event_type=TraceEventType.TOOL_START,
+        session_id="s",
+        step_number=step,
+        action_name=name,
+        input=args,
+    )
 
 
 def test_a_recorded_run_becomes_a_script():
@@ -192,9 +194,11 @@ def test_a_step_recorded_without_reasoning_still_replays():
     """
     from agentevolver.trace.types import TraceEvent, TraceEventType
 
-    script = script_from_events([
-        TraceEvent(event_type=TraceEventType.AGENT_CALL, session_id="s", step_number=1),
-    ])
+    script = script_from_events(
+        [
+            TraceEvent(event_type=TraceEventType.AGENT_CALL, session_id="s", step_number=1),
+        ]
+    )
 
     assert len(script) == 1
     assert script[0].reasoning == ""
@@ -237,6 +241,5 @@ def test_the_harness_is_ready_for_a_loop_test_once_a_runtime_fixture_exists():
     Asserted rather than left as a comment because a comment does not fail when the
     situation changes: when a runtime fixture lands, this test is what says so.
     """
-    from agentevolver.agent.types import Agent
 
     assert hasattr(Agent, "_think"), "the loop entry point this harness targets"

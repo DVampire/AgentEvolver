@@ -42,7 +42,7 @@ from agentevolver.constraint import (
     TokenConstraint,
     WallTimeConstraint,
 )
-from agentevolver.session import BaseContext
+from agentevolver.session import BaseContext, resolve_workspace_root
 from agentevolver.constraint import Constraint
 from agentevolver.registry import CONSTRAINT
 from agentevolver.response import Response
@@ -176,6 +176,61 @@ def _delegation_summary(data: Optional[Dict[str, Any]]) -> str:
     else:
         cost = ""
     return f"\n\n[dispatch status: {outcome}{cost}]"
+
+
+def _child_result_envelope(
+    response: Any,
+    *,
+    patch: str = "",
+    read_set: Optional[List[str]] = None,
+    write_set: Optional[List[str]] = None,
+    acceptance: Optional[List[str]] = None,
+    task_contract: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Machine-readable child outcome, retained beside the legacy status sentence."""
+    def items(value: Any) -> List[Any]:
+        """Normalize result metadata without splitting scalar strings into characters."""
+        if value is None:
+            return []
+        if isinstance(value, bytes):
+            return [value.decode("utf-8", errors="replace")]
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, (list, tuple, set)):
+            return list(value)
+        return [value]
+
+    data = dict(getattr(response, "data", None) or {})
+    if getattr(response, "success", False):
+        status = "finished"
+    elif data.get("stopped_by_constraint") or (
+        data.get("step") is not None and data.get("max_step")
+        and data["step"] >= data["max_step"]
+    ):
+        status = "partial"
+    else:
+        status = "failed"
+    payload = {
+        "schema_version": 1,
+        "status": status,
+        "summary": str(getattr(response, "message", "") or "")[:4000],
+        "artifacts": items(data.get("artifacts") or getattr(response, "files", None)),
+        "patch": patch or data.get("patch") or "",
+        "tests": items(data.get("tests")),
+        "evidence": items(data.get("evidence")),
+        "blockers": items(data.get("blockers")),
+        "remaining": items(data.get("remaining")),
+        "resources": {
+            "read_set": list(read_set or []),
+            "write_set": list(write_set or []),
+        },
+        "acceptance": list(acceptance or []),
+        "task_contract": dict(task_contract or {}),
+        "steps": {"used": data.get("step"), "limit": data.get("max_step")},
+    }
+    return "\n\n[child_result " + json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, default=str,
+    ) + "]"
 
 #: Capability types the dispatch handles with one path: everything except ``tool``,
 #: which carries an execution record and the ``done_tool`` terminal, and ``agent``,
@@ -986,11 +1041,13 @@ class Agent(BaseModel):
         from agentevolver.paths import path_manager
 
         roots = path_manager.session_roots()
-        workspace = str(
-            roots["workspace"] if roots
-            else getattr(config, "workspace_root", "") or ""
+        workspace = resolve_workspace_root(
+            ctx,
+            str(roots["workspace"] if roots else getattr(config, "workspace_root", "") or ""),
         )
-        project_context = load_project_context(workspace)
+        project_context = load_project_context(
+            workspace, active_paths=extra.get("task_files") or (),
+        )
         parent_session = str(extra.get("forked_from") or "")
         if not parent_session:
             return ({"inherited_context": project_context} if project_context else {})
@@ -1065,7 +1122,7 @@ class Agent(BaseModel):
         context at all, and the fact that nothing broke is the evidence that the roots
         travelling through contexts were not the ones being used.
         """
-        return assemble_workspace_path(config.workspace_root or self.base_dir)
+        return assemble_workspace_path(resolve_workspace_root(ctx, self.base_dir))
 
     def _workspace_snapshot(self, ctx: Optional[AgentContext]) -> str:
         """A live listing of the working directory's files, refreshed each step.
@@ -1074,7 +1131,7 @@ class Agent(BaseModel):
         spending a tool call. Opt-in: agents that do file work expose this as a
         `workspace` sub-module from their `_get_agent_context` override.
         """
-        workspace_root = os.path.abspath(config.workspace_root or self.base_dir)
+        workspace_root = os.path.abspath(resolve_workspace_root(ctx, self.base_dir))
         try:
             entries = sorted(os.listdir(workspace_root))
             lines = [
@@ -1728,6 +1785,9 @@ class Agent(BaseModel):
                             ),
                         },
                         **({
+                            "reasoning_effort": ctx.extra["child_reasoning_effort"],
+                        } if (ctx.extra or {}).get("child_reasoning_effort") else {}),
+                        **({
                             "trace_integrity_profile": ctx.extra["trace_integrity_profile"],
                         } if (ctx.extra or {}).get("trace_integrity_profile") else {}),
                     },
@@ -2097,10 +2157,99 @@ class Agent(BaseModel):
         if capability_type == "agent":
             from agentevolver.agent.server import agent_manager
             from agentevolver.runtime import runtime_manager
-            child = await agent_manager.get(route[1])
-            if child is None:
+            if ctx is None:
+                ctx = AgentContext()
+            registered_child = await agent_manager.get(route[1])
+            if registered_child is None:
                 raise ValueError(f"No registered agent named {route[1]!r}")
             inp = call.input or {}
+            read_set = [str(item) for item in inp.get("read_set") or []]
+            write_set = [str(item) for item in inp.get("write_set") or []]
+            acceptance = [str(item) for item in inp.get("acceptance") or []]
+            owner = str(inp.get("owner") or self.name)
+            model = str(inp.get("model") or "") or None
+            reasoning_effort = str(inp.get("reasoning_effort") or "") or None
+            token_budget = inp.get("token_budget")
+            if token_budget is not None:
+                token_budget = int(token_budget)
+                if token_budget <= 0:
+                    raise ValueError("token_budget must be a positive integer")
+            # Registered agents are templates. Every invocation gets private run state,
+            # constraints and model/budget overrides so two parallel delegations cannot
+            # race through the same `_runs` or `_pending_step_tokens` dictionaries.
+            if isinstance(registered_child, Agent):
+                child = registered_child.model_copy(deep=True)
+                child._runs = {}
+                child._pending_step_tokens = {}
+                for constraint in child.constraints:
+                    constraint._state.clear()
+            else:
+                # Third-party manager adapters used before Agent became the mandatory
+                # registration type may still return an opaque callable. Preserve that
+                # compatibility when no per-invocation Agent fields can be applied.
+                child = registered_child
+            if model is not None:
+                if not isinstance(child, Agent):
+                    raise TypeError("model override requires a registered Agent instance")
+                child.model_name = model
+            if token_budget is not None:
+                if not isinstance(child, Agent):
+                    raise TypeError("token_budget requires a registered Agent instance")
+                child.max_token = token_budget
+                token_constraint = next(
+                    (c for c in child.constraints if isinstance(c, TokenConstraint)), None,
+                )
+                if token_constraint is None:
+                    token_constraint = TokenConstraint(max_token=token_budget)
+                    child.constraints.append(token_constraint)
+                    # ConstraintHook resolves by registered name. Install the standard
+                    # constraint only when no agent has registered it yet.
+                    if await constraint_manager.get(token_constraint.name) is None:
+                        await constraint_manager.register(token_constraint)
+                else:
+                    token_constraint.max_token = token_budget
+            task_contract = {
+                "owner": owner,
+                "model": getattr(child, "model_name", None),
+                "reasoning_effort": reasoning_effort,
+                "token_budget": token_budget,
+            }
+            isolate_worktree = bool(inp.get("isolate_worktree"))
+            if isolate_worktree and inp.get("run_in_background"):
+                raise ValueError(
+                    "isolate_worktree cannot be combined with run_in_background: the "
+                    "background job has no completion boundary at which to collect and "
+                    "clean up its patch"
+                )
+            extra = dict(getattr(ctx, "extra", None) or {})
+            extra["task_contract"] = task_contract
+            if reasoning_effort is not None:
+                extra["child_reasoning_effort"] = reasoning_effort
+            else:
+                extra.pop("child_reasoning_effort", None)
+            delegated_ctx = ctx.model_copy(update={"extra": extra})
+            worktree = None
+            worktree_patch = ""
+            if isolate_worktree:
+                from agentevolver.agent.worktree import IsolatedWorktree
+
+                source = resolve_workspace_root(ctx)
+                extra = dict(getattr(delegated_ctx, "extra", None) or {})
+                from agentevolver.paths import path_manager
+                roots = path_manager.session_roots()
+                storage = str(
+                    roots["log"] if roots else getattr(config, "log_root", "") or ""
+                )
+                if not source or not storage:
+                    raise RuntimeError(
+                        "isolated worktree requires both workspace_root and log_root"
+                    )
+                worktree = await IsolatedWorktree.create(
+                    source, storage, str(call.id or uuid.uuid4()),
+                )
+                extra["execution_cwd"] = str(worktree.path)
+                extra["isolated_worktree"] = True
+                delegated_ctx = ctx.model_copy(update={"extra": extra})
             # Attachments carry across a delegation unless the dispatch names its own.
             # The child is working on part of the same task, and the source material it
             # needs is whatever came with that task; without this it gets only the
@@ -2121,7 +2270,7 @@ class Agent(BaseModel):
                 # The child executes wherever this agent executes — most importantly
                 # inside the same peer sandbox, which both bash_tool and the prompt's
                 # workspace slot read off the context.
-                parent_ctx=ctx,
+                parent_ctx=delegated_ctx,
                 fork=bool(inp.get("fork")),
             )
             if inp.get("run_in_background"):
@@ -2130,11 +2279,30 @@ class Agent(BaseModel):
                 logger.info(f"| 🚀 [{self.name}] Sub-agent '{route[1]}' backgrounded as "
                             f"{(started.data or {}).get('job_id')}")
                 return started.message, False, None, None, None, None
-            resp = await runtime_manager.delegate(child, inp.get("task", ""), **brief)
+            try:
+                resp = await runtime_manager.delegate(
+                    child, inp.get("task", ""), **brief,
+                )
+                if worktree is not None:
+                    worktree_patch = await worktree.collect_patch()
+            finally:
+                if worktree is not None:
+                    await worktree.cleanup()
             # Hand back the child's result plus a deterministic completion envelope, so the
             # orchestrator can tell a finished result from a cut-off one — whether or not the
             # child called done_tool, and without an exception discarding the work.
-            output = (resp.message or "") + _delegation_summary(resp.data)
+            output = (
+                (resp.message or "")
+                + _delegation_summary(resp.data)
+                + _child_result_envelope(
+                    resp,
+                    patch=worktree_patch,
+                    read_set=read_set,
+                    write_set=write_set,
+                    acceptance=acceptance,
+                    task_contract=task_contract,
+                )
+            )
             if resp.success:
                 logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success=True)")
                 return output, False, None, None, None, None
@@ -2178,7 +2346,15 @@ class Agent(BaseModel):
                 name=route[1], input=call.input, ctx=ctx,
                 execution_context=tool_execution_context, **passthrough,
             )
-            execution_meta = dict((tool_response.extra or {}).get("execution") or {})
+            response_extra = dict(tool_response.extra or {})
+            execution_meta = dict(response_extra.get("execution") or {})
+            # The pre-write snapshot is part of the effect receipt.  Keeping it only on
+            # the transient Response made rewind work in-process but made it disappear
+            # from Trace, exactly where crash recovery needs to discover it.
+            if response_extra.get("workspace_checkpoint"):
+                execution_meta["workspace_checkpoint"] = dict(
+                    response_extra["workspace_checkpoint"]
+                )
             if not tool_response.success:
                 message = tool_response.message or f"Tool {route[1]!r} failed"
                 return message, False, None, None, message, execution_meta
@@ -2248,6 +2424,23 @@ class Agent(BaseModel):
         # trace events, memory, and cancellation all describe one execution identity.
         task_id = str(kwargs.pop("task_id", "") or make_id())
         run = _AgentRun(task, files, ctx, ref, task_id, kwargs)
+        checkpoint_payload = (ctx.extra or {}).get("execution_checkpoint")
+        if checkpoint_payload:
+            from agentevolver.trace.execution_checkpoint import ExecutionCheckpoint
+
+            checkpoint = ExecutionCheckpoint.model_validate(checkpoint_payload)
+            if checkpoint.session_id != str(ctx.id) or checkpoint.task_id != task_id:
+                raise RuntimeError(
+                    "Execution checkpoint does not belong to this session/task; "
+                    "refusing to skip or replay work."
+                )
+            if not checkpoint.may_resume_automatically:
+                raise RuntimeError(
+                    f"Execution checkpoint state {checkpoint.state!r} is not auto-resumable"
+                )
+            run.step = max(0, int(checkpoint.next_step))
+            run.extra_kwargs["resume_execution"] = True
+            run.extra_kwargs["resume_source_seq"] = checkpoint.source_last_seq
         self._runs[ref.name] = run
 
         for hook_name in ("trace_hook", "trajectory_hook"):
@@ -2456,12 +2649,16 @@ class Agent(BaseModel):
         subtask ids from the run context, so memory, trace, and trajectory hooks all
         receive a consistent lifecycle envelope.
         """
-        return {
+        lifecycle = {
             "agent_name": self.name, "task_id": run.task_id,
             "memory_name": self.memory_name, "use_memory": self.use_memory,
             "parent_session_id": getattr(run.ctx, "parent_session_id", None),
             "subtask_id": getattr(run.ctx, "subtask_id", None),
         }
+        if run.extra_kwargs.get("resume_execution"):
+            lifecycle["resume_execution"] = True
+            lifecycle["resume_source_seq"] = run.extra_kwargs.get("resume_source_seq")
+        return lifecycle
 
     async def _advance(self, run: "_AgentRun") -> None:
         """Turns, until one dispatches work or the run concludes.
@@ -3051,7 +3248,7 @@ class Agent(BaseModel):
         before a single source file existed. It has to watch the directory the tools
         actually write to.
         """
-        root_value = config.workspace_root
+        root_value = resolve_workspace_root(ctx)
         if not root_value:
             return ""
         root = os.path.abspath(root_value)
@@ -3118,11 +3315,47 @@ class Agent(BaseModel):
     async def _batch_requires_serial(
         self, calls: List[Any], routing: Dict[str, Any],
     ) -> bool:
-        """Parallelize only a batch whose every effect is explicitly read-only."""
+        """Parallelize only read-only calls or disjoint, contracted child tasks."""
         if len(calls) < 2:
             return False
         from agentevolver.tool import tool_manager
         from agentevolver.connector import connector_manager
+
+        routed = [routing.get(call.name) or ("tool", call.name) for call in calls]
+        if any(route[0] == "agent" for route in routed):
+            if any(route[0] not in ("agent", "capability_search") for route in routed):
+                return True
+            contracts = []
+            for call, route in zip(calls, routed):
+                if route[0] == "capability_search":
+                    continue
+                values = call.input or {}
+                if "read_set" not in values and "write_set" not in values:
+                    return True
+                reads = [str(path) for path in values.get("read_set") or []]
+                writes = [str(path) for path in values.get("write_set") or []]
+                # A writing child can only run beside another child when its process cwd,
+                # Git index and filesystem are isolated as well as its declared paths.
+                if writes and not values.get("isolate_worktree"):
+                    return True
+                contracts.append((reads, writes))
+
+            def overlap(left: str, right: str) -> bool:
+                a = tuple(p for p in left.replace("\\", "/").split("/") if p not in ("", "."))
+                b = tuple(p for p in right.replace("\\", "/").split("/") if p not in ("", "."))
+                common = min(len(a), len(b))
+                return (not a and not b) or (common > 0 and a[:common] == b[:common])
+
+            for index, (reads, writes) in enumerate(contracts):
+                for other_reads, other_writes in contracts[index + 1:]:
+                    conflicts = (
+                        [(path, held) for path in writes for held in other_writes]
+                        + [(path, held) for path in writes for held in other_reads]
+                        + [(path, held) for path in reads for held in other_writes]
+                    )
+                    if any(overlap(left, right) for left, right in conflicts):
+                        return True
+            return False
 
         for call in calls:
             route = routing.get(call.name) or ("tool", call.name)

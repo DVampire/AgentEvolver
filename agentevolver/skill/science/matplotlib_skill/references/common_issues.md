@@ -10,6 +10,7 @@ Troubleshooting guide for frequently encountered matplotlib problems.
 
 **Solutions:**
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # 1. Check if backend is properly set (for interactive use)
 import matplotlib
 print(matplotlib.get_backend())

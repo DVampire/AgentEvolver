@@ -1,9 +1,16 @@
+"""Workspace checkpoints restore overwritten files and remove newly created ones.
+
+Mutating tools capture recovery data before approval and execution; an incorrect snapshot
+would either discard the original bytes or leave a file that did not exist. The fixture
+also restores global path bindings so checkpoint tests cannot contaminate later cases.
+"""
+
 from types import SimpleNamespace
 
 import pytest
 
-from agentevolver.permission import Operation, PermissionRequest
 from agentevolver.paths import P, path_manager
+from agentevolver.permission import Operation, PermissionRequest
 from agentevolver.tool.execution import ToolExecution
 from agentevolver.tool.workspace_checkpoint import (
     capture_file_checkpoint,
@@ -22,7 +29,9 @@ def restore_path_binding():
 
 def _execution():
     return ToolExecution.create(
-        name="write_file_tool", version="1", arguments={"path": "x"},
+        name="write_file_tool",
+        version="1",
+        arguments={"path": "x"},
         ctx=SimpleNamespace(id="s", name="meta_agent", extra={}),
     )
 

@@ -77,8 +77,9 @@ def test_the_runs_own_staging_tree_is_not_refused():
     path_manager.bind_session("local", "stagingok")
     try:
         staged = path_manager.session_roots()["extension"]
-        result = validate_command(f"echo x > {staged}/workflow/t.html",
-                                  PermissionMode.DANGER_FULL_ACCESS)
+        result = validate_command(
+            f"echo x > {staged}/workflow/t.html", PermissionMode.DANGER_FULL_ACCESS
+        )
         assert result.allowed
     finally:
         path_manager.unbind_session()
@@ -106,12 +107,15 @@ def test_the_staging_tree_is_outside_the_shared_one_by_layout():
         path_manager.unbind_session()
 
 
-@pytest.mark.parametrize("command", [
-    "cat {shared}/tool/existing.py",
-    "grep -r pattern {shared}/",
-    "ls {shared}/skill",
-    "python -m py_compile {shared}/tool/x.py",
-])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat {shared}/tool/existing.py",
+        "grep -r pattern {shared}/",
+        "ls {shared}/skill",
+        "python -m py_compile {shared}/tool/x.py",
+    ],
+)
 def test_reading_the_shared_tree_stays_allowed(command, shared):
     """Refusing reads would break the thing agents legitimately do most.
 
@@ -122,13 +126,16 @@ def test_reading_the_shared_tree_stays_allowed(command, shared):
     assert result.allowed, result.reason
 
 
-@pytest.mark.parametrize("command", [
-    "echo x > /tmp/scratch.txt",
-    "echo x > relative/output.txt",
-    "pip install --target /opt/deps requests",
-    "make && ./run-tests",
-    "python script.py > results.json",
-])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo x > /tmp/scratch.txt",
+        "echo x > relative/output.txt",
+        "pip install --target /opt/deps requests",
+        "make && ./run-tests",
+        "python script.py > results.json",
+    ],
+)
 def test_writes_everywhere_else_are_untouched(command):
     """The scope of the rule, asserted rather than described.
 

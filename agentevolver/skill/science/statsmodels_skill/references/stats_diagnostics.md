@@ -735,6 +735,7 @@ plt.show()
 **Cohen's d** (standardized mean difference):
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 def cohens_d(group1, group2):
     \"\"\"Calculate Cohen's d for independent samples\"\"\"
     n1, n2 = len(group1), len(group2)

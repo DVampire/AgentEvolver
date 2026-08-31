@@ -9,13 +9,13 @@ Expectations are derived from the templates rather than restated, so a template 
 new leaf drags the stylesheet, the renderer and the splitter into the failure with it.
 """
 
-from pathlib import Path
 import asyncio
-import pytest
 import re
+from pathlib import Path
+
+import pytest
 
 from agentevolver.prompt.types import parse_prompt_file
-
 
 # ---------------------------------------------------------------------------
 # from test_prompt_structure_agrees_across_files.py
@@ -27,9 +27,13 @@ ROOT = Path(__file__).resolve().parents[1]
 #: found its leaves only in `extension/prompt/gaia_answer_agent.html`: a generated,
 #: fully-expanded prompt that happened to be committed. Clearing the extension tree
 #: emptied the guard, and it said so — which is the one thing that made this visible.
-TEMPLATES = sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*.html")) + \
-            sorted((ROOT / "agentevolver" / "prompt" / "module").glob("*.html")) + \
-            sorted((ROOT / "extension" / "prompt").glob("*.html"))
+TEMPLATES = (
+    sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*.html"))
+    + sorted((ROOT / "agentevolver" / "prompt" / "module").glob("*.html"))
+    + sorted((ROOT / "extension" / "prompt").glob("*.html"))
+)
+
+
 # Read per test, not at import. Collection happens before session fixtures, so a
 # module-level read captures whatever is on disk at that instant — including a mutation
 # the repair fixture is about to undo. That exact race cost a commit: a killed run left
@@ -46,6 +50,7 @@ def _js() -> str:
 def _splitter() -> str:
     return (ROOT / "agentevolver" / "agent" / "types.py").read_text(encoding="utf-8")
 
+
 CONTAINER = "capability-context"
 
 
@@ -57,9 +62,11 @@ def _inline(text: str, base: Path) -> str:
     The ordering check below did exactly that for 28 of 29 templates — it looked like it
     was guarding the layout and was guarding one file.
     """
+
     def sub(match):
         path = (base / match.group(1)).resolve()
         return path.read_text(encoding="utf-8") if path.exists() else ""
+
     return re.sub(r'<module src="([^"]+)"></module>', sub, text)
 
 
@@ -79,18 +86,23 @@ LEAVES = _leaves_used_in_templates()
 def _render_meta(*, evolution_enabled: bool) -> str:
     cfg = parse_prompt_file(str(ROOT / "agentevolver" / "prompt" / "default" / "meta_agent.html"))
     prompt = cfg.to_prompt()
-    return asyncio.run(prompt.get_system_message({
-        "project_root": "/project",
-        "package_root": "/package",
-        "extension_root": "/extension",
-        "workspace_root": "/workspace",
-        "log_root": "/log",
-        "python_executable": "python",
-        "python_version": "3.12",
-        "python_env": "agentos",
-        "platform": "Linux",
-        "evolution_enabled": evolution_enabled,
-    }, reload=True)).text
+    return asyncio.run(
+        prompt.get_system_message(
+            {
+                "project_root": "/project",
+                "package_root": "/package",
+                "extension_root": "/extension",
+                "workspace_root": "/workspace",
+                "log_root": "/log",
+                "python_executable": "python",
+                "python_version": "3.12",
+                "python_env": "agentos",
+                "platform": "Linux",
+                "evolution_enabled": evolution_enabled,
+            },
+            reload=True,
+        )
+    ).text
 
 
 def test_meta_agent_remains_one_general_direct_working_orchestrator():
@@ -132,8 +144,14 @@ def test_agent_prompts_use_the_native_calling_protocol():
     paths = list((ROOT / "agentevolver" / "prompt" / "default").glob("*_agent.html"))
     paths += [
         ROOT / "agentevolver" / "prompt" / "module" / "response_protocol.html",
-        ROOT / "agentevolver" / "skill" / "evolving" / "generate_skill"
-        / "references" / "agent" / "html_prompt_template.html",
+        ROOT
+        / "agentevolver"
+        / "skill"
+        / "evolving"
+        / "generate_skill"
+        / "references"
+        / "agent"
+        / "html_prompt_template.html",
     ]
     forbidden = ("env__", "`finish`", '"type": "text"', '"name": "text"')
     for path in paths:
@@ -144,13 +162,23 @@ def test_agent_prompts_use_the_native_calling_protocol():
 
 def test_generated_agent_template_matches_the_default_capability_frame():
     path = (
-        ROOT / "agentevolver" / "skill" / "evolving" / "generate_skill"
-        / "references" / "agent" / "html_prompt_template.html"
+        ROOT
+        / "agentevolver"
+        / "skill"
+        / "evolving"
+        / "generate_skill"
+        / "references"
+        / "agent"
+        / "html_prompt_template.html"
     )
     text = path.read_text(encoding="utf-8")
     for tag in (
-        "tool-context", "skill-context", "connector-context", "plugin-context",
-        "workflow-context", "subagent-context",
+        "tool-context",
+        "skill-context",
+        "connector-context",
+        "plugin-context",
+        "workflow-context",
+        "subagent-context",
     ):
         assert f"<{tag}>" in text
     assert text.index("<capability-context>") < text.index("<environment-context>")
@@ -181,9 +209,11 @@ def test_the_stylesheet_reaches_the_leaf_at_its_real_depth(leaf):
     """
     assert f"div.user > {leaf}" not in _css(), (
         f"{leaf} is nested in <{CONTAINER}> but the stylesheet still selects it as a "
-        f"direct child of div.user; that rule matches nothing")
+        f"direct child of div.user; that rule matches nothing"
+    )
     assert re.search(rf"{CONTAINER} > {leaf}\b", _css()), (
-        f"the stylesheet never reaches {leaf} at its nested depth")
+        f"the stylesheet never reaches {leaf} at its nested depth"
+    )
 
 
 def test_the_renderer_knows_the_container_holds_children():
@@ -196,7 +226,8 @@ def test_the_renderer_knows_the_container_holds_children():
     assert match, "prompt.js no longer declares _CONTAINER_TAGS"
     assert CONTAINER in match.group(1), (
         f"prompt.js does not treat <{CONTAINER}> as a container; its children would be "
-        f"flattened into one block of text")
+        f"flattened into one block of text"
+    )
 
 
 @pytest.mark.parametrize("leaf", sorted(LEAVES))
@@ -216,7 +247,8 @@ def test_the_splitter_treats_the_container_as_stable():
     match = re.search(r"for block in \((.*?)\):", _splitter(), re.S)
     assert match, "the stable-block list moved; this check needs updating with it"
     assert f'"{CONTAINER}"' in match.group(1), (
-        f"_split_rendered_turn does not treat <{CONTAINER}> as stable content")
+        f"_split_rendered_turn does not treat <{CONTAINER}> as stable content"
+    )
 
 
 @pytest.mark.parametrize("path", TEMPLATES, ids=lambda p: p.name)
@@ -232,7 +264,8 @@ def test_a_template_puts_its_capabilities_before_its_state(path):
         pytest.skip("template carries no capability catalog")
     assert text.index(f"<{CONTAINER}>") < text.index("<agent-context>"), (
         f"{path.name} renders its state before its capabilities; nothing after the "
-        f"state can be cached")
+        f"state can be cached"
+    )
 
 
 @pytest.mark.parametrize("path", TEMPLATES, ids=lambda p: p.name)
@@ -253,11 +286,14 @@ def test_the_agent_authoring_guide_describes_the_shape_it_will_be_read_against()
     stale does not merely mislead a reader — it reproduces the old layout in every agent
     generated afterwards.
     """
-    guide = (ROOT / "agentevolver" / "skill" / "evolving" / "generate_skill"
-             / "references" / "agent.md").read_text(encoding="utf-8")
+    guide = (
+        ROOT / "agentevolver" / "skill" / "evolving" / "generate_skill" / "references" / "agent.md"
+    ).read_text(encoding="utf-8")
     assert CONTAINER in guide, "the agent-authoring guide never mentions the container"
-    assert "as **siblings** of `<agent-context>`" not in guide, \
+    assert "as **siblings** of `<agent-context>`" not in guide, (
         "the guide still describes the pre-merge sibling layout"
+    )
+
 
 # ---------------------------------------------------------------------------
 # from test_prompt_documents_capabilities.py
@@ -269,9 +305,11 @@ ROOT = Path(__file__).resolve().parents[1]
 #: found its leaves only in `extension/prompt/gaia_answer_agent.html`: a generated,
 #: fully-expanded prompt that happened to be committed. Clearing the extension tree
 #: emptied the guard, and it said so — which is the one thing that made this visible.
-TEMPLATES = sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*.html")) + \
-            sorted((ROOT / "agentevolver" / "prompt" / "module").glob("*.html")) + \
-            sorted((ROOT / "extension" / "prompt").glob("*.html"))
+TEMPLATES = (
+    sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*.html"))
+    + sorted((ROOT / "agentevolver" / "prompt" / "module").glob("*.html"))
+    + sorted((ROOT / "extension" / "prompt").glob("*.html"))
+)
 
 
 def _inline(text: str, base: Path) -> str:
@@ -280,9 +318,11 @@ def _inline(text: str, base: Path) -> str:
     Shared rules live in modules, so a template can document something without the word
     appearing in its own file. Checking the raw text alone reports four false failures.
     """
+
     def sub(match):
         path = (base / match.group(1)).resolve()
         return path.read_text(encoding="utf-8") if path.exists() else ""
+
     return re.sub(r'<module src="([^"]+)"></module>', sub, text)
 
 
@@ -302,14 +342,14 @@ def test_there_is_something_to_check():
 def test_every_catalog_template_explains_the_changes_block(path):
     config = parse_prompt_file(str(path))
     system = _inline(config.system_template or "", path.parent)
-    assert ("capability-context-changes" in system
-            or "capability_context_changes" in system), (
-        f"{path.name} can receive a <capability-context-changes> block but never says so")
+    assert "capability-context-changes" in system or "capability_context_changes" in system, (
+        f"{path.name} can receive a <capability-context-changes> block but never says so"
+    )
 
 
 @pytest.mark.parametrize("path", [p for p, _ in _with_capabilities()], ids=lambda p: p.name)
 def test_the_changes_block_is_described_as_an_amendment(path):
-    """"Supersedes what it names" and "replaces the catalog" are opposite instructions.
+    """ "Supersedes what it names" and "replaces the catalog" are opposite instructions.
 
     The block lists only what moved, so read as a replacement it would strip the model of
     every capability the delta happens not to mention.
@@ -317,7 +357,8 @@ def test_the_changes_block_is_described_as_an_amendment(path):
     config = parse_prompt_file(str(path))
     system = _inline(config.system_template or "", path.parent).lower()
     assert any(word in system for word in ("amendment", "supersedes", "does not mention")), (
-        f"{path.name} names the block but does not say it amends rather than replaces")
+        f"{path.name} names the block but does not say it amends rather than replaces"
+    )
 
 
 @pytest.mark.parametrize("path", [p for p, _ in _with_capabilities()], ids=lambda p: p.name)
@@ -331,6 +372,7 @@ def test_the_explanation_sits_before_the_cache_breakpoint(path):
     """
     config = parse_prompt_file(str(path))
     user = re.sub(r"<!--.*?-->", "", config.user_template or "", flags=re.S)
-    tail = user[user.index("</capability-context>"):]
+    tail = user[user.index("</capability-context>") :]
     assert "capability-context-changes" not in tail, (
-        f"{path.name} explains the block after the breakpoint, where it is not cacheable")
+        f"{path.name} explains the block after the breakpoint, where it is not cacheable"
+    )

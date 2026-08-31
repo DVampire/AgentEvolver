@@ -217,6 +217,7 @@ p.label(
 Apply matplotlib style settings.
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 Plot.theme(config, /)
 ```
 

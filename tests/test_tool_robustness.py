@@ -85,6 +85,7 @@ async def test_a_failure_inside_the_tool_is_not_reported_as_a_bad_call(tmp_path)
     a call that was already correct. The execution boundary must preserve its real type
     and message under a distinct code so Trace records the actual failure.
     """
+
     class _Boom(DoneTool):
         async def __call__(self, reasoning: str, result: str, **kwargs):
             raise ValueError("boom inside body")
@@ -94,7 +95,8 @@ async def test_a_failure_inside_the_tool_is_not_reported_as_a_bad_call(tmp_path)
     # then normalizes a body exception with a different stable code, so direct callers,
     # Agent, Workflow, and Code Mode all observe the same failure contract.
     response = await manager(
-        name="done_tool", input={"reasoning": "r", "result": "ok"},
+        name="done_tool",
+        input={"reasoning": "r", "result": "ok"},
     )
     assert response.success is False
     assert "boom inside body" in response.message
@@ -160,10 +162,12 @@ def test_nothing_to_commit_is_an_observation_not_a_failure(tmp_path):
     a hard failure, the agent read it as broken staging and retried variants of the same
     commit 11 times, burning ~40 of its 65 commands."""
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command="echo 'nothing added to commit but untracked files present'; exit 1",
-        ctx=SimpleNamespace(extra={}),
-    ))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access")(
+            command="echo 'nothing added to commit but untracked files present'; exit 1",
+            ctx=SimpleNamespace(extra={}),
+        )
+    )
     assert resp.success is True
     assert resp.data["exit_code"] == 1
     assert "nothing added to commit" in resp.message
@@ -173,8 +177,11 @@ def test_a_command_that_cannot_run_at_all_is_a_tool_failure(tmp_path):
     """The line between the two: a command that ran and returned a verdict is an
     observation; being unable to run one is a failure."""
     config.workspace_root = str(tmp_path / "does-not-exist")
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command="echo hi", ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access")(
+            command="echo hi", ctx=SimpleNamespace(extra={})
+        )
+    )
     assert resp.success is False
 
 
@@ -187,14 +194,20 @@ def test_search_tools_report_no_matches_as_an_answer(tmp_path):
     config.workspace_root = str(tmp_path)
     ctx = SimpleNamespace(extra={})
 
-    r = asyncio.run(GrepSearchTool(permission_mode="danger_full_access")(
-        pattern="nothing matches this", root=str(tmp_path), ctx=ctx))
+    r = asyncio.run(
+        GrepSearchTool(permission_mode="danger_full_access")(
+            pattern="nothing matches this", root=str(tmp_path), ctx=ctx
+        )
+    )
     assert r.success is True
     assert r.data["results"] == []
     assert "No matches" in r.message
 
-    g = asyncio.run(GlobSearchTool(permission_mode="danger_full_access")(
-        pattern="*.nope", root=str(tmp_path), ctx=ctx))
+    g = asyncio.run(
+        GlobSearchTool(permission_mode="danger_full_access")(
+            pattern="*.nope", root=str(tmp_path), ctx=ctx
+        )
+    )
     assert g.success is True
     assert g.data["matches"] == []
 
@@ -209,12 +222,18 @@ def test_search_tools_find_what_is_there(tmp_path):
     config.workspace_root = str(tmp_path)
     ctx = SimpleNamespace(extra={})
 
-    g = asyncio.run(GlobSearchTool(permission_mode="danger_full_access")(
-        pattern="*.c", root=str(tmp_path), ctx=ctx))
+    g = asyncio.run(
+        GlobSearchTool(permission_mode="danger_full_access")(
+            pattern="*.c", root=str(tmp_path), ctx=ctx
+        )
+    )
     assert g.success is True and len(g.data["matches"]) == 1
 
-    r = asyncio.run(GrepSearchTool(permission_mode="danger_full_access")(
-        pattern="int rows", root=str(tmp_path), ctx=ctx))
+    r = asyncio.run(
+        GrepSearchTool(permission_mode="danger_full_access")(
+            pattern="int rows", root=str(tmp_path), ctx=ctx
+        )
+    )
     assert r.success is True and len(r.data["results"]) == 1
 
 
@@ -244,8 +263,9 @@ def test_list_dir_honours_an_explicit_ignore(tmp_path):
     (tmp_path / "keep.c").write_text("int main(){}")
     config.workspace_root = str(tmp_path)
 
-    resp = asyncio.run(ListDirTool()(
-        path=str(tmp_path), ignore=["target"], ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        ListDirTool()(path=str(tmp_path), ignore=["target"], ctx=SimpleNamespace(extra={}))
+    )
     assert "keep.c" in resp.message
     assert "target" not in resp.message
 
@@ -286,10 +306,12 @@ def test_one_shot_sees_the_filesystem_as_it_is_now(tmp_path):
 
     (tmp_path / "target.c").write_text("int main(){}\n")
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(CodeInterpreterTool(use_kernel=False)(
-        code="import pathlib; print('found:', pathlib.Path('target.c').exists())",
-        ctx=SimpleNamespace(extra={}),
-    ))
+    resp = asyncio.run(
+        CodeInterpreterTool(use_kernel=False)(
+            code="import pathlib; print('found:', pathlib.Path('target.c').exists())",
+            ctx=SimpleNamespace(extra={}),
+        )
+    )
     assert resp.success is True
     assert "found: True" in resp.message
 
@@ -300,10 +322,12 @@ def test_one_shot_nonzero_exit_is_an_observation(tmp_path):
     from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
 
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(CodeInterpreterTool(use_kernel=False)(
-        code="import sys; print('partial output'); sys.exit(3)",
-        ctx=SimpleNamespace(extra={}),
-    ))
+    resp = asyncio.run(
+        CodeInterpreterTool(use_kernel=False)(
+            code="import sys; print('partial output'); sys.exit(3)",
+            ctx=SimpleNamespace(extra={}),
+        )
+    )
     assert resp.success is True
     assert "partial output" in resp.message
     assert resp.data["exit_code"] == 3
@@ -316,8 +340,11 @@ def test_one_shot_rejects_a_language_it_cannot_run(tmp_path):
     from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
 
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(CodeInterpreterTool(use_kernel=False)(
-        code="print(1)", language="brainfuck", ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        CodeInterpreterTool(use_kernel=False)(
+            code="print(1)", language="brainfuck", ctx=SimpleNamespace(extra={})
+        )
+    )
     assert resp.success is False
     assert "Unsupported language" in resp.message
 
@@ -331,8 +358,11 @@ def test_a_timeout_names_the_cause_and_suggests_the_fix(tmp_path):
     timeout from a crash. Seen when `./executable -z` on a reconstruction that fell into
     its TUI loop blocked for the full timeout and the agent learned nothing."""
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access", timeout=1)(
-        command="sleep 30", ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access", timeout=1)(
+            command="sleep 30", ctx=SimpleNamespace(extra={})
+        )
+    )
     assert resp.success is False
     assert "timed out" in resp.message
     # The agent must be able to act on it next time.
@@ -351,6 +381,7 @@ def test_a_timeout_names_the_cause_and_suggests_the_fix(tmp_path):
 # collapsed to 1. Anything downstream that split on newlines (glob_search's find
 # parsing, any diff the agent tried between two programs' output) was operating on
 # glued-together text.
+
 
 class _Msg:
     """Stand-in for opensandbox's OutputMessage."""
@@ -406,7 +437,9 @@ def test_the_assembled_result_keeps_its_line_breaks():
 
     execution = SimpleNamespace(
         logs=SimpleNamespace(stdout=[_Msg("line one"), _Msg("line two")], stderr=[]),
-        exit_code=0, result=[], error=None,
+        exit_code=0,
+        result=[],
+        error=None,
     )
     assert execution_to_result(execution).stdout == "line one\nline two"
 
@@ -420,6 +453,7 @@ def test_the_assembled_result_keeps_its_line_breaks():
 # failing the call outright. Every file written through write_file_tool/edit_file_tool
 # was 0o420; the mode survives the submission tarball, and the ProgramBench images run
 # as the non-root user `agent`, so the graded build could not read its own source.
+
 
 def test_sandbox_write_file_sends_octal_digits_not_the_int():
     """The wire format is a decimal-looking integer that the server parses as base 8, so
@@ -466,6 +500,7 @@ def test_base_sandbox_write_file_applies_the_mode():
     class _Shell(Sandbox):
         async def run_command(self, command, **kwargs):
             from agentevolver.sandbox.types import ExecResult  # noqa: PLC0415
+
             ran.append(command)
             return ExecResult(success=True, exit_code=0)
 
@@ -488,8 +523,11 @@ def test_grep_search_skips_binaries(tmp_path):
     (tmp_path / "executable").write_bytes(b"\x7fELF\x00\x00Usage\x00\xff\xfe binary noise")
     config.workspace_root = str(tmp_path)
 
-    resp = asyncio.run(GrepSearchTool(permission_mode="danger_full_access")(
-        pattern="Usage", root=str(tmp_path), ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        GrepSearchTool(permission_mode="danger_full_access")(
+            pattern="Usage", root=str(tmp_path), ctx=SimpleNamespace(extra={})
+        )
+    )
     assert resp.success is True
     assert [r["file"].split("/")[-1] for r in resp.data["results"]] == ["notes.txt"]
 
@@ -523,14 +561,15 @@ def test_a_tools_own_bookkeeping_stays_out_of_the_deliverable(tmp_path):
             continue
         try:
             instance = cls()
-        except Exception:                                     # noqa: BLE001 — needs args
+        except Exception:  # noqa: BLE001 — needs args
             continue
         if config.workspace_root in str(getattr(instance, "base_dir", "") or ""):
             offenders.append(f"{name} keeps state at {instance.base_dir}")
 
-    assert not offenders, ("tool state inside the deliverable:\n  " + "\n  ".join(offenders))
+    assert not offenders, "tool state inside the deliverable:\n  " + "\n  ".join(offenders)
     assert os.listdir(config.workspace_root) == [], (
-        "constructing the tools wrote into the workspace")
+        "constructing the tools wrote into the workspace"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -541,6 +580,7 @@ def test_a_tools_own_bookkeeping_stays_out_of_the_deliverable(tmp_path):
 # handed to the agent whole and stored in its memory, so every turn afterwards asked for
 # ~4.3M tokens against a 1,048,576 limit; the run died of consecutive 400s and the
 # reported cause named neither the command nor the size.
+
 
 def test_clip_output_leaves_short_output_alone():
     """Almost every command is this case. A clipper that appended its notice
@@ -581,11 +621,13 @@ def test_bash_flood_is_clipped_by_the_pipeline(tmp_path):
 
     config.workspace_root = str(tmp_path)
     manager = _manager_for(tmp_path, BashTool(permission_mode="danger_full_access"))
-    resp = asyncio.run(manager(
-        name="bash_tool",
-        input={"command": "python3 -c \"print('A' * 3_000_000)\""},
-        ctx=SimpleNamespace(id="call-1", extra={}),
-    ))
+    resp = asyncio.run(
+        manager(
+            name="bash_tool",
+            input={"command": "python3 -c \"print('A' * 3_000_000)\""},
+            ctx=SimpleNamespace(id="call-1", extra={}),
+        )
+    )
 
     assert resp.success is True
     assert len(resp.message) < OUTPUT_LIMIT * 2
@@ -595,9 +637,12 @@ def test_bash_flood_is_clipped_by_the_pipeline(tmp_path):
 def test_bash_clips_each_stream_separately(tmp_path):
     """A command that floods stdout must not cost the agent the stderr explaining why."""
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command="python3 -c \"import sys; print('A'*3_000_000); sys.stderr.write('THE REASON')\"",
-        ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access")(
+            command="python3 -c \"import sys; print('A'*3_000_000); sys.stderr.write('THE REASON')\"",
+            ctx=SimpleNamespace(extra={}),
+        )
+    )
     assert "THE REASON" in resp.message
 
 
@@ -615,8 +660,13 @@ def test_memory_caps_one_entry_even_if_a_tool_does_not():
     memory = TieredMemory(base_dir="/tmp", recent_max=100)
     state = _State()
 
-    TieredMemory._append_recent(memory, state, MemoryRecord(
-        ts="00:00:00", event="bash_tool result", detail="Z" * 14_419_441, status="done"))
+    TieredMemory._append_recent(
+        memory,
+        state,
+        MemoryRecord(
+            ts="00:00:00", event="bash_tool result", detail="Z" * 14_419_441, status="done"
+        ),
+    )
 
     stored = state.recent[0].detail
     assert len(stored) < _RECORD_DETAIL_MAX + 200
@@ -634,14 +684,18 @@ def test_memory_caps_one_entry_even_if_a_tool_does_not():
 # behaviour was invisible this way: 12 of the graded test files drive the program through
 # a pty, and the reconstruction that never implemented any of it looked correct.
 
+
 def test_tty_is_off_by_default(tmp_path):
     """Turning it on unconditionally would change what every other command reports:
     programs check isatty() and colourise, paginate, or prompt when they think a human is
     watching."""
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command="python3 -c \"import sys; print(sys.stdout.isatty())\"",
-        ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access")(
+            command='python3 -c "import sys; print(sys.stdout.isatty())"',
+            ctx=SimpleNamespace(extra={}),
+        )
+    )
     assert "False" in resp.message
 
 
@@ -651,9 +705,14 @@ def test_tty_gives_the_command_a_terminal(tmp_path):
     a pipe, a pty that is not on the program's own stdout — leaves it refusing to start,
     which reads as "this program does nothing"."""
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command="python3 -c \"import sys; print(sys.stdout.isatty())\"",
-        tty=True, timeout=10, ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access")(
+            command='python3 -c "import sys; print(sys.stdout.isatty())"',
+            tty=True,
+            timeout=10,
+            ctx=SimpleNamespace(extra={}),
+        )
+    )
     assert resp.success is True
     assert "True" in resp.message
 
@@ -664,8 +723,11 @@ def test_tty_sets_a_terminal_type(tmp_path):
     exits — the same refusal that having no terminal produces, which is the thing this
     exists to get past."""
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command="echo TERM=$TERM", tty=True, timeout=10, ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access")(
+            command="echo TERM=$TERM", tty=True, timeout=10, ctx=SimpleNamespace(extra={})
+        )
+    )
     assert "TERM=" in resp.message
     assert "TERM=\r\n" not in resp.message, "TERM was left empty"
 
@@ -674,9 +736,14 @@ def test_a_caller_can_choose_the_terminal_type(tmp_path):
     """How a program behaves under a different TERM is itself worth comparing — the graded
     tests use linux, vt100, dumb, screen and a name that does not exist."""
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command="TERM=vt100 sh -c 'echo TERM=$TERM'", tty=True, timeout=10,
-        ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access")(
+            command="TERM=vt100 sh -c 'echo TERM=$TERM'",
+            tty=True,
+            timeout=10,
+            ctx=SimpleNamespace(extra={}),
+        )
+    )
     assert "TERM=vt100" in resp.message
 
 
@@ -684,17 +751,22 @@ def test_stdin_reaches_the_command(tmp_path):
     """Driving an interactive program means sending it keys — and being able to tell it to
     quit, which is the difference between a comparison and a hang."""
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command="cat", stdin="hello from stdin\n", timeout=10,
-        ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access")(
+            command="cat", stdin="hello from stdin\n", timeout=10, ctx=SimpleNamespace(extra={})
+        )
+    )
     assert "hello from stdin" in resp.message
 
 
 def test_a_tty_command_that_never_exits_times_out_with_advice(tmp_path):
     """A full-screen program holds the terminal until told to leave."""
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command="sleep 30", tty=True, timeout=2, ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access")(
+            command="sleep 30", tty=True, timeout=2, ctx=SimpleNamespace(extra={})
+        )
+    )
     assert resp.success is False
     assert resp.data["timed_out"] is True
     assert "whatever key quits it" in resp.message
@@ -706,8 +778,11 @@ def test_a_per_call_timeout_overrides_the_default(tmp_path):
     and without the override every probe of a program that hangs costs the full default
     before the agent learns anything."""
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access", timeout=600)(
-        command="sleep 30", timeout=1, ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access", timeout=600)(
+            command="sleep 30", timeout=1, ctx=SimpleNamespace(extra={})
+        )
+    )
     assert resp.success is False
     assert "timed out after 1 seconds" in resp.message
 
@@ -721,6 +796,7 @@ def test_a_per_call_timeout_overrides_the_default(tmp_path):
 # leave behind. Handing over the raw stream hands over the wire protocol instead of the
 # page: one reference program's 500-character screen arrived as 32,184 bytes of escape
 # sequences, which filled the output budget and got skimmed past as noise.
+
 
 def test_the_screen_is_returned_not_the_escape_sequences():
     """The cursor move is why stripping escapes is not enough: "there" is written at row
@@ -771,8 +847,11 @@ def test_a_tty_command_reports_the_screen(tmp_path):
     bytes to the renderer, and the dimensions are stated because a screen is only
     interpretable against the size it was laid out for."""
     config.workspace_root = str(tmp_path)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command="printf 'a\\nb\\n'", tty=True, timeout=10, ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access")(
+            command="printf 'a\\nb\\n'", tty=True, timeout=10, ctx=SimpleNamespace(extra={})
+        )
+    )
     assert "a\nb" in resp.message
     assert "terminal 80x24" in resp.message
 
@@ -805,9 +884,11 @@ def test_keystrokes_wait_for_the_program_to_draw(tmp_path):
     script = tmp_path / "draws.sh"
     script.write_text("#!/bin/bash\nprintf 'PAINTED'\nread -n1 key\nprintf '\\033[2J\\033[H'\n")
     script.chmod(0o755)
-    resp = asyncio.run(BashTool(permission_mode="danger_full_access")(
-        command=str(script), tty=True, stdin="q", timeout=8,
-        ctx=SimpleNamespace(extra={})))
+    resp = asyncio.run(
+        BashTool(permission_mode="danger_full_access")(
+            command=str(script), tty=True, stdin="q", timeout=8, ctx=SimpleNamespace(extra={})
+        )
+    )
     assert "PAINTED" in resp.message
     assert resp.success is True, "the key must still be delivered, not withheld until timeout"
 
@@ -817,8 +898,11 @@ def test_a_line_left_on_the_restored_screen_does_not_hide_the_drawing():
     back — a shell prompt, an `echo exit=$?`. Rescuing only an entirely blank final frame
     let one such line make a screenful of drawing look like it never happened."""
     out = render_terminal(
-        b"\x1b[?1049h" + b"\r\n".join(f"rain row {i}".encode() for i in range(10))
-        + b"\x1b[2J\x1b[H\x1b[?1049l" + b"exit=0\r\n")
+        b"\x1b[?1049h"
+        + b"\r\n".join(f"rain row {i}".encode() for i in range(10))
+        + b"\x1b[2J\x1b[H\x1b[?1049l"
+        + b"exit=0\r\n"
+    )
     assert "rain row 9" in out
     assert "exit=0" in out
     assert "as it appeared while running" in out

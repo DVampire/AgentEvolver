@@ -116,7 +116,7 @@ def test_every_violation_is_reported_not_just_the_first():
         registered={},
     )
 
-    assert len(problems) == 3        # two dark files, plus the floor
+    assert len(problems) == 3  # two dark files, plus the floor
 
 
 # --------------------------------------------------------------------------- #

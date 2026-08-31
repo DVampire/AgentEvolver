@@ -192,11 +192,17 @@ async def test_rename_without_a_mapping_is_refused(mapping):
 # Filtering rows
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
-@pytest.mark.parametrize("op, value, kept", [
-    ("eq", 2, [2]), ("ne", 2, [1, 3]),
-    ("gt", 1, [2, 3]), ("ge", 2, [2, 3]),
-    ("lt", 3, [1, 2]), ("le", 2, [1, 2]),
-])
+@pytest.mark.parametrize(
+    "op, value, kept",
+    [
+        ("eq", 2, [2]),
+        ("ne", 2, [1, 3]),
+        ("gt", 1, [2, 3]),
+        ("ge", 2, [2, 3]),
+        ("lt", 3, [1, 2]),
+        ("le", 2, [1, 2]),
+    ],
+)
 async def test_each_comparison_selects_the_right_rows(op, value, kept):
     """Each operator is spelled out because the boundary cases differ by one row.
 
@@ -297,7 +303,9 @@ async def test_rows_are_reshaped_for_a_benchmark_node():
     """
     rows = [{"pred": "a", "truth": "b"}]
     result = await ToEvalRecordsProcessor()(
-        records=rows, prediction_field="pred", ground_truth_field="truth",
+        records=rows,
+        prediction_field="pred",
+        ground_truth_field="truth",
     )
     assert result.data["records"] == [{"task_id": "0", "prediction": "a", "ground_truth": "b"}]
 
@@ -356,15 +364,18 @@ async def test_sort_without_a_key_is_refused():
 # The properties every transform shares
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
-@pytest.mark.parametrize("processor, kwargs", [
-    (SelectFieldsProcessor(), {"fields": ["a"]}),
-    (HeadProcessor(), {"n": 1}),
-    (RenameFieldsProcessor(), {"mapping": {"a": "alpha"}}),
-    (FilterRowsProcessor(), {"field": "a", "op": "gt", "value": 1}),
-    (SortRecordsProcessor(), {"key": "a", "descending": True}),
-    (DeriveReturnProcessor(), {"field": "a"}),
-    (ToEvalRecordsProcessor(), {}),
-])
+@pytest.mark.parametrize(
+    "processor, kwargs",
+    [
+        (SelectFieldsProcessor(), {"fields": ["a"]}),
+        (HeadProcessor(), {"n": 1}),
+        (RenameFieldsProcessor(), {"mapping": {"a": "alpha"}}),
+        (FilterRowsProcessor(), {"field": "a", "op": "gt", "value": 1}),
+        (SortRecordsProcessor(), {"key": "a", "descending": True}),
+        (DeriveReturnProcessor(), {"field": "a"}),
+        (ToEvalRecordsProcessor(), {}),
+    ],
+)
 async def test_a_transform_never_mutates_its_input(processor, kwargs):
     """Purity is the contract, and one branch of a graph can feed several nodes.
 
@@ -379,15 +390,18 @@ async def test_a_transform_never_mutates_its_input(processor, kwargs):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("processor, kwargs", [
-    (SelectFieldsProcessor(), {"fields": ["a"]}),
-    (HeadProcessor(), {}),
-    (RenameFieldsProcessor(), {"mapping": {"a": "b"}}),
-    (FilterRowsProcessor(), {"field": "a"}),
-    (SortRecordsProcessor(), {"key": "a"}),
-    (DeriveReturnProcessor(), {}),
-    (ToEvalRecordsProcessor(), {}),
-])
+@pytest.mark.parametrize(
+    "processor, kwargs",
+    [
+        (SelectFieldsProcessor(), {"fields": ["a"]}),
+        (HeadProcessor(), {}),
+        (RenameFieldsProcessor(), {"mapping": {"a": "b"}}),
+        (FilterRowsProcessor(), {"field": "a"}),
+        (SortRecordsProcessor(), {"key": "a"}),
+        (DeriveReturnProcessor(), {}),
+        (ToEvalRecordsProcessor(), {}),
+    ],
+)
 async def test_an_empty_batch_flows_through_every_transform(processor, kwargs):
     """An upstream filter matching nothing must not break every stage after it.
 
@@ -408,8 +422,9 @@ class Doubler(Processor):
     description: str = "Doubles a number"
 
     async def __call__(self, value: int = 0, **kwargs):
-        return Response(type=ResponseType.TOOL, success=True, message="ok",
-                        data={"value": value * 2})
+        return Response(
+            type=ResponseType.TOOL, success=True, message="ok", data={"value": value * 2}
+        )
 
 
 class Exploding(Processor):

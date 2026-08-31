@@ -14,13 +14,16 @@ must its message — "add more context" is what makes the retry work instead of 
 """
 
 import asyncio
-from pathlib import Path
 
 from agentevolver.tool.default.edit_file import EditFileTool
 
 
 def _edit(path, old, new):
-    return asyncio.run(EditFileTool()(path=str(path), old_string=old, new_string=new))
+    # These tests isolate replacement semantics on pytest's temporary directory, which
+    # deliberately sits outside the configured agent workspace. Full access is explicit
+    # here; production calls use the registered tool's workspace fence.
+    tool = EditFileTool(permission_mode="danger_full_access")
+    return asyncio.run(tool(path=str(path), old_string=old, new_string=new))
 
 
 def test_a_string_that_appears_twice_is_refused(tmp_path):

@@ -29,23 +29,37 @@ ROOT = Path(__file__).resolve().parents[1]
 
 #: Directories whose Markdown is not ours to keep parsing: a vendored reference checkout,
 #: generated trees, and dependency installs.
-SKIP_DIRS = {"others", "node_modules", "output", ".git", ".venv", "venv",
-             "dist", "build", "__pycache__", ".pytest_cache"}
+SKIP_DIRS = {
+    "others",
+    "node_modules",
+    "output",
+    ".git",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    "__pycache__",
+    ".pytest_cache",
+}
 
 #: A block a reader is not meant to run as-is. Marked at the top of the block, in the block,
 #: so the reason travels with the code rather than living in a list somewhere else.
 FRAGMENT_MARKER = "# fragment"
 
-_BLOCK = re.compile(r"^```(?P<lang>[a-zA-Z0-9_+-]*)\s*$(?P<body>.*?)^```\s*$",
-                    re.DOTALL | re.MULTILINE)
+_BLOCK = re.compile(
+    r"^```(?P<lang>[a-zA-Z0-9_+-]*)\s*$(?P<body>.*?)^```\s*$", re.DOTALL | re.MULTILINE
+)
 
 #: Languages whose blocks this file parses. `py` and `python3` are the same request.
 PYTHON_LANGUAGES = {"python", "py", "python3"}
 
 
 def _documents() -> list[Path]:
-    return [path for path in sorted(ROOT.rglob("*.md"))
-            if not any(part in SKIP_DIRS for part in path.relative_to(ROOT).parts)]
+    return [
+        path
+        for path in sorted(ROOT.rglob("*.md"))
+        if not any(part in SKIP_DIRS for part in path.relative_to(ROOT).parts)
+    ]
 
 
 def _python_blocks(text: str):
@@ -54,15 +68,24 @@ def _python_blocks(text: str):
         if match.group("lang").lower() not in PYTHON_LANGUAGES:
             continue
         body = match.group("body")
-        line = text[:match.start()].count("\n") + 1
+        line = text[: match.start()].count("\n") + 1
         yield line, body
 
 
-#: Collected once so a document with no Python contributes no test rather than a skip.
-BLOCKS = [
-    pytest.param(path, line, body, id=f"{path.relative_to(ROOT)}:{line}")
+#: Group blocks by document.  A separate pytest item for every fenced block made
+#: collection dominate this otherwise cheap check (large skill references contain many
+#: snippets).  Grouping preserves every parse and every source line in the failure while
+#: paying pytest's parametrisation overhead only once per document.
+DOCUMENT_BLOCKS = [
+    (path, blocks)
     for path in _documents()
-    for line, body in _python_blocks(path.read_text(encoding="utf-8"))
+    if (blocks := list(_python_blocks(path.read_text(encoding="utf-8"))))
+]
+BLOCK_COUNT = sum(len(blocks) for _, blocks in DOCUMENT_BLOCKS)
+BLOCK_BATCH_SIZE = 25
+BLOCK_BATCHES = [
+    DOCUMENT_BLOCKS[index : index + BLOCK_BATCH_SIZE]
+    for index in range(0, len(DOCUMENT_BLOCKS), BLOCK_BATCH_SIZE)
 ]
 
 
@@ -81,19 +104,30 @@ def _is_fragment(body: str) -> bool:
     return False
 
 
-@pytest.mark.parametrize("path,line,body", BLOCKS)
-def test_a_python_block_in_a_document_parses(path: Path, line: int, body: str):
-    """Every ````python` block is valid Python, or says why it is not meant to be."""
-    if _is_fragment(body):
-        return
-    try:
-        ast.parse(body)
-    except SyntaxError as error:
-        pytest.fail(
-            f"{path.relative_to(ROOT)}:{line} — the Python block does not parse: {error.msg} "
-            f"(block line {error.lineno}). Fix the example, or open the block with "
-            f"`{FRAGMENT_MARKER}` if it is deliberately not a whole program."
-        )
+@pytest.mark.parametrize(
+    "documents",
+    BLOCK_BATCHES,
+    ids=lambda batch: f"{batch[0][0].relative_to(ROOT)}+{len(batch) - 1}",
+)
+def test_python_blocks_in_documents_parse(documents: list[tuple[Path, list[tuple[int, str]]]]):
+    """Every Python block is valid, retaining document and line in a batched failure."""
+    failures = []
+    for path, blocks in documents:
+        for line, body in blocks:
+            if _is_fragment(body):
+                continue
+            try:
+                ast.parse(body)
+            except SyntaxError as error:
+                failures.append(
+                    f"{path.relative_to(ROOT)}:{line} — {error.msg} (block line {error.lineno})"
+                )
+
+    assert not failures, (
+        "Python blocks that do not parse:\n  "
+        + "\n  ".join(failures)
+        + f"\nFix each example, or open a deliberate fragment with `{FRAGMENT_MARKER}`."
+    )
 
 
 def test_the_repository_actually_has_python_blocks_to_check():
@@ -103,8 +137,8 @@ def test_the_repository_actually_has_python_blocks_to_check():
     language tag — every example in the repository silently stops being checked, and the
     suite stays green. This is the check that notices.
     """
-    assert len(BLOCKS) >= 5, (
-        f"only {len(BLOCKS)} Python blocks found across the documentation — the fence "
+    assert BLOCK_COUNT >= 5, (
+        f"only {BLOCK_COUNT} Python blocks found across the documentation — the fence "
         f"pattern probably stopped matching"
     )
 
@@ -123,7 +157,7 @@ def test_the_reported_line_points_at_the_fence():
     """A failure message is only useful if it names where to look."""
     text = "intro\n\n```python\nx = 1\n```\n"
 
-    (line, _), = _python_blocks(text)
+    ((line, _),) = _python_blocks(text)
 
     assert line == 3
 

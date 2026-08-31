@@ -338,6 +338,7 @@ trainer = Trainer(
 Use LoRA for efficient fine-tuning:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 from peft import LoraConfig, get_peft_model
 
 lora_config = LoraConfig(
@@ -362,6 +363,7 @@ trainer.train()
 Reduce memory at cost of speed:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 model.gradient_checkpointing_enable()
 
 training_args = TrainingArguments(
@@ -373,6 +375,7 @@ training_args = TrainingArguments(
 ### Mixed Precision Training
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 training_args = TrainingArguments(
     fp16=True,  # For NVIDIA GPUs with Tensor Cores
     # or
@@ -406,6 +409,7 @@ For very large models:
 ```
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 training_args = TrainingArguments(
     deepspeed="ds_config.json",
     ...
@@ -425,6 +429,7 @@ Common starting points:
 Use Optuna for hyperparameter search:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 def model_init():
     return AutoModelForSequenceClassification.from_pretrained(
         "bert-base-uncased",
@@ -456,6 +461,7 @@ tensorboard --logdir ./logs
 
 Or Weights & Biases:
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 import wandb
 wandb.init(project="my-project")
 

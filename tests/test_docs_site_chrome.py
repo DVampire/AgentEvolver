@@ -5,9 +5,8 @@ their icons, column order, active state, and responsive breakpoints. The chrome 
 shared asset; this gate prevents a new page or later copy/paste from splitting it again.
 """
 
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -27,8 +26,13 @@ def test_every_public_page_uses_the_shared_chrome_and_favicon():
     for filename, current in PUBLIC_PAGES.items():
         body = (DOCS / filename).read_text(encoding="utf-8")
         expected = f'<nav data-ae-nav="{current}"></nav>'
-        for requirement in (expected, 'assets/chrome.css', 'assets/chrome.js',
-                            'assets/favicon.svg', '<ae-footer></ae-footer>'):
+        for requirement in (
+            expected,
+            "assets/chrome.css",
+            "assets/chrome.js",
+            "assets/favicon.svg",
+            "<ae-footer></ae-footer>",
+        ):
             if body.count(requirement) != 1:
                 problems.append(f"{filename}: expected exactly one {requirement!r}")
         if "🧬" in body or ">◆<" in body or "&#9670;" in body:

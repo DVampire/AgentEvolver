@@ -1,3 +1,10 @@
+"""Project instructions are layered by active path without crossing trust boundaries.
+
+Overrides must shadow ordinary files, nested rules must follow root-to-leaf order, and
+symlinks or paths outside the workspace must never import host content. Memory and Claude
+instructions remain compatible inputs alongside AGENTS files.
+"""
+
 from agentevolver.agent.project_context import load_project_context
 
 
@@ -30,3 +37,49 @@ def test_symlinked_override_falls_back_to_regular_agents_file(tmp_path):
     context = load_project_context(str(tmp_path))
 
     assert "project rules" in context and "host secret" not in context
+
+
+def test_project_context_layers_rules_for_active_task_paths(tmp_path):
+    source = tmp_path / "packages" / "api" / "handler.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("pass", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("root rule", encoding="utf-8")
+    (tmp_path / "packages" / "AGENTS.md").write_text("package rule", encoding="utf-8")
+    (source.parent / "AGENTS.override.md").write_text("api override", encoding="utf-8")
+    (source.parent / "AGENTS.md").write_text("shadowed api rule", encoding="utf-8")
+
+    context = load_project_context(str(tmp_path), [str(source)])
+
+    assert (
+        context.index("root rule") < context.index("package rule") < context.index("api override")
+    )
+    assert "shadowed api rule" not in context
+
+
+def test_project_context_ignores_active_paths_outside_workspace(tmp_path):
+    outside = tmp_path.parent / "outside-project-context"
+    outside.mkdir(exist_ok=True)
+    (outside / "AGENTS.md").write_text("outside rule", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("inside rule", encoding="utf-8")
+
+    context = load_project_context(str(tmp_path), [str(outside / "file.py")])
+
+    assert "inside rule" in context and "outside rule" not in context
+
+
+def test_project_context_budget_preserves_the_closest_scope(tmp_path):
+    source = tmp_path / "packages" / "api" / "handler.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("pass", encoding="utf-8")
+    (tmp_path / "MEMORY.md").write_text("root-memory-" * 4_000, encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("generic-root-rule", encoding="utf-8")
+    (source.parent / "AGENTS.md").write_text(
+        "closest-api-rule", encoding="utf-8",
+    )
+
+    context = load_project_context(str(tmp_path), [str(source)])
+
+    assert len(context) <= 32_000
+    assert "closest-api-rule" in context
+    assert "generic-root-rule" in context
+    assert context.index("generic-root-rule") < context.index("closest-api-rule")

@@ -29,9 +29,9 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from agentevolver.gateway.types import PROTOCOL_VERSION
 from agentevolver.gateway.service import AgentGateway
 from agentevolver.gateway.transport import create_websocket_app, serve_stdio
+from agentevolver.gateway.types import PROTOCOL_VERSION
 
 #: Any non-empty value works; the tests care about match/mismatch, not the secret.
 TOKEN = "a-shared-secret"
@@ -78,13 +78,17 @@ def test_a_socket_from_an_unlisted_origin_is_refused_even_with_the_right_token(g
     a socket, so an `or` here instead of an `and` would quietly undo it.
     """
     with pytest.raises(WebSocketDisconnect) as refused:
-        with guarded.websocket_connect(f"/ws?token={TOKEN}", headers={"origin": "http://evil.test"}):
+        with guarded.websocket_connect(
+            f"/ws?token={TOKEN}", headers={"origin": "http://evil.test"}
+        ):
             pass
 
     assert refused.value.code == 1008
 
 
-def test_the_token_may_arrive_as_a_bearer_header_instead_of_a_query_parameter(gateway: AgentGateway):
+def test_the_token_may_arrive_as_a_bearer_header_instead_of_a_query_parameter(
+    gateway: AgentGateway,
+):
     """A client that can set headers should not be forced to put the secret in the URL."""
     client = TestClient(create_websocket_app(gateway, token=TOKEN))
 
@@ -118,16 +122,22 @@ def test_an_unparseable_command_is_answered_and_the_socket_stays_open(gateway: A
     client = TestClient(create_websocket_app(gateway))
 
     with client.websocket_connect("/ws") as socket:
-        socket.send_text("{}")                      # valid JSON, not a command
+        socket.send_text("{}")  # valid JSON, not a command
         first = json.loads(socket.receive_text())
         assert first["ok"] is False
         assert first["error"]["code"] == "invalid_command"
 
         # The socket is still usable, which is the actual claim.
-        socket.send_text(json.dumps({
-            "id": "1", "method": "hello", "params": {},
-            "protocol_version": PROTOCOL_VERSION,
-        }))
+        socket.send_text(
+            json.dumps(
+                {
+                    "id": "1",
+                    "method": "hello",
+                    "params": {},
+                    "protocol_version": PROTOCOL_VERSION,
+                }
+            )
+        )
         assert json.loads(socket.receive_text())["id"] == "1"
 
 
@@ -191,10 +201,14 @@ def test_stdio_answers_a_real_command_and_releases_its_subscription_at_eof(gatew
     raised, the release would be skipped and the queue would be left attached to a
     gateway that has no way to reach this process again.
     """
-    command = json.dumps({
-        "id": "hello-1", "method": "hello", "params": {},
-        "protocol_version": PROTOCOL_VERSION,
-    })
+    command = json.dumps(
+        {
+            "id": "hello-1",
+            "method": "hello",
+            "params": {},
+            "protocol_version": PROTOCOL_VERSION,
+        }
+    )
 
     written = _run_stdio(gateway, command + "\n")
 
@@ -213,8 +227,9 @@ def test_health_names_the_protocol_version_it_speaks(guarded: TestClient):
     assert body == {"ok": True, "protocol_version": PROTOCOL_VERSION}
 
 
-@pytest.mark.parametrize("route", ["/ide/resolve/no-such-session",
-                                   "/science/resolve/no-such-session"])
+@pytest.mark.parametrize(
+    "route", ["/ide/resolve/no-such-session", "/science/resolve/no-such-session"]
+)
 def test_resolving_an_unknown_session_reveals_nothing_about_it(guarded: TestClient, route: str):
     """404 for "no such session" and 404 for "not yours" are the same answer on purpose.
 

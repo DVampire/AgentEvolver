@@ -13,8 +13,6 @@ import asyncio
 import contextlib
 import io
 
-import pytest
-
 from agentevolver.agent.types import _EMPTY_TURNS_BEFORE_GIVING_UP
 
 
@@ -76,8 +74,14 @@ def _run_with_stubbed_turn(decision_sequence):
     return run, concluded
 
 
-EMPTY = {"tool_calls": [], "routing": {}, "reasoning": "", "step_tokens": 0,
-         "step_usage": None, "error": None}
+EMPTY = {
+    "tool_calls": [],
+    "routing": {},
+    "reasoning": "",
+    "step_tokens": 0,
+    "step_usage": None,
+    "error": None,
+}
 TEXT_ONLY = {**EMPTY, "reasoning": "I am thinking about what to do next."}
 
 
@@ -89,7 +93,8 @@ def test_a_run_of_empty_turns_stops_before_the_budget_is_gone():
     assert run.done is False
     assert run.step <= _EMPTY_TURNS_BEFORE_GIVING_UP + 1, (
         f"took {run.step} steps to stop on empty turns; the ceiling is "
-        f"{_EMPTY_TURNS_BEFORE_GIVING_UP}")
+        f"{_EMPTY_TURNS_BEFORE_GIVING_UP}"
+    )
     assert "empty" in (run.result or "").lower()
 
 
@@ -119,7 +124,6 @@ def test_text_only_turns_are_not_counted_as_empty():
         return []
 
     reached_max = {"hit": False}
-    orig = agent._conclude
 
     async def fake_conclude(run):
         reached_max["hit"] = True
@@ -145,4 +149,5 @@ def test_text_only_turns_are_not_counted_as_empty():
     # killed early.
     assert run.step >= _EMPTY_TURNS_BEFORE_GIVING_UP + 3, (
         f"a text-only run stopped at step {run.step}, before its step ceiling — the "
-        f"empty-turn guard counted turns that had reasoning")
+        f"empty-turn guard counted turns that had reasoning"
+    )

@@ -77,10 +77,14 @@ async def test_identity_and_arguments_cannot_be_rewritten_by_a_guard(tmp_path):
     assert meta["project_id"] == "session-1"
     assert meta["tool_version"] == "3.2.1"
     assert (meta["call_id"], meta["root_call_id"], meta["parent_call_id"]) == (
-        "sub-1", "root-1", "parent-1",
+        "sub-1",
+        "root-1",
+        "parent-1",
     )
     assert (meta["session_id"], meta["task_id"], meta["step_number"]) == (
-        "session-1", "task-1", 4,
+        "session-1",
+        "task-1",
+        4,
     )
 
 
@@ -112,7 +116,8 @@ async def test_tool_owned_permission_intent_is_checked_before_the_body(tmp_path)
     class ShellLike(EchoTool):
         def permission_request(self, arguments, ctx=None):
             return PermissionRequest(
-                op=Operation.BASH, target=str(arguments.get("value") or ""),
+                op=Operation.BASH,
+                target=str(arguments.get("value") or ""),
             )
 
         async def __call__(self, value: str, **kwargs):
@@ -123,7 +128,8 @@ async def test_tool_owned_permission_intent_is_checked_before_the_body(tmp_path)
     permission_manager.register("echo_tool", mode=PermissionMode.READ_ONLY)
     try:
         response = await manager_for(tmp_path, ShellLike())(
-            name="echo_tool", input={"value": "python -c 'open(\"x\",\"w\")'"},
+            name="echo_tool",
+            input={"value": 'python -c \'open("x","w")\''},
         )
     finally:
         permission_manager.unregister("echo_tool")
@@ -143,7 +149,8 @@ async def test_destructive_permission_warning_routes_through_approval(tmp_path):
 
         def permission_request(self, arguments, ctx=None):
             return PermissionRequest(
-                op=Operation.BASH, target=str(arguments.get("value") or ""),
+                op=Operation.BASH,
+                target=str(arguments.get("value") or ""),
             )
 
         async def __call__(self, value: str, **kwargs):
@@ -173,7 +180,8 @@ async def test_broken_permission_intent_fails_closed_as_a_guard_error(tmp_path):
             raise RuntimeError("policy backend unavailable")
 
     response = await manager_for(tmp_path, BrokenPolicy())(
-        name="echo_tool", input={"value": "x"},
+        name="echo_tool",
+        input={"value": "x"},
     )
 
     assert response.success is False
@@ -209,8 +217,9 @@ async def test_explicit_one_shot_approval_allows_the_same_guard(tmp_path):
     manager = manager_for(tmp_path)
     manager.guard(lambda execution: ToolPolicyDecision.ask("confirm deployment"))
     manager.set_approval_resolver(
-        lambda execution, reason: execution.tool_name == "echo_tool"
-        and reason == "confirm deployment"
+        lambda execution, reason: (
+            execution.tool_name == "echo_tool" and reason == "confirm deployment"
+        )
     )
 
     response = await manager(name="echo_tool", input={"value": "approved"})
@@ -226,7 +235,8 @@ async def test_tool_exception_and_invalid_result_are_normalized(tmp_path):
             raise LookupError("backend disappeared")
 
     failure = await manager_for(tmp_path, Boom())(
-        name="echo_tool", input={"value": "x"},
+        name="echo_tool",
+        input={"value": "x"},
     )
     assert failure.success is False
     assert failure.extra["execution"]["error_code"] == "execution_error"
@@ -237,7 +247,8 @@ async def test_tool_exception_and_invalid_result_are_normalized(tmp_path):
             return {"message": value}
 
     invalid = await manager_for(tmp_path, BadResult())(
-        name="echo_tool", input={"value": "x"},
+        name="echo_tool",
+        input={"value": "x"},
     )
     assert invalid.success is False
     assert invalid.extra["execution"]["error_code"] == "invalid_result"
@@ -252,7 +263,9 @@ async def test_postprocessing_cannot_launder_a_tool_failure(tmp_path):
     manager = manager_for(tmp_path, Refusal())
     manager.postprocess(
         lambda execution, response: Response(
-            type=ResponseType.TOOL, success=True, message="pretend it worked",
+            type=ResponseType.TOOL,
+            success=True,
+            message="pretend it worked",
         )
     )
     response = await manager(name="echo_tool", input={"value": "x"})
@@ -332,23 +345,28 @@ async def test_trace_keeps_the_pipeline_outcome_beside_the_tool_result(monkeypat
         "error_code": "timeout",
     }
     hook = TraceHook()
-    await hook.handle(HookContext(
-        id="session-1",
-        name="trace_hook",
-        input={
-            "event": HookEvent.POST_ACTION,
-            "agent_name": "agent",
-            "task_id": "task-1",
-            "step_number": 1,
-            "action": {
-                "index": 0, "id": "call-1", "type": "tool",
-                "name": "echo_tool", "args_parsed": {"value": "x"},
+    await hook.handle(
+        HookContext(
+            id="session-1",
+            name="trace_hook",
+            input={
+                "event": HookEvent.POST_ACTION,
+                "agent_name": "agent",
+                "task_id": "task-1",
+                "step_number": 1,
+                "action": {
+                    "index": 0,
+                    "id": "call-1",
+                    "type": "tool",
+                    "name": "echo_tool",
+                    "args_parsed": {"value": "x"},
+                },
+                "action_result": "timed out",
+                "error": "timed out",
+                "execution_meta": execution_meta,
             },
-            "action_result": "timed out",
-            "error": "timed out",
-            "execution_meta": execution_meta,
-        },
-    ))
+        )
+    )
 
     assert emitted[0].metadata["execution"] == execution_meta
     assert emitted[0].metadata["call_id"] == "call-1"

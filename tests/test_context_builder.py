@@ -1,4 +1,12 @@
+"""Trace events rebuild a provider-ready context without collapsing its layers.
+
+Anchors, compacted checkpoints, recent turns, and the live tail have different caching
+and replay semantics. These tests keep their ordering, provenance, provider state, and
+protocol validation intact as the trace representation evolves.
+"""
+
 import asyncio
+
 import pytest
 
 from agentevolver.agent.context_builder import (
@@ -36,48 +44,60 @@ def _number(events):
 
 
 def test_builder_keeps_anchor_checkpoint_recent_turns_and_live_tail_separate():
-    events = _number([
-        agent_start_event("s", "t", "a", "fix the bug"),
-        tool_start_event("s", "t", "a", 1, 0, "bash_tool", {"command": "cat a"}, "c1"),
-        tool_call_event("s", "t", "a", 1, 0, "bash_tool", "old", True, call_id="c1"),
-        agent_call_event("s", "t", "a", 1, "inspect"),
-    ])
-    events.append(TraceEvent(
-        event_type=TraceEventType.CUSTOM,
-        session_id="s",
-        seq_no=4,
-        message="Found the faulty branch.",
-        metadata={"type": "compaction"},
-        surface_op=replace_op(0, 3),
-        source_event_seqs=[0, 2, 3],
-        provider_state={
-            "responses": {
-                "compaction_items": [
-                    {"type": "compaction", "encrypted_content": "opaque"}
-                ]
-            }
-        },
-    ))
-    events.extend(_number([
-        tool_start_event("s", "t", "a", 2, 0, "bash_tool", {"command": "git diff"}, "c2"),
-        tool_call_event("s", "t", "a", 2, 0, "bash_tool", "diff", True, call_id="c2"),
-        agent_call_event("s", "t", "a", 2, "verify"),
-    ]))
+    events = _number(
+        [
+            agent_start_event("s", "t", "a", "fix the bug"),
+            tool_start_event("s", "t", "a", 1, 0, "bash_tool", {"command": "cat a"}, "c1"),
+            tool_call_event("s", "t", "a", 1, 0, "bash_tool", "old", True, call_id="c1"),
+            agent_call_event("s", "t", "a", 1, "inspect"),
+        ]
+    )
+    events.append(
+        TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id="s",
+            seq_no=4,
+            message="Found the faulty branch.",
+            metadata={"type": "compaction"},
+            surface_op=replace_op(0, 3),
+            source_event_seqs=[0, 2, 3],
+            provider_state={
+                "responses": {
+                    "compaction_items": [{"type": "compaction", "encrypted_content": "opaque"}]
+                }
+            },
+        )
+    )
+    events.extend(
+        _number(
+            [
+                tool_start_event("s", "t", "a", 2, 0, "bash_tool", {"command": "git diff"}, "c2"),
+                tool_call_event("s", "t", "a", 2, 0, "bash_tool", "diff", True, call_id="c2"),
+                agent_call_event("s", "t", "a", 2, "verify"),
+            ]
+        )
+    )
     for seq, event in enumerate(events):
         event.seq_no = seq
 
     rendered = [
         SystemMessage(content="rules"),
-        HumanMessage(content=(
-            "<capability-context><tool-context>bash</tool-context></capability-context>"
-            "<agent-context><task>duplicate</task><constraints>10 left</constraints>"
-            "<recent-steps>duplicate</recent-steps></agent-context>"
-        )),
+        HumanMessage(
+            content=(
+                "<capability-context><tool-context>bash</tool-context></capability-context>"
+                "<agent-context><task>duplicate</task><constraints>10 left</constraints>"
+                "<recent-steps>duplicate</recent-steps></agent-context>"
+            )
+        ),
     ]
     messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
 
     assert [type(message) for message in messages] == [
-        SystemMessage, HumanMessage, CompactionMessage, AssistantMessage, ToolMessage,
+        SystemMessage,
+        HumanMessage,
+        CompactionMessage,
+        AssistantMessage,
+        ToolMessage,
         HumanMessage,
     ]
     assert messages[1].cache is True
@@ -93,22 +113,25 @@ def test_builder_keeps_anchor_checkpoint_recent_turns_and_live_tail_separate():
 
 
 def test_envelope_makes_the_four_layers_explicit_before_flattening():
-    events = _number([
-        agent_start_event("s", "t", "a", "task"),
-        agent_call_event("s", "t", "a", 1, assistant_text="done"),
-    ])
+    events = _number(
+        [
+            agent_start_event("s", "t", "a", "task"),
+            agent_call_event("s", "t", "a", 1, assistant_text="done"),
+        ]
+    )
     rendered = [
         SystemMessage(content="rules"),
         HumanMessage(content="<task>task</task><constraints>one step</constraints>"),
     ]
 
-    envelope = ContextBuilder().build_envelope(
-        rendered, events, type("C", (), {"extra": {}})()
-    )
+    envelope = ContextBuilder().build_envelope(rendered, events, type("C", (), {"extra": {}})())
     messages = envelope.flatten()
 
     assert [message.context_layer for message in messages] == [
-        "fixed", "fixed", "recent", "live",
+        "fixed",
+        "fixed",
+        "recent",
+        "live",
     ]
     assert set(messages.layer_tokens) == {"fixed", "checkpoint", "recent", "live"}
     assert all(value >= 0 for value in messages.layer_tokens.values())
@@ -125,33 +148,41 @@ def test_envelope_rejects_orphan_and_incomplete_tool_turns():
     with pytest.raises(ContextProtocolError, match="orphan tool result"):
         ContextEnvelope(recent=(ToolMessage(content="x", tool_call_id="missing"),)).validate()
 
-    assistant = AssistantMessage(content="", tool_calls=[ToolCall(
-        id="call-1", function=Function(name="bash", arguments="{}")
-    )])
+    assistant = AssistantMessage(
+        content="",
+        tool_calls=[ToolCall(id="call-1", function=Function(name="bash", arguments="{}"))],
+    )
     with pytest.raises(ContextProtocolError, match="tool turn is incomplete"):
         ContextEnvelope(recent=(assistant,)).validate()
 
 
 def test_envelope_accepts_one_complete_parallel_tool_batch():
-    assistant = AssistantMessage(content="", tool_calls=[
-        ToolCall(id="call-1", function=Function(name="a", arguments="{}")),
-        ToolCall(id="call-2", function=Function(name="b", arguments="{}")),
-    ])
-    envelope = ContextEnvelope(recent=(
-        assistant,
-        ToolMessage(content="one", tool_call_id="call-1"),
-        ToolMessage(content="two", tool_call_id="call-2"),
-    ))
+    assistant = AssistantMessage(
+        content="",
+        tool_calls=[
+            ToolCall(id="call-1", function=Function(name="a", arguments="{}")),
+            ToolCall(id="call-2", function=Function(name="b", arguments="{}")),
+        ],
+    )
+    envelope = ContextEnvelope(
+        recent=(
+            assistant,
+            ToolMessage(content="one", tool_call_id="call-1"),
+            ToolMessage(content="two", tool_call_id="call-2"),
+        )
+    )
 
     assert len(envelope.validate().flatten()) == 3
 
 
 def test_private_reasoning_is_not_replayed_as_assistant_text():
     event = agent_call_event("s", "t", "a", 1, reasoning="hidden chain", assistant_text="")
-    events = _number([
-        agent_start_event("s", "t", "a", "task"),
-        event,
-    ])
+    events = _number(
+        [
+            agent_start_event("s", "t", "a", "task"),
+            event,
+        ]
+    )
     rendered = [SystemMessage(content="rules"), HumanMessage(content="<task>task</task>")]
 
     messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
@@ -160,22 +191,28 @@ def test_private_reasoning_is_not_replayed_as_assistant_text():
 
 
 def test_native_claude_checkpoint_becomes_the_cache_anchor():
-    events = _number([
-        agent_start_event("s", "t", "a", "task"),
-        agent_call_event("s", "t", "a", 1, assistant_text="done"),
-    ])
-    events.append(TraceEvent(
-        event_type=TraceEventType.CUSTOM,
-        session_id="s",
-        seq_no=2,
-        message="canonical summary",
-        metadata={"type": "compaction"},
-        surface_op=replace_op(0, 1),
-        source_event_seqs=[0, 1],
-        provider_state={"anthropic": {"compaction_blocks": [
-            {"type": "compaction", "content": "canonical summary"}
-        ]}},
-    ))
+    events = _number(
+        [
+            agent_start_event("s", "t", "a", "task"),
+            agent_call_event("s", "t", "a", 1, assistant_text="done"),
+        ]
+    )
+    events.append(
+        TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id="s",
+            seq_no=2,
+            message="canonical summary",
+            metadata={"type": "compaction"},
+            surface_op=replace_op(0, 1),
+            source_event_seqs=[0, 1],
+            provider_state={
+                "anthropic": {
+                    "compaction_blocks": [{"type": "compaction", "content": "canonical summary"}]
+                }
+            },
+        )
+    )
     rendered = [SystemMessage(content="rules"), HumanMessage(content="<task>task</task>")]
 
     messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
@@ -188,10 +225,12 @@ def test_native_claude_checkpoint_becomes_the_cache_anchor():
 
 def test_provider_replay_state_survives_trace_projection():
     state = {"responses": {"reasoning_items": [{"type": "reasoning", "id": "r1"}]}}
-    events = _number([
-        agent_start_event("s", "t", "a", "task"),
-        agent_call_event("s", "t", "a", 1, provider_state=state),
-    ])
+    events = _number(
+        [
+            agent_start_event("s", "t", "a", "task"),
+            agent_call_event("s", "t", "a", 1, provider_state=state),
+        ]
+    )
     rendered = [SystemMessage(content="rules"), HumanMessage(content="<task>task</task>")]
 
     messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
@@ -203,26 +242,31 @@ def test_provider_replay_state_survives_trace_projection():
 def test_compaction_drops_old_provider_state_and_keeps_the_exact_recent_turn():
     old = {"responses": {"reasoning_items": [{"type": "reasoning", "id": "old"}]}}
     recent = {"responses": {"reasoning_items": [{"type": "reasoning", "id": "recent"}]}}
-    events = _number([
-        agent_start_event("s", "t", "a", "task"),
-        agent_call_event("s", "t", "a", 1, provider_state=old),
-    ])
-    events.append(TraceEvent(
-        event_type=TraceEventType.CUSTOM,
-        session_id="s",
-        seq_no=2,
-        message="Old step completed.",
-        metadata={"type": "compaction"},
-        surface_op=replace_op(0, 1),
-        source_event_seqs=[0, 1],
-    ))
+    events = _number(
+        [
+            agent_start_event("s", "t", "a", "task"),
+            agent_call_event("s", "t", "a", 1, provider_state=old),
+        ]
+    )
+    events.append(
+        TraceEvent(
+            event_type=TraceEventType.CUSTOM,
+            session_id="s",
+            seq_no=2,
+            message="Old step completed.",
+            metadata={"type": "compaction"},
+            surface_op=replace_op(0, 1),
+            source_event_seqs=[0, 1],
+        )
+    )
     events.append(agent_call_event("s", "t", "a", 2, provider_state=recent))
     events[-1].seq_no = 3
     rendered = [SystemMessage(content="rules"), HumanMessage(content="<task>task</task>")]
 
     messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
     states = [
-        message.provider_state for message in messages
+        message.provider_state
+        for message in messages
         if isinstance(message, AssistantMessage) and message.provider_state
     ]
 
@@ -230,16 +274,20 @@ def test_compaction_drops_old_provider_state_and_keeps_the_exact_recent_turn():
 
 
 def test_template_comments_are_not_sent_but_task_comments_remain():
-    events = _number([
-        agent_start_event("s", "t", "a", "fix <!-- meaningful fixture -->"),
-    ])
+    events = _number(
+        [
+            agent_start_event("s", "t", "a", "fix <!-- meaningful fixture -->"),
+        ]
+    )
     rendered = [
         SystemMessage(content="rules <!-- maintainer note -->"),
-        HumanMessage(content=(
-            "<!-- module documentation -->"
-            "<agent-context><task>stale</task>"
-            "<constraints>10 left</constraints></agent-context>"
-        )),
+        HumanMessage(
+            content=(
+                "<!-- module documentation -->"
+                "<agent-context><task>stale</task>"
+                "<constraints>10 left</constraints></agent-context>"
+            )
+        ),
     ]
 
     messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
@@ -252,11 +300,13 @@ def test_template_comments_are_not_sent_but_task_comments_remain():
 def test_first_request_strips_template_comments_without_losing_task_comments():
     rendered = [
         SystemMessage(content="rules <!-- maintainer note -->"),
-        HumanMessage(content=(
-            "<!-- module documentation -->"
-            "<agent-context><task>fix <!-- task fixture --> it</task>"
-            "<constraints>10 left</constraints></agent-context>"
-        )),
+        HumanMessage(
+            content=(
+                "<!-- module documentation -->"
+                "<agent-context><task>fix <!-- task fixture --> it</task>"
+                "<constraints>10 left</constraints></agent-context>"
+            )
+        ),
     ]
 
     messages = ContextBuilder().build(rendered, [], type("C", (), {"extra": {}})())
@@ -268,10 +318,14 @@ def test_first_request_strips_template_comments_without_losing_task_comments():
 
 
 def test_rendered_fallback_preserves_comments_inside_memory_payloads():
-    rendered = [HumanMessage(content=(
-        "<!-- template note -->"
-        "<working-memory>code has <!-- meaningful --> marker</working-memory>"
-    ))]
+    rendered = [
+        HumanMessage(
+            content=(
+                "<!-- template note -->"
+                "<working-memory>code has <!-- meaningful --> marker</working-memory>"
+            )
+        )
+    ]
 
     cleaned = strip_rendered_comments(rendered)[0].text
 
@@ -295,20 +349,24 @@ def test_trace_hook_hands_memory_the_same_numbered_event(monkeypatch):
 
     monkeypatch.setattr(trace_manager, "emit", emit)
     monkeypatch.setattr(memory_manager, "consume_trace_event", consume)
-    asyncio.run(TraceHook().handle(HookContext(
-        id="s",
-        name="trace_hook",
-        input={
-            "event": HookEvent.POST_ACTION,
-            "agent_name": "a",
-            "task_id": "t",
-            "step_number": 1,
-            "action": {"type": "tool", "name": "bash_tool", "id": "c1"},
-            "action_result": "ok",
-            "use_memory": True,
-            "memory_name": "file_system_memory",
-        },
-    )))
+    asyncio.run(
+        TraceHook().handle(
+            HookContext(
+                id="s",
+                name="trace_hook",
+                input={
+                    "event": HookEvent.POST_ACTION,
+                    "agent_name": "a",
+                    "task_id": "t",
+                    "step_number": 1,
+                    "action": {"type": "tool", "name": "bash_tool", "id": "c1"},
+                    "action_result": "ok",
+                    "use_memory": True,
+                    "memory_name": "file_system_memory",
+                },
+            )
+        )
+    )
 
     assert seen[0][1] is seen[1][1]
     assert seen[1][1].seq_no == 17

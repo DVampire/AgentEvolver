@@ -31,6 +31,7 @@ from agentevolver.version import version_manager
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.registry import TOOL
 from agentevolver.permission import permission_manager, PermissionMode
+from agentevolver.session import isolated_workspace_root
 
 _UNSET = object()  # sentinel: get_instruction cache is empty / invalidated
 
@@ -1041,6 +1042,7 @@ class ToolContextManager(BaseModel):
             result = permission_manager.check(
                 tool_instance.name,
                 request,
+                workspace=isolated_workspace_root(ctx),
             )
             if not result.allowed:
                 return ToolPolicyDecision.deny(

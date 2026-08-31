@@ -15,9 +15,13 @@ collectable-whenever, and both strand a child.
 """
 
 import asyncio
+import contextlib
+import io
+from types import SimpleNamespace
 
 import pytest
 
+from agentevolver.agent.types import _delegation_summary
 from agentevolver.job import job_manager
 from agentevolver.job.types import JobStatus
 from agentevolver.plan.server import action_is_allowed
@@ -42,7 +46,7 @@ class _Child:
     def __init__(self, delay: float = 0.0, succeed: bool = True):
         self.delay = delay
         self.succeed = succeed
-        self.turns = []          # (task, ctx) per turn, in the order they were run
+        self.turns = []  # (task, ctx) per turn, in the order they were run
         self.running = 0
         self.overlapped = False  # True if two turns were ever in flight at once
 
@@ -55,9 +59,13 @@ class _Child:
         await asyncio.sleep(self.delay)
         self.running -= 1
         if msg.reply_future is not None and not msg.reply_future.done():
-            msg.reply_future.set_result(Response(
-                type=ResponseType.AGENT, success=self.succeed,
-                message=f"answer {len(self.turns)}"))
+            msg.reply_future.set_result(
+                Response(
+                    type=ResponseType.AGENT,
+                    success=self.succeed,
+                    message=f"answer {len(self.turns)}",
+                )
+            )
 
 
 class _Parent:
@@ -98,6 +106,7 @@ async def _report(job_id: str, output: str):
     Going through the tool rather than re-implementing its one line is what stops these
     assertions from passing while the thing that actually writes the transcript is broken.
     """
+
     class _Ctx:
         extra = {"report_job_id": job_id, "report_agent_name": ""}
 
@@ -123,7 +132,7 @@ async def _until(predicate, timeout=5.0):
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
 async def test_a_background_child_is_a_job_rather_than_a_second_registry():
-    """"What is running" has to have one answer.
+    """ "What is running" has to have one answer.
 
     A separate sub-agent registry would mean `job_list_tool` shows the backgrounded
     shell command and not the backgrounded child — wrong in exactly the moment the
@@ -206,8 +215,7 @@ async def test_a_continuable_child_outlives_its_own_answer():
     running and the parent can still reach it.
     """
     child = _Child()
-    sub = await _start(child, "first task", continuable=True,
-                                       parent_ctx=_Parent())
+    sub = await _start(child, "first task", continuable=True, parent_ctx=_Parent())
 
     assert await _until(lambda: sub.alive and not sub.busy)
     assert sub.alive
@@ -217,8 +225,7 @@ async def test_a_continuable_child_outlives_its_own_answer():
 @pytest.mark.asyncio
 async def test_a_message_becomes_the_continuable_child_s_next_turn():
     child = _Child()
-    sub = await _start(child, "first task", continuable=True,
-                                       parent_ctx=_Parent())
+    sub = await _start(child, "first task", continuable=True, parent_ctx=_Parent())
     assert await _until(lambda: sub.alive and not sub.busy)
 
     await runtime_manager.send_to_child(sub.job_id, "second task", session_id=SESSION)
@@ -317,8 +324,7 @@ async def test_one_session_cannot_send_work_into_another_session_s_child():
     sub = await _start(child, "first", continuable=True, parent_ctx=_Parent())
     assert await _until(lambda: sub.alive and not sub.busy)
 
-    sent = await runtime_manager.send_to_child(sub.job_id, "more work",
-                                               session_id="other-session")
+    sent = await runtime_manager.send_to_child(sub.job_id, "more work", session_id="other-session")
     assert not sent.success and "another session" in sent.message
 
 
@@ -350,6 +356,7 @@ async def test_a_report_from_a_foreground_child_still_reaches_its_parent():
     Folding it into the returned result is what keeps `report_tool` from meaning
     different things depending on how the parent happened to dispatch.
     """
+
     class _Reporting(_Child):
         async def handle(self, msg, ref):
             if isinstance(msg, TaskMessage):
@@ -389,8 +396,7 @@ async def test_killing_the_job_actually_stops_the_child():
     without stopping the pump leaves exactly that lie behind.
     """
     child = _Child(delay=5.0)
-    sub = await _start(child, "a long job", continuable=True,
-                                       parent_ctx=_Parent())
+    sub = await _start(child, "a long job", continuable=True, parent_ctx=_Parent())
     ref_name = sub.name
 
     assert job_manager.kill(sub.job_id) is True
@@ -421,8 +427,7 @@ async def test_a_background_child_does_not_outlive_the_run_that_started_it():
     tokens against a run that is over.
     """
     child = _Child(delay=5.0)
-    sub = await _start(child, "a long job", continuable=True,
-                                       parent_ctx=_Parent())
+    sub = await _start(child, "a long job", continuable=True, parent_ctx=_Parent())
     ref_name = sub.name
 
     runtime_manager.forget(SESSION)
@@ -438,10 +443,10 @@ async def test_reaping_one_session_leaves_another_session_s_children_alone():
     A reaper that walked every child would end a concurrent run's worker the moment any
     other run finished.
     """
-    mine = await _start(_Child(delay=5.0), "mine", continuable=True,
-                                        parent_ctx=_Parent())
-    theirs = await _start(_Child(delay=5.0), "theirs", continuable=True,
-                                          parent_ctx=_Parent(id="other-session"))
+    mine = await _start(_Child(delay=5.0), "mine", continuable=True, parent_ctx=_Parent())
+    theirs = await _start(
+        _Child(delay=5.0), "theirs", continuable=True, parent_ctx=_Parent(id="other-session")
+    )
 
     runtime_manager.forget(SESSION)
 
@@ -486,8 +491,7 @@ def test_backgrounding_does_not_smuggle_a_dispatch_past_the_plan_gate():
     refused" is to make the kind judgeable.
     """
     assert action_is_allowed("agent", "general_agent", {"mutates": False}) is False
-    assert action_is_allowed("agent", "general_agent",
-                             {"permission_mode": "read_only"}) is False
+    assert action_is_allowed("agent", "general_agent", {"permission_mode": "read_only"}) is False
 
 
 @pytest.mark.asyncio
@@ -504,3 +508,154 @@ async def test_the_dispatch_schema_offers_backgrounding_to_the_model():
     properties = AgentManagerServer._dispatch_parameters()["properties"]
     assert "run_in_background" in properties
     assert "continuable" in properties
+
+
+# --------------------------------------------------------------------------- #
+# Outcome envelope returned to the parent
+# --------------------------------------------------------------------------- #
+def test_a_clean_finish_is_labelled_finished_with_its_cost():
+    envelope = _delegation_summary(
+        {"done": True, "stopped_by_constraint": False, "step": 40, "max_step": 50}
+    )
+    assert "finished" in envelope
+    assert "40/50 steps" in envelope
+    assert "PARTIAL" not in envelope
+
+
+@pytest.mark.parametrize(
+    ("data", "reason"),
+    [
+        (
+            {"done": False, "stopped_by_constraint": False, "step": 50, "max_step": 50},
+            "step ceiling",
+        ),
+        (
+            {"done": False, "stopped_by_constraint": True, "step": 30, "max_step": 100},
+            "resource limit",
+        ),
+        (
+            {"done": False, "stopped_by_constraint": False, "step": 12, "max_step": 100},
+            "12/100 steps",
+        ),
+    ],
+    ids=("step-ceiling", "resource-limit", "unfinished"),
+)
+def test_an_unfinished_dispatch_is_labelled_partial(data, reason):
+    """Every non-terminal outcome tells the parent why it must continue the work."""
+    envelope = _delegation_summary(data)
+    assert "PARTIAL" in envelope
+    assert reason in envelope
+
+
+def test_an_unbounded_child_does_not_show_a_sentinel_denominator():
+    """The internal 1e8 sentinel is implementation noise, not a useful budget."""
+    envelope = _delegation_summary({"done": True, "step": 5, "max_step": int(1e8)})
+    assert "100000000" not in envelope
+    assert "used 5 steps" in envelope
+
+
+def test_missing_dispatch_data_yields_no_envelope():
+    assert _delegation_summary(None) == ""
+    assert _delegation_summary({}) == ""
+
+
+def test_the_dispatch_envelope_is_one_trailing_tagged_line():
+    """The status is append-only and cannot disturb the worker's own result text."""
+    envelope = _delegation_summary({"done": True, "step": 1, "max_step": 5})
+    assert envelope.startswith("\n\n[dispatch status:")
+    assert envelope.rstrip().endswith("]")
+    assert envelope.count("[dispatch status:") == 1
+
+
+async def _invoke_agent_route(monkeypatch, delegated_response):
+    """Invoke an agent route while replacing only the child lookup and delegation call."""
+    import agentevolver.agent.server as server_module
+    import agentevolver.runtime as runtime_module
+    from agentevolver.agent.actor.general_agent import GeneralAgent
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        agent = GeneralAgent(base_dir="/tmp/agentevolver-delegation-test")
+
+    async def fake_get(name):
+        return object()
+
+    async def fake_delegate(child, task, **brief):
+        return delegated_response
+
+    # monkeypatch restores these process-global singletons after each case. The previous
+    # standalone test assigned them directly and could leak its stubs into later files.
+    monkeypatch.setattr(server_module.agent_manager, "get", fake_get)
+    monkeypatch.setattr(runtime_module.runtime_manager, "delegate", fake_delegate)
+
+    call = SimpleNamespace(
+        input={"task": "implement the query command"},
+        id="c1",
+        name="code_agent",
+    )
+    result = await agent._invoke_capability(("agent", "code_agent"), call, ctx=None)
+    return result[0], result[4]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response", "expected"),
+    [
+        (
+            Response(
+                type=ResponseType.AGENT,
+                success=False,
+                message="Implemented src/cmd/query.rs; the aging edge case is unfinished.",
+                data={"done": False, "stopped_by_constraint": False, "step": 50, "max_step": 50},
+            ),
+            "step ceiling",
+        ),
+        (
+            Response(
+                type=ResponseType.AGENT,
+                success=False,
+                message="Wrote the parser; ran out of time before the tests.",
+                data={"done": False, "stopped_by_constraint": True, "step": 20, "max_step": 50},
+            ),
+            "resource limit",
+        ),
+    ],
+    ids=("step-ceiling", "resource-limit"),
+)
+async def test_partial_work_is_returned_as_an_observation(monkeypatch, response, expected):
+    """Budget exhaustion preserves useful work instead of turning it into a hard error."""
+    output, error = await _invoke_agent_route(monkeypatch, response)
+    assert response.message in output
+    assert "PARTIAL" in output and expected in output
+    assert error is None
+
+
+@pytest.mark.asyncio
+async def test_a_clean_dispatch_still_carries_the_finished_envelope(monkeypatch):
+    response = Response(
+        type=ResponseType.AGENT,
+        success=True,
+        message="Done: query command implemented and verified.",
+        data={"done": True, "stopped_by_constraint": False, "step": 30, "max_step": 50},
+    )
+
+    output, error = await _invoke_agent_route(monkeypatch, response)
+
+    assert "query command implemented" in output
+    assert "finished" in output and "30/50 steps" in output
+    assert error is None
+
+
+@pytest.mark.asyncio
+async def test_a_genuine_early_dispatch_failure_keeps_its_error_flag(monkeypatch):
+    """Only budget exhaustion is partial progress; provider failures remain failures."""
+    response = Response(
+        type=ResponseType.AGENT,
+        success=False,
+        message="The model could not be called: model not found.",
+        data={"done": False, "stopped_by_constraint": False, "step": 1, "max_step": 50},
+    )
+
+    output, error = await _invoke_agent_route(monkeypatch, response)
+
+    assert "model could not be called" in output
+    assert error is not None and "model not found" in error

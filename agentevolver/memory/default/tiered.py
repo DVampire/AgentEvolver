@@ -25,8 +25,8 @@ fallback logic lives in exactly one place.
 
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import json
 import os
 import re
@@ -36,14 +36,12 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Deque, Dict, List, Optional
 
-from agentevolver.paths import path_manager
-
 from pydantic import BaseModel, Field
 
 from agentevolver.logger import logger
 from agentevolver.memory.types import Memory
-from agentevolver.message.types import HumanMessage, SystemMessage
 from agentevolver.model import model_manager
+from agentevolver.paths import path_manager
 from agentevolver.trace.types import TraceEvent, TraceEventType
 from agentevolver.utils import assemble_workspace_path
 
@@ -734,26 +732,37 @@ class TieredMemory(Memory):
             )
 
     def _pack_summary_items(self, items: List[str]) -> List[str]:
-        """Bound one summariser input while retaining evidence from every source item."""
+        """Bound one summariser input to the configured aggregate character budget."""
         if not items:
             return []
         # Four characters/token is intentionally conservative for code-heavy traces.
-        budget = max(4_096, int(self.compact_input_tokens) * 4)
+        budget = max(256, int(self.compact_input_tokens) * 4)
         joined = "\n".join(items)
         if len(joined) <= budget:
             return items
-        per_item = max(256, (budget - len(items)) // len(items))
+        # Account for the separators before distributing the remaining bytes. A fixed
+        # 256-character minimum made the list exceed the total budget when a long run
+        # contained hundreds of small source records.
+        content_budget = max(1, budget - max(0, len(items) - 1))
+        base, remainder = divmod(content_budget, len(items))
         packed: List[str] = []
-        for item in items:
+        for index, item in enumerate(items):
+            per_item = base + int(index < remainder)
             if len(item) <= per_item:
                 packed.append(item)
                 continue
             source = re.search(r"\[source_seq=[^\]]+\]", item)
             marker = source.group(0) if source else "[source excerpt]"
             notice = f"\n{marker} [... source clipped for compaction ...]\n"
-            room = max(64, per_item - len(notice))
+            if per_item <= len(notice):
+                packed.append((marker + " [… clipped …]")[:per_item])
+                continue
+            room = per_item - len(notice)
             head = int(room * 0.65)
             packed.append(item[:head] + notice + item[-(room - head):])
+        # Keep the invariant local: callers cannot accidentally add an oversized
+        # summarizer request if the allocation logic changes later.
+        assert len("\n".join(packed)) <= budget
         return packed
 
     def _valid_checkpoint(
@@ -1049,7 +1058,7 @@ class TieredMemory(Memory):
             return False
 
     async def _summarise(self, items: list[str], existing: str) -> str:
-        from agentevolver.hook import hook_manager, HookEvent
+        from agentevolver.hook import HookEvent, hook_manager
         res = await hook_manager(name=self.compact_hook, input={
             "event": HookEvent.ON_CALL, "items": items,
             "existing_summary": existing, "model_name": self.model_name,

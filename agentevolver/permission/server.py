@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from .context import PermissionContextManager
 from .types import (
@@ -97,9 +97,9 @@ class PermissionManagerServer(BaseModel):
 
         Registry execution always uses :meth:`check` and remains fail-closed for an
         unknown name. This seam exists for built-in tools/environments that deliberately
-        support direct Python invocation in tests and small scripts. Outside a bound run
-        there is no workspace boundary to infer, so ``workspace_write`` retains its
-        historical standalone meaning while all command/destructive/size checks remain.
+        support direct Python invocation in tests and small scripts. A missing session
+        never upgrades the entity to full access: the configured workspace is the final
+        fallback, and an absent fence remains visibly ``workspace_write``.
         """
         declared = PermissionMode(mode)
         from agentevolver.paths import path_manager
@@ -109,7 +109,12 @@ class PermissionManagerServer(BaseModel):
             if roots:
                 workspace = str(roots["workspace"])
             else:
-                declared = PermissionMode.DANGER_FULL_ACCESS
+                try:
+                    from agentevolver.config import config
+
+                    workspace = str(getattr(config, "workspace_root", "") or "")
+                except Exception:  # noqa: BLE001 - optional standalone config
+                    workspace = ""
         return PermissionEnforcer(
             entity_name=name, mode=declared, workspace=workspace,
         ).check(input, workspace=workspace)

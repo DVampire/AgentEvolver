@@ -57,6 +57,7 @@ def test_a_one_shot_invoke_forwards_its_kwargs_and_leaves_no_ref_behind() -> Non
     caller. And because the ref is registered by name for the duration, a missing cleanup
     would make the second invoke under the same name collide with the first.
     """
+
     async def check() -> None:
         result = await runtime_manager.invoke(
             StubAgent(), name="one-shot", task="hello", parent_ref="parent", ctx={"id": "ctx"}
@@ -79,6 +80,7 @@ def test_a_stopped_ref_is_deregistered_and_refuses_further_messages() -> None:
     reading, and wait forever with nothing to show for it. Raising `AgentDeadError`
     converts that silent hang into an immediate error at the call site.
     """
+
     async def check() -> None:
         ref = await runtime_manager.spawn(StubAgent(), name="lifecycle")
         assert ref.status is AgentStatus.RUNNING
@@ -101,6 +103,7 @@ def test_two_running_agents_cannot_share_one_ref_name() -> None:
     would keep running with nothing able to reach it, and messages meant for it would land
     on the newcomer. Refusing at spawn puts the error where the mistake is.
     """
+
     async def check() -> None:
         ref = await runtime_manager.spawn(StubAgent(), name="duplicate")
         try:
@@ -125,6 +128,7 @@ def test_a_callers_timeout_does_not_kill_the_agent_it_was_waiting_on() -> None:
     would end a long-lived agent that many other callers still hold a ref to. Shielding
     the future keeps the damage inside the caller.
     """
+
     async def check() -> None:
         # The handler sleeps 0.2s and the caller waits 0.01s, so the timeout is certain;
         # the 0.25s sleep afterwards lets that first handler finish and try to reply,
@@ -150,6 +154,7 @@ def test_a_task_that_raises_is_the_tasks_failure_not_the_agents() -> None:
     ends the agent, so the next caller sees `AgentDeadError` for a fault that had nothing
     to do with it.
     """
+
     async def check() -> None:
         ref = await runtime_manager.spawn(StubAgent(fail_on="boom"), name="resilient")
         try:
@@ -175,6 +180,7 @@ def test_shutdown_empties_the_registry_and_a_ref_still_says_who_it_is() -> None:
     that prints without its name or status makes those logs useless for exactly the
     lifecycle bugs this file is about.
     """
+
     async def check() -> None:
         first = await runtime_manager.spawn(StubAgent(), name="shutdown-a")
         await runtime_manager.spawn(StubAgent(), name="shutdown-b")

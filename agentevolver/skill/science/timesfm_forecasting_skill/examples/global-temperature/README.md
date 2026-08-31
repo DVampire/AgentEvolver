@@ -87,7 +87,7 @@ TimesFM forecasts a mean temperature anomaly of **1.19°C** for 2025, slightly b
 
 ## Visualization
 
-![Temperature Anomaly Forecast](forecast_visualization.png)
+Generated output: `forecast_visualization.png` (created by `visualize_forecast.py`).
 
 ---
 

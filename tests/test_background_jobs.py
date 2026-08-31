@@ -8,7 +8,6 @@ trajectory and in the reward, from one that thought hard and slowly.
 """
 
 import asyncio
-import os
 
 import pytest
 
@@ -24,10 +23,13 @@ class _Ctx:
 def workspace(tmp_path):
     from agentevolver.config import config
     from agentevolver.permission import PermissionMode, permission_manager
+
     previous = getattr(config, "workspace_root", None)
     config.workspace_root = str(tmp_path)
     permission_manager.register(
-        "bash_tool", mode=PermissionMode.WORKSPACE_WRITE, workspace=str(tmp_path),
+        "bash_tool",
+        mode=PermissionMode.WORKSPACE_WRITE,
+        workspace=str(tmp_path),
     )
     yield tmp_path
     job_manager.forget(_Ctx.id)
@@ -127,16 +129,19 @@ def test_elapsed_time_separates_working_from_hung():
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
 async def test_a_backgrounded_command_returns_at_once_and_is_collected_later(workspace):
-    from agentevolver.tool.default.bash import BashTool
     from agentevolver.environment.default.job import JobEnvironment
+    from agentevolver.tool.default.bash import BashTool
 
     started = await BashTool()(
         command="for i in 1 2 3; do echo line-$i; sleep 0.2; done",
-        run_in_background=True, ctx=_Ctx())
+        run_in_background=True,
+        ctx=_Ctx(),
+    )
     assert started.success
     job_id = started.data["job_id"]
-    assert job_manager.get(job_id).status is JobStatus.RUNNING, \
+    assert job_manager.get(job_id).status is JobStatus.RUNNING, (
         "the call returned only after the command finished; it did not background it"
+    )
 
     output = JobEnvironment()
     assert await _wait_until(lambda: "line-3" in (job_manager.output(job_id) or ""))
@@ -153,8 +158,8 @@ async def test_a_running_job_says_so_rather_than_looking_finished(workspace):
 
     An agent reading it as finished stops collecting, and never sees the rest.
     """
-    from agentevolver.tool.default.bash import BashTool
     from agentevolver.environment.default.job import JobEnvironment
+    from agentevolver.tool.default.bash import BashTool
 
     started = await BashTool()(command="sleep 5", run_in_background=True, ctx=_Ctx())
     result = await JobEnvironment().output(job_id=started.data["job_id"], ctx=_Ctx())
@@ -165,11 +170,12 @@ async def test_a_running_job_says_so_rather_than_looking_finished(workspace):
 
 @pytest.mark.asyncio
 async def test_killing_keeps_what_the_job_already_said(workspace):
-    from agentevolver.tool.default.bash import BashTool
     from agentevolver.environment.default.job import JobEnvironment
+    from agentevolver.tool.default.bash import BashTool
 
     started = await BashTool()(
-        command="echo before-kill; sleep 30", run_in_background=True, ctx=_Ctx())
+        command="echo before-kill; sleep 30", run_in_background=True, ctx=_Ctx()
+    )
     job_id = started.data["job_id"]
     assert await _wait_until(lambda: "before-kill" in (job_manager.output(job_id) or ""))
 
@@ -227,11 +233,13 @@ def test_a_process_that_ignores_sigterm_is_still_stopped():
     import sys
     import time
 
-    ignores_term = ("import signal, time; "
-                    "signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)")
+    ignores_term = (
+        "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
+    )
     process = subprocess.Popen([sys.executable, "-c", ignores_term], start_new_session=True)
-    job = job_manager.register(type="test", label="ignores SIGTERM",
-                               session_id="quiescence", handle=process)
+    job = job_manager.register(
+        type="test", label="ignores SIGTERM", session_id="quiescence", handle=process
+    )
     # The handler is installed by the interpreter at startup; signalling before it exists
     # kills the process on the first SIGTERM and tests nothing.
     time.sleep(0.5)
@@ -254,10 +262,10 @@ def test_killing_reaps_the_process_rather_than_leaving_a_zombie():
     import subprocess
     import sys
 
-    process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
-                               start_new_session=True)
-    job = job_manager.register(type="test", label="sleeper", session_id="reap",
-                               handle=process)
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True
+    )
+    job = job_manager.register(type="test", label="sleeper", session_id="reap", handle=process)
     try:
         job_manager.kill(job.id)
         assert process.returncode is not None, "the exit status was never collected"
@@ -272,8 +280,7 @@ def test_killing_a_job_whose_process_is_already_gone_does_not_raise():
 
     process = subprocess.Popen([sys.executable, "-c", ""], start_new_session=True)
     process.wait()
-    job = job_manager.register(type="test", label="already gone", session_id="gone",
-                               handle=process)
+    job = job_manager.register(type="test", label="already gone", session_id="gone", handle=process)
     try:
         assert job_manager.kill(job.id) is True
     finally:
@@ -295,8 +302,9 @@ async def test_unfinished_work_shows_up_in_the_state(workspace):
     from agentevolver.environment.default.job import JobEnvironment
 
     env = JobEnvironment()
-    assert (await env.get_state(ctx=_Ctx()))["state"] == "", \
+    assert (await env.get_state(ctx=_Ctx()))["state"] == "", (
         "with nothing outstanding the state is empty, so the block is omitted entirely"
+    )
 
     job = job_manager.register(type="test", label="a long thing", session_id=_Ctx.id)
     body = (await env.get_state(ctx=_Ctx()))["state"]
@@ -318,10 +326,12 @@ async def test_finished_work_leaves_the_state(workspace):
     assert job.id in (await env.get_state(ctx=_Ctx()))["state"]
 
     job_manager.finish(job.id, exit_code=0)
-    assert (await env.get_state(ctx=_Ctx()))["state"] == "", \
+    assert (await env.get_state(ctx=_Ctx()))["state"] == "", (
         "a finished job stayed in the state, where it costs prompt every step"
-    assert job.id in (await env.list(ctx=_Ctx()))["message"], \
+    )
+    assert job.id in (await env.list(ctx=_Ctx()))["message"], (
         "`list` is where finished work is still visible"
+    )
 
 
 @pytest.mark.asyncio

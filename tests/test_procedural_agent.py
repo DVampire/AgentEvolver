@@ -73,7 +73,9 @@ def test_an_agent_type_survives_a_dump_and_reload() -> None:
     that expects an LLM loop, and the mismatch shows up only when it is next run.
     """
     config = AgentConfig(
-        name="procedure", description="test", agent_type=AgentType.PROCEDURAL,
+        name="procedure",
+        description="test",
+        agent_type=AgentType.PROCEDURAL,
     )
     restored = AgentConfig.model_validate(config.model_dump())
     assert restored.agent_type is AgentType.PROCEDURAL
@@ -92,15 +94,14 @@ def test_a_direct_call_and_a_delegated_one_leave_the_same_lifecycle_record(tmp_p
     nothing. `agent_type` is checked on every event because the hooks route on it — an
     event labelled `tool_calling` would be filed against the wrong contract downstream.
     """
+
     async def check() -> None:
         hooks = FakeHooks()
         agent = EchoProcedure(base_dir=str(tmp_path))
         ctx = AgentContext(id="direct", workspace_root=str(tmp_path))
         with patch("agentevolver.hook.server.hook_manager", hooks):
             direct = await agent(task="direct", ctx=ctx, suffix="ok")
-            delegated = await runtime_manager.invoke(
-                agent, task="delegated", ctx=ctx, suffix="ok"
-            )
+            delegated = await runtime_manager.invoke(agent, task="delegated", ctx=ctx, suffix="ok")
         assert direct.success and direct.message.endswith(":ok")
         assert delegated.success and delegated.message.startswith("delegated:")
         # Memory consumes the exact seq-numbered event inside trace_hook; it is no

@@ -11,11 +11,10 @@ class BaseContext(BaseModel):
     name: Optional[str] = Field(default=None, description="Human-readable label for this context.")
     input: Dict[str, Any] = Field(default_factory=dict, description="Input payload for this context.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this context.")
-    # NOTE: there is deliberately no ``workspace_root`` field. The working directory is
-    # a per-run value owned by the global ``config`` (config.workspace_root), which
-    # bind_session_roots() sets for each session on the single serialized run path
-    # (CLI and Gateway alike). Tools/agents read config.workspace_root. A live
-    # ``sandbox`` (peer container to route tool execution into) rides in ``extra``.
+    # A normal run still inherits the globally-bound session workspace. A delegated
+    # worker may carry a narrower, internally-created workspace in ``extra`` (for
+    # example a Git worktree), allowing isolated workers to run concurrently without
+    # racing on process-global configuration.
 
     @classmethod
     def create(
@@ -67,3 +66,25 @@ class SessionContext(BaseContext):
     id: str = Field(description="Unique session identifier.")
     name: Optional[str] = Field(default=None, description="Human-readable label for this session.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this session.")
+
+
+def resolve_workspace_root(ctx: Any = None, fallback: str = "") -> str:
+    """Resolve the effective workspace, preferring an internally-bound child root."""
+    extra = getattr(ctx, "extra", None) or {}
+    scoped = extra.get("execution_cwd")
+    if scoped:
+        return str(scoped)
+    try:
+        from agentevolver.config import config
+
+        configured = str(getattr(config, "workspace_root", "") or "")
+        if configured:
+            return configured
+    except Exception:
+        pass
+    return str(fallback or "")
+
+
+def isolated_workspace_root(ctx: Any = None) -> str:
+    """Return only a dispatcher-minted isolated cwd, never the global fallback."""
+    return str((getattr(ctx, "extra", None) or {}).get("execution_cwd") or "")

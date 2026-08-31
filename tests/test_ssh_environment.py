@@ -18,8 +18,7 @@ import asyncio
 import json
 import os
 import shlex
-from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 from unittest.mock import AsyncMock
 
 import pytest
@@ -357,9 +356,7 @@ class TestActions:
         assert "2 times" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_jobs_hides_everything_this_session_did_not_start(
-        self, env_and_service
-    ) -> None:
+    async def test_jobs_hides_everything_this_session_did_not_start(self, env_and_service) -> None:
         """A shared login node carries the owner's own tmux sessions.
 
         On the machine this was built against those were `claude`, `code` and `eval`.
@@ -370,13 +367,7 @@ class TestActions:
         ctx = _Ctx("sess1234abcd")
         fake.default = SSHResult(
             exit_code=0,
-            stdout=(
-                "ae-sess1234-train\t0\n"
-                "ae-other999-train\t0\n"
-                "claude\t1\n"
-                "eval\t0\n"
-                "__LOGS__\n"
-            ),
+            stdout=("ae-sess1234-train\t0\nae-other999-train\t0\nclaude\t1\neval\t0\n__LOGS__\n"),
         )
         result = await env.jobs(ctx=ctx)
         listed = {job["job"] for job in result["jobs"]}
@@ -509,12 +500,17 @@ async def _call_env_action(action):
         async def __call__(self, name, act, input, ctx, **kwargs):
             return await action(**input)
 
-    with patch.object(type(environment_manager), "environment_context_manager",
-                      _Manager(), create=True):
-        with patch.object(type(environment_manager), "_announce_live_view",
-                          AsyncMock(return_value=None)):
+    with patch.object(
+        type(environment_manager), "environment_context_manager", _Manager(), create=True
+    ):
+        with patch.object(
+            type(environment_manager), "_announce_live_view", AsyncMock(return_value=None)
+        ):
             return await environment_manager(
-                name="remote_host", action="run", input={}, ctx=None,
+                name="remote_host",
+                action="run",
+                input={},
+                ctx=None,
             )
 
 
@@ -541,6 +537,7 @@ class TestEnvironmentResults:
         Reading only `message` returns nothing, and nothing is what the agent then saw
         from a directory listing, a file read, and a job list alike.
         """
+
         async def action(**kwargs):
             return {"success": True, "jobs": [{"job": "train"}], "count": 1}
 
@@ -553,6 +550,7 @@ class TestEnvironmentResults:
     @pytest.mark.asyncio
     async def test_prose_wins_when_the_action_wrote_some(self) -> None:
         """An action that says something in words should not have it replaced by JSON."""
+
         async def action(**kwargs):
             return {"success": True, "message": "Navigated to example.com", "url": "..."}
 
@@ -564,6 +562,7 @@ class TestEnvironmentResults:
     async def test_a_failure_is_reported_as_one(self) -> None:
         """`success=False` has to survive the boundary, or the loop treats a refusal as
         an observation and carries on as though the action worked."""
+
         async def action(**kwargs):
             return {"success": False, "message": "path outside the workspace"}
 
@@ -579,6 +578,7 @@ class TestEnvironmentResults:
         Returning an empty message would put a blank observation in front of the model,
         which reads as a broken tool rather than as an action that had no output.
         """
+
         async def action(**kwargs):
             return {"success": True}
 
@@ -590,8 +590,9 @@ class TestEnvironmentResults:
         would nest a response inside a response and lose `data`."""
         from agentevolver.response.types import Response, ResponseType
 
-        original = Response(type=ResponseType.ENVIRONMENT, success=True,
-                            message="already normalized", data={"a": 1})
+        original = Response(
+            type=ResponseType.ENVIRONMENT, success=True, message="already normalized", data={"a": 1}
+        )
 
         async def action(**kwargs):
             return original
@@ -661,12 +662,15 @@ class TestHostRegistry:
         assert store.removable("a") is False
         assert store.names() == ["a"]
 
-    @pytest.mark.parametrize("bad", [
-        {"name": "x"},                       # no address
-        {"host": "h", "name": "a/b"},        # reaches a tmux session name and a path
-        {"host": "h", "name": ".hidden"},
-        {"host": "h", "name": "x", "port": "not-a-number"},
-    ])
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"name": "x"},  # no address
+            {"host": "h", "name": "a/b"},  # reaches a tmux session name and a path
+            {"host": "h", "name": ".hidden"},
+            {"host": "h", "name": "x", "port": "not-a-number"},
+        ],
+    )
     def test_a_malformed_host_is_refused(self, bad) -> None:
         from agentevolver.environment.default.ssh.hosts import HostStore
 
@@ -698,10 +702,13 @@ class TestMultiHostRouting:
     def env(self):
         from agentevolver.environment.default.ssh.environment import SSHEnvironment
 
-        return SSHEnvironment(hosts=[
-            {"name": "alpha", "host": "a.example", "workspace_root": "/srv/alpha"},
-            {"name": "beta", "host": "b.example", "workspace_root": "/srv/beta"},
-        ], live_view=False)
+        return SSHEnvironment(
+            hosts=[
+                {"name": "alpha", "host": "a.example", "workspace_root": "/srv/alpha"},
+                {"name": "beta", "host": "b.example", "workspace_root": "/srv/beta"},
+            ],
+            live_view=False,
+        )
 
     def test_the_first_host_is_the_default_and_selection_is_per_session(self, env) -> None:
         one, two = _Ctx("session-one"), _Ctx("session-two")
@@ -748,8 +755,9 @@ class TestMultiHostRouting:
         """`--host` and every one-machine config already write the flat form."""
         from agentevolver.environment.default.ssh.environment import SSHEnvironment
 
-        env = SSHEnvironment(host="solo.example", user="u", workspace_root="/srv/solo",
-                             live_view=False)
+        env = SSHEnvironment(
+            host="solo.example", user="u", workspace_root="/srv/solo", live_view=False
+        )
         assert env.host_store.names() == ["solo.example"]
         assert env.active_host(_Ctx()).workspace_root == "/srv/solo"
 
@@ -770,15 +778,23 @@ class TestEditingAHostTakesEffect:
         """
         from agentevolver.environment.default.ssh.environment import SSHEnvironment
 
-        env = SSHEnvironment(hosts=[
-            {"name": "alpha", "host": "a.example"},
-            {"name": "beta", "host": "b.example"},
-        ], live_view=False)
+        env = SSHEnvironment(
+            hosts=[
+                {"name": "alpha", "host": "a.example"},
+                {"name": "beta", "host": "b.example"},
+            ],
+            live_view=False,
+        )
 
         class _Svc:
-            def __init__(self): self.stopped = False
-            async def stop(self): self.stopped = True
-            async def run_raw(self, *a, **k): return SSHResult(exit_code=0)
+            def __init__(self):
+                self.stopped = False
+
+            async def stop(self):
+                self.stopped = True
+
+            async def run_raw(self, *a, **k):
+                return SSHResult(exit_code=0)
 
         alpha_one, alpha_two, beta = _Svc(), _Svc(), _Svc()
         env._services[("s1", "alpha")] = alpha_one
@@ -820,6 +836,7 @@ class TestConfig:
         A config that named it after `env_names` was read as empty.
         """
         import inflection
+
         from agentevolver.environment.default.ssh.environment import SSHEnvironment
 
         registered_name = SSHEnvironment.model_fields["name"].default
@@ -871,7 +888,9 @@ class TestConfig:
         assert "bind_session_roots" in runner
         # Before the managers, not after: they capture roots derived from `config.log_root`
         # when they are built.
-        assert runner.index("bind_session_roots(config") < runner.index("version_manager.initialize")
+        assert runner.index("bind_session_roots(config") < runner.index(
+            "version_manager.initialize"
+        )
 
     def test_the_environment_md_documents_every_action(self) -> None:
         """The ENVIRONMENT.md is what the agent is told the host can do."""
@@ -985,12 +1004,12 @@ class TestEnvironmentInstruction:
         rule = "no argument switches a tool between them"
 
         full = await environment_manager.get_instruction(level="full")
-        assert rule in full                       # a sentence only the md has
+        assert rule in full  # a sentence only the md has
         assert "upload" in full and "download" in full
 
         brief = await environment_manager.get_instruction(level="brief")
-        assert "ENVIRONMENT.md" in brief          # where the rest is
-        assert rule not in brief                  # and not a second copy of it
+        assert "ENVIRONMENT.md" in brief  # where the rest is
+        assert rule not in brief  # and not a second copy of it
 
     @pytest.mark.asyncio
     async def test_an_allowlist_selects_environments_the_way_every_manager_does(self) -> None:

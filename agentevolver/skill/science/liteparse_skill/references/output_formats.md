@@ -128,6 +128,7 @@ x, y, width, height = x1, y1, x2 - x1, y2 - y1
 Use `search_items()` when a query spans multiple `text_items`:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 from liteparse import search_items
 
 hits = search_items(page.text_items, "Supplementary Table 1")

@@ -105,8 +105,9 @@ def test_an_existing_extra_value_is_not_overwritten_by_lineage():
     """``extra`` is the more specific answer: it was set deliberately by whoever
     built this context, while the field is whatever the source class happened to
     carry. Copying the field over it would rewrite a deliberate hand-off."""
-    source = WithLineage(id="s1", parent_session_id="from-field",
-                         extra={"parent_session_id": "already-set"})
+    source = WithLineage(
+        id="s1", parent_session_id="from-field", extra={"parent_session_id": "already-set"}
+    )
     assert BaseContext.from_context(source).extra["parent_session_id"] == "already-set"
 
 
@@ -147,7 +148,9 @@ def test_an_explicit_creation_time_is_preserved_but_the_update_moves(tmp_path):
     """The project list leads with what was touched last, not what was born last."""
     import json
 
-    write_session_manifest(FakeSandbox(tmp_path), session_id="s1", created_at="2020-01-01T00:00:00+00:00")
+    write_session_manifest(
+        FakeSandbox(tmp_path), session_id="s1", created_at="2020-01-01T00:00:00+00:00"
+    )
     payload = json.loads((tmp_path / SESSION_MANIFEST).read_text())
     assert payload["created_at"] == "2020-01-01T00:00:00+00:00"
     assert payload["updated_at"] != payload["created_at"]
@@ -160,7 +163,12 @@ def test_the_manifest_holds_identity_only_not_a_transcript(tmp_path):
 
     write_session_manifest(FakeSandbox(tmp_path), session_id="s1")
     assert set(json.loads((tmp_path / SESSION_MANIFEST).read_text())) == {
-        "session_id", "name", "owner", "created_at", "updated_at", "source_workspace",
+        "session_id",
+        "name",
+        "owner",
+        "created_at",
+        "updated_at",
+        "source_workspace",
     }
 
 
@@ -180,7 +188,9 @@ def roots(tmp_path, monkeypatch):
     log = tmp_path / "log"
     workspace.mkdir()
     log.mkdir()
-    monkeypatch.setattr("agentevolver.session.project.config.workspace_root", str(workspace), raising=False)
+    monkeypatch.setattr(
+        "agentevolver.session.project.config.workspace_root", str(workspace), raising=False
+    )
     monkeypatch.setattr("agentevolver.session.project.config.log_root", str(log), raising=False)
     return workspace, log
 
@@ -288,11 +298,18 @@ def test_a_written_manifest_can_be_read_back(tmp_path):
 
     from agentevolver.session.project import SESSION_MANIFEST, read_session_manifest
 
-    (tmp_path / SESSION_MANIFEST).write_text(json.dumps({
-        "session_id": "s1", "name": "interactive", "owner": "local",
-        "created_at": "2026-08-14T10:00:00+00:00",
-        "updated_at": "2026-08-15T09:00:00+00:00",
-    }), encoding="utf-8")
+    (tmp_path / SESSION_MANIFEST).write_text(
+        json.dumps(
+            {
+                "session_id": "s1",
+                "name": "interactive",
+                "owner": "local",
+                "created_at": "2026-08-14T10:00:00+00:00",
+                "updated_at": "2026-08-15T09:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     manifest = read_session_manifest(tmp_path)
 
@@ -334,13 +351,22 @@ def test_projects_are_listed_by_what_was_touched_last(tmp_path):
 
     from agentevolver.session.project import SESSION_MANIFEST, list_session_manifests
 
-    for name, created, updated in (("old", "2026-01-01T00:00:00+00:00", "2026-08-15T09:00:00+00:00"),
-                                   ("new", "2026-08-14T00:00:00+00:00", "2026-08-14T01:00:00+00:00")):
+    for name, created, updated in (
+        ("old", "2026-01-01T00:00:00+00:00", "2026-08-15T09:00:00+00:00"),
+        ("new", "2026-08-14T00:00:00+00:00", "2026-08-14T01:00:00+00:00"),
+    ):
         directory = tmp_path / name
         directory.mkdir()
-        (directory / SESSION_MANIFEST).write_text(json.dumps({
-            "session_id": name, "created_at": created, "updated_at": updated,
-        }), encoding="utf-8")
+        (directory / SESSION_MANIFEST).write_text(
+            json.dumps(
+                {
+                    "session_id": name,
+                    "created_at": created,
+                    "updated_at": updated,
+                }
+            ),
+            encoding="utf-8",
+        )
 
     assert [m["session_id"] for m in list_session_manifests(tmp_path)] == ["old", "new"]
 
@@ -351,7 +377,6 @@ def test_a_manifest_with_no_session_id_is_refused(tmp_path):
 
     from agentevolver.session.project import SESSION_MANIFEST, read_session_manifest
 
-    (tmp_path / SESSION_MANIFEST).write_text(json.dumps({"name": "nameless"}),
-                                             encoding="utf-8")
+    (tmp_path / SESSION_MANIFEST).write_text(json.dumps({"name": "nameless"}), encoding="utf-8")
 
     assert read_session_manifest(tmp_path) is None

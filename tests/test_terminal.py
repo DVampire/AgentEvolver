@@ -128,7 +128,8 @@ async def test_the_screen_is_what_the_terminal_displays_not_the_bytes_that_drew_
     """
     terminal = _open()
     output, _ = await terminal.send(
-        "echo BEFORE-THE-CLEAR; clear; echo after-the-clear", timeout=SEND_TIMEOUT)
+        "echo BEFORE-THE-CLEAR; clear; echo after-the-clear", timeout=SEND_TIMEOUT
+    )
     assert "after-the-clear" in output
     assert "BEFORE-THE-CLEAR" not in output
     assert "\x1b" not in output
@@ -149,8 +150,7 @@ async def test_a_terminal_going_quiet_does_not_mean_the_command_finished(session
     terminal = _open()
     # Quiet for well past the idle threshold, then speaks again. The line is arithmetic
     # so that the terminal's echo of the command typed is not itself a match for it.
-    output, reason = await terminal.send('sleep 1.5; echo "late-$((6*7))"',
-                                         timeout=SEND_TIMEOUT)
+    output, reason = await terminal.send('sleep 1.5; echo "late-$((6*7))"', timeout=SEND_TIMEOUT)
     assert reason is WaitReason.IDLE
     assert "late-42" not in output
 
@@ -169,7 +169,8 @@ async def test_a_send_that_runs_out_of_time_says_so_rather_than_looking_complete
     terminal = _open()
     # Never goes quiet: something is printed every 0.1s for longer than the wait allows.
     output, reason = await terminal.send(
-        "for i in $(seq 1 40); do echo tick-$i; sleep 0.1; done", timeout=1.0)
+        "for i in $(seq 1 40); do echo tick-$i; sleep 0.1; done", timeout=1.0
+    )
     assert reason is WaitReason.TIMEOUT
     assert "tick-1" in output
 
@@ -184,7 +185,8 @@ async def test_two_sends_at_once_are_refused_rather_than_interleaved(session):
     """
     terminal = _open()
     first = asyncio.create_task(
-        terminal.send("for i in $(seq 1 40); do echo tick-$i; sleep 0.1; done", timeout=1.0))
+        terminal.send("for i in $(seq 1 40); do echo tick-$i; sleep 0.1; done", timeout=1.0)
+    )
     await asyncio.sleep(0.2)
     with pytest.raises(TerminalBusy):
         await terminal.send("echo interleaved", timeout=1.0)
@@ -327,8 +329,9 @@ async def test_the_actions_carry_state_from_one_call_to_the_next(session, tmp_pa
 
     closed = await env.close(terminal_id=terminal_id, ctx=_Ctx())
     assert closed["success"]
-    assert terminal_manager.get(terminal_id) is None, \
+    assert terminal_manager.get(terminal_id) is None, (
         "a closed terminal stayed in the registry, so the agent can still type at it"
+    )
 
 
 @pytest.mark.asyncio
@@ -356,8 +359,9 @@ async def test_every_live_terminal_shows_up_in_the_state(session, tmp_path):
     assert second in after
 
     await env.close(terminal_id=second, ctx=_Ctx())
-    assert (await env.get_state(ctx=_Ctx()))["state"] == "", \
+    assert (await env.get_state(ctx=_Ctx()))["state"] == "", (
         "with nothing open the state is empty, so the block is omitted entirely"
+    )
 
 
 @pytest.mark.asyncio

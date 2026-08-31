@@ -1,3 +1,10 @@
+"""Connector effect annotations survive discovery and control approval decisions.
+
+MCP and frontmatter use different field spellings; losing either mapping makes read-only
+calls prompt unnecessarily or, worse, lets an unknown mutation run without approval.
+The contract therefore normalizes aliases and fails closed when evidence is absent.
+"""
+
 from types import SimpleNamespace
 
 import pytest
@@ -18,10 +25,15 @@ def _manager(tmp_path):
 def test_mcp_effect_annotations_are_normalized_from_sdk_aliases(tmp_path):
     manager = _manager(tmp_path)
     tool = SimpleNamespace(
-        name="lookup", description="read a record", args_schema={"type": "object"},
-        annotations=SimpleNamespace(model_dump=lambda **kwargs: {
-            "read_only_hint": True, "open_world_hint": False,
-        }),
+        name="lookup",
+        description="read a record",
+        args_schema={"type": "object"},
+        annotations=SimpleNamespace(
+            model_dump=lambda **kwargs: {
+                "read_only_hint": True,
+                "open_world_hint": False,
+            }
+        ),
     )
 
     _, _, _, annotations = manager._contract_from_tools([tool])
@@ -51,7 +63,9 @@ def test_frontmatter_effect_annotations_are_normalized(tmp_path):
 async def test_read_only_mcp_action_runs_without_approval(tmp_path, monkeypatch):
     manager = _manager(tmp_path)
     manager._connector_configs["records"] = ConnectorConfig(
-        name="records", version="1", actions=["lookup"],
+        name="records",
+        version="1",
+        actions=["lookup"],
         action_annotations={"lookup": {"readOnlyHint": True}},
     )
     called = []
@@ -70,7 +84,9 @@ async def test_read_only_mcp_action_runs_without_approval(tmp_path, monkeypatch)
 async def test_unknown_mcp_effect_fails_closed_without_approval(tmp_path, monkeypatch):
     manager = _manager(tmp_path)
     manager._connector_configs["records"] = ConnectorConfig(
-        name="records", version="1", actions=["update"],
+        name="records",
+        version="1",
+        actions=["update"],
     )
     called = False
 

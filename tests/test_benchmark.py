@@ -77,14 +77,17 @@ def test_no_bounds_leaves_the_dataset_whole():
     assert Scored()._apply_slice([1, 2, 3]) == [1, 2, 3]
 
 
-@pytest.mark.parametrize("start, end, expected", [
-    (1, None, [2, 3, 4]),
-    (None, 2, [1, 2]),
-    (1, 3, [2, 3]),
-    (0, 0, []),
-    (10, 20, []),          # out of range is empty, not an error
-    (None, 99, [1, 2, 3, 4]),
-])
+@pytest.mark.parametrize(
+    "start, end, expected",
+    [
+        (1, None, [2, 3, 4]),
+        (None, 2, [1, 2]),
+        (1, 3, [2, 3]),
+        (0, 0, []),
+        (10, 20, []),  # out of range is empty, not an error
+        (None, 99, [1, 2, 3, 4]),
+    ],
+)
 def test_a_range_selects_the_requested_window(start, end, expected):
     """Each half of the range has to work alone, and neither may raise on a bad bound.
 
@@ -116,6 +119,7 @@ def test_a_benchmark_names_itself_after_its_class():
     directory rather than into it, and the benchmark would be unreachable under the name
     everything already refers to.
     """
+
     class GsmEightK(Benchmark):
         pass
 
@@ -184,7 +188,9 @@ async def test_the_grader_is_shown_the_question_and_both_answers(benchmark, judg
     regex.
     """
     judge.result = Reply(parsed_model=JudgeResult(consistent=True))
-    await benchmark.llm_judge(Task(task_id="t", input="What is 2+2?", result="four", ground_truth="4"))
+    await benchmark.llm_judge(
+        Task(task_id="t", input="What is 2+2?", result="four", ground_truth="4")
+    )
 
     name, payload = judge.calls[0]
     assert name == "judge-model"

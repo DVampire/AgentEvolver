@@ -43,6 +43,15 @@ _AMBIENT_CONTEXT_KEYS = (
     "extension_root",
     "package_root",
     "shared_extension_root",
+    # Internal per-child cwd. Unlike the six layout roots this is never accepted from
+    # model input and cannot widen the session; the dispatcher sets it to a disposable
+    # worktree and the sandbox adds only that exact path.
+    "execution_cwd",
+    # Dispatcher-minted per-invocation scheduling/model contract. These are deliberately
+    # ambient rather than user-controlled roots: child_brief creates a fresh context and
+    # copies only this allowlisted metadata into it.
+    "task_contract",
+    "child_reasoning_effort",
 )
 
 

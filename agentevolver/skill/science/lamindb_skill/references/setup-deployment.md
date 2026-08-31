@@ -510,6 +510,7 @@ lamin init --storage s3://prod-bucket/data \
 
 **Migration:** Export artifacts from dev, import to prod
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # Export from dev
 artifacts = ln.Artifact.filter().all()
 for artifact in artifacts:
@@ -701,6 +702,7 @@ lamin migrate check
 
 **Issue: Cache full**
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # Clear cache
 import lamindb as ln
 import shutil

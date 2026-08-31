@@ -203,8 +203,11 @@ def test_nothing_calls_register_with_the_wrong_keyword() -> None:
 
     root = Path(__file__).resolve().parents[1]
     offenders = []
-    for path in [*root.glob("agentevolver/**/*.py"), *root.glob("scripts/*.sh"),
-                 *root.glob("examples/*.py")]:
+    for path in [
+        *root.glob("agentevolver/**/*.py"),
+        *root.glob("scripts/*.sh"),
+        *root.glob("examples/*.py"),
+    ]:
         if "__pycache__" in str(path):
             continue
         text = path.read_text(encoding="utf-8", errors="replace")

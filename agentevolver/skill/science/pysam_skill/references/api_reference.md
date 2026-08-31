@@ -360,6 +360,7 @@ import pysam.bcftools
 Each dispatcher has:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 command(
     *args: str,
     catch_stdout=True,

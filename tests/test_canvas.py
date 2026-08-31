@@ -38,14 +38,30 @@ def _review_graph(name: str = "Canvas review") -> FlowGraph:
     return FlowGraph(
         name=name,
         nodes=[
-            _node("task_in", type="input", name="task", required=True, description="What to review."),
+            _node(
+                "task_in", type="input", name="task", required=True, description="What to review."
+            ),
             _node("angles", type="input", name="angles", input_type="array", required=True),
-            _node("reviews", step_type="map", attrs={"item_name": "angle", "concurrency": 4},
-                  position=Position(x=0, y=100)),
-            _node("review", step_type="agent", target="general_agent",
-                  task="Review from the ${angle} angle: ${inputs.task}", parent="reviews"),
-            _node("report", step_type="reduce", target="general_agent",
-                  task="Merge the findings into one report.", position=Position(x=0, y=300)),
+            _node(
+                "reviews",
+                step_type="map",
+                attrs={"item_name": "angle", "concurrency": 4},
+                position=Position(x=0, y=100),
+            ),
+            _node(
+                "review",
+                step_type="agent",
+                target="general_agent",
+                task="Review from the ${angle} angle: ${inputs.task}",
+                parent="reviews",
+            ),
+            _node(
+                "report",
+                step_type="reduce",
+                target="general_agent",
+                task="Merge the findings into one report.",
+                position=Position(x=0, y=300),
+            ),
             _node("out", type="output", name="report", position=Position(x=0, y=400)),
         ],
         edges=[
@@ -99,13 +115,35 @@ def test_branch_bodies_are_derived_from_which_port_reaches_them() -> None:
     graph = FlowGraph(
         name="branchy",
         nodes=[
-            _node("check", step_type="tool", target="bash_tool", args={"command": "echo hi"},
-                  position=Position(y=0)),
-            _node("gate", step_type="branch", attrs={"condition": "${check}"}, position=Position(y=100)),
-            _node("yes", step_type="agent", target="general_agent", task="Proceed: ${check}",
-                  parent="gate", slot="then"),
-            _node("no", step_type="agent", target="general_agent", task="Stop.",
-                  parent="gate", slot="else"),
+            _node(
+                "check",
+                step_type="tool",
+                target="bash_tool",
+                args={"command": "echo hi"},
+                position=Position(y=0),
+            ),
+            _node(
+                "gate",
+                step_type="branch",
+                attrs={"condition": "${check}"},
+                position=Position(y=100),
+            ),
+            _node(
+                "yes",
+                step_type="agent",
+                target="general_agent",
+                task="Proceed: ${check}",
+                parent="gate",
+                slot="then",
+            ),
+            _node(
+                "no",
+                step_type="agent",
+                target="general_agent",
+                task="Stop.",
+                parent="gate",
+                slot="else",
+            ),
         ],
         edges=[],
     )
@@ -127,10 +165,20 @@ def test_steps_are_ordered_by_what_they_reference_not_by_where_they_sit() -> Non
     graph = FlowGraph(
         name="ordering",
         nodes=[
-            _node("second", step_type="agent", target="general_agent", task="Use ${first}",
-                  position=Position(y=0)),
-            _node("first", step_type="agent", target="general_agent", task="Start",
-                  position=Position(y=500)),
+            _node(
+                "second",
+                step_type="agent",
+                target="general_agent",
+                task="Use ${first}",
+                position=Position(y=0),
+            ),
+            _node(
+                "first",
+                step_type="agent",
+                target="general_agent",
+                task="Start",
+                position=Position(y=500),
+            ),
         ],
     )
     _, definition = canvas_compiler.compile(graph)
@@ -151,14 +199,16 @@ def test_a_graph_that_cannot_run_is_refused_at_compile_time() -> None:
     with pytest.raises(CanvasCompileError, match="no steps"):
         canvas_compiler.compile(FlowGraph(name="x", nodes=[_node("i", type="input", name="q")]))
     with pytest.raises(CanvasCompileError, match="both connected and set"):
-        canvas_compiler.compile(FlowGraph(
-            name="x",
-            nodes=[
-                _node("a", step_type="tool", target="bash_tool", args={"command": "echo hi"}),
-                _node("b", step_type="tool", target="bash_tool", args={"command": "echo bye"}),
-            ],
-            edges=[GraphEdge(id="e", source="a", target="b", param="arg:command")],
-        ))
+        canvas_compiler.compile(
+            FlowGraph(
+                name="x",
+                nodes=[
+                    _node("a", step_type="tool", target="bash_tool", args={"command": "echo hi"}),
+                    _node("b", step_type="tool", target="bash_tool", args={"command": "echo bye"}),
+                ],
+                edges=[GraphEdge(id="e", source="a", target="b", param="arg:command")],
+            )
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -251,8 +301,17 @@ def test_only_a_non_empty_capability_selection_becomes_an_allowlist_arg() -> Non
         name="mounted",
         nodes=[
             _node("q", type="input", name="q", required=True),
-            _node("ag", step_type="agent", target="general_agent", task="Answer: ${inputs.q}",
-                  mounts={"tools": ["bash_tool", "web_searcher_tool"], "skills": ["debug"], "connectors": []}),
+            _node(
+                "ag",
+                step_type="agent",
+                target="general_agent",
+                task="Answer: ${inputs.q}",
+                mounts={
+                    "tools": ["bash_tool", "web_searcher_tool"],
+                    "skills": ["debug"],
+                    "connectors": [],
+                },
+            ),
             _node("out", type="output", name="answer"),
         ],
         edges=[GraphEdge(id="e", source="ag", target="out", param="value")],
@@ -279,7 +338,12 @@ def test_lifting_mount_args_derives_a_context_instead_of_editing_the_shared_one(
     from agentevolver.workflow.runtime import workflow_runtime
 
     ctx = AgentContext(extra={"session_id": "s1"})
-    payload = {"task": "hi", "tools": "bash_tool,web_searcher_tool", "skills": "debug", "connectors": ""}
+    payload = {
+        "task": "hi",
+        "tools": "bash_tool,web_searcher_tool",
+        "skills": "debug",
+        "connectors": "",
+    }
     derived = workflow_runtime._apply_agent_mounts(payload, ctx)
     assert payload == {"task": "hi"}  # mount args popped
     assert derived.extra["tool_allowlist"] == ["bash_tool", "web_searcher_tool"]
@@ -301,7 +365,9 @@ def test_a_draft_is_saved_where_its_session_says_and_may_be_incomplete(tmp_path)
     """
     manager = CanvasManagerServer()
     session_a, session_b = tmp_path / "a" / "canvas", tmp_path / "b" / "canvas"
-    draft = FlowGraph(name="wip", nodes=[_node("a", step_type="tool")])  # no target yet: still saves
+    draft = FlowGraph(
+        name="wip", nodes=[_node("a", step_type="tool")]
+    )  # no target yet: still saves
     saved = manager.save_flow(draft, session_a)
     assert saved.id.startswith("flow-") and not saved.published
     assert manager.get_flow(saved.id, session_a).nodes[0].step_type == "tool"
@@ -310,7 +376,9 @@ def test_a_draft_is_saved_where_its_session_says_and_may_be_incomplete(tmp_path)
     assert asyncio.run(manager.delete_flow(saved.id, session_a)) is True
 
 
-def test_a_flow_exported_to_the_library_comes_back_as_a_fresh_unbound_draft(tmp_path, monkeypatch) -> None:
+def test_a_flow_exported_to_the_library_comes_back_as_a_fresh_unbound_draft(
+    tmp_path, monkeypatch
+) -> None:
     """The library is for reuse, so importing must never alias the copy it came from.
 
     The failure this rules out is destructive: if the imported graph kept its id, the first
@@ -353,15 +421,19 @@ def test_an_unsaved_draft_runs_on_the_shared_workflow_runtime(tmp_path) -> None:
     output. A canvas that grew its own execution path would drift from the runtime the rest
     of the system uses, and the drift would only be visible once behaviour differed.
     """
+
     async def run() -> None:
         from agentevolver.tool import tool_manager
+
         if "bash_tool" not in await tool_manager.list():
             pytest.skip("bash_tool is not registered in this environment")
         manager = CanvasManagerServer()
         graph = FlowGraph(
             name="draft run",
             nodes=[
-                _node("say", step_type="tool", target="bash_tool", args={"command": "echo canvas-ok"}),
+                _node(
+                    "say", step_type="tool", target="bash_tool", args={"command": "echo canvas-ok"}
+                ),
                 _node("out", type="output", name="said"),
             ],
             edges=[GraphEdge(id="e", source="say", target="out", param="value")],
@@ -402,24 +474,30 @@ def _wired(source_port: str, param: str) -> FlowGraph:
     )
 
 
-@pytest.mark.parametrize("source_port, param", [
-    ("files", "task"),      # list  → text
-    ("data", "task"),       # object → text
-    ("message", "items"),   # text  → list
-    ("data", "items"),      # object → list
-])
+@pytest.mark.parametrize(
+    "source_port, param",
+    [
+        ("files", "task"),  # list  → text
+        ("data", "task"),  # object → text
+        ("message", "items"),  # text  → list
+        ("data", "items"),  # object → list
+    ],
+)
 def test_a_mismatched_edge_is_refused_by_the_compiler(source_port, param):
     with pytest.raises(CanvasCompileError) as refusal:
         canvas_compiler.compile(_wired(source_port, param))
     assert "output" in str(refusal.value) and "input" in str(refusal.value)
 
 
-@pytest.mark.parametrize("source_port, param", [
-    ("message", "task"),    # text → text
-    ("files", "items"),     # list → list
-    ("out", "task"),        # `out` is the whole value: any, so it fits anything
-    ("message", "arg:x"),   # an arg's type lives in the node's params, not in the edge
-])
+@pytest.mark.parametrize(
+    "source_port, param",
+    [
+        ("message", "task"),  # text → text
+        ("files", "items"),  # list → list
+        ("out", "task"),  # `out` is the whole value: any, so it fits anything
+        ("message", "arg:x"),  # an arg's type lives in the node's params, not in the edge
+    ],
+)
 def test_a_connection_the_edge_cannot_disprove_is_allowed(source_port, param):
     """The check only tightens where it is certain.
 
@@ -440,19 +518,25 @@ def test_the_editor_and_the_compiler_apply_the_same_rule():
 
     from agentevolver.canvas.types import ports_compatible
 
-    source = (Path(__file__).resolve().parents[1]
-              / "frontend" / "src" / "canvas" / "types.ts").read_text(encoding="utf-8")
+    source = (
+        Path(__file__).resolve().parents[1] / "frontend" / "src" / "canvas" / "types.ts"
+    ).read_text(encoding="utf-8")
     body = re.search(r"export function portsCompatible\([^)]*\)[^{]*\{(.*?)\n\}", source, re.S)
     assert body, "portsCompatible is not where this test expects it"
 
     def typescript(a: str, b: str) -> bool:
         expression = body.group(1).replace("return", "").strip().rstrip(";")
-        return eval(expression.replace("===", "==").replace("||", "or")   # noqa: S307
-                    .replace("source", repr(a)).replace("target", repr(b)))
+        return eval(
+            expression.replace("===", "==")
+            .replace("||", "or")  # noqa: S307
+            .replace("source", repr(a))
+            .replace("target", repr(b))
+        )
 
     kinds = ["text", "list", "object", "any"]
-    mismatched = [(a, b) for a in kinds for b in kinds
-                  if ports_compatible(a, b) != typescript(a, b)]
+    mismatched = [
+        (a, b) for a in kinds for b in kinds if ports_compatible(a, b) != typescript(a, b)
+    ]
     assert not mismatched, f"the two implementations disagree on: {mismatched}"
 
 

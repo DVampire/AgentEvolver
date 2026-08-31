@@ -61,6 +61,7 @@ benchling.teams              # Team operations
 All resources follow a consistent CRUD pattern:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # Create
 resource.create(CreateModel(...))
 

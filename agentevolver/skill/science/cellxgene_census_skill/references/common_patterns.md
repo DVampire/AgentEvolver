@@ -270,6 +270,7 @@ census = cellxgene_census.open_soma(census_version="2025-11-08")
 ### 3. Use Context Manager
 Always use the context manager to ensure proper cleanup:
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 with cellxgene_census.open_soma() as census:
     # Your code here
 ```

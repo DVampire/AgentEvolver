@@ -25,10 +25,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agentevolver.utils import AsyncQueue
 from agentevolver.response import Response, ResponseType
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.types import Tool, ToolContext
+from agentevolver.utils import AsyncQueue
 
 
 # --------------------------------------------------------------------------- #
@@ -40,6 +40,7 @@ def test_a_queue_join_waits_for_the_consumer_to_finish():
     Without a join there is no signal a producer can wait on, which is why the trace had
     no way to answer "is my event on disk yet" before this existed.
     """
+
     async def run():
         queue: AsyncQueue[int] = AsyncQueue(maxsize=8)
         written: list[int] = []
@@ -49,7 +50,7 @@ def test_a_queue_join_waits_for_the_consumer_to_finish():
                 item = await queue.get()
                 if item is None:
                     break
-                await asyncio.sleep(0.01)       # a writer that is not instant
+                await asyncio.sleep(0.01)  # a writer that is not instant
                 written.append(item)
                 queue.task_done()
 
@@ -98,7 +99,7 @@ def test_a_flush_that_does_not_drain_gives_up_rather_than_hanging(borrowed_trace
     """The primitive reports timeout; the selected integrity profile settles policy."""
     borrowed_trace._running = True
     borrowed_trace._queue = AsyncQueue(maxsize=4)
-    borrowed_trace._queue.emit(1)               # queued, never consumed
+    borrowed_trace._queue.emit(1)  # queued, never consumed
 
     assert asyncio.run(borrowed_trace.flush(timeout=0.05)) is False
 
@@ -108,6 +109,7 @@ def test_a_flush_that_does_not_drain_gives_up_rather_than_hanging(borrowed_trace
 # --------------------------------------------------------------------------- #
 def _checkpointed(mutates, kind: str = "tool", route=("tool", "some_tool")) -> bool:
     """Whether this registered Tool flushes after guards and before its body."""
+
     class StubTool(Tool):
         name: str = "some_tool"
         description: str = "Test checkpoint placement."
@@ -124,9 +126,13 @@ def _checkpointed(mutates, kind: str = "tool", route=("tool", "some_tool")) -> b
     manager.get_info = get_info
     flush = AsyncMock(return_value=True)
     with patch("agentevolver.trace.server.trace_manager.flush", flush):
-        asyncio.run(manager(
-            name="some_tool", input={}, ctx=ToolContext(id="session-1"),
-        ))
+        asyncio.run(
+            manager(
+                name="some_tool",
+                input={},
+                ctx=ToolContext(id="session-1"),
+            )
+        )
     return flush.await_count == 1
 
 
@@ -159,9 +165,13 @@ def test_an_unresolved_tool_does_not_checkpoint_or_enter_a_body():
     manager.get_info = AsyncMock(return_value=None)
     flush = AsyncMock(return_value=True)
     with patch("agentevolver.trace.server.trace_manager.flush", flush):
-        response = asyncio.run(manager(
-            name="missing", input={}, ctx=ToolContext(id="session-1"),
-        ))
+        response = asyncio.run(
+            manager(
+                name="missing",
+                input={},
+                ctx=ToolContext(id="session-1"),
+            )
+        )
     flush.assert_not_awaited()
     assert response.extra["execution"]["error_code"] == "not_found"
 
@@ -176,14 +186,16 @@ def test_a_preflight_denial_does_not_pay_for_a_checkpoint():
             raise AssertionError("denied body ran")
 
     manager = ToolContextManager()
-    manager.get_info = AsyncMock(
-        return_value=SimpleNamespace(version="1.0.0", instance=StubTool())
-    )
+    manager.get_info = AsyncMock(return_value=SimpleNamespace(version="1.0.0", instance=StubTool()))
     flush = AsyncMock(return_value=True)
     with patch("agentevolver.trace.server.trace_manager.flush", flush):
-        response = asyncio.run(manager(
-            name="some_tool", input={}, ctx=ToolContext(id="session-1"),
-            execution_context={"guard_denials": ["plan mode is active"]},
-        ))
+        response = asyncio.run(
+            manager(
+                name="some_tool",
+                input={},
+                ctx=ToolContext(id="session-1"),
+                execution_context={"guard_denials": ["plan mode is active"]},
+            )
+        )
     flush.assert_not_awaited()
     assert response.extra["execution"]["error_code"] == "policy_denied"

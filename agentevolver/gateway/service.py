@@ -11,39 +11,38 @@ import os
 import re
 import shutil
 import sys
+from argparse import Namespace
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, Optional
 
-from argparse import Namespace
-
 from dotenv import load_dotenv
-from lxml import etree, html as lxml_html
+from lxml import etree
+from lxml import html as lxml_html
+
 from agentevolver.agent import agent_manager
 from agentevolver.benchmark import benchmark_manager
 from agentevolver.canvas import canvas_manager
+from agentevolver.canvas.types import FlowGraph
+from agentevolver.capability import MOUNTED_TYPES
+from agentevolver.command import command_manager
+from agentevolver.command.types import CommandContext
+from agentevolver.config import config
+from agentevolver.connector import connector_manager
 from agentevolver.conversation import (
     Conversation,
     conversation_manager,
     question_manager,
     title_from,
 )
-from agentevolver.plan import PlanMode, plan_manager
-from agentevolver.canvas.types import FlowGraph
-from agentevolver.command import command_manager
-from agentevolver.command.types import CommandContext
-from agentevolver.capability import MOUNTED_TYPES
-from agentevolver.config import config
-from agentevolver.connector import connector_manager
 from agentevolver.data import data_manager
+from agentevolver.deploy import deployment_manager
 from agentevolver.environment import environment_manager
+from agentevolver.environment.stream import environment_stream
 from agentevolver.extension import extension_manager
-from agentevolver.ide import ide_manager
-from agentevolver.kernel import compute as kernel_compute
-from agentevolver.kernel import kernel_manager
-from agentevolver.kernel import notebooks as kernel_notebooks
+from agentevolver.gateway.approval import GatewayApprovalRendezvous, PendingToolApproval
 from agentevolver.gateway.types import (
     PROTOCOL_VERSION,
     GatewayCommand,
@@ -51,31 +50,41 @@ from agentevolver.gateway.types import (
     GatewayResponse,
     error_response,
 )
-from agentevolver.gateway.approval import GatewayApprovalRendezvous, PendingToolApproval
 from agentevolver.hook import hook_manager
-from agentevolver.paths import P, path_manager
-from agentevolver.session import project as session_project
+from agentevolver.ide import ide_manager
+from agentevolver.kernel import compute as kernel_compute
+from agentevolver.kernel import kernel_manager
+from agentevolver.kernel import notebooks as kernel_notebooks
+from agentevolver.knowledge import knowledge_manager
 from agentevolver.logger import logger
 from agentevolver.memory import memory_manager
-from agentevolver.knowledge import knowledge_manager
 from agentevolver.model import model_manager
 from agentevolver.model.types import ModelConfig
+from agentevolver.paths import P, path_manager
+from agentevolver.plan import PlanMode, plan_manager
 from agentevolver.plugins import plugin_manager
 from agentevolver.process import process_manager
 from agentevolver.prompt import prompt_manager
-from agentevolver.session.types import SessionContext
-from agentevolver.session.project import bind_session_roots
 from agentevolver.sandbox.project import ProjectSandbox
+from agentevolver.session import project as session_project
+from agentevolver.session.project import bind_session_roots
+from agentevolver.session.types import SessionContext
 from agentevolver.skill import skill_manager
-from agentevolver.task import HUMAN_TURN_KEY, TaskCategory, TaskPriority, TaskRecord, task_manager
+from agentevolver.task import (
+    HUMAN_TURN_KEY,
+    TaskCategory,
+    TaskDeferred,
+    TaskPriority,
+    TaskRecord,
+    TaskStatus,
+    task_manager,
+)
+from agentevolver.tool import tool_manager
 from agentevolver.trace import trace_manager
 from agentevolver.trajectory import trajectory_manager
 from agentevolver.utils import make_id
 from agentevolver.version import version_manager
-from agentevolver.tool import tool_manager
 from agentevolver.workflow import workflow_manager
-from agentevolver.deploy import deployment_manager
-from agentevolver.environment.stream import environment_stream
 
 
 @dataclass
@@ -482,6 +491,9 @@ class AgentGateway:
                 # the restart even though task_ids are not carried across.
                 self._sessions[session_id].has_work = True
                 self._adopt_legacy_transcript(session_id)
+                await task_manager.restore_from(
+                    str(self._sessions[session_id].sandbox.log_root),
+                )
                 restored += 1
             except Exception as exc:  # noqa: BLE001 — one bad manifest must not block startup
                 logger.warning(f"| ⚠️ Skipping unreadable session manifest {manifest}: {exc}")
@@ -1139,12 +1151,72 @@ class AgentGateway:
         cancelled = await task_manager.cancel(task_id)
         return {"task_id": task_id, "cancelled": cancelled}
 
+    async def _command_execution_checkpoint(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Inspect the durable resume decision for one task without changing it."""
+        session_id = self._require_session_id(params)
+        task_id = str(params.get("task_id") or "")
+        record = await task_manager.get(task_id)
+        if record is None or record.task.session_id != session_id:
+            raise ValueError("task_id does not belong to this session")
+        trace_id = str((record.task.metadata or {}).get("conversation_id") or session_id)
+        checkpoint = trace_manager.execution_checkpoint(trace_id)
+        if checkpoint.task_id != task_id:
+            raise ValueError("durable checkpoint does not belong to task_id")
+        return {"checkpoint": checkpoint.model_dump(mode="json")}
+
+    async def _command_execution_reconcile(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Record one human reconciliation fact and resume only when all are settled."""
+        session_id = self._require_session_id(params)
+        task_id = str(params.get("task_id") or "")
+        call_id = str(params.get("call_id") or "")
+        outcome = str(params.get("outcome") or "")
+        if not task_id or not call_id:
+            raise ValueError("task_id and call_id are required")
+        if outcome not in ("applied", "not_applied"):
+            raise ValueError("outcome must be 'applied' or 'not_applied'")
+        record = await task_manager.get(task_id)
+        if record is None or record.task.session_id != session_id:
+            raise ValueError("task_id does not belong to this session")
+        if record.task.status is not TaskStatus.WAITING_CONFIRMATION:
+            raise ValueError("task is not waiting for effect reconciliation")
+        trace_id = str((record.task.metadata or {}).get("conversation_id") or session_id)
+        checkpoint = trace_manager.execution_checkpoint(trace_id)
+        if checkpoint.task_id != task_id:
+            raise ValueError("durable checkpoint does not belong to task_id")
+        from agentevolver.trace.execution_checkpoint import reconciliation_event
+
+        event = reconciliation_event(
+            checkpoint,
+            call_id,
+            outcome,  # type: ignore[arg-type]
+            str(params.get("output") or "") or None,
+        )
+        if not await trace_manager.emit(event) or not await trace_manager.flush():
+            raise RuntimeError("reconciliation fact could not be durably recorded")
+        updated = trace_manager.execution_checkpoint(trace_id)
+        resumed = False
+        if updated.may_resume_automatically:
+            resumed = await task_manager.resume_waiting(task_id)
+            if resumed:
+                await self._publish(
+                    "task.reconciliation.completed",
+                    {"checkpoint": updated.model_dump(mode="json")},
+                    session_id=session_id,
+                    conversation_id=str(
+                        (record.task.metadata or {}).get("conversation_id") or ""
+                    ),
+                    task_id=task_id,
+                )
+        return {
+            "checkpoint": updated.model_dump(mode="json"),
+            "resumed": resumed,
+        }
+
     async def _command_capability_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
         """Capabilities enriched per item with ``{type, name, source, evolving}``:
         ``source`` is ``extension`` when the capability's file lives under the
         shared extension root, else ``default``; ``evolving`` reflects
         ``enable_evolving``. The interactive UI renders these as per-item tags."""
-        import os
         from inspect import getfile
 
         ext_root = os.path.realpath(str(getattr(config, "extension_root", "") or "")) or None
@@ -2323,6 +2395,46 @@ class AgentGateway:
         if conversation_id:
             update["id"] = conversation_id
         ctx = session.context.model_copy(update=update)
+        if record.recovered_from_running:
+            trace_session_id = conversation_id or str(ctx.id)
+            checkpoint = trace_manager.execution_checkpoint(trace_session_id)
+            same_task = checkpoint.task_id == record.task.id
+            if checkpoint.state == "completed" and same_task:
+                from agentevolver.response import Response, ResponseType
+
+                response = Response(
+                    type=ResponseType.AGENT,
+                    success=bool(checkpoint.completion_success),
+                    message=checkpoint.completion_result or "Recovered completed execution.",
+                    data={
+                        "recovered": True,
+                        "execution_checkpoint": checkpoint.model_dump(mode="json"),
+                    },
+                )
+                await self._publish(
+                    "task.completed", response.model_dump(mode="json"),
+                    session_id=session_id, conversation_id=conversation_id,
+                    task_id=record.task.id,
+                )
+                return response
+            if not same_task or not checkpoint.may_resume_automatically:
+                unsettled = ", ".join(
+                    f"{call.action_name} ({call.call_id})"
+                    for call in checkpoint.unsettled_calls
+                ) or checkpoint.state
+                details = checkpoint.model_dump(mode="json")
+                await self._publish(
+                    "task.reconciliation.required",
+                    {"checkpoint": details, "unsettled": unsettled},
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    task_id=record.task.id,
+                )
+                raise TaskDeferred(
+                    "Recovered task requires effect reconciliation: " + unsettled,
+                    details,
+                )
+            ctx.extra["execution_checkpoint"] = checkpoint.model_dump(mode="json")
         self._run_conversations[record.task.id] = conversation_id
         await self._publish("task.started", {"content": record.task.content},
                             session_id=session_id, conversation_id=conversation_id, task_id=record.task.id)
@@ -2342,6 +2454,7 @@ class AgentGateway:
         self._active_agent_tasks[record.task.id] = agent_task
         try:
             response = await agent_task
+            record.recovered_from_running = False
             payload = response.model_dump(mode="json") if hasattr(response, "model_dump") else {"result": str(response)}
             await self._publish("task.completed", payload, session_id=session_id,
                                 conversation_id=conversation_id, task_id=record.task.id)

@@ -86,8 +86,8 @@ Ground factual web claims with inline citations. Use only URLs returned by the c
 
 For academic sources, use author-year citation style where metadata is available:
 
-- Academic: [Smith et al., 2025](url) or [Smith & Jones, 2024](url)
-- Non-academic: [Source Title](url)
+- Academic: `[Smith et al., 2025](https://example.invalid/paper)` or `[Smith & Jones, 2024](https://example.invalid/paper)`
+- Non-academic: `[Source Title](https://example.invalid/page)`
 
 Synthesize a response that:
 

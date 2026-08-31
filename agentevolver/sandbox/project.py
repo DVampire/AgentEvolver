@@ -383,6 +383,13 @@ def check_session_path(ctx: Any = None, path: str = "", *, write: bool) -> Optio
         return None
     candidate = Path(path).expanduser().resolve()
     allowed = session_writable_roots() if write else session_readable_roots()
+    # An isolated workspace is minted by the dispatcher, not accepted from model input.
+    # It narrows a child's writes to a disposable worktree while retaining the ordinary
+    # session roots needed for logs and installed capabilities.
+    scoped = (getattr(ctx, "extra", None) or {}).get("execution_cwd")
+    if scoped:
+        scoped_root = Path(str(scoped)).expanduser().resolve()
+        allowed = [scoped_root, *allowed]
     if not allowed or any(_inside(candidate, root) for root in allowed):
         return None
     access = "write" if write else "read"

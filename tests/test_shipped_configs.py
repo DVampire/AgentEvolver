@@ -59,8 +59,11 @@ def test_every_agent_a_config_names_is_configured(path):
     with contextlib.redirect_stdout(io.StringIO()):
         config.initialize(config_path=str(path), args=argparse.Namespace())
 
-    missing = [name for name in (getattr(config, "agent_names", None) or [])
-               if not isinstance(getattr(config, name, None), dict)]
+    missing = [
+        name
+        for name in (getattr(config, "agent_names", None) or [])
+        if not isinstance(getattr(config, name, None), dict)
+    ]
     assert not missing, f"named in agent_names with no config block: {missing}"
 
 
@@ -85,8 +88,7 @@ def test_every_tool_a_config_names_is_registered(path):
         for field in [getattr(cls, "model_fields", {}).get("name")]
         if field is not None and isinstance(field.default, str)
     }
-    unknown = [name for name in (getattr(config, "tool_names", None) or [])
-               if name not in known]
+    unknown = [name for name in (getattr(config, "tool_names", None) or []) if name not in known]
     assert not unknown, f"named in tool_names but not registered: {unknown}"
 
 
@@ -118,8 +120,7 @@ def test_every_environment_a_config_names_is_registered(path):
         for field in [getattr(cls, "model_fields", {}).get("name")]
         if field is not None and isinstance(field.default, str)
     }
-    unknown = [name for name in (getattr(config, "env_names", None) or [])
-               if name not in known]
+    unknown = [name for name in (getattr(config, "env_names", None) or []) if name not in known]
     assert not unknown, f"named in env_names but not registered: {unknown}"
 
 
@@ -215,8 +216,16 @@ def test_the_two_benchmark_arms_differ_only_in_evolution(evolving_name, baseline
         "tool_names": {"evolution_tool"},
         "skill_names": {"self_evolving_skill"},
     }
-    ROSTERS = ("agent_names", "tool_names", "skill_names", "env_names",
-               "memory_names", "connector_names", "plugin_names", "workflow_names")
+    ROSTERS = (
+        "agent_names",
+        "tool_names",
+        "skill_names",
+        "env_names",
+        "memory_names",
+        "connector_names",
+        "plugin_names",
+        "workflow_names",
+    )
 
     arms = {}
     for name in (evolving_name, baseline_name):

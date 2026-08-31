@@ -35,7 +35,7 @@ For arXiv, either the `/abs/` page URL or the raw PDF URL works. Prefer `/abs/` 
 
 Return content as:
 
-**[Page Title](URL)**
+**`[Page Title](https://example.invalid/page)`**
 
 For academic papers, include structured metadata when available:
 - **Authors:** list of authors (from the `author` field)

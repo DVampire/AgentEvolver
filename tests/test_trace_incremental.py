@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from agentevolver.utils import AsyncQueue
 from agentevolver.trace.projection import (
     ProjectionVersionMismatch,
     ProjectionWatermarkError,
@@ -15,6 +14,7 @@ from agentevolver.trace.projection import (
 )
 from agentevolver.trace.types import TraceEvent, TraceEventType
 from agentevolver.trace.writer import TraceWriter
+from agentevolver.utils import AsyncQueue
 
 
 def _writer(tmp_path):
@@ -34,8 +34,9 @@ def _write_jsonl(writer, session_id, payloads):
 def test_read_from_filters_while_streaming_and_honours_the_batch_limit(tmp_path):
     writer = _writer(tmp_path)
     payloads = [
-        TraceEvent(event_type=TraceEventType.CUSTOM, session_id="s", seq_no=index,
-                   label=f"event-{index}").to_dict()
+        TraceEvent(
+            event_type=TraceEventType.CUSTOM, session_id="s", seq_no=index, label=f"event-{index}"
+        ).to_dict()
         for index in range(6)
     ]
     _write_jsonl(writer, "s", payloads)
@@ -49,8 +50,9 @@ def test_read_from_filters_while_streaming_and_honours_the_batch_limit(tmp_path)
 def test_read_from_assigns_line_sequences_to_pre_sequence_logs(tmp_path):
     writer = _writer(tmp_path)
     payloads = [
-        TraceEvent(event_type=TraceEventType.CUSTOM, session_id="legacy",
-                   label=f"event-{index}").to_dict()
+        TraceEvent(
+            event_type=TraceEventType.CUSTOM, session_id="legacy", label=f"event-{index}"
+        ).to_dict()
         for index in range(3)
     ]
     for payload in payloads:

@@ -14,11 +14,9 @@ name a tool that does not exist.
 import asyncio
 from types import SimpleNamespace
 
-import pytest
-
+from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.types import Tool
-from agentevolver.response.types import Response, ResponseType
 
 
 class _Slow(Tool):
@@ -66,12 +64,11 @@ def _manager_for(tmp_path, instance, default_timeout=1800.0):
 
 def test_a_declared_budget_is_enforced(tmp_path):
     manager = _manager_for(tmp_path, _Slow())
-    resp = asyncio.run(manager(name="slow_tool", input={},
-                               ctx=SimpleNamespace(id="c", extra={})))
+    resp = asyncio.run(manager(name="slow_tool", input={}, ctx=SimpleNamespace(id="c", extra={})))
 
     assert resp.success is False
-    assert "slow_tool" in resp.message          # names the tool, not just "a tool"
-    assert "0.05" in resp.message               # and the budget it blew
+    assert "slow_tool" in resp.message  # names the tool, not just "a tool"
+    assert "0.05" in resp.message  # and the budget it blew
     # And says what to do about it, which "timed out" alone does not.
     assert "narrower" in resp.message or "split" in resp.message
 
@@ -94,8 +91,7 @@ def test_the_declared_budget_wins_over_the_manager_default(tmp_path):
 def test_a_tool_that_declares_nothing_keeps_the_default(tmp_path):
     manager = _manager_for(tmp_path, _Quiet())
     assert manager._call_timeout(_Quiet()) == 1800.0
-    resp = asyncio.run(manager(name="quiet_tool", input={},
-                               ctx=SimpleNamespace(id="c", extra={})))
+    resp = asyncio.run(manager(name="quiet_tool", input={}, ctx=SimpleNamespace(id="c", extra={})))
     assert resp.success is True
 
 

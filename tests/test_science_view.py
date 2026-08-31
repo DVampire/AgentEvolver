@@ -17,8 +17,8 @@ from __future__ import annotations
 import asyncio
 import json
 
-from agentevolver.gateway.types import GatewayCommand
 from agentevolver.gateway.service import AgentGateway
+from agentevolver.gateway.types import GatewayCommand
 from agentevolver.kernel import Execution, KernelOutput, compute, kernel_manager
 from agentevolver.paths import P, path_manager
 
@@ -53,19 +53,30 @@ def test_notebooks_are_workspace_files_not_kernel_state() -> None:
         session_id = created.result["session_id"]
         gateway._sessions[session_id].sandbox.materialize()  # noqa: SLF001
 
-        listed = await gateway.handle(GatewayCommand(
-            id="n", method="science.notebooks", params={"session_id": session_id}))
+        listed = await gateway.handle(
+            GatewayCommand(id="n", method="science.notebooks", params={"session_id": session_id})
+        )
         assert listed.result["notebooks"] == []
 
         workspace = path_manager.get(P.SESSION_WORKSPACE, owner="local", session_id=session_id)
-        (workspace / "analysis.ipynb").write_text(json.dumps({
-            "cells": [{"cell_type": "code", "source": "1+1", "outputs": []}],
-            "nbformat": 4, "nbformat_minor": 5, "metadata": {},
-        }), encoding="utf-8")
+        (workspace / "analysis.ipynb").write_text(
+            json.dumps(
+                {
+                    "cells": [{"cell_type": "code", "source": "1+1", "outputs": []}],
+                    "nbformat": 4,
+                    "nbformat_minor": 5,
+                    "metadata": {},
+                }
+            ),
+            encoding="utf-8",
+        )
 
-        listed = await gateway.handle(GatewayCommand(
-            id="n2", method="science.notebooks", params={"session_id": session_id}))
-        assert [(item["title"], item["cell_count"]) for item in listed.result["notebooks"]] == [("analysis", 1)]
+        listed = await gateway.handle(
+            GatewayCommand(id="n2", method="science.notebooks", params={"session_id": session_id})
+        )
+        assert [(item["title"], item["cell_count"]) for item in listed.result["notebooks"]] == [
+            ("analysis", 1)
+        ]
 
     asyncio.run(run())
 
@@ -85,20 +96,50 @@ def test_the_history_is_saved_as_a_real_notebook() -> None:
 
         # Stands in for a live kernel: what is under test is the conversion, not
         # the execution that produced it.
-        kernel_manager._projects[session_id] = _FakeProject([  # noqa: SLF001
-            Execution(execution_count=1, code="import torch", origin="agent",
-                      outputs=[KernelOutput(type="stream", name="stdout", data={"text/plain": "ok\n"})]),
-            Execution(execution_count=2, code="plt.plot(xs)", origin="user",
-                      outputs=[KernelOutput(type="display", data={
-                          "image/png": "iVBORw0KGgo=", "text/plain": "<Figure>"})]),
-            Execution(execution_count=3, code="1/0", origin="agent", success=False,
-                      error="Traceback...\nZeroDivisionError: division by zero",
-                      outputs=[KernelOutput(type="error", data={
-                          "text/plain": "Traceback...\nZeroDivisionError: division by zero"})]),
-        ])
+        kernel_manager._projects[session_id] = _FakeProject(
+            [  # noqa: SLF001
+                Execution(
+                    execution_count=1,
+                    code="import torch",
+                    origin="agent",
+                    outputs=[
+                        KernelOutput(type="stream", name="stdout", data={"text/plain": "ok\n"})
+                    ],
+                ),
+                Execution(
+                    execution_count=2,
+                    code="plt.plot(xs)",
+                    origin="user",
+                    outputs=[
+                        KernelOutput(
+                            type="display",
+                            data={"image/png": "iVBORw0KGgo=", "text/plain": "<Figure>"},
+                        )
+                    ],
+                ),
+                Execution(
+                    execution_count=3,
+                    code="1/0",
+                    origin="agent",
+                    success=False,
+                    error="Traceback...\nZeroDivisionError: division by zero",
+                    outputs=[
+                        KernelOutput(
+                            type="error",
+                            data={
+                                "text/plain": "Traceback...\nZeroDivisionError: division by zero"
+                            },
+                        )
+                    ],
+                ),
+            ]
+        )
         try:
-            saved = await gateway.handle(GatewayCommand(
-                id="s", method="science.save", params={"session_id": session_id, "name": "run"}))
+            saved = await gateway.handle(
+                GatewayCommand(
+                    id="s", method="science.save", params={"session_id": session_id, "name": "run"}
+                )
+            )
             path = saved.result["notebook"]["path"]
             workspace = path_manager.get(P.SESSION_WORKSPACE, owner="local", session_id=session_id)
             document = json.loads((workspace / path).read_text(encoding="utf-8"))
@@ -114,8 +155,11 @@ def test_the_history_is_saved_as_a_real_notebook() -> None:
         error = document["cells"][2]["outputs"][0]
         assert error["ename"] == "ZeroDivisionError" and error["evalue"] == "division by zero"
         # Who ran what is kept — seeing what the AGENT ran is most of the point.
-        assert [cell["metadata"]["agentevolver"]["origin"] for cell in document["cells"]] == \
-            ["agent", "user", "agent"]
+        assert [cell["metadata"]["agentevolver"]["origin"] for cell in document["cells"]] == [
+            "agent",
+            "user",
+            "agent",
+        ]
 
     asyncio.run(run())
 
@@ -166,24 +210,38 @@ def test_the_history_poll_only_sends_what_is_new() -> None:
         created = await gateway.handle(GatewayCommand(id="c", method="session.create", params={}))
         session_id = created.result["session_id"]
 
-        kernel_manager._projects[session_id] = _FakeProject([  # noqa: SLF001
-            Execution(execution_count=n, code=f"step {n}", origin="agent") for n in (1, 2, 3)
-        ])
+        kernel_manager._projects[session_id] = _FakeProject(
+            [  # noqa: SLF001
+                Execution(execution_count=n, code=f"step {n}", origin="agent") for n in (1, 2, 3)
+            ]
+        )
         try:
-            first = await gateway.handle(GatewayCommand(
-                id="h1", method="science.history", params={"session_id": session_id}))
+            first = await gateway.handle(
+                GatewayCommand(id="h1", method="science.history", params={"session_id": session_id})
+            )
             assert first.result["total"] == 3
-            assert [item["code"] for item in first.result["executions"]] == ["step 1", "step 2", "step 3"]
+            assert [item["code"] for item in first.result["executions"]] == [
+                "step 1",
+                "step 2",
+                "step 3",
+            ]
 
             # Nothing new: the poll costs a status, not the whole transcript.
-            second = await gateway.handle(GatewayCommand(
-                id="h2", method="science.history", params={"session_id": session_id, "after": 3}))
+            second = await gateway.handle(
+                GatewayCommand(
+                    id="h2", method="science.history", params={"session_id": session_id, "after": 3}
+                )
+            )
             assert second.result["executions"] == [] and second.result["total"] == 3
 
             kernel_manager._projects[session_id].history.append(  # noqa: SLF001
-                Execution(execution_count=4, code="step 4", origin="user"))
-            third = await gateway.handle(GatewayCommand(
-                id="h3", method="science.history", params={"session_id": session_id, "after": 3}))
+                Execution(execution_count=4, code="step 4", origin="user")
+            )
+            third = await gateway.handle(
+                GatewayCommand(
+                    id="h3", method="science.history", params={"session_id": session_id, "after": 3}
+                )
+            )
             assert [item["code"] for item in third.result["executions"]] == ["step 4"]
         finally:
             kernel_manager._projects.pop(session_id, None)  # noqa: SLF001
@@ -204,14 +262,21 @@ def test_the_gpu_reading_is_sampled_in_the_background_not_per_request() -> None:
 
         def counted():
             calls.append(1)
-            return [{"index": 0, "name": "Fake", "memory_used_mb": 1,
-                     "memory_total_mb": 2, "utilization_percent": 3}]
+            return [
+                {
+                    "index": 0,
+                    "name": "Fake",
+                    "memory_used_mb": 1,
+                    "memory_total_mb": 2,
+                    "utilization_percent": 3,
+                }
+            ]
 
-        original, compute._read_gpus = compute._read_gpus, counted   # noqa: SLF001
+        original, compute._read_gpus = compute._read_gpus, counted  # noqa: SLF001
         # The cache is module state, so a previous test's sampler would serve
         # these reads and the count would pass without proving anything.
         compute.stop_sampling()
-        compute._gpus, compute._wanted_at = [], 0.0                  # noqa: SLF001
+        compute._gpus, compute._wanted_at = [], 0.0  # noqa: SLF001
         try:
             first = await compute.gpus()
             for _ in range(5):
@@ -219,7 +284,7 @@ def test_the_gpu_reading_is_sampled_in_the_background_not_per_request() -> None:
             # One sample served six reads.
             assert len(calls) == 1
         finally:
-            compute._read_gpus = original                            # noqa: SLF001
+            compute._read_gpus = original  # noqa: SLF001
             compute.stop_sampling()
 
     asyncio.run(run())
@@ -244,10 +309,20 @@ def test_the_reaper_never_closes_a_server_whose_kernel_is_working() -> None:
 
         manager = module.KernelManagerServer()
         stale = time.time() - module.IDLE_TIMEOUT_SECONDS - 60
-        quiet = module._Project(key="quiet", workspace="/tmp", kernel_id="k1",  # noqa: SLF001
-                                base_url="http://127.0.0.1:1/x", last_seen=stale)
-        working = module._Project(key="training", workspace="/tmp", kernel_id="k2",  # noqa: SLF001
-                                  base_url="http://127.0.0.1:2/x", last_seen=stale)
+        quiet = module._Project(
+            key="quiet",
+            workspace="/tmp",
+            kernel_id="k1",  # noqa: SLF001
+            base_url="http://127.0.0.1:1/x",
+            last_seen=stale,
+        )
+        working = module._Project(
+            key="training",
+            workspace="/tmp",
+            kernel_id="k2",  # noqa: SLF001
+            base_url="http://127.0.0.1:2/x",
+            last_seen=stale,
+        )
         manager._projects.update({"quiet": quiet, "training": working})  # noqa: SLF001
 
         closed: list[str] = []
@@ -293,15 +368,16 @@ def test_the_proxy_target_is_the_origin_without_the_labs_own_prefix() -> None:
     the caller: the gateway test for this route mocks `upstream` out entirely, so a
     wrong subtraction would reach production with the suite green.
     """
+
     class _Project:
         base_url = "http://127.0.0.1:8888/science/proj-1"
         last_seen = 0.0
 
-    kernel_manager._projects["proj-1"] = _Project()               # noqa: SLF001
+    kernel_manager._projects["proj-1"] = _Project()  # noqa: SLF001
     try:
         assert kernel_manager.upstream("proj-1") == "http://127.0.0.1:8888"
     finally:
-        kernel_manager._projects.pop("proj-1", None)              # noqa: SLF001
+        kernel_manager._projects.pop("proj-1", None)  # noqa: SLF001
 
 
 def test_a_project_that_never_started_has_no_proxy_target() -> None:

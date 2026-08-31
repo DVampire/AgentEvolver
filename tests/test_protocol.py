@@ -188,7 +188,9 @@ async def test_the_guidance_comes_back_to_the_blocked_agent(protocol, runtime):
     runtime.suspend_result = "try the other approach"
     guidance = await protocol.escalate(
         Ctx(parent_session_id="parent-1", subtask_id="sub-1"),
-        reason="stuck", situation="tests fail", suggestion="rebuild?",
+        reason="stuck",
+        situation="tests fail",
+        suggestion="rebuild?",
     )
     assert guidance == "try the other approach"
 
@@ -221,7 +223,9 @@ async def test_lineage_is_found_in_extra_after_a_context_conversion(protocol, ru
     on exactly the path that matters.
     """
     runtime.refs["parent-1"] = object()
-    ctx = Ctx(parent_session_id=None, extra={"parent_session_id": "parent-1", "subtask_id": "sub-9"})
+    ctx = Ctx(
+        parent_session_id=None, extra={"parent_session_id": "parent-1", "subtask_id": "sub-9"}
+    )
     await protocol.escalate(ctx, reason="stuck")
     assert runtime.sent[0][1].task_id == "sub-9"
 
@@ -250,7 +254,9 @@ def test_replying_reports_whether_anyone_was_waiting(protocol, runtime):
 # Steering a running agent
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
-@pytest.mark.parametrize("verb, action", [("cancel", "cancel"), ("pause", "pause"), ("resume", "resume")])
+@pytest.mark.parametrize(
+    "verb, action", [("cancel", "cancel"), ("pause", "pause"), ("resume", "resume")]
+)
 async def test_each_control_verb_sends_its_instruction(protocol, runtime, verb, action):
     """Three near-identical one-line methods, which is exactly how one ends up sending
     another's action — a ``pause`` that cancels is unrecoverable, and the caller sees only

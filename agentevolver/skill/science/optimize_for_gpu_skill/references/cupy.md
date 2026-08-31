@@ -260,6 +260,7 @@ vector_add((blocks,), (threads,), (a, b, c, n))  # (grid, block, args)
 For multi-kernel CUDA files or precompiled binaries:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 module = cp.RawModule(code=cuda_source)       # From source string
 module = cp.RawModule(path='kernels.cu')      # From file
 module = cp.RawModule(path='kernels.cubin')   # From precompiled
@@ -484,6 +485,7 @@ print(result)  # Shows CPU and GPU elapsed times with statistics
 
 In IPython/Jupyter:
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 %load_ext cupyx.profiler
 %gpu_timeit my_function(args)
 ```

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from agentevolver.gateway import types as wire
 from agentevolver.gateway.types import PROTOCOL_VERSION
@@ -67,8 +67,8 @@ def test_the_checked_in_typescript_is_what_the_models_render():
 def test_regenerating_an_unchanged_artifact_reports_no_change(tmp_path):
     """Writing must be idempotent, or the gate above would fight every commit."""
     (tmp_path / "frontend" / "src" / "protocol").mkdir(parents=True)
-    assert write_typescript(tmp_path) is True       # first write creates it
-    assert write_typescript(tmp_path) is False      # second finds it already correct
+    assert write_typescript(tmp_path) is True  # first write creates it
+    assert write_typescript(tmp_path) is False  # second finds it already correct
 
 
 # --------------------------------------------------------------------------- #
@@ -150,8 +150,9 @@ def test_python_shapes_become_the_typescript_a_client_can_use(annotation, expect
 
     model = type("_Shape", (BaseModel,), {"__annotations__": {"value": annotation}})
     if expected.startswith("value?"):
-        model = type("_Shape", (BaseModel,), {"__annotations__": {"value": annotation},
-                                              "value": None})
+        model = type(
+            "_Shape", (BaseModel,), {"__annotations__": {"value": annotation}, "value": None}
+        )
     assert expected in _render_model(model)
 
 
@@ -197,6 +198,6 @@ def test_the_two_axes_on_an_event_are_both_declared():
     different questions, and an event needs both answered — collapsing them would leave a
     client unable to tell a response from an event, or one event from another."""
     rendered = render_typescript()
-    event = rendered[rendered.index("export interface GatewayEvent"):]
+    event = rendered[rendered.index("export interface GatewayEvent") :]
     assert "kind: 'event';" in event
     assert "type: string;" in event

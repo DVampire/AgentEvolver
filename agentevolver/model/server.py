@@ -81,6 +81,32 @@ class ModelManagerServer(BaseModel):
             step_number=step_number,
         )
 
+    async def retrieve_background(
+        self, name: str, response_id: str, **trace: Any,
+    ) -> Response:
+        return await self.model_context_manager.retrieve_background(
+            name, response_id, **trace,
+        )
+
+    async def create_background(
+        self,
+        name: str,
+        input: Dict[str, Any],
+        ctx: ModelContext = None,
+        **kwargs: Any,
+    ) -> Response:
+        payload = {**input, "background": True, "store": True}
+        return await self.model_context_manager(
+            name=name, input=payload, ctx=ctx, **kwargs,
+        )
+
+    async def cancel_background(
+        self, name: str, response_id: str, **trace: Any,
+    ) -> Response:
+        return await self.model_context_manager.cancel_background(
+            name, response_id, **trace,
+        )
+
     # ------------------------------------------------------------------
     # Invocation
     # ------------------------------------------------------------------

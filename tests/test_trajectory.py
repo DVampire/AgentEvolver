@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from agentevolver.message import AssistantMessage, Function, HumanMessage, ToolCall
+from agentevolver.trace.types import TraceEvent, TraceEventType
 from agentevolver.trajectory.server import TrajectoryManagerServer
 from agentevolver.trajectory.types import (
     SFT_EXPORT_VERSION,
@@ -28,7 +29,6 @@ from agentevolver.trajectory.types import (
     TrajectoryContext,
     TrajectoryStep,
 )
-from agentevolver.trace.types import TraceEvent, TraceEventType
 
 TASK = "task-1"
 SESSION = "session-1"
@@ -54,18 +54,22 @@ def a_recorded_run(manager, *, steps=1):
     """
     manager.begin(ctx(task="Fix the bug"))
     for n in range(steps):
-        manager.add_observation(ctx(
-            step_number=n,
-            action={"index": 0, "type": "tool", "name": "bash", "args": {"cmd": "ls"}},
-            action_result="a.txt",
-        ))
-        manager.close_step(ctx(
-            step_number=n,
-            messages=[HumanMessage(content=f"step {n}")],
-            reasoning=f"thinking {n}",
-            plan=[{"id": "call_0", "name": "bash", "args": {"cmd": "ls"}}],
-            step_tokens=100 + n,
-        ))
+        manager.add_observation(
+            ctx(
+                step_number=n,
+                action={"index": 0, "type": "tool", "name": "bash", "args": {"cmd": "ls"}},
+                action_result="a.txt",
+            )
+        )
+        manager.close_step(
+            ctx(
+                step_number=n,
+                messages=[HumanMessage(content=f"step {n}")],
+                reasoning=f"thinking {n}",
+                plan=[{"id": "call_0", "name": "bash", "args": {"cmd": "ls"}}],
+                step_tokens=100 + n,
+            )
+        )
     return manager
 
 
@@ -104,16 +108,36 @@ def test_a_step_cites_the_trace_request_and_event_range_it_projects(trajectories
     — request, actions, results, and the closing assistant turn — used by the projection.
     """
     events = [
-        TraceEvent(event_type=TraceEventType.MODEL_REQUEST, session_id=SESSION,
-                   task_id=TASK, step_number=0, seq_no=4,
-                   metadata={"request_snapshot_id": "primary"}),
-        TraceEvent(event_type=TraceEventType.MODEL_REQUEST, session_id=SESSION,
-                   task_id=TASK, step_number=0, seq_no=5,
-                   metadata={"request_snapshot_id": "fallback"}),
-        TraceEvent(event_type=TraceEventType.TOOL_CALL, session_id=SESSION,
-                   task_id=TASK, step_number=0, seq_no=8),
-        TraceEvent(event_type=TraceEventType.AGENT_CALL, session_id=SESSION,
-                   task_id=TASK, step_number=0, seq_no=9),
+        TraceEvent(
+            event_type=TraceEventType.MODEL_REQUEST,
+            session_id=SESSION,
+            task_id=TASK,
+            step_number=0,
+            seq_no=4,
+            metadata={"request_snapshot_id": "primary"},
+        ),
+        TraceEvent(
+            event_type=TraceEventType.MODEL_REQUEST,
+            session_id=SESSION,
+            task_id=TASK,
+            step_number=0,
+            seq_no=5,
+            metadata={"request_snapshot_id": "fallback"},
+        ),
+        TraceEvent(
+            event_type=TraceEventType.TOOL_CALL,
+            session_id=SESSION,
+            task_id=TASK,
+            step_number=0,
+            seq_no=8,
+        ),
+        TraceEvent(
+            event_type=TraceEventType.AGENT_CALL,
+            session_id=SESSION,
+            task_id=TASK,
+            step_number=0,
+            seq_no=9,
+        ),
     ]
     trajectories.begin(ctx(task="t"))
     with patch("agentevolver.trace.server.trace_manager.events", return_value=events):
@@ -145,9 +169,13 @@ def test_several_actions_in_one_step_are_all_observed(trajectories):
     """
     trajectories.begin(ctx(task="t"))
     for i in range(3):
-        trajectories.add_observation(ctx(
-            step_number=0, action={"index": i, "name": "bash"}, action_result=f"out{i}",
-        ))
+        trajectories.add_observation(
+            ctx(
+                step_number=0,
+                action={"index": i, "name": "bash"},
+                action_result=f"out{i}",
+            )
+        )
     trajectories.close_step(ctx(step_number=0))
     assert [o["index"] for o in trajectories.get(TASK).steps[0].observations] == [0, 1, 2]
 
@@ -229,8 +257,8 @@ def test_finalizing_records_the_outcome_and_writes_the_file(trajectories):
     assert header["__header__"] is True
     assert header["task_id"] == TASK
     assert header["schema_version"] == TRAJECTORY_SCHEMA_VERSION
-    assert "steps" not in header          # steps are their own lines
-    assert len(lines) == 3                # header + two steps
+    assert "steps" not in header  # steps are their own lines
+    assert len(lines) == 3  # header + two steps
 
 
 def test_a_non_string_result_is_stringified_rather_than_dropped(trajectories):
@@ -263,12 +291,18 @@ def test_a_future_trajectory_schema_is_refused_instead_of_partly_loaded(trajecto
     does not understand, so refusing the whole file is the only safe default.
     """
     path = tmp_path / "future.jsonl"
-    path.write_text(json.dumps({
-        "__header__": True,
-        "schema_version": 999,
-        "session_id": SESSION,
-        "task_id": TASK,
-    }) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                "__header__": True,
+                "schema_version": 999,
+                "session_id": SESSION,
+                "task_id": TASK,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     assert trajectories.load(str(path)) is None
 
 
@@ -354,12 +388,14 @@ def test_an_export_names_its_schema_and_source_trace_lineage():
         task_id=TASK,
         source_trace_seq_start=1,
         source_trace_seq_end=12,
-        steps=[TrajectoryStep(
-            step_number=0,
-            request_snapshot_id="sha256:request",
-            source_trace_seq_start=3,
-            source_trace_seq_end=10,
-        )],
+        steps=[
+            TrajectoryStep(
+                step_number=0,
+                request_snapshot_id="sha256:request",
+                source_trace_seq_start=3,
+                source_trace_seq_end=10,
+            )
+        ],
     )
     provenance = trajectory.to_sft_records()[0]["provenance"]
     assert provenance["trajectory_schema_version"] == TRAJECTORY_SCHEMA_VERSION
@@ -397,7 +433,10 @@ def test_a_step_with_no_actions_emits_a_plain_assistant_turn():
     an absent key is a turn that was never about calling anything. A step that only
     reasoned is the second.
     """
-    assert "tool_calls" not in TrajectoryStep(step_number=0, reasoning="just thinking")._assistant_message()
+    assert (
+        "tool_calls"
+        not in TrajectoryStep(step_number=0, reasoning="just thinking")._assistant_message()
+    )
 
 
 def test_prompt_messages_survive_as_chat_dicts(trajectories):
@@ -418,11 +457,17 @@ def test_an_assistant_prompt_message_keeps_its_tool_calls():
     Losing it here breaks the prompt rather than the target: the record then shows a
     tool result answering a call that is not in the history.
     """
-    step = TrajectoryStep(step_number=0, messages_sent=[
-        AssistantMessage(content="calling", tool_calls=[
-            ToolCall(id="c1", function=Function(name="bash", arguments="{}")),
-        ]),
-    ])
+    step = TrajectoryStep(
+        step_number=0,
+        messages_sent=[
+            AssistantMessage(
+                content="calling",
+                tool_calls=[
+                    ToolCall(id="c1", function=Function(name="bash", arguments="{}")),
+                ],
+            ),
+        ],
+    )
     assert step.to_sft_record()["messages"][0]["tool_calls"][0]["id"] == "c1"
 
 

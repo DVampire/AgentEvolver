@@ -19,7 +19,6 @@ import os
 
 import pytest
 
-from agentevolver.utils import AsyncQueue
 from agentevolver.trace.types import (
     EventConfidence,
     EventProvenance,
@@ -33,6 +32,7 @@ from agentevolver.trace.types import (
     tool_start_event,
 )
 from agentevolver.trace.writer import TraceWriter
+from agentevolver.utils import AsyncQueue
 
 SESSION = "sess-1"
 TASK = "task-1"
@@ -99,14 +99,27 @@ def test_the_fingerprint_is_stable_for_the_same_step():
     The fingerprint is derived from the step's coordinates instead, which is what lets a
     duplicate from a retry be recognised rather than counted again.
     """
-    kw = dict(event_type=TraceEventType.TOOL_CALL, session_id=SESSION,
-              step_number=1, action_index=0, action_name="bash")
-    assert compute_event_fingerprint(TraceEvent(**kw)) == compute_event_fingerprint(TraceEvent(**kw))
+    kw = dict(
+        event_type=TraceEventType.TOOL_CALL,
+        session_id=SESSION,
+        step_number=1,
+        action_index=0,
+        action_name="bash",
+    )
+    assert compute_event_fingerprint(TraceEvent(**kw)) == compute_event_fingerprint(
+        TraceEvent(**kw)
+    )
 
 
-@pytest.mark.parametrize("field, value", [
-    ("step_number", 2), ("action_index", 1), ("action_name", "python"), ("session_id", "other"),
-])
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("step_number", 2),
+        ("action_index", 1),
+        ("action_name", "python"),
+        ("session_id", "other"),
+    ],
+)
 def test_the_fingerprint_changes_when_the_step_identity_does(field, value):
     """Each coordinate is checked separately because one left out of the hash is silent.
 
@@ -114,8 +127,13 @@ def test_the_fingerprint_changes_when_the_step_identity_does(field, value):
     step into one identity — they share everything else — and deduplication would then
     discard real work.
     """
-    kw = dict(event_type=TraceEventType.TOOL_CALL, session_id=SESSION,
-              step_number=1, action_index=0, action_name="bash")
+    kw = dict(
+        event_type=TraceEventType.TOOL_CALL,
+        session_id=SESSION,
+        step_number=1,
+        action_index=0,
+        action_name="bash",
+    )
     baseline = compute_event_fingerprint(TraceEvent(**kw))
     assert compute_event_fingerprint(TraceEvent(**{**kw, field: value})) != baseline
 
@@ -190,7 +208,9 @@ def test_an_optional_description_reaches_the_metadata():
     blank" the same, and every consumer would have to guard for a key that carries no
     information.
     """
-    with_it = tool_call_event(SESSION, TASK, AGENT, 0, 0, "bash", "o", True, description="list files")
+    with_it = tool_call_event(
+        SESSION, TASK, AGENT, 0, 0, "bash", "o", True, description="list files"
+    )
     without = tool_call_event(SESSION, TASK, AGENT, 0, 0, "bash", "o", True)
     assert with_it.metadata["description"] == "list files"
     assert "description" not in without.metadata
@@ -325,6 +345,7 @@ async def test_an_event_that_cannot_be_written_does_not_stop_the_loop(writer):
     tracing for the rest of the process, and nothing restarts it. So the bad event is
     dropped and the loop continues — "before" is missing from the log and "after" is not.
     """
+
     class Unserialisable:
         # Raising from __repr__ is what makes the event unwritable: json.dumps builds its
         # own error message from the object, so even the failure path cannot render it.

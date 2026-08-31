@@ -35,8 +35,12 @@ from agentevolver.trace.types import TraceEvent, TraceEventType
 
 def _event(seq, op=APPEND, cites=None, label=""):
     return TraceEvent(
-        event_type=TraceEventType.CUSTOM, session_id="s", seq_no=seq,
-        label=label or f"e{seq}", surface_op=op, source_event_seqs=cites,
+        event_type=TraceEventType.CUSTOM,
+        session_id="s",
+        seq_no=seq,
+        label=label or f"e{seq}",
+        surface_op=op,
+        source_event_seqs=cites,
     )
 
 
@@ -56,7 +60,8 @@ def test_emitting_stamps_an_event_with_its_position():
     TraceManager.__init__(manager)
 
     class _Q:
-        def emit(self, event): pass
+        def emit(self, event):
+            pass
 
     manager._queue, manager._running = _Q(), True
     events = [TraceEvent(event_type=TraceEventType.CUSTOM, session_id="s") for _ in range(3)]
@@ -80,7 +85,8 @@ def test_each_session_numbers_its_own_events_from_zero():
     TraceManager.__init__(manager)
 
     class _Q:
-        def emit(self, event): pass
+        def emit(self, event):
+            pass
 
     manager._queue, manager._running = _Q(), True
     a1 = TraceEvent(event_type=TraceEventType.CUSTOM, session_id="a")
@@ -106,7 +112,8 @@ def test_numbering_continues_after_a_restart():
     TraceManager.__init__(manager)
 
     class _Q:
-        def emit(self, event): pass
+        def emit(self, event):
+            pass
 
     class _Writer:
         def next_seq(self, session_id):
@@ -131,14 +138,18 @@ def test_history_bearing_constructors_join_the_surface():
     surface twice.
     """
     from agentevolver.trace.types import (
-        agent_call_event, agent_end_event, agent_start_event,
-        skill_call_event, tool_call_event, tool_start_event,
+        agent_call_event,
+        agent_end_event,
+        agent_start_event,
+        skill_call_event,
+        tool_call_event,
+        tool_start_event,
     )
 
     joins = [
-        agent_start_event("s", "t", "a", "task"),                 # the task
-        agent_call_event("s", "t", "a", 1),                       # the assistant's turn
-        agent_end_event("s", "t", "a", True, "r"),                # the final answer
+        agent_start_event("s", "t", "a", "task"),  # the task
+        agent_call_event("s", "t", "a", 1),  # the assistant's turn
+        agent_end_event("s", "t", "a", True, "r"),  # the final answer
         tool_call_event("s", "t", "a", 1, 0, "bash", None, True),  # a result
         skill_call_event("s", "t", "a", 1, 0, "sk", None, True),
     ]
@@ -181,7 +192,7 @@ def test_a_replacement_stands_in_for_its_range():
     events.append(_event(5, op=replace_op(1, 3), cites=[1, 2, 3]))
 
     fold = fold_surface(events)
-    assert fold["nodes"] == [0, 5, 4]                 # in place, not appended at the tail
+    assert fold["nodes"] == [0, 5, 4]  # in place, not appended at the tail
     assert fold["replacements"][0]["shadowed"] == [1, 2, 3]
 
 
@@ -228,7 +239,7 @@ def test_a_replacement_must_cite_what_it_shadows():
     producers put there. Event 1 is missing here for exactly that reason.
     """
     events = [_event(i) for i in range(3)]
-    events.append(_event(3, op=replace_op(0, 2), cites=[0, 2]))     # 1 missing
+    events.append(_event(3, op=replace_op(0, 2), cites=[0, 2]))  # 1 missing
 
     with pytest.raises(SurfaceError, match="does not cite"):
         fold_surface(events)
@@ -243,7 +254,7 @@ def test_replacing_an_already_replaced_range_is_refused():
     """
     events = [_event(i) for i in range(3)]
     events.append(_event(3, op=replace_op(0, 1), cites=[0, 1]))
-    events.append(_event(4, op=replace_op(0, 1), cites=[0, 1]))     # 0 and 1 are gone
+    events.append(_event(4, op=replace_op(0, 1), cites=[0, 1]))  # 0 and 1 are gone
 
     with pytest.raises(SurfaceError, match="not on the current surface"):
         fold_surface(events)
@@ -325,6 +336,7 @@ def test_compaction_records_its_fold_in_the_log():
             emitted.append(event)
 
     import agentevolver.trace as trace_pkg
+
     real = trace_pkg.trace_manager
     trace_pkg.trace_manager = _Manager()
     try:
@@ -333,10 +345,7 @@ def test_compaction_records_its_fold_in_the_log():
         trace_pkg.trace_manager = real
 
     assert emitted, "the fold was not recorded"
-    first = next(
-        event for event in emitted
-        if (event.metadata or {}).get("type") == "compaction"
-    )
+    first = next(event for event in emitted if (event.metadata or {}).get("type") == "compaction")
     assert first.surface_op == {"op": "replace", "start": 0, "end": 4}
     assert first.source_event_seqs == [0, 1, 2, 3, 4]
     assert first.message == "a summary"
@@ -354,7 +363,7 @@ def test_records_without_a_position_are_not_cited():
     memory = TieredMemory(base_dir="", recent_max=4, recent_fetch=2)
     state = _SessionState(session_id="s1", task="t", file_path="", working_max=10)
     for i in range(9):
-        state.recent.append(MemoryRecord(ts="t", event=f"e{i}", detail="d"))   # no seq
+        state.recent.append(MemoryRecord(ts="t", event=f"e{i}", detail="d"))  # no seq
 
     emitted = []
 
@@ -371,6 +380,7 @@ def test_records_without_a_position_are_not_cited():
             emitted.append(event)
 
     import agentevolver.trace as trace_pkg
+
     real = trace_pkg.trace_manager
     trace_pkg.trace_manager = _Manager()
     try:
@@ -378,9 +388,7 @@ def test_records_without_a_position_are_not_cited():
     finally:
         trace_pkg.trace_manager = real
 
-    assert not any(
-        (event.metadata or {}).get("type") == "compaction" for event in emitted
-    )
+    assert not any((event.metadata or {}).get("type") == "compaction" for event in emitted)
 
 
 # --------------------------------------------------------------------------- #
@@ -394,7 +402,8 @@ def _live_manager():
     TraceManager.__init__(manager)
 
     class _Q:
-        def emit(self, event): pass
+        def emit(self, event):
+            pass
 
     manager._queue, manager._running = _Q(), True
     return manager
@@ -409,10 +418,14 @@ def test_the_manager_tracks_the_surface_as_it_emits():
     """
     manager = _live_manager()
     for _ in range(3):
-        asyncio.run(manager.emit(TraceEvent(
-            event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)))
-    asyncio.run(manager.emit(TraceEvent(
-        event_type=TraceEventType.CUSTOM, session_id="s", surface_op=None)))   # log-only
+        asyncio.run(
+            manager.emit(
+                TraceEvent(event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)
+            )
+        )
+    asyncio.run(
+        manager.emit(TraceEvent(event_type=TraceEventType.CUSTOM, session_id="s", surface_op=None))
+    )  # log-only
 
     assert manager.surface("s") == [0, 1, 2]
 
@@ -421,11 +434,21 @@ def test_a_replacement_advances_the_live_surface_in_place():
     """The same in-place rule as the fold, on the path that runs during a live session."""
     manager = _live_manager()
     for _ in range(4):
-        asyncio.run(manager.emit(TraceEvent(
-            event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)))
-    asyncio.run(manager.emit(TraceEvent(
-        event_type=TraceEventType.CUSTOM, session_id="s",
-        surface_op=replace_op(1, 2), source_event_seqs=[1, 2])))
+        asyncio.run(
+            manager.emit(
+                TraceEvent(event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)
+            )
+        )
+    asyncio.run(
+        manager.emit(
+            TraceEvent(
+                event_type=TraceEventType.CUSTOM,
+                session_id="s",
+                surface_op=replace_op(1, 2),
+                source_event_seqs=[1, 2],
+            )
+        )
+    )
 
     assert manager.surface("s") == [0, 4, 3]
 
@@ -439,8 +462,11 @@ def test_surface_span_returns_everything_in_the_range():
     """
     manager = _live_manager()
     for _ in range(5):
-        asyncio.run(manager.emit(TraceEvent(
-            event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)))
+        asyncio.run(
+            manager.emit(
+                TraceEvent(event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)
+            )
+        )
 
     assert manager.surface_span("s", 1, 3) == [1, 2, 3]
 
@@ -455,8 +481,11 @@ def test_surface_span_is_empty_when_an_edge_is_not_on_the_surface():
     """
     manager = _live_manager()
     for _ in range(3):
-        asyncio.run(manager.emit(TraceEvent(
-            event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)))
+        asyncio.run(
+            manager.emit(
+                TraceEvent(event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)
+            )
+        )
 
     assert manager.surface_span("s", 0, 99) == []
     assert manager.surface_span("unknown-session", 0, 1) == []
@@ -471,11 +500,18 @@ def test_the_live_surface_keeps_a_malformed_replacement_rather_than_dropping_it(
     the stored log still records what its writer declared.
     """
     manager = _live_manager()
-    asyncio.run(manager.emit(TraceEvent(
-        event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)))
-    asyncio.run(manager.emit(TraceEvent(
-        event_type=TraceEventType.CUSTOM, session_id="s",
-        surface_op=replace_op(50, 60))))          # names a range that does not exist
+    asyncio.run(
+        manager.emit(
+            TraceEvent(event_type=TraceEventType.CUSTOM, session_id="s", surface_op=APPEND)
+        )
+    )
+    asyncio.run(
+        manager.emit(
+            TraceEvent(
+                event_type=TraceEventType.CUSTOM, session_id="s", surface_op=replace_op(50, 60)
+            )
+        )
+    )  # names a range that does not exist
 
     assert manager.surface("s") == [0, 1]
 
@@ -494,14 +530,13 @@ def test_a_compaction_removes_turns_from_the_model_history_and_not_from_the_tran
     Nothing catches that in a short session, because both readings agree exactly until the
     first compaction.
     """
-    events = [_event(0), _event(1), _event(2),
-              _event(3, op=replace_op(1, 2), cites=[1, 2])]
+    events = [_event(0), _event(1), _event(2), _event(3, op=replace_op(1, 2), cites=[1, 2])]
 
     model_history = [event.seq_no for event in surface_events(events)]
     human_transcript = [event.seq_no for event in transcript_events(events)]
 
-    assert model_history == [0, 3]              # 1 and 2 are shadowed by the summary
-    assert human_transcript == [0, 1, 2]        # and still on the reader's screen
+    assert model_history == [0, 3]  # 1 and 2 are shadowed by the summary
+    assert human_transcript == [0, 1, 2]  # and still on the reader's screen
 
 
 def test_the_transcript_keeps_an_event_a_later_summary_shadowed():

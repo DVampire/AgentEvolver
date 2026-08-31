@@ -45,8 +45,11 @@ class _Agent:
 def _parent_log(turns: int = 2, reasoning: str = "ruled out the parser"):
     events = [agent_start_event("parent-session", "t", "meta_agent", "investigate")]
     for step in range(1, turns + 1):
-        events.append(agent_call_event("parent-session", "t", "meta_agent", step,
-                                       reasoning=f"{reasoning} ({step})"))
+        events.append(
+            agent_call_event(
+                "parent-session", "t", "meta_agent", step, reasoning=f"{reasoning} ({step})"
+            )
+        )
     for position, event in enumerate(events):
         event.seq_no = position
     return events
@@ -142,9 +145,11 @@ async def test_an_inherited_history_is_bounded_from_the_tail(parent_log):
     _, log = parent_log
     log["events"] = _parent_log(turns=400, reasoning="x" * 200)
 
-    body = (await _Agent()._get_inherited_context(
-        ctx=type("Ctx", (), {"id": "c", "extra": {"forked_from": "parent-session"}})()
-    ))["inherited_context"]
+    body = (
+        await _Agent()._get_inherited_context(
+            ctx=type("Ctx", (), {"id": "c", "extra": {"forked_from": "parent-session"}})()
+        )
+    )["inherited_context"]
 
     assert len(body) < _INHERITED_CONTEXT_MAX * 1.2
     assert "earlier turns omitted" in body
@@ -199,7 +204,12 @@ def test_the_prompt_renders_the_slot_only_when_there_is_something_in_it():
     `<inherited-context>` into every prompt in the repository."""
     from pathlib import Path
 
-    module = (Path(__file__).resolve().parents[1]
-              / "agentevolver" / "prompt" / "module" / "agent_context.html").read_text()
+    module = (
+        Path(__file__).resolve().parents[1]
+        / "agentevolver"
+        / "prompt"
+        / "module"
+        / "agent_context.html"
+    ).read_text()
     assert "{% if inherited_context %}" in module
     assert module.index("{% if inherited_context %}") < module.index("{{ inherited_context }}")

@@ -119,7 +119,9 @@ def test_container_name_survives_an_awkward_key():
     assert "/" not in name and ":" not in name
     # Legible in `docker ps`, and no dangling separator left by truncation.
     assert len(name) <= 64
-    assert "-" + "-" not in name and not name.rstrip("0123456789abcdef").endswith((".-", "_-", "--"))
+    assert "-" + "-" not in name and not name.rstrip("0123456789abcdef").endswith(
+        (".-", "_-", "--")
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -153,6 +155,7 @@ def test_removal_is_by_exact_name():
 def test_a_nonzero_exit_is_an_answer_not_a_tool_failure():
     """`grep` finding nothing and a build failing are results the caller must be able to
     read. Only being unable to run the command at all is a failure."""
+
     async def fake_run(*_args, timeout=300.0):
         return 1, "stdout text", "stderr text"
 
@@ -175,6 +178,7 @@ def test_a_timeout_is_reported_as_a_failure_naming_the_limit():
     """The one case where the tool itself failed: no exit code, no output, nothing
     observed. Naming the limit is what lets the agent tell "this needs longer" from
     "this hangs", which are the only two things it can do about it."""
+
     async def fake_run(*_args, timeout=300.0):
         raise asyncio.TimeoutError
 
@@ -199,9 +203,14 @@ def test_an_egress_policy_without_a_mounted_framework_fails_loudly():
     """The forwarder that carries the traffic runs out of the mounted checkout. Silently
     starting without it would leave the sandbox believing it has a route to the model
     endpoint and burning its budget on connection errors."""
-    sandbox = DockerSandbox(SandboxConfig(
-        image="example/image", sandbox_key="k", network=False, egress_socket="/tmp/x.sock",
-    ))
+    sandbox = DockerSandbox(
+        SandboxConfig(
+            image="example/image",
+            sandbox_key="k",
+            network=False,
+            egress_socket="/tmp/x.sock",
+        )
+    )
     try:
         asyncio.run(sandbox._start_forwarder())
     except RuntimeError as e:
@@ -227,10 +236,15 @@ def test_the_forwarder_is_run_as_a_script_with_isolated_sys_path():
 
     original, mod._run = mod._run, fake_run
     try:
-        sandbox = DockerSandbox(SandboxConfig(
-            image="example/image", sandbox_key="k", network=False,
-            egress_socket="/tmp/x.sock", mounts={"/host/repo": "/AgentEvolver"},
-        ))
+        sandbox = DockerSandbox(
+            SandboxConfig(
+                image="example/image",
+                sandbox_key="k",
+                network=False,
+                egress_socket="/tmp/x.sock",
+                mounts={"/host/repo": "/AgentEvolver"},
+            )
+        )
         sandbox._started = True
         try:
             asyncio.run(sandbox._start_forwarder())

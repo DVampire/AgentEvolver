@@ -19,7 +19,6 @@ from agentevolver.model.types import TokenUsage
 from agentevolver.trace.projection import ProjectionWatermarkError, ProjectionWatermarkStore
 from agentevolver.trace.types import TraceEvent, TraceEventType, parse_trace_event
 
-
 PROJECTOR_VERSION = 1
 PROJECTION_NAME = "stats"
 #: 3 adds compaction attempts/rejections/model calls and canonical context-input usage.
@@ -170,11 +169,22 @@ class TraceStatsProjector:
                 total.context_input_tokens + usage.context_input_tokens
             ),
             output_tokens=total.output_tokens + usage.output_tokens,
+            reasoning_tokens=total.reasoning_tokens + usage.reasoning_tokens,
             cache_write_tokens=total.cache_write_tokens + usage.cache_write_tokens,
             cache_read_tokens=total.cache_read_tokens + usage.cache_read_tokens,
+            provider_reported_total=(
+                (total.provider_reported_total or 0)
+                + (usage.provider_reported_total or usage.total)
+            ),
             cost=(
                 None if total.cost is None and usage.cost is None
                 else float(total.cost or 0.0) + float(usage.cost or 0.0)
+            ),
+            cost_status=(
+                "unknown" if total.cost is None and usage.cost is None
+                else "estimated" if "estimated" in {
+                    total.cost_status, usage.cost_status,
+                } else "reported"
             ),
         )
 

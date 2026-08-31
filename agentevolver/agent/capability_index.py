@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
-from typing import Any, Dict, Iterable, List, Sequence, Tuple
-
+from typing import Any, Dict, List, Sequence, Tuple
 
 SEARCH_NAME = "search_capabilities"
 CORE_NAMES = frozenset({
@@ -116,7 +115,10 @@ def search(
     count = min(12, max(1, int(limit or 6)))
     matches = [item for item in ranked if item[0] or item[1]][:count]
     if not matches:
-        matches = ranked[:count]
+        return (
+            f"No capability schemas matched {str(query).strip()!r}; no schemas were "
+            "loaded. Try a tool name, domain term, or a more specific task description."
+        )
     loaded = _loaded(ctx, agent_name)
     for _, _, name, _, _ in matches:
         if name and name not in loaded:

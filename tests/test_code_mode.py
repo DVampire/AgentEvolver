@@ -126,8 +126,9 @@ async def plans(monkeypatch):
 
 async def run_program(bench, code):
     """Run one program the way the agent's dispatch hands it over."""
-    return await BatchCallTool()(code=code, description="a test program",
-                               ctx=bench["ctx"], sub_dispatch=bench["dispatch"])
+    return await BatchCallTool()(
+        code=code, description="a test program", ctx=bench["ctx"], sub_dispatch=bench["dispatch"]
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -142,7 +143,8 @@ async def test_only_what_a_program_prints_or_returns_comes_back():
     program in the first place.
     """
     result = await code_runtime.run(
-        "secret = 'x' * 5000\nprint('kept')\nreturn 'also kept'", {}, timeout=30)
+        "secret = 'x' * 5000\nprint('kept')\nreturn 'also kept'", {}, timeout=30
+    )
 
     assert result.success
     assert result.logs == ["kept"]
@@ -174,7 +176,8 @@ async def test_a_run_that_expires_still_returns_what_it_printed():
     """
     started = time.monotonic()
     result = await code_runtime.run(
-        "print('got this far')\nimport time\ntime.sleep(30)", {}, timeout=2)
+        "print('got this far')\nimport time\ntime.sleep(30)", {}, timeout=2
+    )
     elapsed = time.monotonic() - started
 
     assert result.failure.type is CodeFailureType.TIMEOUT
@@ -192,15 +195,17 @@ async def test_independent_calls_overlap_instead_of_queueing():
     defect would never show up as a failure — only as a program that is four times
     slower than the model was told to expect.
     """
+
     async def slow(_args):
         await asyncio.sleep(0.4)
         return "done"
 
     started = time.monotonic()
     result = await code_runtime.run(
-        "import asyncio\n"
-        "return await asyncio.gather(*[tools.slow_tool(i=i) for i in range(4)])",
-        {"slow_tool": slow}, timeout=30)
+        "import asyncio\nreturn await asyncio.gather(*[tools.slow_tool(i=i) for i in range(4)])",
+        {"slow_tool": slow},
+        timeout=30,
+    )
     elapsed = time.monotonic() - started
 
     assert result.value == ["done"] * 4
@@ -215,6 +220,7 @@ async def test_one_failed_call_is_the_programs_to_catch_not_the_runs_end():
     nine it could read because of the one it could not — and the model would have to
     re-request them one at a time, which is the cost this tool exists to avoid.
     """
+
     async def refuse(_args):
         raise PermissionError("nope")
 
@@ -224,7 +230,9 @@ async def test_one_failed_call_is_the_programs_to_catch_not_the_runs_end():
         "except ToolCallError as error:\n"
         "    print(f'caught {error} from {error.tool_name}')\n"
         "return 'kept going'",
-        {"refusing_tool": refuse}, timeout=30)
+        {"refusing_tool": refuse},
+        timeout=30,
+    )
 
     assert result.success
     assert result.logs == ["caught nope from refusing_tool"]
@@ -246,14 +254,17 @@ async def test_a_tool_that_refuses_a_wire_call_refuses_a_program_the_same_way(be
     outside = "/etc/agentevolver_code_mode_probe.txt"
     inside = bench["workspace"] / "written.txt"
 
-    result = await run_program(bench, f"""
+    result = await run_program(
+        bench,
+        f"""
 try:
     await tools.write_file_tool(path={outside!r}, content='x')
     print('NOT REFUSED')
 except ToolCallError as error:
     print(f'refused: {{error}}')
 await tools.write_file_tool(path={str(inside)!r}, content='inside')
-""")
+""",
+    )
 
     assert "Permission denied" in result.message
     assert "NOT REFUSED" not in result.message
@@ -273,14 +284,17 @@ async def test_plan_mode_stops_a_mutating_call_made_from_inside_a_program(bench,
     """
     plans.enter(bench["ctx"].id)
 
-    result = await run_program(bench, f"""
+    result = await run_program(
+        bench,
+        f"""
 try:
-    await tools.write_file_tool(path={str(bench['workspace'] / 'planned.txt')!r}, content='x')
+    await tools.write_file_tool(path={str(bench["workspace"] / "planned.txt")!r}, content='x')
     print('WROTE ANYWAY')
 except ToolCallError as error:
     print(f'gated: {{error}}')
 print(await tools.read_only_probe_tool(value='reading is fine'))
-""")
+""",
+    )
 
     assert "WROTE ANYWAY" not in result.message
     assert "plan mode" in result.message
@@ -303,13 +317,16 @@ async def test_a_program_may_not_start_another_program_or_finish_the_task(bench)
     assert BATCH_CALL_TOOL not in bench["dispatch"].names
     assert "done_tool" not in bench["dispatch"].names
 
-    result = await run_program(bench, """
+    result = await run_program(
+        bench,
+        """
 for name in ('batch_call_tool', 'done_tool'):
     try:
         await tools[name](code='pass')
     except ToolCallError as error:
         print(f'{name}: refused')
-""")
+""",
+    )
 
     assert result.message.count("refused") == 2
 
@@ -323,8 +340,8 @@ async def test_without_an_agents_dispatch_a_program_can_call_nothing(bench):
     where nobody looks. Called with no dispatch, the tool binds an empty table.
     """
     result = await BatchCallTool()(
-        code="return await tools.read_only_probe_tool(value='x')",
-        ctx=bench["ctx"])
+        code="return await tools.read_only_probe_tool(value='x')", ctx=bench["ctx"]
+    )
 
     assert not result.success
     assert "No tools were callable" in result.message
@@ -356,13 +373,21 @@ async def test_a_blocked_call_is_an_error_and_not_an_empty_result(bench, monkeyp
     That reading is the dangerous one: the program carries on as if the write happened,
     and reports success for work that was refused.
     """
+
     async def blocked(*args, **kwargs):
-        return {"name": "write_file_tool", "done": False, "result": None,
-                "reasoning": None, "error": None, "output": None}
+        return {
+            "name": "write_file_tool",
+            "done": False,
+            "result": None,
+            "reasoning": None,
+            "error": None,
+            "output": None,
+        }
 
     monkeypatch.setattr(Agent, "_run_one", blocked)
     dispatch = bench["agent"]._guarded_dispatch(
-        bench["routing"], "task-1", 1, bench["ctx"], None, "call-9")
+        bench["routing"], "task-1", 1, bench["ctx"], None, "call-9"
+    )
 
     with pytest.raises(RuntimeError, match="blocked"):
         await dispatch.call("write_file_tool", {"path": "x", "content": "y"})
@@ -377,17 +402,26 @@ def test_a_declaration_puts_required_arguments_before_optional_ones():
     Rendering `path: str = ..., content: str` would model a call that cannot be written,
     and a model copying the shape produces arguments the tool then rejects.
     """
-    rendered = signature({"function": {
-        "name": "write_file_tool",
-        "parameters": {
-            "type": "object",
-            "properties": {"content": {"type": "string"}, "path": {"type": "string"},
-                           "mode": {"type": "integer"}},
-            "required": ["path", "content"],
-        },
-    }})
+    rendered = signature(
+        {
+            "function": {
+                "name": "write_file_tool",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string"},
+                        "path": {"type": "string"},
+                        "mode": {"type": "integer"},
+                    },
+                    "required": ["path", "content"],
+                },
+            }
+        }
+    )
 
-    assert rendered == "async def write_file_tool(*, path: str, content: str, mode: int = ...) -> str"
+    assert (
+        rendered == "async def write_file_tool(*, path: str, content: str, mode: int = ...) -> str"
+    )
 
 
 def test_the_declarations_carry_each_tools_one_line_summary():
@@ -397,9 +431,17 @@ def test_the_declarations_carry_each_tools_one_line_summary():
     transport — the cost the reference implementation warns about — to say the same
     thing twice.
     """
-    block = render_sdk([{"function": {"name": "grep_search_tool",
-                                      "description": "Search  files\n for a pattern.",
-                                      "parameters": {"type": "object", "properties": {}}}}])
+    block = render_sdk(
+        [
+            {
+                "function": {
+                    "name": "grep_search_tool",
+                    "description": "Search  files\n for a pattern.",
+                    "parameters": {"type": "object", "properties": {}},
+                }
+            }
+        ]
+    )
 
     assert block == "# Search files for a pattern.\nasync def grep_search_tool() -> str"
 
@@ -433,8 +475,9 @@ async def test_the_declarations_reach_the_model_beside_the_tool_cards(bench):
 def test_the_names_declared_are_the_names_that_bind(bench):
     """One list, read twice. Declaring a tool the bindings withhold sends the model to
     write a program that fails on a name it was told it had."""
-    declared = callable_names([name for name, route in bench["routing"].items()
-                               if route[0] == "tool"])
+    declared = callable_names(
+        [name for name, route in bench["routing"].items() if route[0] == "tool"]
+    )
 
     assert list(bench["dispatch"].names) == declared
     assert set(UNCALLABLE).isdisjoint(declared)
@@ -484,8 +527,9 @@ def test_the_module_documents_the_route_a_call_takes():
     sees an argument, the runtime sees a binding. The README is where the whole path is
     written down, so it is the thing that must not go stale.
     """
-    readme = (Path(__file__).parents[1] / "agentevolver" / "tool" / "default"
-              / "code_mode" / "README.md").read_text(encoding="utf-8")
+    readme = (
+        Path(__file__).parents[1] / "agentevolver" / "tool" / "default" / "code_mode" / "README.md"
+    ).read_text(encoding="utf-8")
 
     for step in ("plan_mode_hook", "permission_manager.check", "_run_one"):
         assert step in readme

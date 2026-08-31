@@ -13,13 +13,12 @@ Why not reuse `openai/response.py`: that client drops tools on the floor
 (``# params["tools"] = tools  # Uncomment if supported``) and has no ``stream()``. It
 serves non-tool single-turn use, which is the opposite of what an agent needs.
 
-There is no ``stream()`` here either, deliberately. ``ModelContextManager.stream``
-already buffers a client that lacks one and replays the result as canonical events, so
-a real token stream would add a second wire format to maintain for no behavioural gain
-— an agent step consumes the whole turn before acting on it either way.
+Unlike the older client, this adapter implements the native Responses event stream. It
+normalizes text, reasoning and function-argument deltas into the framework's canonical
+events while retaining exact provider output items for stateless replay.
 """
 
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
 from pydantic import BaseModel, ConfigDict, PrivateAttr
@@ -382,7 +381,9 @@ class ResponseLLMHub(BaseModel):
 
         return Response(
             type=ResponseType.LLM,
-            success=payload.get("status") in (None, "completed"),
+            success=payload.get("status") in (
+                None, "queued", "in_progress", "completed", "cancelling", "cancelled",
+            ),
             message=message,
             data={
                 "text": text,
@@ -398,6 +399,10 @@ class ResponseLLMHub(BaseModel):
                 "usage": usage,
                 "finish_reason": "tool_use" if functions else "end_turn",
                 "raw_response": payload,
+                "background": {
+                    "response_id": payload.get("id"),
+                    "status": payload.get("status"),
+                } if payload.get("id") else None,
             },
             usage=TokenUsage.from_raw(usage),
         )
@@ -549,9 +554,18 @@ class ResponseLLMHub(BaseModel):
                     usage.context_input_tokens for usage in usages
                 ),
                 output_tokens=sum(usage.output_tokens for usage in usages),
+                reasoning_tokens=sum(usage.reasoning_tokens for usage in usages),
                 cache_write_tokens=sum(usage.cache_write_tokens for usage in usages),
                 cache_read_tokens=sum(usage.cache_read_tokens for usage in usages),
+                provider_reported_total=(
+                    sum(usage.provider_reported_total or usage.total for usage in usages)
+                ),
                 cost=sum(costs) if costs else None,
+                cost_status=(
+                    "reported" if costs and all(
+                        usage.cost_status == "reported" for usage in usages
+                    ) else "unknown"
+                ),
             )
             response.usage = combined
             response.data["usage"] = combined.model_dump()
@@ -577,6 +591,241 @@ class ResponseLLMHub(BaseModel):
                     usage=response.usage,
                 )
         return response
+
+    async def stream(
+        self,
+        messages: List[Message],
+        tools: Optional[List["Tool"]] = None,
+        response_format: Any = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[Any]:
+        """Yield canonical events from the native Responses event stream.
+
+        Exact output items are retained as provider state, while text/reasoning/tool
+        arguments arrive incrementally. Hosted program/multi-agent segments may require
+        another provider turn; those are continued internally just like ``__call__``.
+        """
+        from agentevolver.model.types import (
+            ProviderState,
+            StreamDone,
+            TextDelta,
+            ThinkingDelta,
+            ToolCallArgsDelta,
+            ToolCallComplete,
+            ToolCallStart,
+        )
+
+        params = self._build_params(messages, tools=tools, **kwargs)
+        if response_format is not None:
+            # Keep structured-output serialization in one implementation. Building the
+            # buffered parameters performs no I/O; capture only the resulting text field.
+            from agentevolver.model.llm_hub.serializer import LLMHubChatSerializer
+            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+                serialized = LLMHubChatSerializer.serialize_response_format(
+                    response_format, model_name=self.model,
+                )
+                schema = serialized.get("json_schema", {})
+                params["text"] = {"format": {
+                    "type": "json_schema", "name": response_format.__name__,
+                    "strict": schema.get("strict", True),
+                    "schema": schema.get("schema", {}),
+                }}
+            elif isinstance(response_format, BaseModel):
+                model_class = type(response_format)
+                serialized = LLMHubChatSerializer.serialize_response_format(
+                    response_format, model_name=self.model,
+                )
+                schema = serialized.get("json_schema", {})
+                params["text"] = {"format": {
+                    "type": "json_schema", "name": model_class.__name__,
+                    "strict": schema.get("strict", True),
+                    "schema": schema.get("schema", {}),
+                }}
+            elif isinstance(response_format, dict):
+                value = response_format.get("text", response_format)
+                params["text"] = value if "format" in value else {"format": value}
+            else:
+                raise RuntimeError(
+                    f"unsupported Responses response_format: {response_format!r}"
+                )
+        params["stream"] = True
+        client = self._client()
+        continuation_input = list(params.get("input") or [])
+        all_output: List[Dict[str, Any]] = []
+        combined_usage = TokenUsage()
+        final_stop = "end_turn"
+
+        for _segment in range(4):
+            segment_items: Dict[int, Dict[str, Any]] = {}
+            call_started: set[int] = set()
+            call_arguments_seen: set[int] = set()
+            saw_visible = False
+            saw_client_call = False
+            hosted_only = False
+            completed_payload: Dict[str, Any] = {}
+            try:
+                raw_stream = await self._create(client, dict(params))
+                async for raw_event in raw_stream:
+                    event = _dump(raw_event)
+                    event_type = str(event.get("type") or "")
+                    index = int(event.get("output_index") or 0)
+                    if event_type == "response.output_item.added":
+                        item = dict(event.get("item") or {})
+                        segment_items[index] = item
+                        if item.get("type") == "function_call":
+                            saw_client_call = True
+                            call_started.add(index)
+                            yield ToolCallStart(
+                                index=index,
+                                id=item.get("call_id") or item.get("id") or "",
+                                name=item.get("name") or "",
+                                caller=item.get("caller"),
+                            )
+                        if item.get("type") in (
+                            "program", "program_output", "multi_agent_call",
+                        ):
+                            hosted_only = True
+                    elif event_type == "response.function_call_arguments.delta":
+                        call_arguments_seen.add(index)
+                        yield ToolCallArgsDelta(
+                            index=index, partial_json=str(event.get("delta") or ""),
+                        )
+                    elif event_type == "response.output_text.delta":
+                        item = segment_items.get(index) or {}
+                        agent = item.get("agent") or {}
+                        visible = (
+                            not agent
+                            or (agent.get("agent_name") == "/root"
+                                and item.get("phase") == "final_answer")
+                        )
+                        if visible:
+                            saw_visible = True
+                            yield TextDelta(str(event.get("delta") or ""))
+                    elif event_type in (
+                        "response.reasoning_summary_text.delta",
+                        "response.reasoning_text.delta",
+                    ):
+                        yield ThinkingDelta(str(event.get("delta") or ""))
+                    elif event_type == "response.output_item.done":
+                        item = dict(event.get("item") or {})
+                        segment_items[index] = item
+                        if item.get("type") == "function_call" and index in call_started:
+                            if index not in call_arguments_seen and item.get("arguments"):
+                                yield ToolCallArgsDelta(
+                                    index=index,
+                                    partial_json=str(item.get("arguments") or ""),
+                                )
+                        elif item.get("type") == "function_call":
+                            import json as _json
+                            arguments = item.get("arguments") or "{}"
+                            try:
+                                parsed = _json.loads(arguments) if isinstance(arguments, str) else arguments
+                            except (ValueError, TypeError):
+                                parsed = {"__raw__": arguments}
+                            saw_client_call = True
+                            yield ToolCallComplete(
+                                index=index,
+                                id=item.get("call_id") or item.get("id") or "",
+                                name=item.get("name") or "",
+                                input=parsed or {},
+                                caller=item.get("caller"),
+                            )
+                    elif event_type == "response.completed":
+                        completed_payload = _dump(event.get("response") or {})
+                    elif event_type in ("response.failed", "response.incomplete"):
+                        detail = event.get("error") or event.get("response") or event
+                        raise RuntimeError(f"Responses stream {event_type}: {detail}")
+            except Exception as error:
+                active = []
+                if any(t.get("type") == "programmatic_tool_calling" for t in params.get("tools") or []):
+                    active.append("programmatic_tool_calling")
+                if params.get("multi_agent"):
+                    active.append("multi_agent")
+                if params.get("prompt_cache_key"):
+                    active.append("prompt_cache")
+                rejected = _rejected_features(error, active)
+                if rejected and not isinstance(error, NativeFeatureUnavailable):
+                    self._disabled_features.update(rejected)
+                    raise NativeFeatureUnavailable(rejected, error) from error
+                raise
+
+            exact_items = [dict(item) for item in completed_payload.get("output") or []]
+            if not exact_items:
+                exact_items = [segment_items[key] for key in sorted(segment_items)]
+            all_output.extend(exact_items)
+            usage = TokenUsage.from_raw(completed_payload.get("usage") or {})
+            if usage is not None:
+                combined_usage.input_tokens += usage.input_tokens
+                combined_usage.context_input_tokens += usage.context_input_tokens
+                combined_usage.output_tokens += usage.output_tokens
+                combined_usage.reasoning_tokens += usage.reasoning_tokens
+                combined_usage.cache_write_tokens += usage.cache_write_tokens
+                combined_usage.cache_read_tokens += usage.cache_read_tokens
+                combined_usage.provider_reported_total = (
+                    (combined_usage.provider_reported_total or 0)
+                    + (usage.provider_reported_total or usage.total)
+                )
+                if usage.cost is not None:
+                    combined_usage.cost = (combined_usage.cost or 0.0) + usage.cost
+                    combined_usage.cost_status = usage.cost_status
+            final_stop = "tool_use" if saw_client_call else "end_turn"
+            if saw_visible or saw_client_call or not hosted_only:
+                break
+            continuation_input.extend(exact_items)
+            params["input"] = list(continuation_input)
+
+        if all_output:
+            yield ProviderState({"responses": {
+                "output_items": all_output,
+                "reasoning_items": [
+                    item for item in all_output if item.get("type") == "reasoning"
+                ],
+            }})
+        usage_dict = combined_usage.model_dump()
+        yield StreamDone(
+            stop_reason=final_stop,
+            usage=usage_dict if any(
+                usage_dict.get(key) for key in (
+                    "input_tokens", "context_input_tokens", "output_tokens",
+                    "reasoning_tokens", "cache_write_tokens", "cache_read_tokens",
+                    "provider_reported_total", "cost",
+                )
+            ) else None,
+        )
+
+    async def create_background(
+        self,
+        messages: List[Message],
+        tools: Optional[List["Tool"]] = None,
+        response_format: Any = None,
+        **kwargs: Any,
+    ) -> Response:
+        """Start a durable provider job without making it conversation authority.
+
+        The returned response id is merely an effect handle. Callers must persist the
+        surrounding request/result in Trace and use explicit retrieve/cancel operations;
+        no hidden ``previous_response_id`` chain is created.
+        """
+        kwargs["background"] = True
+        kwargs["store"] = True
+        return await self(
+            messages=messages,
+            tools=tools,
+            response_format=response_format,
+            **kwargs,
+        )
+
+    async def retrieve_background(self, response_id: str) -> Response:
+        if not response_id:
+            raise ValueError("response_id is required")
+        raw = await self._client().responses.retrieve(response_id)
+        return self._parse(raw)
+
+    async def cancel_background(self, response_id: str) -> Response:
+        if not response_id:
+            raise ValueError("response_id is required")
+        raw = await self._client().responses.cancel(response_id)
+        return self._parse(raw)
 
 
 __all__ = [

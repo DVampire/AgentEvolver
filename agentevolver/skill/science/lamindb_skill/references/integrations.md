@@ -156,6 +156,7 @@ process ANALYZE {
 Integrate LaminDB into Snakemake workflows:
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # In Snakemake rule
 rule process_data:
     input:

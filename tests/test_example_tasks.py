@@ -41,7 +41,7 @@ def test_every_capability_type_has_a_smoke_task():
     # the same way and reached through the same dispatch, so a smoke test that skipped it
     # would leave the one type whose actions have real side effects unexercised.
     types = {entry.type for entry in MOUNTED_TYPES}
-    files = {p.stem[len("capability_"):] for p in TASKS.glob("capability_*.html")}
+    files = {p.stem[len("capability_") :] for p in TASKS.glob("capability_*.html")}
     assert files == types, (
         f"capability types with no smoke task: {sorted(types - files)}; "
         f"smoke tasks for no capability type: {sorted(files - types)}"

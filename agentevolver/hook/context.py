@@ -8,13 +8,20 @@ hook instance itself (via PrivateAttr), not in a shared session store.
 
 from __future__ import annotations
 
-import inflection
 from typing import Any, Dict, List, Optional, Type
 
+import inflection
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.hook.types import (
+    Hook,
+    HookContext,
+    HookDecision,
+    HookEvent,
+    HookResult,
+    check_message_contract,
+)
 from agentevolver.logger import logger
-from agentevolver.hook.types import Hook, HookContext, HookDecision, HookEvent, HookResult, check_message_contract
 
 
 def _contract_mode() -> str:
@@ -100,9 +107,9 @@ class HookContextManager:
         self, hook_names: Optional[List[str]] = None
     ) -> Dict[str, HookConfig]:
         """Load hook classes from the HOOK registry and build HookConfig objects."""
-        import agentevolver.hook  # ensure all default hooks are imported/registered
-        from agentevolver.registry import HOOK
+        import agentevolver.hook  # noqa: F401 - populate the default hook registry
         from agentevolver.config import config
+        from agentevolver.registry import HOOK
 
         hook_classes: List[Type[Hook]] = list(HOOK._module_dict.values())
         logger.info(f"| 🔍 Discovering {len(hook_classes)} hooks from HOOK registry")
@@ -266,7 +273,10 @@ class HookContextManager:
             result = await hook_instance.handle(hook_ctx)
         except Exception as e:
             logger.warning(f"| ⚠️ Hook '{name}' raised on {event}: {e}")
-            result = HookResult.allow()
+            result = (
+                HookResult.block(f"Hook '{name}' failed closed: {e}")
+                if hook_instance.fail_closed else HookResult.allow()
+            )
 
         # Contract-as-code: validate a MODIFY hook's rewritten messages. In strict
         # mode a violation propagates (caught by no one here — surfaces to the run

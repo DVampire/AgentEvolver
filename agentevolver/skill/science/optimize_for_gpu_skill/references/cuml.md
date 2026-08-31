@@ -73,6 +73,7 @@ The fastest path from sklearn to GPU — no code changes required. Similar to `c
 ### Activation
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # Jupyter/IPython (MUST be the first cell, before any sklearn import)
 %load_ext cuml.accel
 
@@ -650,6 +651,7 @@ All of this runs entirely on GPU — from Parquet read to model evaluation — w
 ### Pattern 1: Zero-Effort (cuml.accel)
 
 ```python
+# fragment — illustrative pseudocode; not a complete runnable program
 # Add one line at top of notebook:
 %load_ext cuml.accel
 

@@ -20,8 +20,8 @@ from types import SimpleNamespace
 import pytest
 
 from agentevolver.logger.log import (
-    LogLevel,
     Logger,
+    LogLevel,
     get_session_id,
     set_session_id,
 )
@@ -151,8 +151,9 @@ def test_the_log_directory_is_created_if_absent(tmp_path):
     """The configured path points into a session tree that may not exist yet."""
     instance = a_logger()
     path = tmp_path / "deep" / "nested" / "agent.log"
-    instance.initialize(SimpleNamespace(log_path=str(path)),
-                        console_stream=open(tmp_path / "c.out", "w"))
+    instance.initialize(
+        SimpleNamespace(log_path=str(path)), console_stream=open(tmp_path / "c.out", "w")
+    )
     try:
         assert path.parent.is_dir()
     finally:
@@ -164,9 +165,11 @@ def test_a_host_can_start_without_creating_a_log_file(tmp_path):
     an orphan."""
     instance = a_logger()
     path = tmp_path / "log" / "agent.log"
-    instance.initialize(SimpleNamespace(log_path=str(path)),
-                        console_stream=open(tmp_path / "c.out", "w"),
-                        file_logging=False)
+    instance.initialize(
+        SimpleNamespace(log_path=str(path)),
+        console_stream=open(tmp_path / "c.out", "w"),
+        file_logging=False,
+    )
     try:
         instance.info("before any session")
         assert not path.exists()

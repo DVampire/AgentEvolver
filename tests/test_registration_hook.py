@@ -13,8 +13,7 @@ that did all the work and then could not install it.
 
 from __future__ import annotations
 
-import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import pytest
 
@@ -102,11 +101,12 @@ def test_there_is_exactly_one_registration_hook():
     Eight names in the registry meant eight copies of one algorithm; a reappearing second
     one means a type was special-cased by forking the hook again instead of adding a row.
     """
-    from agentevolver.registry import HOOK
     import agentevolver.hook  # noqa: F401  — registers the defaults
+    from agentevolver.registry import HOOK
 
     registered = sorted(
-        name for name in (
+        name
+        for name in (
             getattr(cls, "model_fields", {}).get("name").default
             for cls in HOOK.module_dict.values()
             if "name" in getattr(cls, "model_fields", {})
@@ -120,6 +120,7 @@ def test_the_dispatcher_asks_for_that_one_hook_by_name():
     """`register_generated` names the hook it fires. A stale `{type}_registration_hook`
     there would resolve to nothing and fail every run, for every type at once."""
     import inspect
+
     from agentevolver.hook import promotion
 
     source = inspect.getsource(promotion.register_generated)
@@ -129,16 +130,19 @@ def test_the_dispatcher_asks_for_that_one_hook_by_name():
     )
 
 
-@pytest.mark.parametrize("module,directory,entry,suffix", [
-    ("tool", False, "", ".py"),
-    ("memory", False, "", ".py"),
-    ("agent", False, "", ".py"),
-    ("workflow", False, "", ".html"),
-    ("skill", True, "", ".py"),
-    ("connector", True, "", ".py"),
-    ("plugin", True, "plugin.py", ".py"),
-    ("environment", True, "environment.py", ".py"),
-])
+@pytest.mark.parametrize(
+    "module,directory,entry,suffix",
+    [
+        ("tool", False, "", ".py"),
+        ("memory", False, "", ".py"),
+        ("agent", False, "", ".py"),
+        ("workflow", False, "", ".html"),
+        ("skill", True, "", ".py"),
+        ("connector", True, "", ".py"),
+        ("plugin", True, "plugin.py", ".py"),
+        ("environment", True, "environment.py", ".py"),
+    ],
+)
 def test_each_type_declares_its_real_artifact_shape(module, directory, entry, suffix):
     """Checked one by one, because these are what every reader of the table relies on:
     a skill is a directory, a workflow is `.html`, an environment must hold the file its
@@ -172,14 +176,17 @@ def promotion_log(monkeypatch):
     be remembered on every new test is one that will be forgotten on some new test.
     """
     order: list[tuple[str, str]] = []
-    monkeypatch.setattr("agentevolver.sandbox.project.validate_staged_extension",
-                        lambda root: order.append(("validate", "")) or {})
+    monkeypatch.setattr(
+        "agentevolver.sandbox.project.validate_staged_extension",
+        lambda root: order.append(("validate", "")) or {},
+    )
 
     def _promote(root, path):
         # The artifact as it stood at promotion time, not as it ends up: the two differ
         # for any type that rewrites its own file, and which one gets promoted is the
         # whole question.
         from pathlib import Path
+
         try:
             snapshot = Path(path).read_text(encoding="utf-8")
         except OSError:
@@ -201,9 +208,11 @@ def staging(bound_session, monkeypatch):
     installed.
     """
     from agentevolver.extension import extension_manager
+
     root = bound_session["extension"]
     monkeypatch.setattr(
-        extension_manager, "stage_path",
+        extension_manager,
+        "stage_path",
         lambda module, leaf: str(root / module / leaf),
     )
 
@@ -212,8 +221,9 @@ def test_a_file_type_is_found_from_a_path_in_prose(bound_session):
     artifact = _staged(bound_session["extension"], "tool", "web_search_tool.py")
     artifact.write_text("# tool")
     found = resolve_artifact(
-        module="tool", target_name=None,
-        reasoning=f"Wrote the tool to extension/tool/web_search_tool.py and verified it.",
+        module="tool",
+        target_name=None,
+        reasoning="Wrote the tool to extension/tool/web_search_tool.py and verified it.",
         extension_root=str(bound_session["extension"]),
         matches=_mentions("tool", component_type("tool")),
     )
@@ -227,7 +237,10 @@ def test_a_directory_type_is_found_when_the_run_names_its_entry_file(bound_sessi
     directory = _staged(bound_session["extension"], "environment", "shell_env", "environment.py")
     directory.write_text("# env")
     found = resolve_artifact(
-        module="environment", directory=True, entry="environment.py", target_name=None,
+        module="environment",
+        directory=True,
+        entry="environment.py",
+        target_name=None,
         reasoning="Created `extension/environment/shell_env/environment.py`.",
         extension_root=str(bound_session["extension"]),
         matches=_mentions("environment", component_type("environment")),
@@ -240,12 +253,18 @@ def test_a_directory_missing_its_entry_file_is_not_accepted(bound_session):
     run that produced it nor the file it lacks."""
     directory = _staged(bound_session["extension"], "plugin", "notes", "README.md")
     directory.write_text("# notes")
-    assert resolve_artifact(
-        module="plugin", directory=True, entry="plugin.py", target_name=None,
-        reasoning="Created extension/plugin/notes/",
-        extension_root=str(bound_session["extension"]),
-        matches=_mentions("plugin", component_type("plugin")),
-    ) is None
+    assert (
+        resolve_artifact(
+            module="plugin",
+            directory=True,
+            entry="plugin.py",
+            target_name=None,
+            reasoning="Created extension/plugin/notes/",
+            extension_root=str(bound_session["extension"]),
+            matches=_mentions("plugin", component_type("plugin")),
+        )
+        is None
+    )
 
 
 def test_a_source_file_the_run_merely_quoted_is_not_registered(tmp_path, bound_session):
@@ -257,24 +276,33 @@ def test_a_source_file_the_run_merely_quoted_is_not_registered(tmp_path, bound_s
     quoted = tmp_path / "agentevolver" / "tool" / "default" / "inspect.py"
     quoted.parent.mkdir(parents=True)
     quoted.write_text("# framework source")
-    assert resolve_artifact(
-        module="tool", target_name=None,
-        reasoning=f"Modelled it on {quoted}, then wrote mine.",
-        extension_root=str(bound_session["extension"]),
-        matches=_mentions("tool", component_type("tool")),
-    ) is None
+    assert (
+        resolve_artifact(
+            module="tool",
+            target_name=None,
+            reasoning=f"Modelled it on {quoted}, then wrote mine.",
+            extension_root=str(bound_session["extension"]),
+            matches=_mentions("tool", component_type("tool")),
+        )
+        is None
+    )
 
 
 def test_a_path_from_another_module_does_not_resolve(bound_session):
     """A skill run naming its own `references/tool.md` must not install a tool."""
     other = _staged(bound_session["extension"], "tool", "unrelated.py")
     other.write_text("# not mine")
-    assert resolve_artifact(
-        module="skill", directory=True, target_name=None,
-        reasoning=f"See {other} for the pattern.",
-        extension_root=str(bound_session["extension"]),
-        matches=_mentions("skill", component_type("skill")),
-    ) is None
+    assert (
+        resolve_artifact(
+            module="skill",
+            directory=True,
+            target_name=None,
+            reasoning=f"See {other} for the pattern.",
+            extension_root=str(bound_session["extension"]),
+            matches=_mentions("skill", component_type("skill")),
+        )
+        is None
+    )
 
 
 def test_a_structured_path_is_believed_without_the_prose_filter(tmp_path, bound_session):
@@ -285,7 +313,9 @@ def test_a_structured_path_is_believed_without_the_prose_filter(tmp_path, bound_
     artifact.parent.mkdir()
     artifact.write_text("# tool")
     assert resolve_artifact(
-        module="tool", target_name=None, artifact_path=str(artifact),
+        module="tool",
+        target_name=None,
+        artifact_path=str(artifact),
         extension_root=str(bound_session["extension"]),
         matches=_mentions("tool", component_type("tool")),
     ) == str(artifact)
@@ -315,10 +345,13 @@ async def test_a_missing_target_type_is_blocked_rather_than_defaulted():
 
 @pytest.mark.asyncio
 async def test_a_run_whose_artifact_cannot_be_found_is_told_what_to_include(bound_session):
-    result = await RegistrationHook().handle(_ctx(
-        target_type="tool", target_name="missing_tool",
-        reasoning="I wrote the tool.",
-    ))
+    result = await RegistrationHook().handle(
+        _ctx(
+            target_type="tool",
+            target_name="missing_tool",
+            reasoning="I wrote the tool.",
+        )
+    )
     assert result.decision == HookDecision.BLOCK
     assert "done_tool reasoning" in result.reason
 
@@ -339,19 +372,24 @@ async def test_a_registered_component_reports_allow(bound_session, monkeypatch, 
         return "adder_tool"
 
     from agentevolver.extension import extension_manager
+
     monkeypatch.setattr(extension_manager, "add_component", _add)
 
-    result = await RegistrationHook().handle(_ctx(
-        target_type="tool", target_name="adder_tool",
-        reasoning="Wrote extension/tool/adder_tool.py.",
-    ))
+    result = await RegistrationHook().handle(
+        _ctx(
+            target_type="tool",
+            target_name="adder_tool",
+            reasoning="Wrote extension/tool/adder_tool.py.",
+        )
+    )
     assert result.decision == HookDecision.ALLOW
-    assert seen == {"module": "tool", "path": str(artifact),
-                    "config": {"enable_evolving": True}}
+    assert seen == {"module": "tool", "path": str(artifact), "config": {"enable_evolving": True}}
 
 
 @pytest.mark.asyncio
-async def test_an_agent_is_constructed_with_a_workspace_and_a_model(bound_session, monkeypatch, promotion_log):
+async def test_an_agent_is_constructed_with_a_workspace_and_a_model(
+    bound_session, monkeypatch, promotion_log
+):
     """The row `agent` exists for: a tool is loaded, an agent is instantiated."""
     artifact = _staged(bound_session["extension"], "agent", "triage_agent.py")
     artifact.write_text("# agent")
@@ -363,12 +401,17 @@ async def test_an_agent_is_constructed_with_a_workspace_and_a_model(bound_sessio
         return "triage_agent"
 
     from agentevolver.extension import extension_manager
+
     monkeypatch.setattr(extension_manager, "add_component", _add)
 
-    result = await RegistrationHook().handle(_ctx(
-        target_type="agent", target_name="triage_agent", model_name="llm_hub/claude-opus-5",
-        reasoning="Wrote extension/agent/triage_agent.py.",
-    ))
+    result = await RegistrationHook().handle(
+        _ctx(
+            target_type="agent",
+            target_name="triage_agent",
+            model_name="llm_hub/claude-opus-5",
+            reasoning="Wrote extension/agent/triage_agent.py.",
+        )
+    )
     assert result.decision == HookDecision.ALLOW
     assert seen["config"]["model_name"] == "llm_hub/claude-opus-5"
     assert seen["config"]["enable_evolving"] is True
@@ -376,7 +419,9 @@ async def test_an_agent_is_constructed_with_a_workspace_and_a_model(bound_sessio
 
 
 @pytest.mark.asyncio
-async def test_an_agent_evolution_that_only_changed_the_prompt_still_registers(bound_session, monkeypatch, promotion_log):
+async def test_an_agent_evolution_that_only_changed_the_prompt_still_registers(
+    bound_session, monkeypatch, promotion_log
+):
     """An optimizer's remit is the class, the prompt, or both.
 
     Blocking a prompt-only change for a `.py` it never needed to write rejects the run for
@@ -391,18 +436,24 @@ async def test_an_agent_evolution_that_only_changed_the_prompt_still_registers(b
         return "triage_agent"
 
     from agentevolver.extension import extension_manager
+
     monkeypatch.setattr(extension_manager, "add_component", _add)
 
-    result = await RegistrationHook().handle(_ctx(
-        target_type="agent", target_name="triage_agent",
-        reasoning="Rewrote the prompt at extension/prompt/triage_agent.html; no class change.",
-    ))
+    result = await RegistrationHook().handle(
+        _ctx(
+            target_type="agent",
+            target_name="triage_agent",
+            reasoning="Rewrote the prompt at extension/prompt/triage_agent.html; no class change.",
+        )
+    )
     assert result.decision == HookDecision.ALLOW
     assert registered == [("prompt", str(prompt))]
 
 
 @pytest.mark.asyncio
-async def test_a_workflow_is_activated_and_compiled_before_it_is_registered(bound_session, monkeypatch, promotion_log):
+async def test_a_workflow_is_activated_and_compiled_before_it_is_registered(
+    bound_session, monkeypatch, promotion_log
+):
     """The `workflow` row's whole reason: the artifact is rewritten before promotion, so
     what gets promoted is what compiled."""
     artifact = _staged(bound_session["extension"], "workflow", "review.html")
@@ -415,12 +466,16 @@ async def test_a_workflow_is_activated_and_compiled_before_it_is_registered(boun
         return "review"
 
     from agentevolver.extension import extension_manager
+
     monkeypatch.setattr(extension_manager, "add_component", _add)
 
-    result = await RegistrationHook().handle(_ctx(
-        target_type="workflow", target_name="review",
-        artifact_path=str(artifact),
-    ))
+    result = await RegistrationHook().handle(
+        _ctx(
+            target_type="workflow",
+            target_name="review",
+            artifact_path=str(artifact),
+        )
+    )
     assert result.decision == HookDecision.ALLOW
     rewritten = artifact.read_text()
     assert 'status="active"' in rewritten
@@ -440,10 +495,13 @@ async def test_a_workflow_that_is_not_a_document_is_blocked_with_the_reason(boun
     artifact = _staged(bound_session["extension"], "workflow", "fragment.html")
     artifact.write_text("<workflow name='x'><flow><checkpoint /></flow></workflow>")
 
-    result = await RegistrationHook().handle(_ctx(
-        target_type="workflow", target_name="fragment",
-        artifact_path=str(artifact),
-    ))
+    result = await RegistrationHook().handle(
+        _ctx(
+            target_type="workflow",
+            target_name="fragment",
+            artifact_path=str(artifact),
+        )
+    )
     assert result.decision == HookDecision.BLOCK
     assert "DOCTYPE" in result.reason
 
@@ -466,19 +524,36 @@ def test_the_extension_tree_still_sees_what_it_saw_before_the_tables_were_derive
     import agentevolver.extension.server as extension_server
 
     assert set(extension_server._MODULES) == {
-        "tool", "agent", "prompt", "skill", "environment", "connector", "workflow",
-        "memory", "plugin"}
-    assert extension_server._CLASS_MODULES == {
-        "tool", "agent", "environment", "memory", "plugin"}
+        "tool",
+        "agent",
+        "prompt",
+        "skill",
+        "environment",
+        "connector",
+        "workflow",
+        "memory",
+        "plugin",
+    }
+    assert extension_server._CLASS_MODULES == {"tool", "agent", "environment", "memory", "plugin"}
     assert extension_server._DIR_MODULES == {"skill", "environment", "connector", "plugin"}
-    assert extension_server._CLASS_ENTRY == {
-        "environment": "environment.py", "plugin": "plugin.py"}
+    assert extension_server._CLASS_ENTRY == {"environment": "environment.py", "plugin": "plugin.py"}
     assert extension_server._MANIFEST_FILE == {
-        "skill": "SKILL.md", "environment": "ENVIRONMENT.md",
-        "connector": "CONNECTOR.md", "plugin": "PLUGIN.md"}
+        "skill": "SKILL.md",
+        "environment": "ENVIRONMENT.md",
+        "connector": "CONNECTOR.md",
+        "plugin": "PLUGIN.md",
+    }
     assert extension_server._EXT == {
-        "tool": ".py", "agent": ".py", "environment": "", "prompt": ".html", "skill": "",
-        "connector": "", "workflow": ".html", "memory": ".py", "plugin": ""}
+        "tool": ".py",
+        "agent": ".py",
+        "environment": "",
+        "prompt": ".html",
+        "skill": "",
+        "connector": "",
+        "workflow": ".html",
+        "memory": ".py",
+        "plugin": "",
+    }
 
 
 def test_promotion_sees_the_same_shapes_the_extension_tree_does():
@@ -507,7 +582,10 @@ def test_prompt_is_stored_but_is_not_a_component():
     `extension/server.py` and `sandbox/project.py` had appended their own.
     """
     from agentevolver.capability.types import (
-        COMPONENT_TYPES, STORED_TYPES, component_type, stored_type,
+        COMPONENT_TYPES,
+        STORED_TYPES,
+        component_type,
+        stored_type,
     )
 
     assert {e.type for e in STORED_TYPES} - {e.type for e in COMPONENT_TYPES} == {"prompt"}
@@ -541,8 +619,7 @@ def test_the_three_roles_partition_the_eight_component_types():
     for entry in COMPONENT_TYPES:
         by_role.setdefault(entry.role, set()).add(entry.type)
 
-    assert by_role[Role.CAPABILITY] == {
-        "tool", "skill", "connector", "agent", "workflow", "plugin"}
+    assert by_role[Role.CAPABILITY] == {"tool", "skill", "connector", "agent", "workflow", "plugin"}
     assert by_role[Role.ENVIRONMENT] == {"environment"}
     assert by_role[Role.MEMORY] == {"memory"}
 
@@ -552,7 +629,13 @@ def test_capability_means_the_six_an_agent_calls():
     from agentevolver.capability.types import CAPABILITY_TYPES
 
     assert {e.type for e in CAPABILITY_TYPES} == {
-        "tool", "skill", "connector", "agent", "workflow", "plugin"}
+        "tool",
+        "skill",
+        "connector",
+        "agent",
+        "workflow",
+        "plugin",
+    }
     assert "environment" not in {e.type for e in CAPABILITY_TYPES}
     assert "memory" not in {e.type for e in CAPABILITY_TYPES}
 
@@ -576,7 +659,10 @@ def test_the_six_capabilities_are_exactly_the_six_roster_blocks():
 def test_the_sets_nest():
     """capability ⊂ mounted ⊂ component ⊂ stored, each adding exactly one kind of row."""
     from agentevolver.capability.types import (
-        CAPABILITY_TYPES, COMPONENT_TYPES, MOUNTED_TYPES, STORED_TYPES,
+        CAPABILITY_TYPES,
+        COMPONENT_TYPES,
+        MOUNTED_TYPES,
+        STORED_TYPES,
     )
 
     capability, mounted = set(CAPABILITY_TYPES), set(MOUNTED_TYPES)
@@ -596,7 +682,14 @@ def test_the_canvas_mount_order_is_unchanged():
     from agentevolver.capability import AGENT_MOUNT_TYPES
 
     assert AGENT_MOUNT_TYPES == (
-        "tools", "skills", "connectors", "agents", "environments", "workflows", "plugins")
+        "tools",
+        "skills",
+        "connectors",
+        "agents",
+        "environments",
+        "workflows",
+        "plugins",
+    )
 
 
 def test_dispatch_and_the_plan_gate_look_up_all_seven():
