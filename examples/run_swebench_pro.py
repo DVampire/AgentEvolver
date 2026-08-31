@@ -811,16 +811,21 @@ def parse_args():
     return parser.parse_args()
 
 
+def parse_cfg_options(items) -> dict[str, str]:
+    """Normalize repeatable ``key=value`` CLI overrides before config loading."""
+    return dict(item.split("=", 1) for item in (items or []) if "=" in item)
+
+
 async def main() -> int:
     args = parse_args()
-    if args.cfg_options:
-        args.user_cfg_options = dict(o.split("=", 1) for o in args.cfg_options if "=" in o)
-    else:
-        args.user_cfg_options = {}
-
+    overrides = parse_cfg_options(args.cfg_options)
+    # Config.initialize expects a mapping, while argparse collects repeatable options
+    # as a list. Normalize before crossing that boundary.
+    args.cfg_options = overrides
     config.initialize(config_path=args.config, args=args)
-    if getattr(args, "user_cfg_options", None):
-        for key, value in args.user_cfg_options.items():
+    args.user_cfg_options = overrides
+    if overrides:
+        for key, value in overrides.items():
             with contextlib.suppress(Exception):
                 setattr(config, key, value)
 

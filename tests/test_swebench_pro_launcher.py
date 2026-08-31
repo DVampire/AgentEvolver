@@ -9,7 +9,7 @@ import threading
 import pytest
 
 import examples.run_swebench_pro as swebench_pro
-from examples.run_swebench_pro import _as_list, collect_patch
+from examples.run_swebench_pro import _as_list, collect_patch, parse_cfg_options
 
 
 def _git(repo, *args):
@@ -46,6 +46,16 @@ def test_as_list_accepts_the_dataset_python_literal_fallback():
     row = {"fail_to_pass": "['works with \\\'quoted\\\' input', 'second test']"}
 
     assert _as_list(row, "fail_to_pass") == ["works with 'quoted' input", "second test"]
+
+
+def test_cfg_options_are_a_mapping_before_config_initialization():
+    assert parse_cfg_options([
+        "model_name=llm_hub/deepseek-v4-flash",
+        "output_owner=swebench_pro_deepseek_v4_flash",
+    ]) == {
+        "model_name": "llm_hub/deepseek-v4-flash",
+        "output_owner": "swebench_pro_deepseek_v4_flash",
+    }
 
 
 @pytest.mark.asyncio
