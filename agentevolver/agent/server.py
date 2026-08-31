@@ -16,6 +16,55 @@ from agentevolver.agent.context import AgentContextManager
 from agentevolver.utils import assemble_workspace_path
 from agentevolver.capability import CapabilitySchema, SchemaSource, roster, roster_card
 
+
+# Delegation is a control message, not a document transport.  Large requirements belong
+# in an attached artifact so they are inspectable, reusable, and do not turn one tool call
+# into an unbounded generation.  This limit is enforced both in the JSON schema and again
+# at dispatch time (provider-side schema enforcement is not universal).
+MAX_DELEGATED_TASK_CHARS = 12_000
+MAX_DELEGATION_FILES = 16
+MAX_DELEGATION_CONTRACT_ITEMS = 32
+MAX_DELEGATION_CONTRACT_ITEM_CHARS = 1_000
+
+
+def validate_dispatch_input(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Validate the bounded, structured agent-to-agent handoff contract."""
+    value = dict(raw or {})
+    task = value.get("task")
+    if not isinstance(task, str) or not task.strip():
+        raise ValueError("sub-agent delegation requires a non-empty task")
+    if len(task) > MAX_DELEGATED_TASK_CHARS:
+        raise ValueError(
+            f"sub-agent task is {len(task)} characters; maximum is "
+            f"{MAX_DELEGATED_TASK_CHARS}. Write the detailed specification to a "
+            "workspace file, pass it through files, and delegate a concise instruction."
+        )
+
+    for name, maximum in (
+        ("files", MAX_DELEGATION_FILES),
+        ("read_set", MAX_DELEGATION_CONTRACT_ITEMS),
+        ("write_set", MAX_DELEGATION_CONTRACT_ITEMS),
+        ("acceptance", MAX_DELEGATION_CONTRACT_ITEMS),
+    ):
+        items = value.get(name)
+        if items is None:
+            continue
+        if not isinstance(items, list):
+            raise ValueError(f"sub-agent {name} must be an array")
+        if len(items) > maximum:
+            raise ValueError(
+                f"sub-agent {name} has {len(items)} items; maximum is {maximum}"
+            )
+        for item in items:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(f"sub-agent {name} entries must be non-empty strings")
+            if len(item) > MAX_DELEGATION_CONTRACT_ITEM_CHARS:
+                raise ValueError(
+                    f"sub-agent {name} entry is {len(item)} characters; maximum is "
+                    f"{MAX_DELEGATION_CONTRACT_ITEM_CHARS}"
+                )
+    return value
+
 class AgentManagerServer(BaseModel):
     """Agent Manager Server for managing agent registration and execution with lazy loading."""
 
@@ -183,11 +232,41 @@ class AgentManagerServer(BaseModel):
         return {
             "type": "object",
             "properties": {
-                "task": {"type": "string", "description": "Precise instruction. Unless you set `fork`, this and the files you name are everything the sub-agent gets — it cannot see this conversation."},
-                "files": {"type": "array", "items": {"type": "string"}, "description": "Existing file paths to pass as context; omit if none."},
-                "read_set": {"type": "array", "items": {"type": "string"}, "description": "Workspace paths this subtask may read. Declare this for safe parallel scheduling."},
-                "write_set": {"type": "array", "items": {"type": "string"}, "description": "Workspace paths this subtask may modify. Parent/child paths conflict."},
-                "acceptance": {"type": "array", "items": {"type": "string"}, "description": "Concrete checks the child result must satisfy."},
+                "task": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": MAX_DELEGATED_TASK_CHARS,
+                    "description": (
+                        "Concise instruction. Put detailed requirements in a workspace "
+                        "specification file and pass it through files; do not restate the "
+                        "document here. Unless fork=true, the task, attached files, and "
+                        "resource/acceptance contract are everything the child receives."
+                    ),
+                },
+                "files": {
+                    "type": "array", "maxItems": MAX_DELEGATION_FILES,
+                    "items": {"type": "string", "minLength": 1,
+                              "maxLength": MAX_DELEGATION_CONTRACT_ITEM_CHARS},
+                    "description": "Existing specification/input paths to pass as context; omit if none.",
+                },
+                "read_set": {
+                    "type": "array", "maxItems": MAX_DELEGATION_CONTRACT_ITEMS,
+                    "items": {"type": "string", "minLength": 1,
+                              "maxLength": MAX_DELEGATION_CONTRACT_ITEM_CHARS},
+                    "description": "Workspace paths this subtask may read. Declare this for safe parallel scheduling.",
+                },
+                "write_set": {
+                    "type": "array", "maxItems": MAX_DELEGATION_CONTRACT_ITEMS,
+                    "items": {"type": "string", "minLength": 1,
+                              "maxLength": MAX_DELEGATION_CONTRACT_ITEM_CHARS},
+                    "description": "Workspace paths this subtask may modify. Parent/child paths conflict.",
+                },
+                "acceptance": {
+                    "type": "array", "maxItems": MAX_DELEGATION_CONTRACT_ITEMS,
+                    "items": {"type": "string", "minLength": 1,
+                              "maxLength": MAX_DELEGATION_CONTRACT_ITEM_CHARS},
+                    "description": "Concrete, independently checkable conditions the child must satisfy.",
+                },
                 "isolate_worktree": {"type": "boolean", "description": "Run this child in a disposable Git worktree and return its patch. Required for parallel writing children."},
                 "owner": {"type": "string", "description": "Task-graph owner responsible for this subtask; defaults to the dispatching agent."},
                 "model": {"type": "string", "description": "Registered model route to use for this child invocation only."},
@@ -195,6 +274,8 @@ class AgentManagerServer(BaseModel):
                 "token_budget": {"type": "integer", "minimum": 1, "description": "Hard cumulative LLM-token budget for this child invocation only."},
                 "run_in_background": {"type": "boolean", "description": "Outlive this round: return a job id now and keep working while you do other things. Collect with job__output, stop with job__kill. You do NOT need this to parallelise — dispatch calls in one turn already run together. Use it when the work is longer than you are willing to wait for, or when you want to act on something else before it finishes."},
                 "continuable": {"type": "boolean", "description": "Background only: keep it alive between turns so send_message_tool can give it more work on the same conversation. Default false — it answers once and ends."},
+                "subscription_topics": {"type": "array", "items": {"type": "string"}, "description": "Background subscriber only: logical topics whose published events become serialized turns. Requires run_in_background=true and continuable=true. Registration is idle; the standing task brief runs only when an event arrives."},
+                "isolate_workspace": {"type": "boolean", "description": "Give this child a private scratch workspace under the current session. Use for concurrent user/reviewer agents that must not see or overwrite sibling plans or artifacts."},
                 "fork": {"type": "boolean", "description": "Let it read your conversation so far as context, instead of starting from only this task text. Use it when what you have already found is what makes the task make sense — files you ruled out, an approach that failed, a decision and why. Default false: a fresh worker on a self-contained job does not need your history and reads faster without it."},
                 "target_name": {"type": "string", "description": "ONLY for evaluator/optimizer/generator: the capability being evaluated/improved/created."},
                 "target_type": {"type": "string", "enum": ["tool", "skill", "agent", "connector", "memory", "plugin", "workflow", "environment"], "description": "ONLY for capability_generate/optimize/evaluate_agent: which kind of component to create, improve or judge. A generate run's target does not exist yet, so this cannot be looked up — unstated, the run cannot install what it built."},

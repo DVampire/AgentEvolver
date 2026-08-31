@@ -16,11 +16,16 @@ pump, which kills the agent for every later caller rather than the one that time
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from agentevolver.runtime import AgentDeadError, AgentStatus, TaskMessage, runtime_manager
+from agentevolver.runtime.server import RuntimeManager
+from agentevolver.protocol.types import SubscriptionEventMessage
+from agentevolver.agent.types import AgentContext
+from agentevolver.response import Response, ResponseType
 
 
 class StubAgent:
@@ -188,5 +193,143 @@ def test_shutdown_empties_the_registry_and_a_ref_still_says_who_it_is() -> None:
         assert "running" in repr(first)
         await runtime_manager.shutdown()
         assert runtime_manager.list() == []
+
+    run(check())
+
+
+# --------------------------------------------------------------------------- #
+# Publish/subscribe turns
+# --------------------------------------------------------------------------- #
+def test_a_published_event_is_queued_as_a_serial_subscriber_turn() -> None:
+    """Events use the continuable outer queue, never the live inbox.
+
+    The inbox may already be advancing a model turn. Putting another TaskMessage there
+    would start a second run under the same ref name and overwrite the first; the outer
+    queue is the framework's existing one-turn-at-a-time boundary.
+    """
+
+    async def check() -> None:
+        manager = object.__new__(RuntimeManager)
+        RuntimeManager.__init__(manager)
+        ref = await manager.spawn(StubAgent(), name="event-subscriber")
+        ref.continuable = True
+        ref._ctx = SimpleNamespace(id="subscriber-session", extra={})
+        ref.subscription_brief = "Standing evaluator brief"
+        ref.subscription_files = ["/tmp/persona.html"]
+        manager.subscribe("root::website.releases", ref)
+
+        event = SubscriptionEventMessage.create(
+            topic="root::website.releases",
+            event_type="website.release.ready",
+            payload={"iteration_id": "V0", "url": "http://example.test"},
+            publisher="meta_agent",
+        )
+        assert await manager.publish("root::website.releases", event) == 1
+        queued = await asyncio.wait_for(ref._tasks.get(), timeout=1)
+        assert isinstance(queued, SubscriptionEventMessage)
+        assert queued.task.startswith("Standing evaluator brief")
+        assert queued.kwargs["files"] == ["/tmp/persona.html"]
+        assert queued.kwargs["subscription_event"]["event_type"] == (
+            "website.release.ready"
+        )
+        assert ref._inbox.empty()
+
+        await manager.stop(ref, drain=False)
+        assert ref.subscriptions == set()
+        assert "root::website.releases" not in manager._topics
+
+    run(check())
+
+
+def test_a_short_lived_ref_cannot_subscribe() -> None:
+    """A one-shot ref would disappear before a future event and silently drop it."""
+
+    async def check() -> None:
+        manager = object.__new__(RuntimeManager)
+        RuntimeManager.__init__(manager)
+        ref = await manager.spawn(StubAgent(), name="one-shot-subscriber")
+        try:
+            with pytest.raises(ValueError, match="continuable"):
+                manager.subscribe("root::events", ref)
+        finally:
+            await manager.stop(ref, drain=False)
+
+    run(check())
+
+
+def test_stopping_a_dead_ref_removes_its_subscription_edges() -> None:
+    """Pump failure must not leave a dead subscriber indexed until the next publish."""
+
+    async def check() -> None:
+        manager = object.__new__(RuntimeManager)
+        RuntimeManager.__init__(manager)
+        ref = await manager.spawn(StubAgent(), name="dead-subscriber")
+        ref.continuable = True
+        manager.subscribe("root::events", ref)
+        ref.status = AgentStatus.DEAD
+
+        await manager.stop(ref, drain=False)
+
+        assert ref.subscriptions == set()
+        assert "root::events" not in manager._topics
+
+    run(check())
+
+
+def test_subscription_only_delegation_waits_without_spending_an_agent_turn() -> None:
+    """Registration is idle; only a publish starts the subscriber's first turn."""
+
+    class Subscriber:
+        name = "subscriber"
+        subscription_topics = []
+
+        async def handle(self, msg, ref) -> None:
+            msg.reply_future.set_result(
+                Response(
+                    type=ResponseType.AGENT,
+                    success=True,
+                    message=f"handled:{msg.event_type}",
+                )
+            )
+
+    async def check() -> None:
+        from agentevolver.job import job_manager
+
+        manager = object.__new__(RuntimeManager)
+        RuntimeManager.__init__(manager)
+        parent = AgentContext(id="subscription-root")
+        started = await manager.delegate_background(
+            Subscriber(),
+            "Standing subscriber brief",
+            continuable=True,
+            subscription_topics=["demo.releases"],
+            parent_ctx=parent,
+            parent_ref=None,
+            files=[],
+        )
+        ref = manager.child(started.data["job_id"])
+        try:
+            assert ref is not None
+            assert ref.turns == 0
+            assert ref._tasks.empty()
+            assert not ref.busy
+
+            scoped = "subscription-root::demo.releases"
+            event = SubscriptionEventMessage.create(
+                topic=scoped,
+                event_type="release.ready",
+                payload={"version": "V0"},
+            )
+            assert await manager.publish(scoped, event) == 1
+            for _ in range(100):
+                if ref.turns == 1 and not ref.busy:
+                    break
+                await asyncio.sleep(0.01)
+            assert ref.turns == 1
+            assert "handled:release.ready" in (job_manager.output(ref.job_id) or "")
+        finally:
+            manager.forget(parent.id)
+            job_manager.forget(parent.id)
+            await asyncio.sleep(0)
 
     run(check())

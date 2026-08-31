@@ -523,6 +523,15 @@ def test_handing_a_child_new_work_is_gated_like_the_dispatch_it_is():
     assert action_is_allowed("tool", tool.name, declaration) is False
 
 
+def test_publishing_subscriber_work_is_gated_like_dispatch():
+    """Fan-out starts Agent turns, so plan mode must treat publish as an effect."""
+    from agentevolver.tool.default.publish_event import PublishEventTool
+
+    tool = PublishEventTool()
+    declaration = {"mutates": tool.mutates, "permission_mode": tool.permission_mode}
+    assert action_is_allowed("tool", tool.name, declaration) is False
+
+
 def test_a_child_may_still_say_what_it_found_while_a_plan_is_being_approved():
     """A report changes nothing a person or a later run could observe, and findings are
     exactly what a planning run wants out of a child it already started."""
@@ -559,6 +568,45 @@ async def test_the_dispatch_schema_offers_backgrounding_to_the_model():
     properties = AgentManagerServer._dispatch_parameters()["properties"]
     assert "run_in_background" in properties
     assert "continuable" in properties
+    assert "subscription_topics" in properties
+    assert "continuable=true" in properties["subscription_topics"]["description"]
+
+
+def test_dispatch_schema_bounds_prose_and_prefers_structured_artifacts():
+    """One tool argument must not become an unbounded generated design document."""
+    from agentevolver.agent.server import (
+        AgentManagerServer,
+        MAX_DELEGATED_TASK_CHARS,
+        validate_dispatch_input,
+    )
+
+    properties = AgentManagerServer._dispatch_parameters()["properties"]
+    assert properties["task"]["maxLength"] == MAX_DELEGATED_TASK_CHARS
+    assert "specification file" in properties["task"]["description"]
+    assert properties["files"]["maxItems"] > 0
+    assert properties["acceptance"]["maxItems"] > 0
+
+    with pytest.raises(ValueError, match="Write the detailed specification"):
+        validate_dispatch_input({"task": "x" * (MAX_DELEGATED_TASK_CHARS + 1)})
+
+
+def test_dispatch_contract_rejects_unbounded_structured_fields():
+    from agentevolver.agent.server import (
+        MAX_DELEGATION_CONTRACT_ITEM_CHARS,
+        MAX_DELEGATION_CONTRACT_ITEMS,
+        validate_dispatch_input,
+    )
+
+    with pytest.raises(ValueError, match="maximum"):
+        validate_dispatch_input({
+            "task": "implement the attached spec",
+            "acceptance": ["ok"] * (MAX_DELEGATION_CONTRACT_ITEMS + 1),
+        })
+    with pytest.raises(ValueError, match="entry is"):
+        validate_dispatch_input({
+            "task": "implement the attached spec",
+            "read_set": ["x" * (MAX_DELEGATION_CONTRACT_ITEM_CHARS + 1)],
+        })
 
 
 # --------------------------------------------------------------------------- #

@@ -16,6 +16,7 @@ general; this file is just their typed conversations.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from agentevolver.logger import logger
@@ -24,6 +25,7 @@ from agentevolver.protocol.types import (
     EscalationMessage,
     MonitorProgressMessage,
     QueryMessage,
+    SubscriptionEventMessage,
 )
 from agentevolver.response.types import Response
 from agentevolver.runtime import runtime_manager
@@ -250,6 +252,28 @@ class ProtocolManager(metaclass=Singleton):
     # pubsub — fan-out: broadcast to a topic's subscribers (runtime.publish)
     # ------------------------------------------------------------------
 
+    _TOPIC_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+    @classmethod
+    def scoped_topic(cls, topic: str, ctx: Any) -> str:
+        """Return a root-session-scoped topic name.
+
+        A model supplies the stable logical name (for example ``website.releases``);
+        the protocol adds the task-tree identity.  Two users can therefore run the same
+        workflow concurrently without publishing into one another's subscribers.
+        """
+        logical = str(topic or "").strip()
+        if not cls._TOPIC_RE.fullmatch(logical):
+            raise ValueError(
+                "topic must be 1-128 characters and contain only letters, digits, "
+                "dot, underscore, colon, or hyphen"
+            )
+        extra = getattr(ctx, "extra", None) or {}
+        root = str(extra.get("root_session_id") or getattr(ctx, "id", "") or "").strip()
+        if not root:
+            raise ValueError("publish/subscribe requires a session identity")
+        return f"{root}::{logical}"
+
     def subscribe(self, topic: str, ref: Any) -> None:
         """Start receiving messages published to ``topic`` in ``ref``'s inbox."""
         runtime_manager.subscribe(topic, ref)
@@ -259,8 +283,41 @@ class ProtocolManager(metaclass=Singleton):
         runtime_manager.unsubscribe(topic, ref)
 
     async def publish(self, topic: str, msg: Any) -> int:
-        """Deliver ``msg`` to every running subscriber of ``topic``. Returns the fan-out count."""
+        """Deliver one typed event to every running subscriber of an already-scoped topic.
+
+        ``dict`` remains accepted for compatibility with the earlier transport-only API;
+        it is normalized into a generic event instead of being placed raw in an Agent inbox.
+        New callers should construct :class:`SubscriptionEventMessage` or use
+        :meth:`publish_event` so the event type and publisher are explicit.
+        """
+        if not isinstance(msg, SubscriptionEventMessage):
+            payload = msg if isinstance(msg, dict) else {"value": msg}
+            msg = SubscriptionEventMessage.create(
+                topic=topic,
+                event_type=str(payload.get("event_type") or payload.get("event") or "event"),
+                payload=payload,
+            )
         return await runtime_manager.publish(topic, msg)
+
+    async def publish_event(
+        self,
+        topic: str,
+        *,
+        event_type: str,
+        payload: Optional[Dict[str, Any]],
+        ctx: Any,
+        publisher: str = "",
+    ) -> Tuple[int, str, SubscriptionEventMessage]:
+        """Scope, type, and publish one event; return count, scoped topic, and envelope."""
+        scoped = self.scoped_topic(topic, ctx)
+        event = SubscriptionEventMessage.create(
+            topic=scoped,
+            event_type=event_type,
+            payload=payload,
+            publisher=publisher,
+        )
+        sent = await runtime_manager.publish(scoped, event)
+        return sent, scoped, event
 
 
 protocol_manager = ProtocolManager()

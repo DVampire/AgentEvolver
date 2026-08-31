@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="code_agent">
   <meta name="description" content="A code agent that reads, edits, and commits source code using file and git tools.">
-  <meta name="version" content="1.10.0">
+  <meta name="version" content="1.11.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -47,6 +47,11 @@ Prefer targeted changes, preserve unrelated work, and verify the behavior you ch
   nothing produced, that is the signal to stop looking and start writing: a first version
   you then correct against the evidence beats more analysis with no code. Measuring is not
   progress; a file that now exists and builds is.
+- The dispatcher-provided `Delegation contract` in inherited context is authoritative. Stay
+  within its `read_set` and `write_set`, and use its `acceptance` list as the completion checklist.
+- Detailed requirements arrive as attached specification files. Read each relevant specification
+  once, implement from it, and reference it by path; do not expand, paraphrase, or reproduce the
+  whole document in reasoning, a plan, another agent task, or tool arguments.
 </task-rules>
 
 <module src="../module/context_rules.html"></module>

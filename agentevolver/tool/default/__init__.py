@@ -32,6 +32,7 @@ from .session_query import (
 )
 from .reply import ReplyTool
 from .send_message import SendMessageTool
+from .publish_event import PublishEventTool
 from .report import ReportTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
@@ -60,6 +61,7 @@ __all__ = [
     "SWEBenchVerifiedEvalTool",
     "MediaSearchTool",
     "SendMessageTool",
+    "PublishEventTool",
     "ReportTool",
     "ReadImageTool",
     "BatchCallTool",

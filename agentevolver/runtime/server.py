@@ -83,7 +83,15 @@ class RuntimeManager(metaclass=Singleton):
     # ------------------------------------------------------------------
 
     def subscribe(self, topic: str, ref: AgentRef) -> None:
+        if ref.status != AgentStatus.RUNNING:
+            raise AgentDeadError(f"Cannot subscribe {ref}: not RUNNING")
+        if not ref.continuable:
+            raise ValueError(
+                "Only a continuable AgentRef can subscribe: published events are queued "
+                "as later turns on its long-lived driver."
+            )
         self._topics.setdefault(topic, set()).add(ref.name)
+        ref.subscriptions.add(topic)
 
     def unsubscribe(self, topic: str, ref: AgentRef) -> None:
         subs = self._topics.get(topic)
@@ -91,15 +99,48 @@ class RuntimeManager(metaclass=Singleton):
             subs.discard(ref.name)
             if not subs:
                 self._topics.pop(topic, None)
+        ref.subscriptions.discard(topic)
+
+    def _unsubscribe_all(self, ref: AgentRef) -> None:
+        """Remove every topic edge owned by ``ref`` during its normal lifecycle cleanup."""
+        for topic in tuple(ref.subscriptions):
+            self.unsubscribe(topic, ref)
 
     async def publish(self, topic: str, msg: BaseMessage) -> int:
-        """Deliver ``msg`` to every RUNNING subscriber of ``topic``. Returns the count sent
-        (dropping any subscriber that is no longer running)."""
+        """Queue ``msg`` for every running subscriber; return the accepted fan-out count.
+
+        Typed subscription events become serialized task turns on a continuable ref's
+        outer queue. They never enter the live inbox directly, because doing so while a
+        turn is active can overwrite that run. Legacy non-event messages retain the raw
+        inbox fan-out behavior for transport-level callers.
+        """
+        from agentevolver.protocol.types import SubscriptionEventMessage
+
         sent = 0
         for name in list(self._topics.get(topic, set())):
             ref = self._refs.get(name)
             if ref is not None and ref.status == AgentStatus.RUNNING:
-                await ref._inbox.put(msg)
+                if isinstance(msg, SubscriptionEventMessage):
+                    if not ref.continuable:
+                        self.unsubscribe(topic, ref)
+                        continue
+                    event_data = msg.model_dump(exclude={"reply_future", "task", "kwargs"})
+                    kwargs = dict(msg.kwargs or {})
+                    kwargs.update(
+                        ctx=ref._ctx,
+                        files=list(ref.subscription_files) or None,
+                        subscription_event=event_data,
+                    )
+                    task = msg.task or ""
+                    if ref.subscription_brief:
+                        task = f"{ref.subscription_brief}\n\n--- published event ---\n{task}"
+                    delivery = msg.model_copy(
+                        update={"task": task, "kwargs": kwargs, "reply_future": None},
+                        deep=True,
+                    )
+                    await ref._tasks.put(delivery)
+                else:
+                    await ref._inbox.put(msg)
                 sent += 1
             else:
                 self._topics[topic].discard(name)
@@ -139,6 +180,7 @@ class RuntimeManager(metaclass=Singleton):
     ) -> None:
         """Stop the ref's pump."""
         if ref.status != AgentStatus.RUNNING:
+            self._unsubscribe_all(ref)
             self._refs.pop(ref.name, None)
             return
 
@@ -161,6 +203,7 @@ class RuntimeManager(metaclass=Singleton):
                     ref._pump_task.cancel()
                     await asyncio.gather(ref._pump_task, return_exceptions=True)
         finally:
+            self._unsubscribe_all(ref)
             if ref.status != AgentStatus.DEAD:
                 ref.status = AgentStatus.STOPPED
             self._refs.pop(ref.name, None)
@@ -318,16 +361,37 @@ class RuntimeManager(metaclass=Singleton):
         from agentevolver.response import Response, ResponseType
 
         text, ctx = self._brief(child, task, brief)
+        requested_topics = list(
+            brief.get("subscription_topics")
+            or getattr(child, "subscription_topics", None)
+            or []
+        )
+        if requested_topics and not continuable:
+            raise ValueError(
+                "subscription_topics requires continuable=true so the subscriber remains "
+                "alive to consume later events"
+            )
         job = self._register(child, task, ctx, brief.get("parent_ctx"))
         await self._emit_subagent("subagent_start", child, job, ctx, task=task)
 
         ref = await self.spawn(child)
         self._bind_delegated_ref(ref, job, task, ctx, continuable=continuable)
+        ref.subscription_brief = text if requested_topics else ""
+        ref.subscription_files = list(self._existing(brief.get("files")) or [])
+        if requested_topics:
+            from agentevolver.protocol import protocol_manager
 
-        await ref._tasks.put(TaskMessage(task=text, kwargs={
-            "ctx": ctx, "files": self._existing(brief.get("files")),
-            "parent_ref": brief.get("parent_ref"),
-        }))
+            for logical_topic in requested_topics:
+                scoped = protocol_manager.scoped_topic(logical_topic, brief.get("parent_ctx"))
+                self.subscribe(scoped, ref)
+            # Subscription registration itself is not a model task. The driver starts
+            # idle and the first queued publish becomes turn 1.
+            ref.busy = False
+        else:
+            await ref._tasks.put(TaskMessage(task=text, kwargs={
+                "ctx": ctx, "files": ref.subscription_files or None,
+                "parent_ref": brief.get("parent_ref"),
+            }))
         # Wait for the driver's first step — not for the turn, which is the whole point of
         # backgrounding, but for the coroutine to be *inside* its try block. A task
         # cancelled before it has ever run is closed without executing, so its cleanup
@@ -341,7 +405,7 @@ class RuntimeManager(metaclass=Singleton):
         job.handle, job.label = ref._driver, ref.label()
         await running.wait()
         logger.info(f"| 🧑‍🚀 Delegated {ref.agent_name} in the background as {job.id} "
-                    f"({'continuable' if continuable else 'one-shot'})")
+                    f"({'subscriber' if requested_topics else ('continuable' if continuable else 'one-shot')})")
 
         return Response(type=ResponseType.AGENT, success=True,
                         message=self._handoff(ref), data={"job_id": job.id})
@@ -390,6 +454,15 @@ class RuntimeManager(metaclass=Singleton):
         else:
             lines.append("It answers once and ends. Collect the result before you finish; "
                          "an uncollected sub-agent is work you paid for and threw away.")
+        if ref.subscriptions:
+            logical = [topic.split("::", 1)[-1] for topic in sorted(ref.subscriptions)]
+            lines[0] = (
+                f"Registered {ref.agent_name} as an idle subscriber in the background "
+                f"under {ref.job_id}; no model turn was spent waiting."
+            )
+            lines.insert(1, f"  subscribed topics: {', '.join(logical)}")
+            lines.append("A published event becomes its next serialized turn; collect each result "
+                         "with job__output before publishing the next iteration.")
         return "\n".join(lines)
 
     async def send_to_child(self, job_id: str, message: str, *, session_id: str = "") -> Any:
@@ -466,6 +539,7 @@ class RuntimeManager(metaclass=Singleton):
                 driver.cancel()          # its own teardown does the rest
             elif ref.alive:
                 # No driver to cancel — it never got one, or it already returned.
+                self._unsubscribe_all(ref)
                 ref.status = AgentStatus.STOPPED
                 self._refs.pop(ref.name, None)
             self._delegated.pop(ref.job_id, None)

@@ -137,7 +137,10 @@ class BrowserEnvironment(Environment):
 
     # ------------------------------------------------------------------ actions
 
-    @environment_manager.action(name="click", description="Click at specified coordinates on the page")
+    @environment_manager.action(
+        name="click", description="Click at specified coordinates on the page",
+        read_only=False, destructive=False,
+    )
     async def click(self, x: int, y: int, button: str = "left", ctx=None, **kwargs) -> Dict[str, Any]:
         try:
             sid, rec = self._sess(ctx)
@@ -154,7 +157,10 @@ class BrowserEnvironment(Environment):
             logger.error(f"| ❌ click failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
 
-    @environment_manager.action(name="double_click", description="Double click at specified coordinates on the page")
+    @environment_manager.action(
+        name="double_click", description="Double click at specified coordinates on the page",
+        read_only=False, destructive=False,
+    )
     async def double_click(self, x: int, y: int, ctx=None, **kwargs) -> Dict[str, Any]:
         try:
             sid, rec = self._sess(ctx)
@@ -171,7 +177,10 @@ class BrowserEnvironment(Environment):
             logger.error(f"| ❌ double_click failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
 
-    @environment_manager.action(name="scroll", description="Scroll at specified coordinates with given offsets")
+    @environment_manager.action(
+        name="scroll", description="Scroll at specified coordinates with given offsets",
+        read_only=True, destructive=False, idempotent=False,
+    )
     async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int, ctx=None, **kwargs) -> Dict[str, Any]:
         try:
             sid, rec = self._sess(ctx)
@@ -189,7 +198,10 @@ class BrowserEnvironment(Environment):
             logger.error(f"| ❌ scroll failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
 
-    @environment_manager.action(name="type", description="Type text at the current cursor position")
+    @environment_manager.action(
+        name="type", description="Type text at the current cursor position",
+        read_only=False, destructive=False,
+    )
     async def type_text(self, text: str, ctx=None, **kwargs) -> Dict[str, Any]:
         try:
             sid, _ = self._sess(ctx)
@@ -199,7 +211,10 @@ class BrowserEnvironment(Environment):
             logger.error(f"| ❌ type failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
 
-    @environment_manager.action(name="wait", description="Wait for specified milliseconds (default 1000)")
+    @environment_manager.action(
+        name="wait", description="Wait for specified milliseconds (default 1000)",
+        read_only=True, destructive=False, idempotent=True,
+    )
     async def wait(self, ms: int = 1000, ctx=None, **kwargs) -> Dict[str, Any]:
         try:
             sid, _ = self._sess(ctx)
@@ -209,7 +224,10 @@ class BrowserEnvironment(Environment):
             logger.error(f"| ❌ wait failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
 
-    @environment_manager.action(name="move", description="Move mouse to specified coordinates")
+    @environment_manager.action(
+        name="move", description="Move mouse to specified coordinates",
+        read_only=True, destructive=False, idempotent=False,
+    )
     async def move(self, x: int, y: int, ctx=None, **kwargs) -> Dict[str, Any]:
         try:
             sid, rec = self._sess(ctx)
@@ -226,7 +244,10 @@ class BrowserEnvironment(Environment):
             logger.error(f"| ❌ move failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
 
-    @environment_manager.action(name="keypress", description="Press specified keys")
+    @environment_manager.action(
+        name="keypress", description="Press specified keys",
+        read_only=False, destructive=False,
+    )
     async def keypress(self, keys: List[str], ctx=None, **kwargs) -> Dict[str, Any]:
         try:
             sid, _ = self._sess(ctx)
@@ -236,7 +257,10 @@ class BrowserEnvironment(Environment):
             logger.error(f"| ❌ keypress failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
 
-    @environment_manager.action(name="drag", description="Drag mouse along specified path")
+    @environment_manager.action(
+        name="drag", description="Drag mouse along specified path",
+        read_only=False, destructive=False,
+    )
     async def drag(self, path: List[List[int]], ctx=None, **kwargs) -> Dict[str, Any]:
         try:
             sid, rec = self._sess(ctx)
@@ -257,6 +281,8 @@ class BrowserEnvironment(Environment):
     @environment_manager.action(
         name="goto",
         description="Navigate the browser to a URL. Accepts a full URL (https://...) or a bare domain. Use this to open a link found via the search action.",
+        read_only=True,
+        destructive=False,
     )
     async def goto(self, url: str, ctx=None, **kwargs) -> Dict[str, Any]:
         try:
@@ -275,6 +301,9 @@ class BrowserEnvironment(Environment):
             "to a search engine. Use it to discover relevant pages, then open one with the `goto` action.\n"
             "Args: query (str), num_results (int, default 5)."
         ),
+        read_only=True,
+        destructive=False,
+        open_world=True,
     )
     async def search(self, query: str, num_results: int = 5, **kwargs) -> Dict[str, Any]:
         try:
@@ -300,6 +329,8 @@ class BrowserEnvironment(Environment):
             '- Run JS in page: return await page.evaluate("document.title")\n'
             '- Wait for an element: await page.wait_for_selector("#result", timeout=5000)'
         ),
+        read_only=False,
+        destructive=False,
     )
     async def command(self, code: str, ctx=None, **kwargs) -> Dict[str, Any]:
         try:

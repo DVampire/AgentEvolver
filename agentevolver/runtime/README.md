@@ -56,3 +56,15 @@ one goes idle, keeps its session and its memory, and can be handed more work wit
 `send_message_tool`. Idle is not finished, which is why "mid-turn" is a `busy` flag on the
 ref rather than the job's status — collapsing the two would report either a live child as
 collectable or a finished one as still running.
+
+## Publish/subscribe reuses the continuable queue
+
+A subscriber is a continuable background `AgentRef` with one or more scoped topics. Starting
+one with `subscription_topics` registers it idle: its task argument becomes a standing brief,
+and no model call is spent pretending to wait. A typed publish prepends that brief, restores
+the subscriber's context/files, and enqueues `SubscriptionEventMessage` on `_tasks`. The same
+driver that serializes `send_message_tool` turns therefore serializes published events too.
+
+The live ref owns `subscriptions`; stopping it removes every topic edge. Runtime reports the
+fan-out count when an event is accepted into subscriber queues. Protocol owns event meaning
+and session scoping, while Runtime owns delivery and lifecycle.

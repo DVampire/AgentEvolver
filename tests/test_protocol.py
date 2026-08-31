@@ -23,6 +23,7 @@ from agentevolver.protocol.types import (
     EscalationMessage,
     MonitorProgressMessage,
     QueryMessage,
+    SubscriptionEventMessage,
 )
 
 
@@ -314,6 +315,8 @@ async def test_publishing_reports_the_fan_out_count(protocol, runtime):
     which is how a topic name typo shows itself — and it looks identical to a successful
     publish if the number is thrown away."""
     assert await protocol.publish("evolution", {"event": "x"}) == 2
+    assert isinstance(runtime.published[0][1], SubscriptionEventMessage)
+    assert runtime.published[0][1].event_type == "x"
 
 
 def test_subscription_is_passed_straight_through(protocol, runtime):
@@ -324,6 +327,23 @@ def test_subscription_is_passed_straight_through(protocol, runtime):
     protocol.subscribe("evolution", ref)
     protocol.unsubscribe("evolution", ref)
     assert runtime.subscriptions == [("sub", "evolution", ref), ("unsub", "evolution", ref)]
+
+
+def test_logical_topics_are_isolated_by_root_session(protocol):
+    """Identical workflows in two sessions must not share subscribers."""
+    first = Ctx(id="session-a")
+    second = Ctx(id="session-b")
+    assert protocol.scoped_topic("website.releases", first) == (
+        "session-a::website.releases"
+    )
+    assert protocol.scoped_topic("website.releases", first) != protocol.scoped_topic(
+        "website.releases", second
+    )
+
+
+def test_invalid_topic_is_rejected_before_it_reaches_runtime(protocol):
+    with pytest.raises(ValueError, match="topic must be"):
+        protocol.scoped_topic("spaces are not allowed", Ctx(id="session-a"))
 
 
 # --------------------------------------------------------------------------- #

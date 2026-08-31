@@ -139,6 +139,21 @@ def test_default_agents_share_the_stable_to_live_user_layout():
         )
 
 
+def test_default_agents_share_the_core_system_contract_modules():
+    """Roles specialize behavior without forking the base Agent contract."""
+    required = (
+        "input_rules",
+        "constraint_rules",
+        "context_rules",
+        "response_protocol",
+    )
+    for path in sorted((ROOT / "agentevolver" / "prompt" / "default").glob("*_agent.html")):
+        text = path.read_text(encoding="utf-8")
+        for module in required:
+            include = f'<module src="../module/{module}.html"></module>'
+            assert include in text, f"{path.name} does not share {module}"
+
+
 def test_agent_prompts_use_the_native_calling_protocol():
     """Old JSON actions, `finish`, and synthetic env prefixes break native calls."""
     paths = list((ROOT / "agentevolver" / "prompt" / "default").glob("*_agent.html"))

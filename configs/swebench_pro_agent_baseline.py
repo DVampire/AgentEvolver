@@ -31,7 +31,7 @@ tag = "swebench_pro_agent_baseline"
 log_path = "agent.log"
 
 # Keep in sync with swebench_pro_agent.py — the two arms are only comparable on one model.
-model_name = "llm_hub/claude-opus-5"
+model_name = "llm_hub/deepseek-v4-flash"
 
 memory_names = [
     "file_system_memory",

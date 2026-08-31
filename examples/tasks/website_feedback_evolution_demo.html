@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="website_feedback_evolution_demo">
+  <meta name="description" content="General protocol for a participatory, preference-driven website builder self-evolution demonstration">
+  <meta name="version" content="2.1.0">
+  <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
+  <script src="../../agentevolver/visual/js/task.js"></script>
+</head>
+<body>
+
+<div class="task">
+  <div class="objective">
+    Build and deploy an initial website from the attached site brief, then let three independent
+    persona-based user agents participate as active co-designers rather than passive reviewers.
+    Each user must experience the product, shape a personal version, originate a design
+    contribution, and later accept or revise what the system delivered. Produce a verified second
+    version that demonstrates user preference, user customization, user participation in
+    development, and automatic fulfillment—not only developer-led bug fixing.
+
+    The run must also demonstrate genuine AgentEvolver self-evolution when user contributions
+    expose reusable capabilities that the Builder system does not already possess. Relevant
+    entities may include a Builder/User prompt, Skill, Tool, or newly generated specialist Agent;
+    every claimed evolution needs measured evidence and real downstream use.
+
+    This document is domain-independent. The site brief defines what the website is; the three
+    persona briefs define who co-designs it. Do not invent domain requirements beyond those inputs.
+  </div>
+
+  <div class="inputs">
+    The runtime manifest appended by the launcher identifies exactly four role-bearing inputs:
+    one `site_brief` and `persona_01` through `persona_03`.
+
+    Treat persona contents as hidden co-design material. The Website Builder may read the site
+    brief but must not read persona contents before or during participation. After V0 is frozen, it
+    routes each persona file unchanged to the corresponding dedicated Website User Agent. Each
+    participant sees one persona only.
+  </div>
+
+  <div class="experiment-protocol">
+    Run the demonstration as a gated experiment:
+
+    1. Build, deploy, verify, and freeze V0 without seeing persona contents.
+    2. Register three persona-scoped Website User Agents once as isolated continuable subscribers to the
+       release topic, then publish the frozen V0 release event. Their event turns run concurrently.
+       Do not modify V0 while any baseline co-design turn is active.
+    3. Require each participant to exercise the main journey, make and save meaningful personal
+       choices, and submit a structured design contribution through the website. Verify its profile
+       ID and immutable contribution receipt in shared storage.
+    4. Normalize observations, explicit preferences, and desired experiences without flattening
+       minority preferences. Separate personal variants from justified shared product changes;
+       record delivered, deferred, and declined contributions with reasons.
+    5. Implement feasible user-originated contributions automatically. Fix ordinary product defects
+       directly. Use framework evolution only for a demonstrated
+       reusable capability gap, following generate/optimize, evaluate, baseline comparison, and
+       explicit keep or rollback/unload.
+    6. Build, independently verify, deploy, and freeze V1.
+    7. Publish the V1 release event to the same three live subscribers rather than dispatching new
+       agents. Each keeps its user identity but receives a fresh browser context, restores its
+       server-side preference profile, sees how its receipt was handled, and accepts or revises the
+       delivered experience.
+  </div>
+
+  <div class="co-design-contract">
+    The site must expose two discoverable ordinary-user experiences. `Make it mine` lets a user
+    preview, save, restore, edit, and reset meaningful preferences. `Design with us` records the
+    attempted goal, observed outcome/evidence, explicit choices, desired experience, personal or
+    shared scope, priority, non-negotiables, acceptance scenario, positive observations, and integer
+    1–5 ratings for usability, task success, clarity/trust, accessibility/responsiveness, and sense
+    of participation. A decorative theme toggle or generic comment box alone is insufficient.
+
+    Preference profiles and contributions must live in a store shared across isolated browser
+    sessions for the demo lifetime. Saving returns a visible profile ID; contributing returns a
+    visible immutable receipt. Per-browser local or session storage alone does not satisfy this
+    requirement. Participants can retrieve only their own profile and contribution status. The
+    Builder can retrieve the inbox without exposing one participant's private data to another.
+  </div>
+
+  <div class="evolution-rules">
+    Do not label a website code change as AgentEvolver self-evolution. Evolution is justified only
+    by observed evidence that the current system lacks a reusable operation or method, or by a
+    repeated structural failure that survives at least two materially different correction attempts.
+    First inspect whether an appropriate registered capability already exists and whether a mounted
+    skill was simply not used.
+
+    A measured cross-cutting methodology gap is eligible when it affects a persona, no mounted
+    capability covers it, and a consistent reusable method plus verification is needed beyond a
+    one-off content or CSS edit. This still requires an actual V0 observation; the builder may not
+    pre-generate a capability merely to satisfy the demo narrative.
+
+    Audit candidate gaps across prompts/roles, Skills, Tools, and specialist Agents. The intended
+    demonstration changes multiple entity classes, but component count never overrides evidence:
+    evaluate candidates from at least two distinct framework types when supported; otherwise record
+    the multi-entity objective as unmet rather than generating decorative capabilities.
+
+    A candidate capability is provisional. Evaluate it, compare the same representative task with
+    and without it, and obtain independent review when substantial. Keep it only when it measurably
+    helps and a downstream implementation agent actually uses it in V1. Otherwise rollback an
+    optimized component or unload a new component, and record the negative result honestly.
+  </div>
+
+  <div class="evidence-and-deliverables">
+    Preserve a reproducible audit trail in the workspace: run manifest, V0/V1 source revisions or
+    hashes, the bounded `website_v0_spec.html` used for implementation delegation, deployment URLs,
+    verification evidence, preference profiles, raw contribution receipts,
+    contribution/disposition ledgers, evolution ledger, and a final report. Detailed specifications
+    travel as attached files; agent-to-agent task strings remain concise and structured.
+
+    The report must trace each finding as:
+    `preference/contribution receipt → personal/shared decision → product or capability change →
+    verification → participant accept/revise result`.
+    It must also list unsuccessful submissions, rejected/deferred findings, failed or rolled-back
+    evolution attempts, and remaining limitations. Do not replace participant-level evidence with
+    averages alone.
+  </div>
+
+  <div class="acceptance">
+    The task is complete only when:
+    - V0 and V1 are live, frozen, and independently verified;
+    - three isolated participants were registered once, the V0 and V1 release publishes each reported
+      fan-out three, and all three subscribers attempted each iteration with the same persona routing;
+    - successful turns have website-issued profile/contribution IDs verified in shared storage;
+    - every participant made an explicit choice, originated a contribution, and later accepted or
+      revised its implementation;
+    - every preference and contribution has a recorded disposition and evidence-linked outcome;
+    - every evolution attempt has an observed trigger, evaluation, baseline comparison, explicit
+      keep/rollback decision, and actual downstream use when kept;
+    - V1 preserves the original primary journey while fulfilling accepted contributions; and
+    - the final report exposes exact artifact paths, live URL, receipts, before/after measures,
+      evolution decisions, and limitations.
+  </div>
+</div>
+
+</body>
+</html>

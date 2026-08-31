@@ -150,9 +150,10 @@ searches; the redundancy is in the code, not in any prompt.
 | `reply_tool` | | Reply to a sub-agent that escalated, unblocking it. |
 | `report_tool` | no | Report a finding upward without waiting for a reply. |
 | `send_message_tool` | yes | Give a continuable background sub-agent more work on the same conversation. |
+| `publish_event_tool` | yes | Fan out a typed event to session-scoped Agent subscribers; each delivery becomes a queued turn. |
 
-Five directions, not five spellings: the person, the parent, a blocked child, a one-way
-note upward, and more work for a child that is still running.
+The first five cover direct conversations; publish adds a distinct fan-out direction for
+event-driven subscribers and returns the number of queues that accepted the event.
 
 ### Intent and state
 

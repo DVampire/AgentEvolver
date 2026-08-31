@@ -205,4 +205,9 @@ async def test_child_model_and_budget_overrides_are_invocation_local(monkeypatch
     assert registered.model_name == "default-model" and registered.max_token is None
     assert child_ctx.extra["child_reasoning_effort"] == "medium"
     assert child_ctx.extra["task_contract"]["owner"] == "planner"
+    assert child_ctx.extra["task_contract"]["read_set"] == ["src"]
+    assert child_ctx.extra["task_contract"]["write_set"] == []
+    inherited = await child._get_inherited_context(child_ctx)
+    assert "### Delegation contract" in inherited["inherited_context"]
+    assert '"read_set": [' in inherited["inherited_context"]
     assert '"token_budget": 1234' in output

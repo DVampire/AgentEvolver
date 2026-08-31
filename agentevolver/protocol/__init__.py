@@ -11,6 +11,7 @@ from agentevolver.protocol.types import (
     MonitorProgressMessage,
     ControlMessage,
     QueryMessage,
+    SubscriptionEventMessage,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "MonitorProgressMessage",
     "ControlMessage",
     "QueryMessage",
+    "SubscriptionEventMessage",
 ]

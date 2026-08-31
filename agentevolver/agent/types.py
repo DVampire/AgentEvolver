@@ -56,6 +56,7 @@ from agentevolver.utils import (
 # (allow reads, deny writes per call) is future work.
 _READ_ONLY_DENIED_TOOLS = {
     "write_file_tool", "edit_file_tool", "git_tool", "deploy_tool", "evolution_tool",
+    "send_message_tool", "publish_event_tool",
 }
 
 #: The capabilities whose presence means "this run can self-evolve". Checked
@@ -442,6 +443,7 @@ class AgentConfig(BaseModel):
 
 from agentevolver.protocol.types import ControlMessage as _ControlMessage  # noqa: E402
 from agentevolver.protocol.types import QueryMessage as _QueryMessage  # noqa: E402
+from agentevolver.protocol.types import SubscriptionEventMessage as _SubscriptionEventMessage  # noqa: E402
 from agentevolver.runtime.types import BaseMessage as _BaseMessage  # noqa: E402
 
 
@@ -569,6 +571,13 @@ class Agent(BaseModel):
     enable_evolving: bool = Field(default=False, description="Whether the agent may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     agent_type: AgentType = Field(default=AgentType.TOOL_CALLING, description="Agent execution contract")
+    subscription_topics: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Default logical topics consumed when this Agent is started as a continuable "
+            "background subscriber. Runtime scopes them to the root session."
+        ),
+    )
 
     def __init__(
         self,
@@ -595,6 +604,7 @@ class Agent(BaseModel):
         prefer_native_multi_agent: bool = False,
         native_max_concurrent_subagents: int = 3,
         defer_capabilities_after: int = 40,
+        subscription_topics: Optional[List[str]] = None,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
@@ -632,6 +642,9 @@ class Agent(BaseModel):
             1, int(native_max_concurrent_subagents or 3)
         )
         self.defer_capabilities_after = max(0, int(defer_capabilities_after or 0))
+        self.subscription_topics = list(
+            self.subscription_topics if subscription_topics is None else subscription_topics
+        )
         self.model_name = model_name
 
         # Setup steps
@@ -822,7 +835,9 @@ class Agent(BaseModel):
                 session_id = str(getattr(ctx, "id", "") or "")
                 # No session id passed: this is the run being rendered, and naming it
                 # takes the parameterised path, which no override answers.
-                plan_body = read_plan()
+                # Path binding is process-global, while subscriber turns are concurrent.
+                # Naming the child session prevents sibling plan.md contamination.
+                plan_body = read_plan(session_id=session_id)
                 if not plan_body and plan_manager.mode(session_id) is PlanMode.AUTO:
                     # An empty slot would render as no slot at all — `{% if plan %}` —
                     # so in `auto` the agent would never be told the document is its to
@@ -1048,9 +1063,28 @@ class Agent(BaseModel):
             active_paths=extra.get("task_files") or (),
             source_workspace=extra.get("source_workspace"),
         )
+        inherited_blocks: List[str] = []
+        if project_context:
+            inherited_blocks.append(project_context)
+        task_contract = dict(extra.get("task_contract") or {})
+        if task_contract:
+            # This is dispatcher-minted and therefore more reliable than a prose task
+            # paraphrase.  Keep it in the fixed inherited layer so the child can see the
+            # exact scope and acceptance conditions it will later be judged against.
+            compact_contract = {
+                key: value for key, value in task_contract.items()
+                if value not in (None, "", [])
+            }
+            inherited_blocks.append(
+                "### Delegation contract\n"
+                "Treat this dispatcher-provided JSON as authoritative scope. Detailed "
+                "requirements belong in the attached specification files.\n"
+                + json.dumps(compact_contract, ensure_ascii=False, indent=2, sort_keys=True)
+            )
+        fixed_context = "\n\n".join(inherited_blocks)
         parent_session = str(extra.get("forked_from") or "")
         if not parent_session:
-            return ({"inherited_context": project_context} if project_context else {})
+            return ({"inherited_context": fixed_context} if fixed_context else {})
         from agentevolver.trace import trace_manager
         from agentevolver.trace.derive import derive_messages
         from agentevolver.trace.surface import SurfaceError
@@ -1063,9 +1097,9 @@ class Agent(BaseModel):
                 f"| ⚠️ [{self.name}] cannot project the parent log {parent_session} "
                 f"({error}); the fork starts without it"
             )
-            return {}
+            return ({"inherited_context": fixed_context} if fixed_context else {})
         if not derived:
-            return ({"inherited_context": project_context} if project_context else {})
+            return ({"inherited_context": fixed_context} if fixed_context else {})
 
         lines = [f"{getattr(m, 'role', '?')}: {getattr(m, 'text', '') or ''}".strip()
                  for m in derived]
@@ -1078,8 +1112,8 @@ class Agent(BaseModel):
             "This is what the agent that dispatched you had already done, for context. "
             "It is not your own history and you did not take these actions.\n\n" + body
         )
-        if project_context:
-            inherited = f"{project_context}\n\n### Parent execution context\n{inherited}"
+        if fixed_context:
+            inherited = f"{fixed_context}\n\n### Parent execution context\n{inherited}"
         return {"inherited_context": inherited}
 
 
@@ -2168,14 +2202,14 @@ class Agent(BaseModel):
             )
             return output, False, None, None, None, None
         if capability_type == "agent":
-            from agentevolver.agent.server import agent_manager
+            from agentevolver.agent.server import agent_manager, validate_dispatch_input
             from agentevolver.runtime import runtime_manager
             if ctx is None:
                 ctx = AgentContext()
             registered_child = await agent_manager.get(route[1])
             if registered_child is None:
                 raise ValueError(f"No registered agent named {route[1]!r}")
-            inp = call.input or {}
+            inp = validate_dispatch_input(call.input or {})
             read_set = [str(item) for item in inp.get("read_set") or []]
             write_set = [str(item) for item in inp.get("write_set") or []]
             acceptance = [str(item) for item in inp.get("acceptance") or []]
@@ -2226,7 +2260,18 @@ class Agent(BaseModel):
                 "model": getattr(child, "model_name", None),
                 "reasoning_effort": reasoning_effort,
                 "token_budget": token_budget,
+                "read_set": read_set,
+                "write_set": write_set,
+                "acceptance": acceptance,
             }
+            subscription_topics = [str(item) for item in inp.get("subscription_topics") or []]
+            if subscription_topics and not (
+                inp.get("run_in_background") and inp.get("continuable")
+            ):
+                raise ValueError(
+                    "subscription_topics requires run_in_background=true and "
+                    "continuable=true"
+                )
             isolate_worktree = bool(inp.get("isolate_worktree"))
             if isolate_worktree and inp.get("run_in_background"):
                 raise ValueError(
@@ -2243,6 +2288,20 @@ class Agent(BaseModel):
             delegated_ctx = ctx.model_copy(update={"extra": extra})
             worktree = None
             worktree_patch = ""
+            if inp.get("isolate_workspace"):
+                from pathlib import Path
+
+                source = resolve_workspace_root(ctx)
+                if not source:
+                    raise RuntimeError("isolated workspace requires a parent workspace_root")
+                # Dispatcher-minted and nested beneath the authorized workspace: this is
+                # scratch isolation for concurrent users, not a source branch to merge.
+                scratch = Path(source) / ".agent_sessions" / str(call.id or uuid.uuid4())
+                scratch.mkdir(parents=True, exist_ok=True)
+                extra = dict(getattr(delegated_ctx, "extra", None) or {})
+                extra["execution_cwd"] = str(scratch.resolve())
+                extra["isolated_workspace"] = True
+                delegated_ctx = ctx.model_copy(update={"extra": extra})
             if isolate_worktree:
                 from agentevolver.agent.worktree import IsolatedWorktree
 
@@ -2285,6 +2344,7 @@ class Agent(BaseModel):
                 # workspace slot read off the context.
                 parent_ctx=delegated_ctx,
                 fork=bool(inp.get("fork")),
+                subscription_topics=subscription_topics,
             )
             if inp.get("run_in_background"):
                 started = await runtime_manager.delegate_background(
@@ -3493,6 +3553,47 @@ class Agent(BaseModel):
         Default behaviour: no-op.  Override to emit extra teardown / trace / reset state.
         """
 
+    async def on_subscription_event(
+        self,
+        msg: "_SubscriptionEventMessage",
+        ref: Any,
+    ) -> None:
+        """Handle one published event through the ordinary task-turn lifecycle.
+
+        Runtime has already serialized the event on the subscriber's continuable task
+        queue and prepended its standing brief. Subclasses may override this hook for
+        event-boundary setup (for example, resetting a browser context), then call
+        ``super()``. They must not bypass :meth:`_handle_task_message`.
+        """
+        await self._handle_task_message(msg, ref)
+
+    async def _handle_task_message(self, msg: Any, ref: Any) -> None:
+        """Run one TaskMessage, shared by direct and subscription-triggered turns."""
+        ctx = msg.kwargs.get("ctx")
+        ref._pending_reply = msg.reply_future      # hand ownership to ref
+        try:
+            extra_kwargs = {k: v for k, v in msg.kwargs.items() if k not in ("ctx", "files")}
+            result = await self.on_start(
+                task=msg.task or "",
+                files=msg.kwargs.get("files"),
+                ctx=ctx,
+                ref=ref,
+                **extra_kwargs,
+            )
+            if result is not None:
+                if ref._pending_reply is not None and not ref._pending_reply.done():
+                    ref._pending_reply.set_result(result)
+                    ref._pending_reply = None
+                await self.on_end(result, ctx)
+        except asyncio.CancelledError:
+            if ref._pending_reply is not None and not ref._pending_reply.done():
+                ref._pending_reply.cancel()
+            raise
+        except Exception as exc:
+            logger.error(f"| ❌ {self.name} task failed: {exc}", exc_info=True)
+            if ref._pending_reply is not None and not ref._pending_reply.done():
+                ref._pending_reply.set_exception(exc)
+
     # ------------------------------------------------------------------
     # Framework dispatcher — do NOT override in subclasses
     # ------------------------------------------------------------------
@@ -3509,31 +3610,10 @@ class Agent(BaseModel):
         overriding ``handle``.
         """
         from agentevolver.runtime.types import TaskMessage
-        if isinstance(msg, TaskMessage):
-            ctx = msg.kwargs.get("ctx")
-            ref._pending_reply = msg.reply_future      # hand ownership to ref
-            try:
-                extra_kwargs = {k: v for k, v in msg.kwargs.items() if k not in ("ctx", "files")}
-                result = await self.on_start(
-                    task=msg.task or "",
-                    files=msg.kwargs.get("files"),
-                    ctx=ctx,
-                    ref=ref,
-                    **extra_kwargs,
-                )
-                if result is not None:
-                    if ref._pending_reply is not None and not ref._pending_reply.done():
-                        ref._pending_reply.set_result(result)
-                        ref._pending_reply = None
-                    await self.on_end(result, ctx)
-            except asyncio.CancelledError:
-                if ref._pending_reply is not None and not ref._pending_reply.done():
-                    ref._pending_reply.cancel()
-                raise
-            except Exception as exc:
-                logger.error(f"| ❌ {self.name} task failed: {exc}", exc_info=True)
-                if ref._pending_reply is not None and not ref._pending_reply.done():
-                    ref._pending_reply.set_exception(exc)
+        if isinstance(msg, _SubscriptionEventMessage):
+            await self.on_subscription_event(msg, ref)
+        elif isinstance(msg, TaskMessage):
+            await self._handle_task_message(msg, ref)
         else:
             await self.on_event(msg, ref)
 

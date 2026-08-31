@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
@@ -80,6 +80,15 @@ class AgentRef(BaseModel):
     session_id:        str  = ""
     continuable:       bool = False
     turns:             int  = 0
+    #: Session-scoped topics this live ref consumes. Subscription is a relationship of
+    #: a running ref, not a second kind of Agent, so lifecycle and addressability remain
+    #: in the one runtime registry.
+    subscriptions:     Set[str] = Field(default_factory=set)
+    #: Standing instructions and attachments prepended to every published event turn.
+    #: A subscription-only child does not spend a model turn "waiting"; its first turn
+    #: begins when an event arrives.
+    subscription_brief: str = ""
+    subscription_files: List[str] = Field(default_factory=list)
     #: Mid-turn right now. Deliberately not the job's status and not ``AgentStatus``: a
     #: continuable child that finished a turn is idle, not finished — it still holds its
     #: context and can be sent more work — so collapsing the two would report either a

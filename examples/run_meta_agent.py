@@ -10,6 +10,10 @@ python examples/run_meta_agent.py --task "Write a Python function to reverse a s
 
 # Override config options
 python examples/run_meta_agent.py --task "..." --cfg-options model_name=openai/o3
+
+# Launch another registered orchestrator through the same lifecycle
+python examples/run_meta_agent.py --config configs/website_evolution_demo.py \
+    --agent-name website_builder_agent --task "..."
 """
 
 import asyncio
@@ -56,6 +60,11 @@ def parse_args():
         "--config",
         default=os.path.join(root, "configs", "meta_agent.py"),
         help="Config file path",
+    )
+    parser.add_argument(
+        "--agent-name",
+        default="meta_agent",
+        help="Registered orchestrator to run (default: meta_agent).",
     )
     add_task_args(parser, default_task_file=os.path.join(root, "examples", "tasks", "calculator_tool.html"))
     parser.add_argument(
@@ -129,10 +138,10 @@ async def answer_from_the_terminal(session_id: str, stop: asyncio.Event) -> None
         await asyncio.sleep(0.5)
 
 
-async def run_agent(record: TaskRecord, ctx: SessionContext):
+async def run_agent(record: TaskRecord, ctx: SessionContext, agent_name: str):
 
     response = await agent_manager(
-        name="meta_agent",
+        name=agent_name,
         input={
             "task": record.task.content,
             "files": record.task.files,
@@ -237,7 +246,10 @@ async def main():
 
     # --- TaskManager ---
     task_log_root = str(path_manager.under(config.log_root, P.LOG_MODULE, module="tasks"))
-    await task_manager.initialize(log_root=task_log_root, handler=lambda record: run_agent(record, ctx))
+    await task_manager.initialize(
+        log_root=task_log_root,
+        handler=lambda record: run_agent(record, ctx, args.agent_name),
+    )
     await task_manager.start(num_workers=1)
 
     # --- Build the task (inline --task string or --task-file document) ---

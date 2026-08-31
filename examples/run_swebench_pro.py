@@ -46,6 +46,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import sys
@@ -431,6 +432,31 @@ async def eval_bridge_watcher(bridge_dir: str, workspace_dir: str, row: dict,
 
 
 # --------------------------------------------------------------------------- #
+# Per-instance disk reclaim (for large runs on a full volume)
+# --------------------------------------------------------------------------- #
+def _reclaim_instance_disk(workspace_dir, image_ref_str) -> None:
+    """Free one graded instance's disk: its seeded workspace and its (unique) image.
+
+    Runs in a worker thread. The workspace is container-uid-owned, so its contents are
+    removed through a throwaway root container before the (host-owned) top dir is dropped.
+    The image's dockerhub_tag is unique to the instance, so ``docker rmi`` frees it without
+    affecting any other in-flight instance. Best-effort — never raises.
+    """
+    if workspace_dir and os.path.isdir(workspace_dir):
+        with contextlib.suppress(Exception):
+            subprocess.run(
+                ["docker", "run", "--rm", "-v", f"{workspace_dir}:/w", "alpine", "sh", "-c",
+                 "rm -rf /w/..?* /w/.[!.]* /w/* 2>/dev/null; true"],
+                capture_output=True, timeout=300,
+            )
+        with contextlib.suppress(Exception):
+            shutil.rmtree(workspace_dir, ignore_errors=True)
+    if image_ref_str:
+        with contextlib.suppress(Exception):
+            subprocess.run(["docker", "rmi", "-f", image_ref_str], capture_output=True, timeout=180)
+
+
+# --------------------------------------------------------------------------- #
 # Workspace seeding (from /app in the image)
 # --------------------------------------------------------------------------- #
 def seed_workspace(image_ref_str: str, base_commit: str, destination: str) -> None:
@@ -714,6 +740,7 @@ async def run_launcher(args) -> int:
         record: dict = {"instance_id": instance_id, "status": "failed", "error": None}
         sandbox = None
         watcher_task = None
+        workspace_dir = None
         eval_counter = {"count": 0}
         try:
             owner = str(config.get("output_owner") or config.tag)
@@ -785,6 +812,11 @@ async def run_launcher(args) -> int:
                 record["leaderboard_comparable"] = False
             if sandbox is not None:
                 await sandbox_manager.release("docker", reuse_key=instance_id)
+            # Bounded disk on a near-full shared volume: each instance has its own ~1GB
+            # image and a seeded repo workspace. Reclaim both once graded — result.json and
+            # agent.patch live in the session root (not the workspace), so scores survive.
+            if getattr(args, "reclaim_disk", True):
+                await asyncio.to_thread(_reclaim_instance_disk, workspace_dir, ref)
 
         record.setdefault("time_seconds", round(time.time() - started, 1))
         logger.info(f"| {'✅' if record['status'] == 'done' else '❌'} [{index}/{len(selected)}] "
@@ -832,6 +864,11 @@ def parse_args():
     parser.add_argument("--grader-repo", default=DEFAULT_GRADER_REPO,
                         help="Path to the cloned scaleapi/SWE-bench_Pro-os checkout.")
     parser.add_argument("--concurrency", type=int, default=1)
+    parser.add_argument("--reclaim-disk", dest="reclaim_disk", action="store_true", default=True,
+                        help="After each instance is graded, delete its seeded workspace and its "
+                             "docker image to bound disk on a full volume (default on).")
+    parser.add_argument("--no-reclaim-disk", dest="reclaim_disk", action="store_false",
+                        help="Keep each instance's workspace and image (needs ~1GB per instance).")
     parser.add_argument("--out", default=None, help="Results output directory.")
     parser.add_argument("--cfg-options", nargs="+", default=None,
                         help="Config overrides, e.g. model_name=llm_hub/claude-opus-5")
