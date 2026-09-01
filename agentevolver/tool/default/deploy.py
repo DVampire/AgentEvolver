@@ -6,15 +6,15 @@ The per-framework knowledge lives in pluggable deploy *profiles* (``runtime``),
 so this tool stays stable as new target types are added.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import Field
 
-from agentevolver.tool.types import Tool
-from agentevolver.response.types import Response, ResponseType
-from agentevolver.deploy import deployment_manager, DeployRequest
+from agentevolver.deploy import DeployRequest, deployment_manager
 from agentevolver.logger import logger
 from agentevolver.registry import TOOL
+from agentevolver.response.types import Response, ResponseType
+from agentevolver.tool.types import Tool
 
 _DESCRIPTION = "Deploy and manage web apps — from a one-call inline HTML page to a full frontend/backend project — each bound to a URL."
 
@@ -77,30 +77,54 @@ class DeployTool(Tool):
         """
         return f"{rec.site_id}\t{rec.runtime}\t{rec.status.value}\t{rec.url or '-'}"
 
-    async def __call__(self, action: str = "list", **kwargs) -> Response:
+    async def __call__(
+        self,
+        action: Literal["deploy", "list", "get", "stop", "redeploy"] = "list",
+        site_id: Optional[str] = None,
+        runtime: str = "static",
+        source_dir: Optional[str] = None,
+        git_url: Optional[str] = None,
+        content: Optional[str] = None,
+        files: Optional[Dict[str, str]] = None,
+        filename: str = "index.html",
+        backend: Optional[str] = None,
+        port: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
+        overrides: Optional[Dict[str, Any]] = None,
+    ) -> Response:
         """Deploy, inspect, and tear down sites.
 
         Args:
-            action: Which operation to run — ``deploy`` (build + start a site and
-                return its URL), ``list``, ``status``, ``logs``, ``stop``, ``remove``.
-                Every other argument belongs to the chosen action and is documented
-                under "Actions" in this tool's instruction. Defaults to ``list``.
+            action: Operation to run: deploy, list, get, stop, or redeploy.
+            site_id: Stable site identifier. Required except for list.
+            runtime: Deployment profile, such as static, node, python, or custom.
+            source_dir: Absolute host directory containing the application.
+            git_url: Repository URL to clone as the application source.
+            content: Inline single-file application content.
+            files: Inline mapping of relative paths to text content.
+            filename: Destination filename used with content.
+            backend: Execution backend: host, opensandbox, or auto.
+            port: Optional application port override.
+            env: Environment variables passed to the application.
+            overrides: Deployment specification overrides such as start and health.
         """
         action = (action or "list").lower().strip()
         try:
             if action == "deploy":
+                if not site_id:
+                    raise KeyError("site_id")
                 req = DeployRequest(
-                    site_id=kwargs["site_id"],
-                    runtime=kwargs.get("runtime", "static"),
-                    source_dir=kwargs.get("source_dir"),
-                    git_url=kwargs.get("git_url"),
-                    content=kwargs.get("content"),
-                    files=kwargs.get("files"),
-                    filename=kwargs.get("filename", "index.html"),
-                    backend=kwargs.get("backend"),
-                    port=kwargs.get("port"),
-                    env=kwargs.get("env") or {},
-                    overrides=kwargs.get("overrides") or {},
+                    site_id=site_id,
+                    runtime=runtime,
+                    source_dir=source_dir,
+                    git_url=git_url,
+                    content=content,
+                    files=files,
+                    filename=filename,
+                    backend=backend,
+                    port=port,
+                    env=env or {},
+                    overrides=overrides or {},
                 )
                 rec = await deployment_manager.deploy(req)
                 ok = rec.status.value == "running"
@@ -117,17 +141,23 @@ class DeployTool(Tool):
                                 data={"sites": [s.model_dump() for s in sites]})
 
             if action == "get":
-                rec = await deployment_manager.get_site(kwargs["site_id"])
+                if not site_id:
+                    raise KeyError("site_id")
+                rec = await deployment_manager.get_site(site_id)
                 if rec is None:
-                    return Response(type=ResponseType.TOOL, success=False, message=f"No such site {kwargs['site_id']!r}.")
+                    return Response(type=ResponseType.TOOL, success=False, message=f"No such site {site_id!r}.")
                 return Response(type=ResponseType.TOOL, success=True, message=self._site_line(rec), data=rec.model_dump())
 
             if action == "stop":
-                rec = await deployment_manager.stop_site(kwargs["site_id"])
+                if not site_id:
+                    raise KeyError("site_id")
+                rec = await deployment_manager.stop_site(site_id)
                 return Response(type=ResponseType.TOOL, success=True, message=f"Stopped '{rec.site_id}'.", data=rec.model_dump())
 
             if action == "redeploy":
-                rec = await deployment_manager.redeploy(kwargs["site_id"])
+                if not site_id:
+                    raise KeyError("site_id")
+                rec = await deployment_manager.redeploy(site_id)
                 ok = rec.status.value == "running"
                 msg = (f"✅ '{rec.site_id}' redeployed at {rec.url}" if ok
                        else f"❌ redeploy '{rec.site_id}' status={rec.status.value}: {rec.error}")

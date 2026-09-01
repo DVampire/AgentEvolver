@@ -30,6 +30,41 @@ from agentevolver.deploy.types import (
     SiteRecord,
     SiteStatus,
 )
+from agentevolver.dynamic import dynamic_manager
+from agentevolver.tool.default.deploy import DeployTool
+
+
+def test_deploy_tool_native_schema_exposes_every_action_argument():
+    """Native tool calls must not depend on permissive ``**kwargs`` forwarding.
+
+    A kwargs-only payload looks usable to Python but disappears from the inferred JSON
+    schema. Strict provider routes then retain only ``action`` and make deploy/redeploy
+    impossible after a context compaction rebuilds the native tool list.
+    """
+    parameters = dynamic_manager.get_parameters(DeployTool)
+
+    assert set(parameters["properties"]) == {
+        "action",
+        "site_id",
+        "runtime",
+        "source_dir",
+        "git_url",
+        "content",
+        "files",
+        "filename",
+        "backend",
+        "port",
+        "env",
+        "overrides",
+    }
+    assert parameters["properties"]["action"]["enum"] == [
+        "deploy",
+        "list",
+        "get",
+        "stop",
+        "redeploy",
+    ]
+    assert parameters["additionalProperties"] is False
 
 
 @pytest.fixture
