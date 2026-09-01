@@ -70,6 +70,7 @@ class ModelManagerServer(BaseModel):
         task_id: Optional[str] = None,
         agent_name: Optional[str] = None,
         step_number: Optional[int] = None,
+        max_output_tokens: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         """Delegate provider-native compaction through the public model facade."""
         return await self.model_context_manager.compact_history(
@@ -79,6 +80,7 @@ class ModelManagerServer(BaseModel):
             task_id=task_id,
             agent_name=agent_name,
             step_number=step_number,
+            max_output_tokens=max_output_tokens,
         )
 
     async def retrieve_background(

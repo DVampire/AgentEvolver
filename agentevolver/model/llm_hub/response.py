@@ -407,13 +407,21 @@ class ResponseLLMHub(BaseModel):
             usage=TokenUsage.from_raw(usage),
         )
 
-    async def compact_history(self, messages: List[Message]) -> Dict[str, Any]:
+    async def compact_history(
+        self,
+        messages: List[Message],
+        max_output_tokens: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """Compact canonical history with the native Responses endpoint.
 
         Its output is a canonical replacement input. It must be replayed as-is; the
         provider serializer retains stable system/developer instructions, replaces the
         older conversation with this output, and then appends only newer turns.
         """
+        # The Responses compact endpoint returns an opaque provider item and does not
+        # expose an output-token control. Accept the provider-neutral limit so callers
+        # do not need to branch; it applies only to text-producing compactors.
+        del max_output_tokens
         client = self._client()
         raw = await client.responses.compact(
             model=self.model,

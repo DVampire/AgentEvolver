@@ -282,6 +282,7 @@ async def test_model_server_exposes_native_compaction(monkeypatch):
         task_id="task-1",
         agent_name="meta_agent",
         step_number=23,
+        max_output_tokens=None,
     )
 
     assert result is expected
@@ -292,7 +293,38 @@ async def test_model_server_exposes_native_compaction(monkeypatch):
         task_id="task-1",
         agent_name="meta_agent",
         step_number=23,
+        max_output_tokens=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_native_compaction_forwards_a_text_output_limit_to_capable_client():
+    observed = {}
+
+    class Client:
+        @staticmethod
+        def compaction_ready(_messages):
+            return True
+
+        @staticmethod
+        def compaction_options(max_output_tokens=None):
+            observed["snapshot_limit"] = max_output_tokens
+            return {"max_tokens": max_output_tokens}
+
+        async def compact_history(self, _messages, max_output_tokens=None):
+            observed["provider_limit"] = max_output_tokens
+            return {"summary": "checkpoint"}
+
+    manager = ModelContextManager()
+    manager.models["main"] = _config(provider="anthropic", native_compaction=True)
+    manager.model_clients["main"] = Client()
+
+    result = await manager.compact_history(
+        "main", [HumanMessage(content="history")], max_output_tokens=1536,
+    )
+
+    assert result["summary"] == "checkpoint"
+    assert observed == {"snapshot_limit": 1536, "provider_limit": 1536}
 
 
 @pytest.mark.asyncio

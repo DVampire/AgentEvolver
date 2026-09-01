@@ -256,10 +256,12 @@ async def test_native_anthropic_compaction_returns_a_round_trippable_block(monke
     result = await client.compact_history(
         [
             HumanMessage(content="task" + ("x" * 220_000)),
-        ]
+        ],
+        max_output_tokens=1536,
     )
 
     edit = captured["context_management"]["edits"][0]
+    assert captured["max_tokens"] == 1536
     assert captured["betas"] == ["compact-2026-01-12"]
     assert edit["type"] == "compact_20260112"
     assert edit["pause_after_compaction"] is True

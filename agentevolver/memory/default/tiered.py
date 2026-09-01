@@ -959,6 +959,10 @@ class TieredMemory(Memory):
                     (record.step for record in records if record.step is not None),
                     default=None,
                 ),
+                # Native providers count their own tokenizer while the request boundary
+                # uses a conservative portable estimator. Leave headroom so a valid
+                # provider summary cannot be rejected and regenerated on every step.
+                max_output_tokens=max(256, int(self.compact_output_tokens * 0.75)),
             )
             if result:
                 logger.info(

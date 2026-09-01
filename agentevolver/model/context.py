@@ -4,6 +4,7 @@ Contains all model registration, client lifecycle, and invocation logic.
 """
 
 import asyncio
+import inspect
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -1232,6 +1233,7 @@ class ModelContextManager:
         task_id: Optional[str] = None,
         agent_name: Optional[str] = None,
         step_number: Optional[int] = None,
+        max_output_tokens: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         """Return a provider-native checkpoint when the selected route supports it.
 
@@ -1259,7 +1261,27 @@ class ModelContextManager:
         if callable(ready) and not ready(messages):
             return None
         options = getattr(client, "compaction_options", None)
-        compact_options = options() if callable(options) else {}
+        accepts_limit = False
+        if callable(compact):
+            parameters = inspect.signature(compact).parameters.values()
+            accepts_limit = any(
+                item.name == "max_output_tokens"
+                or item.kind is inspect.Parameter.VAR_KEYWORD
+                for item in parameters
+            )
+        if callable(options):
+            option_parameters = inspect.signature(options).parameters.values()
+            options_accept_limit = any(
+                item.name == "max_output_tokens"
+                or item.kind is inspect.Parameter.VAR_KEYWORD
+                for item in option_parameters
+            )
+            compact_options = (
+                options(max_output_tokens=max_output_tokens)
+                if options_accept_limit else options()
+            )
+        else:
+            compact_options = {}
         snapshot_id = await _record_request_snapshot(
             session_id=session_id,
             requested_model=name,
@@ -1287,7 +1309,10 @@ class ModelContextManager:
             self.capability_registry.observe(
                 route, "compaction", CapabilityState.PROBING,
             )
-            result = await compact(messages)
+            result = await (
+                compact(messages, max_output_tokens=max_output_tokens)
+                if accepts_limit else compact(messages)
+            )
         except Exception as error:
             status = getattr(error, "status_code", None)
             text = str(error).lower()

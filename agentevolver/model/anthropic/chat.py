@@ -140,10 +140,15 @@ class ChatAnthropic(BaseChatModel):
         """Claude's beta rejects triggers below 50k; avoid a request that cannot fold."""
         return estimate_tokens(messages) >= 50_000
 
-    def compaction_options(self) -> Dict[str, Any]:
+    def compaction_options(
+        self, max_output_tokens: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """Provider parameters recorded in the RequestSnapshot and sent verbatim."""
+        limit = self.max_tokens or 16_384
+        if max_output_tokens is not None:
+            limit = min(limit, max(1, int(max_output_tokens)))
         return {
-            "max_tokens": self.max_tokens or 16_384,
+            "max_tokens": limit,
             "betas": ["compact-2026-01-12"],
             "context_management": {
                 "edits": [{
@@ -154,7 +159,11 @@ class ChatAnthropic(BaseChatModel):
             },
         }
 
-    async def compact_history(self, messages: List[Message]) -> Optional[Dict[str, Any]]:
+    async def compact_history(
+        self,
+        messages: List[Message],
+        max_output_tokens: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Create one native Claude ``compaction`` block and pause before generation.
 
         This is the Messages-API counterpart of ``/responses/compact``. The block is
@@ -167,7 +176,7 @@ class ChatAnthropic(BaseChatModel):
         params: Dict[str, Any] = {
             "model": self.model,
             "messages": history,
-            **self.compaction_options(),
+            **self.compaction_options(max_output_tokens=max_output_tokens),
         }
         if system:
             params["system"] = system
