@@ -142,7 +142,18 @@ Permission mode: `danger_full_access` · changes state
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
-| `action` | `str` | no | `'list'` |
+| `action` | `Literal['deploy', 'list', 'get', 'stop', 'redeploy']` | no | `'list'` |
+| `site_id` | `Optional[str]` | no | `None` |
+| `runtime` | `str` | no | `'static'` |
+| `source_dir` | `Optional[str]` | no | `None` |
+| `git_url` | `Optional[str]` | no | `None` |
+| `content` | `Optional[str]` | no | `None` |
+| `files` | `Optional[Dict[str, str]]` | no | `None` |
+| `filename` | `str` | no | `'index.html'` |
+| `backend` | `Optional[str]` | no | `None` |
+| `port` | `Optional[int]` | no | `None` |
+| `env` | `Optional[Dict[str, str]]` | no | `None` |
+| `overrides` | `Optional[Dict[str, Any]]` | no | `None` |
 
 ## `done_tool`
 

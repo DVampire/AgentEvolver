@@ -20,6 +20,7 @@ None of these raise when they are wrong. The agent just acts on a false descript
 """
 
 import asyncio
+import inspect
 import os
 from types import SimpleNamespace
 
@@ -35,6 +36,43 @@ from agentevolver.utils.terminal import render_terminal
 # --------------------------------------------------------------------------- #
 # A malformed tool call is answered, not raised
 # --------------------------------------------------------------------------- #
+def test_every_builtin_tool_accepts_runtime_context_through_kwargs():
+    """Every tool receives manager-owned runtime data outside its model schema.
+
+    The manager always injects ``ctx=``. Requiring one implementation to know that
+    concrete keyword breaks the call before its body runs, while declaring ``ctx`` as
+    a normal parameter risks exposing framework state in the provider schema. Built-in
+    tools therefore share one boundary: explicit model arguments plus ``**kwargs``.
+    """
+    import agentevolver.tool.default  # noqa: F401 — registers built-in tools
+    from agentevolver.registry import TOOL
+
+    offenders = []
+    for name, cls in sorted(TOOL.module_dict.items()):
+        parameters = inspect.signature(cls.__call__).parameters.values()
+        if not any(item.kind is inspect.Parameter.VAR_KEYWORD for item in parameters):
+            offenders.append(f"{name}: {inspect.signature(cls.__call__)}")
+
+    assert not offenders, "tools reject runtime ctx:\n  " + "\n  ".join(offenders)
+
+
+@pytest.mark.asyncio
+async def test_a_tool_without_runtime_kwargs_is_rejected_when_registered(tmp_path):
+    """An incompatible evolved tool fails before an agent can spend a call on it."""
+    from agentevolver.tool.types import Tool
+
+    class _MissingRuntimeChannel(Tool):
+        name: str = "missing_runtime_channel_tool"
+        description: str = "Bad contract fixture"
+
+        async def __call__(self, value: str):
+            return value
+
+    manager = ToolContextManager(base_dir=str(tmp_path))
+    with pytest.raises(TypeError, match=r"must accept \*\*kwargs"):
+        await manager.register(_MissingRuntimeChannel)
+
+
 def _manager_for(tmp_path, instance):
     manager = ToolContextManager(base_dir=str(tmp_path))
 

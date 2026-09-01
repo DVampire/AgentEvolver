@@ -17,6 +17,7 @@ Nothing here starts a container: the acquire → upload → build → start path
 sandbox and is not exercised.
 """
 
+import inspect
 import os
 
 import pytest
@@ -31,7 +32,9 @@ from agentevolver.deploy.types import (
     SiteStatus,
 )
 from agentevolver.dynamic import dynamic_manager
-from agentevolver.tool.default.deploy import DeployTool
+from agentevolver.tool.context import ToolContextManager
+from agentevolver.tool.default.deploy import DeployTool, deployment_manager
+from agentevolver.tool.types import ToolContext
 
 
 def test_deploy_tool_native_schema_exposes_every_action_argument():
@@ -65,6 +68,38 @@ def test_deploy_tool_native_schema_exposes_every_action_argument():
         "redeploy",
     ]
     assert parameters["additionalProperties"] is False
+
+
+def test_deploy_tool_accepts_runtime_context_without_exposing_it_to_model():
+    """The manager injects ``ctx`` into every tool invocation.
+
+    Runtime-only kwargs must remain accepted by Python while staying absent from the
+    strict provider schema.
+    """
+    signature = inspect.signature(DeployTool.__call__)
+    assert any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    assert "ctx" not in dynamic_manager.get_parameters(DeployTool)["properties"]
+
+
+@pytest.mark.asyncio
+async def test_deploy_tool_list_accepts_manager_injected_context(monkeypatch, tmp_path):
+    async def no_sites():
+        return []
+
+    monkeypatch.setattr(deployment_manager, "list_sites", no_sites)
+    manager = ToolContextManager(base_dir=str(tmp_path))
+    await manager.register(DeployTool, version="test")
+    response = await manager(
+        name="deploy_tool",
+        input={"action": "list"},
+        ctx=ToolContext(id="deploy-test"),
+    )
+
+    assert response.success is True
+    assert response.message == "No deployed sites."
 
 
 @pytest.fixture

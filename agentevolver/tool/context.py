@@ -40,6 +40,19 @@ def _field_default(tool_cls, name):
     return getattr(field, "default", None) if field is not None else None
 
 
+def _validate_tool_call_contract(tool_cls: Type[Tool]) -> None:
+    """Require the runtime-only keyword channel used by every tool invocation."""
+    signature = inspect.signature(tool_cls.__call__)
+    if any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return
+    raise TypeError(
+        f"{tool_cls.__name__}.__call__{signature} must accept **kwargs; "
+        "the tool manager injects runtime-only values such as ctx through it"
+    )
+
 
 #: How much of a capability's instruction to render. Two levels, because there are
 #: two callers and they want different things:
@@ -242,6 +255,7 @@ class ToolContextManager(BaseModel):
                 tool_cls: Tool class to register
             """
             try:
+                _validate_tool_call_contract(tool_cls)
                 # Get tool config from global config
                 tool_config_key = inflection.underscore(tool_cls.__name__)
                 tool_config_dict = config.get(tool_config_key, {})
@@ -352,6 +366,7 @@ class ToolContextManager(BaseModel):
             # cls should already be loaded (either from registry or from code)
             if tool_config.cls is None:
                 raise ValueError(f"Cannot create tool {tool_config.name}: no class provided. Class should be loaded during initialization.")
+            _validate_tool_call_contract(tool_config.cls)
             
             # Instantiate tool instance
             tool_instance = tool_config.cls(**tool_config.config) if tool_config.config else tool_config.cls()
@@ -395,6 +410,7 @@ class ToolContextManager(BaseModel):
         """
         
         try:
+            _validate_tool_call_contract(tool_cls)
             if tool_config_dict is None:
                 # Fallback to global config by class name
                 tool_config_key = inflection.underscore(tool_cls.__name__)
@@ -554,6 +570,7 @@ class ToolContextManager(BaseModel):
             ToolConfig: Updated tool configuration
         """
         try:
+            _validate_tool_call_contract(tool_cls)
             if tool_config_dict is None:
                 # Fallback to global config by class name
                 tool_config_key = inflection.underscore(tool_cls.__name__)

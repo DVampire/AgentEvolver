@@ -91,6 +91,7 @@ class DeployTool(Tool):
         port: Optional[int] = None,
         env: Optional[Dict[str, str]] = None,
         overrides: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
     ) -> Response:
         """Deploy, inspect, and tear down sites.
 
@@ -107,6 +108,7 @@ class DeployTool(Tool):
             port: Optional application port override.
             env: Environment variables passed to the application.
             overrides: Deployment specification overrides such as start and health.
+            **kwargs: Runtime-only values injected by the tool manager, including ctx.
         """
         action = (action or "list").lower().strip()
         try:
