@@ -9,7 +9,20 @@ import ast
 import json
 import re
 from copy import deepcopy
-from typing import Type, Optional, TypeVar, Any, Dict, List, Set, Callable, Union, get_type_hints, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    get_type_hints,
+)
 
 import inflection
 
@@ -118,6 +131,12 @@ class DynamicModuleManager:
 
         origin = getattr(annotation, "__origin__", None)
         args = getattr(annotation, "__args__", ())
+
+        if origin is Literal and args:
+            value_types = {type(value) for value in args}
+            if len(value_types) == 1:
+                return self.annotation_to_types(next(iter(value_types)))
+            return "string", "str"
 
         if origin is Union and len(args) == 2 and type(None) in args:
             inner_type = args[0] if args[1] is type(None) else args[1]
@@ -1003,6 +1022,17 @@ class DynamicModuleManager:
                 "type": json_type,
                 "description": doc_descriptions.get(name, ""),
             }
+            literal_annotation = annotation
+            origin = getattr(literal_annotation, "__origin__", None)
+            literal_args = getattr(literal_annotation, "__args__", ())
+            if origin is Union and type(None) in literal_args:
+                literal_annotation = next(
+                    item for item in literal_args if item is not type(None)
+                )
+                origin = getattr(literal_annotation, "__origin__", None)
+                literal_args = getattr(literal_annotation, "__args__", ())
+            if origin is Literal:
+                schema["enum"] = list(literal_args)
             # Arrays MUST declare their element type (`items`) — strict consumers
             # like the Gemini API reject an array schema without it.
             if json_type == "array":
@@ -1129,4 +1159,3 @@ class DynamicModuleManager:
 
 # Global instance for convenience
 dynamic_manager = DynamicModuleManager()
-

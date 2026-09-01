@@ -17,7 +17,7 @@ fallback rather than an exception, because an exception here stops the evolution
 that produced it.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import pytest
 from pydantic import BaseModel, Field
@@ -57,6 +57,8 @@ def dynamic():
         (Dict[str, Any], "object", "dict"),
         (Optional[str], "string", "Optional[str]"),
         (Optional[int], "integer", "Optional[int]"),
+        (Literal["idle", "finished"], "string", "str"),
+        (Literal[1, 2], "integer", "int"),
     ],
 )
 def test_annotations_map_to_json_and_python_types(dynamic, annotation, json_type, python_type):

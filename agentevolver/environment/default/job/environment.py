@@ -21,7 +21,7 @@ included — deliberately.
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import ConfigDict, Field
 
@@ -159,7 +159,7 @@ class JobEnvironment(Environment):
     async def wait(
         self,
         job_ids: List[str],
-        condition: str = "idle_after_turn",
+        condition: Literal["idle_after_turn", "finished"] = "idle_after_turn",
         min_turns: int = 1,
         timeout: float = 600.0,
         ctx=None,

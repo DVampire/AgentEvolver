@@ -46,6 +46,18 @@ async def _wait_until(predicate, timeout=10.0):
     return False
 
 
+def test_job_wait_schema_enumerates_supported_conditions():
+    """Invalid wait modes should be impossible for a native tool call to invent."""
+    from agentevolver.dynamic import dynamic_manager
+    from agentevolver.environment.default.job import JobEnvironment
+
+    parameters = dynamic_manager.get_parameters(JobEnvironment.wait)
+    schema = dynamic_manager.build_function_calling("wait", "", parameters)
+
+    condition = schema["function"]["parameters"]["properties"]["condition"]
+    assert condition["enum"] == ["idle_after_turn", "finished"]
+
+
 # --------------------------------------------------------------------------- #
 # The registry
 # --------------------------------------------------------------------------- #
