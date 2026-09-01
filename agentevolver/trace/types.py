@@ -246,6 +246,7 @@ def agent_call_event(
     duration_ms: Optional[float] = None,
     usage: Optional[Dict[str, Any]] = None,
     provider_state: Optional[Dict[str, Any]] = None,
+    protocol_followup: Optional[str] = None,
 ) -> TraceEvent:
     return TraceEvent(
         event_type=TraceEventType.AGENT_CALL,
@@ -259,6 +260,10 @@ def agent_call_event(
         duration_ms=duration_ms,
         usage=usage,
         provider_state=provider_state or {},
+        # Persist the host-generated user seam after a text-only assistant turn.
+        # Otherwise replay creates adjacent assistant roles and signed provider
+        # reasoning can no longer be preserved safely.
+        metadata={"protocol_followup": protocol_followup} if protocol_followup else {},
         # On the surface: this is the assistant's turn. It was log-only while the
         # surface meant "what memory records", which covers results and not the
         # reasoning that produced them — so a compaction could hide a result while

@@ -20,7 +20,8 @@ live tail, and there is still a use for asking about the whole of it — finishe
 included — deliberately.
 """
 
-from typing import Any, Dict, Optional
+import asyncio
+from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict, Field
 
@@ -144,6 +145,99 @@ class JobEnvironment(Environment):
                    # Stated as data as well as prose: a caller deciding whether to come
                    # back should not have to parse a header for it.
                    running=not job.status.is_final)
+
+    @environment_manager.action(
+        name="wait",
+        read_only=True,
+        description=(
+            "Wait efficiently for background work without spending model turns polling. "
+            "For long-lived sub-agents use condition='idle_after_turn' and set min_turns "
+            "to the release turn each must have completed. The call returns early if all "
+            "targets are ready, any target ends unexpectedly, or timeout expires."
+        ),
+    )
+    async def wait(
+        self,
+        job_ids: List[str],
+        condition: str = "idle_after_turn",
+        min_turns: int = 1,
+        timeout: float = 600.0,
+        ctx=None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Block one tool call on job state; never generate periodic model turns."""
+        from agentevolver.runtime import runtime_manager
+
+        ids = list(dict.fromkeys(str(item) for item in job_ids if str(item).strip()))
+        if not ids or len(ids) > STATE_JOB_LIMIT:
+            return _fail(f"job_ids must contain 1–{STATE_JOB_LIMIT} unique job ids")
+        if condition not in {"idle_after_turn", "finished"}:
+            return _fail("condition must be 'idle_after_turn' or 'finished'")
+        if min_turns < 0:
+            return _fail("min_turns must be non-negative")
+        if timeout <= 0 or timeout > 3600:
+            return _fail("timeout must be greater than 0 and at most 3600 seconds")
+
+        owner = self._session(ctx)
+        resolved = []
+        for job_id in ids:
+            job = job_manager.get(job_id)
+            if job is None or (owner and job.session_id != owner):
+                return _fail(f"No background job {job_id!r} in this session")
+            resolved.append(job)
+
+        def snapshots() -> tuple[List[Dict[str, Any]], bool, bool]:
+            rows: List[Dict[str, Any]] = []
+            all_ready = True
+            terminal_failure = False
+            for job in resolved:
+                ref = runtime_manager.child(job.id)
+                row: Dict[str, Any] = {
+                    "job_id": job.id,
+                    "status": job.status.value,
+                    "ready": False,
+                    "turns": int(getattr(ref, "turns", 0) or 0),
+                    "alive": bool(ref and ref.alive),
+                    "busy": bool(ref and ref.busy),
+                    "queued": int(ref._tasks.qsize()) if ref is not None else 0,
+                }
+                if condition == "finished":
+                    row["ready"] = job.status.is_final
+                elif ref is None or not ref.continuable:
+                    row["error"] = "idle_after_turn requires a live continuable sub-agent"
+                    terminal_failure = True
+                elif not ref.alive or job.status.is_final:
+                    row["error"] = job.error or "sub-agent ended before reaching the requested turn"
+                    terminal_failure = True
+                else:
+                    row["ready"] = (
+                        ref.turns >= min_turns and not ref.busy and ref._tasks.empty()
+                    )
+                all_ready = all_ready and bool(row["ready"])
+                rows.append(row)
+            return rows, all_ready, terminal_failure
+
+        started = asyncio.get_running_loop().time()
+        while True:
+            rows, ready, failed = snapshots()
+            elapsed = asyncio.get_running_loop().time() - started
+            if ready:
+                return _ok(
+                    f"All {len(rows)} job(s) reached {condition} after {elapsed:.1f}s.",
+                    condition=condition, min_turns=min_turns, timed_out=False, jobs=rows,
+                )
+            if failed:
+                return _fail(
+                    f"A job ended before all targets reached {condition}.",
+                    condition=condition, min_turns=min_turns, timed_out=False, jobs=rows,
+                )
+            remaining = timeout - elapsed
+            if remaining <= 0:
+                return _fail(
+                    f"Timed out after {timeout:.1f}s waiting for {condition}.",
+                    condition=condition, min_turns=min_turns, timed_out=True, jobs=rows,
+                )
+            await asyncio.sleep(min(0.2, remaining))
 
     @environment_manager.action(
         name="kill",

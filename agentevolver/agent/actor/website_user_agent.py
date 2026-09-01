@@ -1,10 +1,4 @@
-"""Independent browser co-designers used by the website self-evolution demo.
-
-The browser environment isolates pages by context id, but ``BrowserAgent`` also keeps
-the latest observation on the Python instance while it renders a turn.  The demo runs
-three co-designers concurrently, so each participant needs its own registered class (and
-therefore its own instance) rather than three calls to one shared ``BrowserAgent``.
-"""
+"""Reusable long-lived browser co-designer for participatory website releases."""
 
 from typing import Any, Dict, List
 
@@ -15,9 +9,11 @@ from agentevolver.environment.server import environment_manager
 from agentevolver.registry import AGENT
 
 
-class _WebsiteUserAgent(BrowserAgent):
-    """Common implementation for a persona-grounded, browser-only co-designer."""
+@AGENT.register_module(force=True)
+class WebsiteUserAgent(BrowserAgent):
+    """One registered template; every dispatch receives a deep-copied runtime instance."""
 
+    name: str = Field(default="website_user_agent")
     description: str = Field(
         default=(
             "A browser-only website co-designer that follows one assigned user persona, "
@@ -44,27 +40,4 @@ class _WebsiteUserAgent(BrowserAgent):
             await environment.close_session(str(getattr(ctx, "id", "") or "default"))
         self._observed_state = None
         await super().on_subscription_event(msg, ref)
-
-
-@AGENT.register_module(force=True)
-class WebsiteUser1Agent(_WebsiteUserAgent):
-    """First independent website user co-designer."""
-
-    name: str = Field(default="website_user_1_agent")
-
-
-@AGENT.register_module(force=True)
-class WebsiteUser2Agent(_WebsiteUserAgent):
-    """Second independent website user co-designer."""
-
-    name: str = Field(default="website_user_2_agent")
-
-
-@AGENT.register_module(force=True)
-class WebsiteUser3Agent(_WebsiteUserAgent):
-    """Third independent website user co-designer."""
-
-    name: str = Field(default="website_user_3_agent")
-
-
-__all__ = ["WebsiteUser1Agent", "WebsiteUser2Agent", "WebsiteUser3Agent"]
+__all__ = ["WebsiteUserAgent"]

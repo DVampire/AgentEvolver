@@ -40,7 +40,6 @@
     <div class="grp">
       <b data-i18n="side_c">Keeping it true</b>
       <a href="#verify" data-i18n="nav_verify">Verification</a>
-      <a href="#records" data-i18n="nav_rec">Decisions &amp; postmortems</a>
       <a href="#invariants" data-i18n="nav_inv">Invariants</a>
     </div>
   </aside>
@@ -166,28 +165,9 @@ pytest --cov        # measures, then applies the coverage gate</code></pre>
     <p data-i18n="s7_p3">Consistency checks are themselves guarded: a suite reintroduces each real defect in a subprocess and requires the check to go red. A check that always passes reports the invariant as held, silently, forever.</p>
   </section>
 
-  <!-- ============ RECORDS ============ -->
-  <section id="records">
-    <h2><span class="num">08</span><span data-i18n="s8_h">Decisions and postmortems</span></h2>
-    <p data-i18n="s8_p1">Code says what happens; tests say what must keep happening. Neither says why the third option lost, and that is what gets re-litigated.</p>
-    <table>
-      <thead><tr><th data-i18n="s8_th1">Record</th><th data-i18n="s8_th2">Answers</th><th data-i18n="s8_th3">Rule</th></tr></thead>
-      <tbody>
-        <tr><td data-i18n="s8_r1a">Decision</td><td data-i18n="s8_r1b">Why is it like this, and what did we give up?</td><td data-i18n="s8_r1c">Alternatives are mandatory and are recorded, never invented. Present tense only.</td></tr>
-        <tr><td data-i18n="s8_r2a">Postmortem</td><td data-i18n="s8_r2b">Why did the process let this through?</td><td data-i18n="s8_r2c">Subtle, systemic, and costly to rediscover — all three, or it does not belong.</td></tr>
-      </tbody>
-    </table>
-    <p data-i18n="s8_p2">The test for writing one is simple: would someone reasonably ask "why was this done this way?" in six months? That is a lower bar than "was this hard" and a much higher one than "did I change something".</p>
-    <p data-i18n="s8_read">Both trees live beside the code and are checked by the same gates as everything else:
-      <a href="decisions/README.md" style="color:#8ea9ff">decisions/</a> ·
-      <a href="postmortems/README.md" style="color:#8ea9ff">postmortems/</a> ·
-      <a href="cookbook/adding-a-tool.md" style="color:#8ea9ff">cookbook/</a> ·
-      <a href="DOC-STANDARD.md" style="color:#8ea9ff">DOC-STANDARD.md</a></p>
-  </section>
-
   <!-- ============ INVARIANTS ============ -->
   <section id="invariants">
-    <h2><span class="num">09</span><span data-i18n="s9_h">Invariants that were paid for</span></h2>
+    <h2><span class="num">08</span><span data-i18n="s9_h">Invariants that were paid for</span></h2>
     <p data-i18n="s9_p1">Each of these is a rule that exists because its absence produced a defect. They are collected here because every one of them is easy to undo by accident.</p>
 
     <div class="card">
@@ -230,7 +210,7 @@ window.I18N = {
   en:{
     nav_home:"Home", nav_ui:"Web UI", nav_tut:"Tutorial", nav_arch:"Architecture", nav_mod:"Modules", nav_dev:"Development", nav_start:"Setup", nav_layout:"Layout", nav_cap:"Add a capability",
     nav_verify:"Verification", nav_inv:"Invariants", nav_module:"The module contract", nav_gw:"Gateway & frontend",
-    nav_ext:"Extensions at runtime", nav_rec:"Decisions & postmortems",
+    nav_ext:"Extensions at runtime",
     side_a:"Getting in", side_b:"Changing things", side_c:"Keeping it true",
     t_why:"Why", t_trap:"Trap",
     hdr_pill:"For contributors",
@@ -286,14 +266,6 @@ window.I18N = {
     s7_h3:"A check that cannot fail is worse than no check",
     s7_p3:"Consistency checks are themselves guarded: a suite reintroduces each real defect in a subprocess and requires the check to go red. A check that always passes reports the invariant as held, silently, forever.",
 
-    s8_h:"Decisions and postmortems",
-    s8_p1:"Code says what happens; tests say what must keep happening. Neither says why the third option lost, and that is what gets re-litigated.",
-    s8_th1:"Record", s8_th2:"Answers", s8_th3:"Rule",
-    s8_r1a:"Decision", s8_r1b:"Why is it like this, and what did we give up?", s8_r1c:"Alternatives are mandatory and are recorded, never invented. Present tense only.",
-    s8_r2a:"Postmortem", s8_r2b:"Why did the process let this through?", s8_r2c:"Subtle, systemic, and costly to rediscover — all three, or it does not belong.",
-    s8_p2:"The test for writing one is simple: would someone reasonably ask \"why was this done this way?\" in six months? That is a lower bar than \"was this hard\" and a much higher one than \"did I change something\".",
-
-    s8_read:'Both trees live beside the code and are checked by the same gates as everything else: <a href="decisions/README.md" style="color:#8ea9ff">decisions/</a> · <a href="postmortems/README.md" style="color:#8ea9ff">postmortems/</a> · <a href="cookbook/adding-a-tool.md" style="color:#8ea9ff">cookbook/</a> · <a href="DOC-STANDARD.md" style="color:#8ea9ff">DOC-STANDARD.md</a>',
   s9_h:"Invariants that were paid for",
     s9_p1:"Each of these is a rule that exists because its absence produced a defect. They are collected here because every one of them is easy to undo by accident.",
     s9_i1:"<strong>Disposal must reach quiescence, not request it.</strong> Sending a signal and immediately marking something stopped reports a process that ignores the signal as dead while it is still running. Wait, escalate, wait again, and say so if it survives both.",
@@ -309,7 +281,7 @@ window.I18N = {
   zh:{
     nav_home:"首页", nav_ui:"Web 界面", nav_tut:"教程", nav_arch:"架构", nav_mod:"模块", nav_dev:"开发文档", nav_start:"环境搭建", nav_layout:"仓库结构", nav_cap:"新增能力",
     nav_verify:"验证体系", nav_inv:"不变式", nav_module:"模块契约", nav_gw:"网关与前端",
-    nav_ext:"运行时扩展", nav_rec:"决策与事后分析",
+    nav_ext:"运行时扩展",
     side_a:"上手", side_b:"动手改", side_c:"保持正确",
     t_why:"为什么", t_trap:"坑",
     hdr_pill:"写给贡献者",
@@ -365,14 +337,6 @@ window.I18N = {
     s7_h3:"一个不会失败的检查比没有检查更糟",
     s7_p3:"一致性检查自身也被守护着：有一套测试在子进程里把每个真实缺陷重新引入，并要求对应的检查变红。一个永远通过的检查会一直、静默地报告「不变式成立」。",
 
-    s8_h:"决策与事后分析",
-    s8_p1:"代码说的是发生了什么，测试说的是什么必须继续成立。两者都不说第三个方案为什么输了——而那恰恰是会被反复重新争论的东西。",
-    s8_th1:"记录类型", s8_th2:"回答什么", s8_th3:"规矩",
-    s8_r1a:"决策记录", s8_r1b:"为什么是这样，我们放弃了什么？", s8_r1c:"备选方案是强制的，而且是记录下来的，绝不是编的。只用现在时。",
-    s8_r2a:"事后分析", s8_r2b:"为什么我们的流程放它过去了？", s8_r2c:"机制不显然、逃逸原因是系统性缺口、重新发现代价高昂——三条全中，否则不该写。",
-    s8_p2:"要不要写的判据很简单：半年后会不会有人合理地问「这为什么这么做」？这个门槛比「这事难不难」低，比「我是不是改了点什么」高得多。",
-
-    s8_read:'这两棵树就放在代码旁边，并且和其他一切一样被同一批门禁检查： <a href="decisions/README.md" style="color:#8ea9ff">decisions/</a> · <a href="postmortems/README.md" style="color:#8ea9ff">postmortems/</a> · <a href="cookbook/adding-a-tool.md" style="color:#8ea9ff">cookbook/</a> · <a href="DOC-STANDARD.md" style="color:#8ea9ff">DOC-STANDARD.md</a>',
   s9_h:"用缺陷换来的不变式",
     s9_p1:"下面每一条之所以存在，都是因为它缺席时产生过缺陷。把它们汇总在这里，是因为每一条都很容易在无意中被推翻。",
     s9_i1:"<strong>拆卸必须到达静默，而不只是请求静默。</strong>发个信号就立刻标记为「已停止」，会把一个忽略该信号的进程报告成已死，而它还在跑。要等待、要升级、再等待，两次都活下来就得说出来。",

@@ -155,6 +155,11 @@ def derive_messages(events: Sequence[Any]) -> List[Message]:
                 provider_state=getattr(event, "provider_state", None) or {},
             ))
             flush_results()
+            followup = _text((getattr(event, "metadata", None) or {}).get(
+                "protocol_followup"
+            )).strip()
+            if followup:
+                messages.append(HumanMessage(content=followup))
         elif event_type == TraceEventType.AGENT_START:
             flush_results()
             messages.append(HumanMessage(content=_text((event.input or {}).get("task"))))

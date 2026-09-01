@@ -85,6 +85,11 @@ class MetaAgent(Agent):
         run.repeated_action_rounds += 1
         if run.repeated_action_rounds == 1:
             run.round_step = run.step
+            followup = (
+                "No-progress guard: this exact action batch was already executed. "
+                "Do not retry it; delegate, choose a materially different action, or "
+                "call done_tool with the best verified partial result."
+            )
             await self._post_step(
                 run.task_id,
                 run.step,
@@ -93,6 +98,7 @@ class MetaAgent(Agent):
                 reasoning=decision["reasoning"],
                 assistant_text=decision.get("assistant_text", ""),
                 provider_state=decision.get("provider_state", {}),
+                protocol_followup=followup,
                 plan=[],
                 step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"),
                 done=False,
@@ -103,9 +109,7 @@ class MetaAgent(Agent):
             # the whole batch — so both are worth the model reading.
             run.action_errors = [
                 *(run.action_errors or []),
-                "No-progress guard: this exact action batch was already executed. "
-                "Do not retry it; delegate, choose a materially different action, or "
-                "call done_tool with the best verified partial result.",
+                followup,
             ]
             run.step += 1
             run.retry_now = True

@@ -288,6 +288,37 @@ div.system > evaluation-target-rules::before { content: counter(section, decimal
 div.system > generation-target-rules::before { content: counter(section, decimal-leading-zero) "  ·  generation-target-rules"; }
 div.system > tool-convention::before    { content: counter(section, decimal-leading-zero) "  ·  tool-convention"; }
 div.system > domain-rules::before       { content: counter(section, decimal-leading-zero) "  ·  domain-rules"; }
+div.system > browser-response-rules::before { content: counter(section, decimal-leading-zero) "  ·  browser-response-rules"; }
+div.system > computer-response-rules::before { content: counter(section, decimal-leading-zero) "  ·  computer-response-rules"; }
+div.system > orchestration-rules::before { content: counter(section, decimal-leading-zero) "  ·  orchestration-rules"; }
+div.system > orchestration-response-rules::before { content: counter(section, decimal-leading-zero) "  ·  orchestration-response-rules"; }
+div.system > review-budget-rules::before { content: counter(section, decimal-leading-zero) "  ·  review-budget-rules"; }
+div.system > review-context-rules::before { content: counter(section, decimal-leading-zero) "  ·  review-context-rules"; }
+
+/* ── Participatory website sections ── */
+div.system > input-boundaries,
+div.system > required-artifacts,
+div.system > website-contract,
+div.system > persona-isolation,
+div.system > co-design-protocol,
+div.system > browser-rules { border-left-color: var(--blue); }
+div.system > execution-discipline,
+div.system > stage-gates,
+div.system > completion-contract { border-left-color: var(--amber); }
+div.system > tool-and-skill-policy,
+div.system > website-user-response-rules { border-left-color: var(--purple); }
+
+div.system > input-boundaries::before { content: counter(section, decimal-leading-zero) "  ·  input-boundaries"; color: var(--blue); }
+div.system > execution-discipline::before { content: counter(section, decimal-leading-zero) "  ·  execution-discipline"; color: var(--amber); }
+div.system > required-artifacts::before { content: counter(section, decimal-leading-zero) "  ·  required-artifacts"; color: var(--blue); }
+div.system > website-contract::before { content: counter(section, decimal-leading-zero) "  ·  website-contract"; color: var(--blue); }
+div.system > stage-gates::before { content: counter(section, decimal-leading-zero) "  ·  stage-gates"; color: var(--amber); }
+div.system > tool-and-skill-policy::before { content: counter(section, decimal-leading-zero) "  ·  tool-and-skill-policy"; color: var(--purple); }
+div.system > completion-contract::before { content: counter(section, decimal-leading-zero) "  ·  completion-contract"; color: var(--amber); }
+div.system > persona-isolation::before { content: counter(section, decimal-leading-zero) "  ·  persona-isolation"; color: var(--blue); }
+div.system > co-design-protocol::before { content: counter(section, decimal-leading-zero) "  ·  co-design-protocol"; color: var(--blue); }
+div.system > browser-rules::before { content: counter(section, decimal-leading-zero) "  ·  browser-rules"; color: var(--blue); }
+div.system > website-user-response-rules::before { content: counter(section, decimal-leading-zero) "  ·  website-user-response-rules"; color: var(--purple); }
 
 /* ── CODE BLOCKS — schema / template sections ── */
 div.system > output-schema,

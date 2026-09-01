@@ -44,6 +44,11 @@ DEFAULT_SITE_BRIEF = (
 )
 DEFAULT_CONFIG = ROOT / "configs" / "website_evolution_demo.py"
 OPTIMIZATION_CYCLES = 5
+DEFAULT_USER_MODELS = [
+    "llm_hub/claude-opus-5",
+    "llm_hub/gpt-5.6-sol",
+    "llm_hub/deepseek-v4-flash",
+]
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -137,7 +142,12 @@ def resolve_inputs(args: argparse.Namespace) -> tuple[Path, Path, Path, list[Pat
     return config_path, task_path, site_brief, personas
 
 
-def build_task_text(task_path: Path, site_brief: Path, personas: list[Path]) -> str:
+def build_task_text(
+    task_path: Path,
+    site_brief: Path,
+    personas: list[Path],
+    user_models: Sequence[str] | None = None,
+) -> str:
     from agentevolver.task.loader import load_task_document
 
     document = load_task_document(str(task_path))
@@ -148,6 +158,7 @@ def build_task_text(task_path: Path, site_brief: Path, personas: list[Path]) -> 
         "persona_03": str(personas[2]),
         "optimization_cycles": OPTIMIZATION_CYCLES,
         "required_versions": [f"V{index}" for index in range(OPTIMIZATION_CYCLES + 1)],
+        "user_models": list(user_models or DEFAULT_USER_MODELS),
         "privacy_rule": (
             "The Website Builder routes each exact persona path but never reads its contents; "
             "each file is read only by its assigned Website User Agent."
@@ -177,7 +188,7 @@ def validate_local_artifacts(
     from agentevolver.registry import AGENT
     from agentevolver.task.loader import load_task_document
 
-    # Importing the actor package registers all three concrete co-designer classes.
+    # Importing the actor package registers the reusable co-designer template.
     import agentevolver.agent  # noqa: F401
 
     config.initialize(
@@ -191,9 +202,7 @@ def validate_local_artifacts(
 
     expected_agents = {
         "website_builder_agent",
-        "website_user_1_agent",
-        "website_user_2_agent",
-        "website_user_3_agent",
+        "website_user_agent",
     }
     missing_config = expected_agents.difference(config.agent_names)
     registry_agents = {
@@ -248,7 +257,7 @@ def validate_local_artifacts(
     # compaction, but no role may silently disable compaction altogether.
     expected_context_policy = {
         "retain_recent_steps": 4,
-        "compact_after_steps": 24,
+        "compact_after_steps": 18,
         "compact_body_tokens": 100000,
         "fold_at_pressure": 0.85,
     }
@@ -260,9 +269,7 @@ def validate_local_artifacts(
         "generate_agent",
         "optimize_agent",
         "evaluate_agent",
-        "website_user1_agent",
-        "website_user2_agent",
-        "website_user3_agent",
+        "website_user_agent",
     )
     for role in context_roles:
         role_config = dict(getattr(config, role))
@@ -295,35 +302,28 @@ def validate_local_artifacts(
         raise ValueError(f"missing required skills: {sorted(missing_skills)}")
     if "publish_event_tool" not in config.tool_names:
         raise ValueError("publish_event_tool is required for release notifications")
-    for agent_name in (
-        "website_user_1_agent",
-        "website_user_2_agent",
-        "website_user_3_agent",
+    agent_class = registry_agents["website_user_agent"]
+    key = inflection.underscore(agent_class.__name__)
+    instance_config = dict(getattr(config, key))
+    topics = list(instance_config.get("subscription_topics") or [])
+    if topics != ["website.releases"]:
+        raise ValueError(f"{key} must subscribe to website.releases, got {topics}")
+    instance = agent_class(**instance_config)
+    if (
+        instance.name != "website_user_agent"
+        or instance.prompt_name != "website_user_agent"
+        or instance.env_name != "browser_environment"
     ):
-        agent_class = registry_agents[agent_name]
-        key = inflection.underscore(agent_class.__name__)
-        instance_config = dict(getattr(config, key))
-        topics = list(instance_config.get("subscription_topics") or [])
-        if topics != ["website.releases"]:
-            raise ValueError(f"{key} must subscribe to website.releases, got {topics}")
-        instance = agent_class(**instance_config)
-        if (
-            instance.name != agent_name
-            or instance.prompt_name != "website_user_agent"
-            or instance.env_name != "browser_environment"
-        ):
-            raise ValueError(
-                f"{key} resolved to an invalid Website User Agent instance: "
-                f"name={instance.name!r}, prompt={instance.prompt_name!r}, "
-                f"environment={instance.env_name!r}"
-            )
+        raise ValueError(
+            f"{key} resolved to an invalid Website User Agent template: "
+            f"name={instance.name!r}, prompt={instance.prompt_name!r}, "
+            f"environment={instance.env_name!r}"
+        )
 
     expected_models = {
         "website_builder_agent": "llm_hub/claude-opus-5",
         "code_agent": "llm_hub/claude-opus-5",
-        "website_user1_agent": "llm_hub/claude-opus-5",
-        "website_user2_agent": "llm_hub/gpt-5.6-sol",
-        "website_user3_agent": "llm_hub/deepseek-v4-flash",
+        "website_user_agent": "llm_hub/claude-opus-5",
     }
     actual_models = {
         key: str(getattr(config, key).get("model_name")) for key in expected_models
@@ -332,6 +332,11 @@ def validate_local_artifacts(
         raise ValueError(
             "default role model routing is invalid: "
             f"expected={expected_models}, actual={actual_models}"
+        )
+    if list(config.website_user_models) != DEFAULT_USER_MODELS:
+        raise ValueError(
+            "default per-dispatch user model routes are invalid: "
+            f"{list(config.website_user_models)!r}"
         )
 
     print("Website evolution demo validation: OK")
@@ -350,7 +355,10 @@ def launch(args: argparse.Namespace) -> None:
         validate_local_artifacts(config_path, task_path, site_brief, personas)
         return
 
-    task_text = build_task_text(task_path, site_brief, personas)
+    user_models = list(args.user_model or DEFAULT_USER_MODELS)
+    if args.model:
+        user_models = [args.model] * 3
+    task_text = build_task_text(task_path, site_brief, personas, user_models)
     forwarded = [
         "run_meta_agent.py",
         "--config",
@@ -377,9 +385,7 @@ def launch(args: argparse.Namespace) -> None:
             f"generate_agent.model_name={args.model}",
             f"optimize_agent.model_name={args.model}",
             f"evaluate_agent.model_name={args.model}",
-            f"website_user1_agent.model_name={args.model}",
-            f"website_user2_agent.model_name={args.model}",
-            f"website_user3_agent.model_name={args.model}",
+            f"website_user_agent.model_name={args.model}",
         ]
     else:
         if args.builder_model:
@@ -388,11 +394,6 @@ def launch(args: argparse.Namespace) -> None:
             )
         if args.code_model:
             cfg_options.insert(0, f"code_agent.model_name={args.code_model}")
-        if args.user_model:
-            cfg_options[:0] = [
-                f"website_user{index}_agent.model_name={model}"
-                for index, model in enumerate(args.user_model, start=1)
-            ]
     if cfg_options:
         forwarded.extend(["--cfg-options", *cfg_options])
 

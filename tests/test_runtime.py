@@ -173,6 +173,28 @@ def test_a_task_that_raises_is_the_tasks_failure_not_the_agents() -> None:
     run(check())
 
 
+def test_a_pump_crash_wakes_the_active_ask_instead_of_hanging_forever() -> None:
+    """A dead sole consumer must settle the future owned by the current run."""
+
+    class CrashingAgent:
+        name = "crasher"
+
+        async def handle(self, msg, ref):
+            ref._pending_reply = msg.reply_future
+            raise RuntimeError("protocol replay failed")
+
+    async def check() -> None:
+        ref = await runtime_manager.spawn(CrashingAgent(), name="crash-wakeup")
+        with pytest.raises(RuntimeError, match="protocol replay failed"):
+            await asyncio.wait_for(
+                runtime_manager.ask(ref, TaskMessage(task="run")), timeout=1
+            )
+        assert ref.status is AgentStatus.DEAD
+        await runtime_manager.stop(ref, drain=False)
+
+    run(check())
+
+
 # --------------------------------------------------------------------------- #
 # Shutdown
 # --------------------------------------------------------------------------- #

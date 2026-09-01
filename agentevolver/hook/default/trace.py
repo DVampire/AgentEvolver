@@ -133,6 +133,7 @@ class TraceHook(Hook):
                 reasoning=inp.get("reasoning"),
                 assistant_text=inp.get("assistant_text"),
                 provider_state=inp.get("provider_state"),
+                protocol_followup=inp.get("protocol_followup"),
                 duration_ms=elapsed,
                 usage=step_usage,
             )

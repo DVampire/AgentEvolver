@@ -17,13 +17,10 @@ contains two answers with no way to tell which is current.
 | Module `README.md` | That module's contract: what it owns, its shape, its extension points | Restating a docstring, another module's concerns |
 | Docstrings | The local contract: behaviour, failure modes, ownership, timing, non-obvious orientation | Reasoning transcripts, test walkthroughs, code restatement |
 | [tests/README.md](../tests/README.md) | How a test in this repo is written, and why | What any individual test asserts |
-| [decisions/](decisions/README.md) | Why it is like this and what was given up | Plans, migration steps, acceptance checklists |
-| [postmortems/](postmortems/README.md) | Incident stories — **the only tier where narrative belongs** | Design rationale that was never an incident |
-| [cookbook/](cookbook/adding-a-tool.md) | Step-by-step procedures, ending in a verify step | Design rationale — link the decision record instead |
 | `docs/<topic>.md` | A reference for one subject: current behaviour, lookup-shaped | Teaching sequences that belong in a tutorial |
 
-Placement, in one line: **bug → postmortem; rationale → decision record; contract, and the
-standing orders that go with it → the docstring or module README that owns the thing.**
+Placement, in one line: **contract, and the standing orders that go with it → the docstring
+or module README that owns the thing.**
 
 There is deliberately no repo-wide standing-orders page. `PROJECT.md` was one, and every
 rule on it was a second copy of something with an owner — so it drifted from all of them at
@@ -33,7 +30,7 @@ once, silently, because nothing imports a document.
 
 **Document current state, not change history.** "Previously", "now", "no longer", "used to",
 "was renamed" — none of these belong in durable prose. Name the live mechanism. Change
-stories go in commits, decision records, or postmortems.
+stories go in commits.
 
 **Say why the wrong answer is tempting.** This is the highest-value sentence in most
 documents and the one most often missing. Restating what the code does is nearly free and
@@ -66,19 +63,8 @@ has produced a real defect somewhere.
 7. **Paragraph walls**: one paragraph carrying several rules plus parenthetical asides. Split
    it, or demote the detail to its home.
 8. **Emphasis inflation**: bold, caps, and "critically" everywhere.
-9. **Plan language in a shipped record**: "should", "we will", migration steps, acceptance
-   checklists. A decision record describes what *is*.
-
-### A worked example of #2
-
-This standard forbids narrated history in *durable prose* — module READMEs, docstrings,
-reference pages. It does not forbid it in the two tiers whose subject **is** history:
-a decision record explains what an option lost to, and a postmortem is a story by
-construction. [Postmortem 0001](postmortems/0001-the-coverage-gate-printed-failed-and-exited-zero.md)
-is almost entirely "previously", and it is correct there.
-
-The test is not the words. It is whether a reader who needs the current behaviour has to
-read past the history to find it.
+9. **Plan language in a shipped document**: "should", "we will", migration steps, acceptance
+   checklists. A shipped document describes what *is*.
 
 ## What is already enforced
 

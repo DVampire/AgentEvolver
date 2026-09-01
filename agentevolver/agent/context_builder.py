@@ -304,6 +304,15 @@ class ContextBuilder:
                     recent.pop()
                 elif current_empty:
                     continue
+                else:
+                    # Legacy Trace files predate persisted host follow-ups. The live
+                    # request did contain a user nudge between these turns, but replay
+                    # cannot recover its exact wording. Restore a minimal protocol seam
+                    # instead of dropping either signed assistant state or crashing.
+                    recent.append(HumanMessage(content=(
+                        "<runtime-followup>Continue with the next tool action, or finish "
+                        "explicitly if the task is complete.</runtime-followup>"
+                    )))
             recent.append(message)
         return recent
 

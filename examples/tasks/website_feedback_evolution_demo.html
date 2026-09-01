@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="website_feedback_evolution_demo">
   <meta name="description" content="General protocol for a participatory, preference-driven website builder self-evolution demonstration">
-  <meta name="version" content="2.2.0">
+  <meta name="version" content="3.0.0">
   <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
   <script src="../../agentevolver/visual/js/task.js"></script>
 </head>
@@ -36,16 +36,18 @@
 
     Treat persona contents as hidden co-design material. The Website Builder may read the site
     brief but must not read persona contents before or during participation. After V0 is frozen, it
-    routes each persona file unchanged to the corresponding dedicated Website User Agent. Each
-    participant sees one persona only.
+    routes each persona file unchanged to an independent runtime copy of the one registered
+    Website User Agent template. Each participant sees one persona only.
   </div>
 
   <div class="experiment-protocol">
-    Run the demonstration as a gated experiment:
+    Run the demonstration as a gated experiment. V0→V5 is not a fixed implementation workflow:
+    the Builder plans each increment from current evidence. Every release must still cross
+    `BUILDING → VERIFYING → FROZEN → PUBLISHED → COLLECTING → SYNTHESIZING → PLANNING_NEXT`.
 
     1. Build, deploy, verify, and freeze V0 without seeing persona contents.
-    2. Register three persona-scoped Website User Agents once as isolated continuable subscribers to the
-       release topic, then publish the frozen V0 release event. Their event turns run concurrently.
+    2. Dispatch the same Website User Agent template three times with distinct models/personas and
+       register the resulting isolated continuable subscribers once, then publish frozen V0.
        Do not modify V0 while any baseline co-design turn is active.
     3. Require each participant to exercise the main journey, make and save meaningful personal
        choices, and submit a structured design contribution through the website. Verify its profile
@@ -64,24 +66,27 @@
     7. Publish each VK release event to the same three live subscribers rather than dispatching new
        agents. Each keeps its evaluator/resident identity but receives a fresh browser context,
        restores its server-side preference profile, sees how its earlier receipt was handled,
-       retries affected goals, and accepts or revises the delivered experience. V1 through V4 also
-       collect the next evidence-backed co-design contribution that drives the following cycle; V5
+       retries affected goals, and accepts or revises the delivered experience. V1 through V4 may
+       collect a new evidence-backed contribution when the user genuinely has one; V5
        is the final acceptance/revision evaluation, with unresolved revisions recorded as backlog.
   </div>
 
   <div class="co-design-contract">
-    The site must expose two discoverable ordinary-user experiences. `Make it mine` lets a user
-    preview, save, restore, edit, and reset meaningful preferences. `Design with us` records the
-    attempted goal, observed outcome/evidence, explicit choices, desired experience, personal or
-    shared scope, priority, non-negotiables, acceptance scenario, positive observations, and integer
-    1–5 ratings for usability, task success, clarity/trust, accessibility/responsiveness, and sense
-    of participation. A decorative theme toggle or generic comment box alone is insufficient.
+    The site must expose two discoverable ordinary-user experiences. `Make it mine` is an in-context
+    experience composer for information density/priority, navigation, terminology and explanation
+    depth, decision support, pacing/guidance, privacy/notifications, visual treatment, and
+    accessibility. Changes are explicit, previewable, explainable, versioned, undoable, and may be
+    personal, shared, or experimental. `Design with us` is a candidate preview/edit/accept loop that
+    also lets users originate a desired experience with scope, priority, non-negotiables, and an
+    acceptance scenario. A settings dump, decorative theme toggle, ratings survey, or generic
+    complaint box alone is insufficient.
 
-    Preference profiles and contributions must live in a store shared across isolated browser
-    sessions for the demo lifetime. Saving returns a visible profile ID; contributing returns a
-    visible immutable receipt. Per-browser local or session storage alone does not satisfy this
-    requirement. Participants can retrieve only their own profile and contribution status. The
-    Builder can retrieve the inbox without exposing one participant's private data to another.
+    The server is authoritative for residents, profile revisions, opt-in interaction signals,
+    contributions, design candidates/assignments, candidate verdicts, releases, and release changes.
+    Saving returns a visible profile revision ID; contributions and verdicts return immutable
+    receipts. Per-browser storage alone is invalid. Participants retrieve only their records; the
+    Builder uses an inbox/API without exposing one participant's private data to another. Interaction
+    signals may suggest a change but must never silently adapt the experience.
   </div>
 
   <div class="evolution-rules">
@@ -130,7 +135,8 @@
       a material accepted change, a new frozen release, and subsequent participant evaluation;
     - three isolated participants were registered once, all six release publishes each reported
       fan-out three, and all three subscribers attempted every iteration with the same persona routing;
-    - successful turns have website-issued profile/contribution IDs verified in shared storage;
+    - successful turns have website-issued resident/profile revision/contribution/candidate/verdict
+      IDs verified in shared storage as applicable;
     - every participant made an explicit choice, originated a contribution, and on V1 through V5
       restored its identity/preferences and accepted or revised the relevant implementation;
     - every preference and contribution has a recorded disposition and evidence-linked outcome;

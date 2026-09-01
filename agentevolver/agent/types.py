@@ -1736,10 +1736,14 @@ class Agent(BaseModel):
         outcome = await self._dispatch(decision, task_id, step_number, ctx)
 
         # Per-step lifecycle: POST_STEP + trajectory capture.
+        protocol_followup = ""
+        if not decision["tool_calls"]:
+            protocol_followup = "\n".join(outcome["action_errors"])
         await self._post_step(task_id, step_number, ctx, messages,
                               reasoning=decision["reasoning"],
                               assistant_text=decision.get("assistant_text", ""),
                               provider_state=decision.get("provider_state", {}),
+                              protocol_followup=protocol_followup,
                               plan=outcome["plan"],
                               step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"),
                               done=outcome["done"])
@@ -1748,7 +1752,8 @@ class Agent(BaseModel):
                 "action_errors": outcome["action_errors"], "constraint_status": [], "stopped_by_constraint": False}
 
     async def _post_step(self, task_id, step_number, ctx, messages, *, reasoning,
-                         assistant_text="", provider_state=None, plan, step_tokens, done,
+                         assistant_text="", provider_state=None,
+                         protocol_followup="", plan, step_tokens, done,
                          step_usage=None):
         """Fire the per-step POST_STEP lifecycle (memory / trace / trajectory)
         and carry token usage forward. Shared by the blocking ``_think_and_act`` path
@@ -1763,6 +1768,7 @@ class Agent(BaseModel):
                    "step_number": step_number, "task_id": task_id,
                    "reasoning": reasoning, "assistant_text": assistant_text,
                    "provider_state": provider_state or {},
+                   "protocol_followup": protocol_followup,
                    "step_usage": step_usage,
                    "use_memory": self.use_memory, "memory_name": self.memory_name},
             ctx=ctx,
@@ -2927,10 +2933,15 @@ class Agent(BaseModel):
             # text-only turn: record the empty step, nudge, and try again next turn
             run.round_step = run.step
             run.step_plan = []
+            followup = (
+                "You produced text but called no tool. Take the next action by calling a "
+                "tool, or if the task is COMPLETE call `done_tool` with the result now."
+            )
             await self._post_step(run.task_id, run.step, run.ctx, messages,
                                   reasoning=decision["reasoning"],
                                   assistant_text=decision.get("assistant_text", ""),
                                   provider_state=decision.get("provider_state", {}),
+                                  protocol_followup=followup,
                                   plan=[], step_tokens=decision["step_tokens"],
                                   step_usage=decision.get("step_usage"), done=False)
 
@@ -2956,9 +2967,7 @@ class Agent(BaseModel):
             else:
                 run.empty_turns = 0
 
-            run.action_errors = [
-                "You produced text but called no tool. Take the next action by calling a tool, "
-                "or if the task is COMPLETE call `done_tool` with the result now."]
+            run.action_errors = [followup]
             run.step += 1
             return True
         decision["serialize_batch"] = await self._batch_requires_serial(
@@ -3237,14 +3246,6 @@ class Agent(BaseModel):
             await self._conclude(run)
             return None
 
-        run.round_step = run.step
-        await self._post_step(
-            run.task_id, run.step, run.ctx, run.messages,
-            reasoning=decision["reasoning"],
-            assistant_text=decision.get("assistant_text", ""),
-            provider_state=decision.get("provider_state", {}), plan=[],
-            step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"), done=False,
-        )
         blocked = (
             f"{reason} You have measured enough to act. Write the change you believe is "
             f"right — an edit, a file, a build — even if you are not certain; a wrong edit "
@@ -3257,6 +3258,16 @@ class Agent(BaseModel):
                 " This is the last such turn that will be allowed: one more that changes "
                 "nothing terminates this agent."
             )
+        run.round_step = run.step
+        await self._post_step(
+            run.task_id, run.step, run.ctx, run.messages,
+            reasoning=decision["reasoning"],
+            assistant_text=decision.get("assistant_text", ""),
+            provider_state=decision.get("provider_state", {}),
+            protocol_followup=blocked, plan=[],
+            step_tokens=decision["step_tokens"],
+            step_usage=decision.get("step_usage"), done=False,
+        )
         # Appended: a repetition reminder raised earlier in this same call is still
         # true, and the model should read both.
         run.action_errors = [*(run.action_errors or []), blocked]
@@ -3679,11 +3690,13 @@ class Agent(BaseModel):
         except asyncio.CancelledError:
             if ref._pending_reply is not None and not ref._pending_reply.done():
                 ref._pending_reply.cancel()
+            ref._pending_reply = None
             raise
         except Exception as exc:
             logger.error(f"| ❌ {self.name} task failed: {exc}", exc_info=True)
             if ref._pending_reply is not None and not ref._pending_reply.done():
                 ref._pending_reply.set_exception(exc)
+            ref._pending_reply = None
 
     # ------------------------------------------------------------------
     # Framework dispatcher — do NOT override in subclasses

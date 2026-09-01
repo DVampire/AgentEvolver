@@ -41,6 +41,12 @@ def _fill(state, n):
         state.recent.append(MemoryRecord(ts="t", event=f"event {i}", detail="d"))
 
 
+def test_memory_record_normalizes_structured_error_detail_to_text():
+    record = MemoryRecord(ts="t", event="failed", detail={"code": 500})
+
+    assert record.detail == "{'code': 500}"
+
+
 def test_portable_checkpoint_normalizes_sections_and_retains_trace_sources():
     """The readable checkpoint and its machine companion must describe one state."""
     checkpoint = PortableCheckpoint.from_text(

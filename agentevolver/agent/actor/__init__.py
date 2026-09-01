@@ -10,9 +10,9 @@ from .ssh_agent import SSHAgent
 from .generate_agent import GenerateAgent
 from .optimize_agent import OptimizeAgent
 from .evaluate_agent import EvaluateAgent
-from .website_user_agent import WebsiteUser1Agent, WebsiteUser2Agent, WebsiteUser3Agent
+from .website_user_agent import WebsiteUserAgent
 
 __all__ = ["GeneralAgent", "CodeAgent", "MetaAgent", "WebsiteBuilderAgent", "MonitorAgent", "BrowserAgent",
            "ComputerAgent", "ReviewerAgent", "SSHAgent",
            "GenerateAgent", "OptimizeAgent", "EvaluateAgent",
-           "WebsiteUser1Agent", "WebsiteUser2Agent", "WebsiteUser3Agent"]
+           "WebsiteUserAgent"]

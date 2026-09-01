@@ -77,8 +77,8 @@ class PublishEventTool(Tool):
                 success=False,
                 message="publish_event_tool requires an active Agent session context.",
             )
-        kind = str(event_type or "").strip()
-        if not kind:
+        event_type_name = str(event_type or "").strip()
+        if not event_type_name:
             return Response(
                 type=ResponseType.TOOL,
                 success=False,
@@ -88,7 +88,7 @@ class PublishEventTool(Tool):
             publisher = str(getattr(ctx, "name", "") or "")
             sent, scoped, event = await protocol_manager.publish_event(
                 topic,
-                event_type=kind,
+                event_type=event_type_name,
                 payload=dict(payload or {}),
                 ctx=ctx,
                 publisher=publisher,
@@ -106,13 +106,13 @@ class PublishEventTool(Tool):
             type=ResponseType.TOOL,
             success=sent > 0,
             message=(
-                f"Published {kind!r} on {visible_topic!r} to {sent} subscriber(s)."
+                f"Published {event_type_name!r} on {visible_topic!r} to {sent} subscriber(s)."
                 if sent
                 else f"Published to zero subscribers on {visible_topic!r}; check registration."
             ),
             data={
                 "event_id": event.id,
-                "event_type": kind,
+                "event_type": event_type_name,
                 "topic": visible_topic,
                 "fanout": sent,
             },

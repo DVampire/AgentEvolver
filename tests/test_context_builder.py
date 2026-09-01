@@ -182,6 +182,40 @@ def test_envelope_rejects_adjacent_assistant_protocol_turns():
         ).validate()
 
 
+def test_recorded_host_followup_separates_text_only_signed_turns():
+    """Replay must retain the user seam that caused the second assistant response."""
+    state = {"anthropic": {"thinking_blocks": [{"type": "thinking", "signature": "s"}]}}
+    events = _number([
+        agent_start_event("s", "t", "a", "task"),
+        agent_call_event(
+            "s", "t", "a", 1, assistant_text="still waiting", provider_state=state,
+            protocol_followup="Use a tool or finish.",
+        ),
+        agent_call_event("s", "t", "a", 2, assistant_text="now acting"),
+    ])
+    rendered = [SystemMessage(content="rules"), HumanMessage(content="<task>task</task>")]
+
+    messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
+
+    assert [message.role for message in messages[2:5]] == ["assistant", "user", "assistant"]
+    assert messages[2].provider_state == state
+    assert messages[3].text == "Use a tool or finish."
+
+
+def test_legacy_adjacent_signed_turns_receive_a_minimal_protocol_seam():
+    events = _number([
+        agent_start_event("s", "t", "a", "task"),
+        agent_call_event("s", "t", "a", 1, assistant_text="waiting"),
+        agent_call_event("s", "t", "a", 2, assistant_text="acting"),
+    ])
+    rendered = [SystemMessage(content="rules"), HumanMessage(content="<task>task</task>")]
+
+    messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
+
+    assert [message.role for message in messages[2:5]] == ["assistant", "user", "assistant"]
+    assert "runtime-followup" in messages[3].text
+
+
 def test_private_reasoning_is_not_replayed_as_assistant_text():
     event = agent_call_event("s", "t", "a", 1, reasoning="hidden chain", assistant_text="")
     events = _number(

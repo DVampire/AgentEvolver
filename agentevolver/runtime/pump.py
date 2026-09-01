@@ -35,3 +35,19 @@ async def _pump(agent: "Agent", ref: AgentRef) -> None:
     except Exception as exc:
         logger.error(f"| 💀 Runtime pump crashed: {ref.name}: {exc}", exc_info=True)
         ref.status = AgentStatus.DEAD
+        # A pump is the only consumer of this ref. Wake the active ask immediately;
+        # otherwise the root invocation or delegated driver waits forever on a future
+        # that no coroutine can now resolve.
+        pending = ref._pending_reply
+        ref._pending_reply = None
+        if pending is not None and not pending.done():
+            pending.set_exception(exc)
+        for queue in (ref._inbox, ref._tasks):
+            while not queue.empty():
+                try:
+                    queued = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                future = getattr(queued, "reply_future", None)
+                if future is not None and not future.done():
+                    future.set_exception(exc)

@@ -1,7 +1,7 @@
 ---
 name: job
 description: Background work this session started — a backgrounded command, a backgrounded terminal send, a dispatched sub-agent, a reminder. What is still outstanding is shown every step.
-version: 1.0.0
+version: 1.1.0
 type: worker
 ---
 
@@ -66,6 +66,7 @@ finished stops collecting.
 |---|---|
 | `list` | Everything, finished included — the history the state deliberately trims |
 | `output` | What a job has printed. Repeatable; reading does not consume. `tail` for the last N lines |
+| `wait` | Hold one tool call until jobs finish or continuable agents become idle after a requested turn; returns early on failure/timeout |
 | `kill` | Stop it. Output printed before the kill is kept |
 
 </environment_job>

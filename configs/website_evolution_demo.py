@@ -1,8 +1,8 @@
 """Configuration for the participatory website self-evolution demonstration.
 
-The Website Builder is the MetaAgent with a purpose-built prompt.  Three concrete
-BrowserAgent subclasses provide independent Python instances, browser sessions, and dispatcher-
-scoped scratch workspaces so co-design turns cannot leak plans or artifacts across participants.
+The Website Builder inherits MetaAgent's orchestration mechanics with a purpose-built prompt.
+One WebsiteUserAgent template is deep-copied into three independent runtime subscriptions,
+browser sessions, memories, and dispatcher-scoped scratch workspaces.
 """
 
 from mmengine.config import read_base
@@ -16,11 +16,7 @@ with read_base():
     from .agents.generate_agent import generate_agent
     from .agents.optimize_agent import optimize_agent
     from .agents.evaluate_agent import evaluate_agent
-    from .agents.website_user_agents import (
-        website_user1_agent,
-        website_user2_agent,
-        website_user3_agent,
-    )
+    from .agents.website_user_agents import website_user_agent
     from .tools.bash import bash_tool
     from .tools.read_file import read_file_tool
     from .tools.write_file import write_file_tool
@@ -55,6 +51,11 @@ extension_root = "output/website_evolution_demo/extension"
 # with the same model family.
 model_name = "llm_hub/claude-opus-5"
 agent_model_policy = "per_agent"
+website_user_models = [
+    "llm_hub/claude-opus-5",
+    "llm_hub/gpt-5.6-sol",
+    "llm_hub/deepseek-v4-flash",
+]
 
 memory_names = ["file_system_memory"]
 
@@ -66,9 +67,7 @@ agent_names = [
     "generate_agent",
     "optimize_agent",
     "evaluate_agent",
-    "website_user_1_agent",
-    "website_user_2_agent",
-    "website_user_3_agent",
+    "website_user_agent",
 ]
 
 # Resident tools cover the coupled build/deploy/evolution loop. Browser co-designers override
@@ -115,8 +114,8 @@ plugin_names = []
 workflow_names = []
 
 # `job` makes background build processes observable.  One shared BrowserEnvironment creates a
-# separate page/context per child session; the three separate Agent classes prevent instance
-# fields from racing while those sessions run concurrently.
+# separate page/context per child session; dispatcher deep copies prevent instance fields from
+# racing while those sessions run concurrently.
 env_names = ["job", "browser_environment"]
 
 browser_environment = dict(
@@ -167,7 +166,7 @@ file_system_memory.update(
 
 WORKER_MAX_STEP = 60
 EVOLUTION_MAX_STEP = 60
-BUILDER_MAX_STEP = 520
+BUILDER_MAX_STEP = 180
 WALL_CLOCK = 28800
 MAX_TOKEN = 10000000
 
@@ -181,7 +180,7 @@ _AGENT_CORE = dict(
     enable_evolving=False,
     use_memory=True,
     retain_recent_steps=4,
-    compact_after_steps=24,
+    compact_after_steps=18,
     compact_body_tokens=100000,
     fold_at_pressure=0.85,
 )
@@ -215,25 +214,14 @@ _USER = {
     # Subscribers live across V0→V5. They need the same durable checkpoint + exact-tail
     # protocol as every other long-running Agent, especially after browser state resets.
     "use_memory": True,
-    "max_step": 50,
-    "timeout": 2700,
+    "max_step": 30,
+    "timeout": 1800,
     "max_token": 1000000,
     "max_actions": 3,
     "max_screenshots": 2,
     "subscription_topics": ["website.releases"],
 }
-website_user1_agent.update(**_USER, model_name="llm_hub/claude-opus-5")
-website_user2_agent.update(**_USER, model_name="llm_hub/gpt-5.6-sol")
-website_user3_agent.update(**_USER, model_name="llm_hub/deepseek-v4-flash")
-
-# The manager binds these concrete classes through their inflected keys above
-# (website_user1_agent, and so on), while the public roster uses the instances'
-# readable runtime names. Expose matching aliases so generic config audits and
-# introspection can resolve every item in ``agent_names`` without changing the
-# manager binding contract.
-website_user_1_agent = website_user1_agent
-website_user_2_agent = website_user2_agent
-website_user_3_agent = website_user3_agent
+website_user_agent.update(**_USER)
 
 website_builder_agent.update(**{
     **_AGENT_CORE,

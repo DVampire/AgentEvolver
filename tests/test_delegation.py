@@ -245,6 +245,45 @@ async def test_a_continuable_child_outlives_its_own_answer():
 
 
 @pytest.mark.asyncio
+async def test_job_wait_collects_a_continuable_turn_without_model_polling():
+    from agentevolver.environment.default.job import JobEnvironment
+
+    sub = await _start(_Child(delay=0.05), "first", continuable=True, parent_ctx=_Parent())
+    result = await JobEnvironment().wait(
+        job_ids=[sub.job_id], condition="idle_after_turn", min_turns=1,
+        timeout=1, ctx=_Parent(),
+    )
+
+    assert result["success"]
+    assert result["jobs"][0] == {
+        "job_id": sub.job_id,
+        "status": "running",
+        "ready": True,
+        "turns": 1,
+        "alive": True,
+        "busy": False,
+        "queued": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_job_wait_returns_early_when_a_subscriber_dies():
+    from agentevolver.environment.default.job import JobEnvironment
+
+    sub = await _start(_Child(), "first", continuable=True, parent_ctx=_Parent())
+    assert await _until(lambda: sub.turns == 1 and not sub.busy)
+    job_manager.kill(sub.job_id)
+    assert await _until(lambda: not sub.alive)
+
+    result = await JobEnvironment().wait(
+        job_ids=[sub.job_id], condition="idle_after_turn", min_turns=2,
+        timeout=1, ctx=_Parent(),
+    )
+    assert not result["success"]
+    assert not result["timed_out"]
+
+
+@pytest.mark.asyncio
 async def test_a_message_becomes_the_continuable_child_s_next_turn():
     child = _Child()
     sub = await _start(child, "first task", continuable=True, parent_ctx=_Parent())

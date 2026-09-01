@@ -35,7 +35,7 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Deque, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agentevolver.logger import logger
 from agentevolver.memory.types import Memory
@@ -162,6 +162,12 @@ class MemoryRecord(BaseModel):
     #: without it, memory's history and the durable log drift apart with nothing able to
     #: relate them. ``None`` for records with no originating event.
     seq: Optional[int] = None
+
+    @field_validator("ts", "event", "detail", "status", "agent_name", mode="before")
+    @classmethod
+    def _normalize_text(cls, value: Any) -> str:
+        """Memory is textual even when a Trace error carries structured detail."""
+        return _as_text(value)
 
     def as_line(self) -> str:
         s = f" [{self.status}]" if self.status else ""
