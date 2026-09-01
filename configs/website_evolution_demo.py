@@ -8,33 +8,20 @@ browser sessions, memories, and dispatcher-scoped scratch workspaces.
 from mmengine.config import read_base
 
 with read_base():
-    from .base import memory_config, window_size, max_tokens
-    from .agents.website_builder_agent import website_builder_agent
-    from .agents.code_agent import code_agent
-    from .agents.general_agent import general_agent
-    from .agents.reviewer_agent import reviewer_agent
+    from .agents.evaluate_agent import evaluate_agent
     from .agents.generate_agent import generate_agent
     from .agents.optimize_agent import optimize_agent
-    from .agents.evaluate_agent import evaluate_agent
+    from .agents.website_builder_agent import website_builder_agent
     from .agents.website_user_agents import website_user_agent
-    from .tools.bash import bash_tool
-    from .tools.read_file import read_file_tool
-    from .tools.write_file import write_file_tool
-    from .tools.edit_file import edit_file_tool
-    from .tools.list_dir import list_dir_tool
-    from .tools.grep_search import grep_search_tool
-    from .tools.glob_search import glob_search_tool
-    from .tools.git import git_tool
-    from .tools.read_image import read_image_tool
-    from .tools.deploy import deploy_tool
-    from .tools.evolution import evolution_tool
-    from .tools.ask_user import ask_user_question
-    from .tools.escalate import escalate_tool
-    from .tools.exit_plan_mode import exit_plan_mode
-    from .tools.publish_event import publish_event_tool
-    from .tools.website_release_gate import website_release_gate_tool
-    from .tools.send_message import send_message_tool
+    from .base import max_tokens, memory_config, window_size  # noqa: F401
     from .memory.file_system_memory import file_system_memory
+    from .tools.bash import bash_tool
+    from .tools.deploy import deploy_tool
+    from .tools.escalate import escalate_tool
+    from .tools.evolution import evolution_tool
+    from .tools.publish_event import publish_event_tool
+    from .tools.send_message import send_message_tool
+    from .tools.website_release_gate import website_release_gate_tool
 
 
 tag = "website_evolution_demo"
@@ -63,35 +50,21 @@ memory_names = ["file_system_memory"]
 
 agent_names = [
     "website_builder_agent",
-    "code_agent",
-    "general_agent",
-    "reviewer_agent",
     "generate_agent",
     "optimize_agent",
     "evaluate_agent",
     "website_user_agent",
 ]
 
-# Resident tools cover the coupled build/deploy/evolution loop. Browser co-designers override
-# tool projection and remain pure environment agents.  Connectors/plugins/workflows stay absent
-# so the demo does not gain unrelated capabilities or prompt weight.
+# Bash owns local file, search, Git, build, and test operations. Keep only tools that add a
+# distinct runtime protocol; parallel read/write/search wrappers would duplicate the same
+# authority and inflate every model request. Browser co-designers further narrow this list.
 tool_names = [
     "bash_tool",
-    "read_file_tool",
-    "write_file_tool",
-    "edit_file_tool",
-    "list_dir_tool",
-    "grep_search_tool",
-    "glob_search_tool",
-    "git_tool",
-    "read_image_tool",
     "deploy_tool",
-    "ask_user_question",
     "escalate_tool",
     "reply_tool",
-    "report_tool",
     "done_tool",
-    "exit_plan_mode",
     "publish_event_tool",
     "website_release_gate_tool",
     "send_message_tool",
@@ -104,9 +77,7 @@ tool_names = [
 # The last three skills are required by the dedicated evolution workers themselves.
 skill_names = [
     "frontend_ui_engineering_skill",
-    "api_and_interface_design_skill",
     "webapp_testing_skill",
-    "deploy_skill",
     "self_evolving_skill",
     "generate_skill",
     "optimize_skill",
@@ -136,19 +107,9 @@ browser_environment = dict(
 
 # ---------------- Tool configuration ----------------
 bash_tool.update(enable_evolving=False)
-read_file_tool.update(enable_evolving=False)
-write_file_tool.update(enable_evolving=False)
-edit_file_tool.update(enable_evolving=False)
-list_dir_tool.update(enable_evolving=False)
-grep_search_tool.update(enable_evolving=False)
-glob_search_tool.update(enable_evolving=False)
-git_tool.update(enable_evolving=False, timeout=60)
-read_image_tool.update(enable_evolving=False)
 deploy_tool.update(enable_evolving=False)
 evolution_tool.update(enable_evolving=False)
-ask_user_question.update(enable_evolving=False)
 escalate_tool.update(enable_evolving=False)
-exit_plan_mode.update(enable_evolving=False)
 publish_event_tool.update(enable_evolving=False)
 website_release_gate_tool.update(enable_evolving=False, max_release=optimization_cycles)
 send_message_tool.update(enable_evolving=False)
@@ -170,7 +131,6 @@ file_system_memory.update(
 )
 
 
-WORKER_MAX_STEP = 60
 EVOLUTION_MAX_STEP = 60
 BUILDER_MAX_STEP = 180
 WALL_CLOCK = 28800
@@ -179,8 +139,8 @@ MAX_TOKEN = 10000000
 # Every role uses the same cache-aware context policy as the SWE-bench MetaAgent.  Native
 # compaction is selected by the configured memory model when supported and otherwise falls
 # back to a portable text checkpoint, so a heterogeneous user panel is not a reason to turn
-# compaction off globally. Models are assigned below by role: Builder/Code use Opus 5, while
-# the co-design panel spans three model families.
+# compaction off globally. The Builder and evolution workers use Opus 5, while the co-design
+# panel spans three model families.
 _AGENT_CORE = dict(
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -190,17 +150,6 @@ _AGENT_CORE = dict(
     compact_body_tokens=100000,
     fold_at_pressure=0.85,
 )
-
-_WORKER = {
-    **_AGENT_CORE,
-    "model_name": model_name,
-    "max_step": WORKER_MAX_STEP,
-    "timeout": WALL_CLOCK,
-    "max_token": MAX_TOKEN,
-}
-code_agent.update(**_WORKER)
-general_agent.update(**_WORKER)
-reviewer_agent.update(**_WORKER)
 
 _EVOLUTION_WORKER = {
     **_AGENT_CORE,

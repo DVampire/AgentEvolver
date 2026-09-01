@@ -106,3 +106,51 @@ def test_builder_requires_verification_at_the_exact_deployed_url():
     assert "exact URL returned by" in prompt
     assert "including any path prefix" in prompt
     assert "Never substitute a direct source port" in prompt
+
+
+def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
+    from mmengine import Config
+
+    cfg = Config.fromfile(str(Path(__file__).resolve().parents[1] / "configs" / "website_evolution_demo.py"))
+
+    assert cfg.agent_names == [
+        "website_builder_agent",
+        "generate_agent",
+        "optimize_agent",
+        "evaluate_agent",
+        "website_user_agent",
+    ]
+    assert cfg.tool_names == [
+        "bash_tool",
+        "deploy_tool",
+        "escalate_tool",
+        "reply_tool",
+        "done_tool",
+        "publish_event_tool",
+        "website_release_gate_tool",
+        "send_message_tool",
+        "evolution_tool",
+    ]
+    assert cfg.skill_names == [
+        "frontend_ui_engineering_skill",
+        "webapp_testing_skill",
+        "self_evolving_skill",
+        "generate_skill",
+        "optimize_skill",
+        "evaluate_skill",
+    ]
+
+
+def test_website_builder_owns_product_engineering_directly():
+    prompt = (
+        Path(__file__).resolve().parents[1]
+        / "agentevolver"
+        / "prompt"
+        / "default"
+        / "website_builder_agent.html"
+    ).read_text(encoding="utf-8")
+
+    assert "Own product engineering end to end" in prompt
+    assert "Use `bash_tool` for local inspection, file mutation, search, Git" in prompt
+    for redundant_worker in ("code_agent", "general_agent", "reviewer_agent"):
+        assert redundant_worker not in prompt

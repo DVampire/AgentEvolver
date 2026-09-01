@@ -34,7 +34,6 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT_DIR = ROOT / "examples" / "inputs" / "website_evolution_demo"
 DEFAULT_ECHO_INPUT_DIR = DEFAULT_INPUT_DIR / "echo_ark"
@@ -88,11 +87,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--builder-model",
         default=None,
         help="Override only the Website Builder model route.",
-    )
-    parser.add_argument(
-        "--code-model",
-        default=None,
-        help="Override only the Code Agent model route.",
     )
     parser.add_argument(
         "--user-model",
@@ -178,13 +172,12 @@ def validate_local_artifacts(
 
     import inflection
 
+    # Importing the actor package registers the reusable co-designer template.
+    import agentevolver.agent  # noqa: F401
     from agentevolver.config import config, validate_assembly
     from agentevolver.prompt.types import parse_prompt_file
     from agentevolver.registry import AGENT
     from agentevolver.task.loader import load_task_document
-
-    # Importing the actor package registers the reusable co-designer template.
-    import agentevolver.agent  # noqa: F401
 
     config.initialize(
         config_path=str(config_path),
@@ -197,18 +190,22 @@ def validate_local_artifacts(
 
     expected_agents = {
         "website_builder_agent",
+        "generate_agent",
+        "optimize_agent",
+        "evaluate_agent",
         "website_user_agent",
     }
-    missing_config = expected_agents.difference(config.agent_names)
+    actual_agents = set(config.agent_names)
     registry_agents = {
         agent_class.model_fields["name"].default: agent_class
         for agent_class in AGENT._module_dict.values()
     }
     registry_agent_names = set(registry_agents)
     missing_registry = expected_agents.difference(registry_agent_names)
-    if missing_config or missing_registry:
+    if actual_agents != expected_agents or missing_registry:
         raise ValueError(
-            f"agent wiring incomplete: missing_config={sorted(missing_config)}, "
+            f"agent wiring must be minimal: expected={sorted(expected_agents)}, "
+            f"actual={sorted(actual_agents)}, "
             f"missing_registry={sorted(missing_registry)}"
         )
 
@@ -258,9 +255,6 @@ def validate_local_artifacts(
     }
     context_roles = (
         "website_builder_agent",
-        "code_agent",
-        "general_agent",
-        "reviewer_agent",
         "generate_agent",
         "optimize_agent",
         "evaluate_agent",
@@ -284,23 +278,35 @@ def validate_local_artifacts(
 
     required_skills = {
         "frontend_ui_engineering_skill",
-        "api_and_interface_design_skill",
         "webapp_testing_skill",
-        "deploy_skill",
         "self_evolving_skill",
         "generate_skill",
         "optimize_skill",
         "evaluate_skill",
     }
-    missing_skills = required_skills.difference(config.skill_names)
-    if missing_skills:
-        raise ValueError(f"missing required skills: {sorted(missing_skills)}")
-    if "publish_event_tool" not in config.tool_names:
-        raise ValueError("publish_event_tool is required for release notifications")
-    if "website_release_gate_tool" not in config.tool_names:
-        raise ValueError("website_release_gate_tool is required for atomic release gates")
-    if "send_message_tool" not in config.tool_names:
-        raise ValueError("send_message_tool is required for targeted subscriber recovery")
+    actual_skills = set(config.skill_names)
+    if actual_skills != required_skills:
+        raise ValueError(
+            "website evolution must mount only non-overlapping methods: "
+            f"expected={sorted(required_skills)}, actual={sorted(actual_skills)}"
+        )
+    expected_tools = {
+        "bash_tool",
+        "deploy_tool",
+        "escalate_tool",
+        "reply_tool",
+        "done_tool",
+        "publish_event_tool",
+        "website_release_gate_tool",
+        "send_message_tool",
+        "evolution_tool",
+    }
+    actual_tools = set(config.tool_names)
+    if actual_tools != expected_tools:
+        raise ValueError(
+            "website evolution uses one shell plus distinct protocol tools: "
+            f"expected={sorted(expected_tools)}, actual={sorted(actual_tools)}"
+        )
     agent_class = registry_agents["website_user_agent"]
     key = inflection.underscore(agent_class.__name__)
     instance_config = dict(getattr(config, key))
@@ -335,7 +341,6 @@ def validate_local_artifacts(
 
     expected_models = {
         "website_builder_agent": "llm_hub/claude-opus-5",
-        "code_agent": "llm_hub/claude-opus-5",
         "website_user_agent": "llm_hub/claude-opus-5",
     }
     actual_models = {
@@ -390,9 +395,6 @@ def launch(args: argparse.Namespace) -> None:
         cfg_options[:0] = [
             f"model_name={args.model}",
             f"website_builder_agent.model_name={args.model}",
-            f"code_agent.model_name={args.model}",
-            f"general_agent.model_name={args.model}",
-            f"reviewer_agent.model_name={args.model}",
             f"generate_agent.model_name={args.model}",
             f"optimize_agent.model_name={args.model}",
             f"evaluate_agent.model_name={args.model}",
@@ -403,8 +405,6 @@ def launch(args: argparse.Namespace) -> None:
             cfg_options.insert(
                 0, f"website_builder_agent.model_name={args.builder_model}"
             )
-        if args.code_model:
-            cfg_options.insert(0, f"code_agent.model_name={args.code_model}")
     if cfg_options:
         forwarded.extend(["--cfg-options", *cfg_options])
 

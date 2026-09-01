@@ -1,4 +1,4 @@
-"""Dedicated orchestrator for participatory website evolution."""
+"""Dedicated product engineer for participatory website evolution."""
 
 import json
 from typing import Any, Dict, List, Optional
@@ -7,7 +7,6 @@ from pydantic import Field
 
 from agentevolver.agent.actor.meta_agent import MetaAgent
 from agentevolver.registry import AGENT
-
 
 _MANIFEST_MARKER = "## runtime-input-manifest"
 
@@ -56,11 +55,12 @@ def bind_runtime_input_manifest(task: str, files: Optional[List[str]]) -> str:
 
 @AGENT.register_module(force=True)
 class WebsiteBuilderAgent(MetaAgent):
-    """Website product builder with MetaAgent's general orchestration lifecycle.
+    """Direct website builder with MetaAgent's reusable event lifecycle.
 
     This is a distinct registered Agent rather than a renamed MetaAgent configuration:
     it has its own runtime identity, version history, prompt default, permissions, memory,
-    traces, and evolution target.  It inherits only the reusable orchestration mechanics.
+    traces, and evolution target. Product engineering stays in this agent; delegation is
+    reserved for persistent user co-design and framework evolution.
     """
 
     name: str = Field(default="website_builder_agent")
