@@ -41,6 +41,14 @@ def test_builder_rebinds_role_manifest_to_staged_files_without_reading_them():
     assert "/source/p1.html" not in bound
 
 
+def test_builder_mounts_job_without_opening_its_own_browser_session():
+    from agentevolver.agent.actor.website_builder_agent import WebsiteBuilderAgent
+
+    ctx = SimpleNamespace(extra={})
+    WebsiteBuilderAgent._bind_runtime_environment(ctx)
+    assert ctx.extra["environment_allowlist"] == ["job"]
+
+
 @pytest.mark.parametrize(
     "task,files,error",
     [

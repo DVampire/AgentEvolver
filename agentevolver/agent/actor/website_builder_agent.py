@@ -94,8 +94,19 @@ class WebsiteBuilderAgent(MetaAgent):
             **kwargs,
         )
 
+    @staticmethod
+    def _bind_runtime_environment(ctx: Any) -> None:
+        """Mount only the coordinator environment on the Builder itself."""
+        # BrowserEnvironment is registered globally because Website User children need
+        # it. The Builder itself coordinates those children and only works in JobEnvironment;
+        # mounting the browser here creates an unused page and pushes critical schemas into
+        # deferred discovery. Keep the runtime boundary explicit before the first prompt.
+        if ctx is not None and getattr(ctx, "extra", None) is not None:
+            ctx.extra["environment_allowlist"] = ["job"]
+
     async def on_start(self, task, files, ctx, ref, **kwargs):
         """Bind staged role paths, then use MetaAgent's ordinary event-driven loop."""
+        self._bind_runtime_environment(ctx)
         task = bind_runtime_input_manifest(task, files)
         return await super().on_start(task, files, ctx, ref, **kwargs)
 
