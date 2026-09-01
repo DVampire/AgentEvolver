@@ -39,7 +39,17 @@ Call this once at each release boundary. The only legal sequence is:
 - Start V0 with `expected_state=""`, `next_state="BUILDING"`. Start a later release only
   after the preceding release reaches `PLANNING_NEXT`.
 - Always pass the state you observed as `expected_state`; a stale concurrent update is rejected.
-- Evidence is transition-specific. The error response lists missing or invalid fields.
+- Required evidence by `next_state`:
+  - `BUILDING`: `plan_ref`
+  - `VERIFYING`: `implementation_ref`
+  - `FROZEN`: `source_hash`, `verification_ref`
+  - `PUBLISHED`: `deployment_id`, `url`, `publish_event_id`, `fanout` (exactly 3)
+  - `COLLECTING`: `participant_job_ids` (exactly 3 distinct IDs)
+  - `SYNTHESIZING`: `participant_outputs` (exactly 3 distinct participants),
+    `authoritative_records_ref`
+  - `PLANNING_NEXT`: `decision_ledger_ref`, `contribution_ledger_ref`
+- This is an execution barrier: put it before work that depends on the transition. Serialized
+  execution stops the remaining batch if this call is rejected.
 - The tool writes only the `release_gates` section of the demo's `run_manifest.json` and
   preserves the builder's remaining manifest schema.
 """
@@ -129,7 +139,12 @@ class WebsiteReleaseGateTool(Tool):
             release_id: Version identifier such as V0 or V3.
             expected_state: State currently observed by the caller, or empty for a new release.
             next_state: Immediate next state in the configured release sequence.
-            evidence: JSON-safe transition evidence required for the requested next state.
+            evidence: JSON-safe transition evidence. Required keys are BUILDING=plan_ref;
+                VERIFYING=implementation_ref; FROZEN=source_hash+verification_ref;
+                PUBLISHED=deployment_id+url+publish_event_id+fanout;
+                COLLECTING=participant_job_ids; SYNTHESIZING=participant_outputs+
+                authoritative_records_ref; PLANNING_NEXT=decision_ledger_ref+
+                contribution_ledger_ref.
             **kwargs: Runtime-injected values, including the active Agent context.
 
         Returns:

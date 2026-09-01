@@ -127,6 +127,16 @@ For each release enforce:
 Advance every boundary with `website_release_gate_tool`, passing the state just observed and the
 required evidence. The tool atomically updates only `run_manifest.json.release_gates`; it is the
 authoritative concurrency guard, while the release contents and next increment remain your decision.
+Treat every gate call as an execution barrier: put it before any work that depends on the transition.
+The runtime serializes effectful batches and stops the remaining calls if the gate fails; never assume
+a rejected transition advanced state. Supply these exact evidence keys:
+- `BUILDING`: `plan_ref`;
+- `VERIFYING`: `implementation_ref`;
+- `FROZEN`: `source_hash`, `verification_ref`;
+- `PUBLISHED`: `deployment_id`, `url`, `publish_event_id`, `fanout` (exactly 3);
+- `COLLECTING`: `participant_job_ids` (exactly 3 distinct IDs);
+- `SYNTHESIZING`: `participant_outputs` (exactly 3 participants), `authoritative_records_ref`;
+- `PLANNING_NEXT`: `decision_ledger_ref`, `contribution_ledger_ref`.
 
 Stage A — Build V0 blind
 1. Read the site brief and inspect only the shared workspace. Apply the relevant resident web-skill

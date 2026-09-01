@@ -1979,11 +1979,11 @@ class Agent(BaseModel):
         step_number: int,
         ctx: "AgentContext",
     ) -> Dict[str, Any]:
-        """Run this turn's batch of tool_calls CONCURRENTLY, each routed to its manager.
+        """Run this turn's tool calls through their owning managers.
 
-        A single turn's batch is parallel-safe by the function-calling contract — the
-        model only puts independent calls in one batch; dependent work is emitted across
-        turns — so we gather the whole batch. Returns
+        Explicitly read-only batches run concurrently. Effectful or unknown batches run
+        serially and stop at the first failure, because later actions were planned without
+        observing that failed result. Returns
         ``{done, result, reasoning, action_errors, plan}``.
         """
         import json as _json
@@ -2008,12 +2008,27 @@ class Agent(BaseModel):
             logger.warning(f"| ⚠️ [{self.name}] No tool call — nudging to act or call done.")
             return {"done": False, "result": None, "reasoning": reasoning, "action_errors": action_errors, "plan": step_plan}
 
+        skipped_calls: List[str] = []
         if await self._batch_requires_serial(tool_calls, routing):
             outcomes = []
             for i, call in enumerate(tool_calls):
-                outcomes.append(await self._run_one(
+                outcome = await self._run_one(
                     call, i, routing, task_id, step_number, ctx,
-                ))
+                )
+                outcomes.append(outcome)
+                if outcome.get("error"):
+                    # A serialized batch is the fail-closed path for calls with
+                    # side effects or uncertain effects. Later calls were planned
+                    # without observing this failure, so executing them can cross a
+                    # rejected gate or compound partial state. Let the next model
+                    # turn repair the failure before any remaining action runs.
+                    skipped_calls = [item.name for item in tool_calls[i + 1 :]]
+                    if skipped_calls:
+                        logger.warning(
+                            f"| ⏹️ [{self.name}] Serialized batch stopped after "
+                            f"'{call.name}' failed; skipped: {skipped_calls}"
+                        )
+                    break
         else:
             outcomes = await asyncio.gather(*[
                 self._run_one(call, i, routing, task_id, step_number, ctx)
@@ -2030,6 +2045,11 @@ class Agent(BaseModel):
                 result = o.get("result")
                 if o.get("reasoning"):
                     reasoning = o["reasoning"]
+        if skipped_calls:
+            action_errors.append(
+                "Serialized batch stopped after the preceding failure; these actions were "
+                f"not executed: {', '.join(skipped_calls)}. Resolve the failure before retrying."
+            )
         return {"done": done, "result": result, "reasoning": reasoning, "action_errors": action_errors, "plan": step_plan}
 
     async def _run_one(

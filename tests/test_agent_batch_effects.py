@@ -20,6 +20,10 @@ def _agent_call(name: str, **contract):
     return SimpleNamespace(name=name, input=contract)
 
 
+def _dispatch_call(name: str):
+    return SimpleNamespace(id=name, name=name, input={})
+
+
 @pytest.mark.asyncio
 async def test_only_explicitly_read_only_tool_batches_run_in_parallel(monkeypatch):
     class ReadOnly:
@@ -128,3 +132,42 @@ async def test_children_without_resource_contracts_remain_serial():
     calls = [_agent_call("agent__a"), _agent_call("agent__b")]
     routing = {"agent__a": ("agent", "a"), "agent__b": ("agent", "b")}
     assert await Agent._batch_requires_serial(actor, calls, routing)
+
+
+@pytest.mark.asyncio
+async def test_serial_batch_stops_after_failure_and_reports_skipped_actions():
+    class Actor:
+        name = "meta_agent"
+
+        def __init__(self):
+            self.seen = []
+
+        async def _batch_requires_serial(self, calls, routing):
+            return True
+
+        async def _run_one(self, call, index, routing, task_id, step_number, ctx):
+            self.seen.append(call.name)
+            return {
+                "name": call.name,
+                "error": "gate rejected" if call.name == "gate" else None,
+                "done": False,
+                "result": None,
+                "reasoning": None,
+            }
+
+    actor = Actor()
+    result = await Agent._dispatch(
+        actor,
+        {
+            "tool_calls": [_dispatch_call("gate"), _dispatch_call("child")],
+            "routing": {"gate": ("tool", "gate"), "child": ("agent", "child")},
+            "reasoning": "advance then build",
+        },
+        task_id="task",
+        step_number=1,
+        ctx=SimpleNamespace(),
+    )
+
+    assert actor.seen == ["gate"]
+    assert any("Action 'gate' failed" in error for error in result["action_errors"])
+    assert any("not executed: child" in error for error in result["action_errors"])
