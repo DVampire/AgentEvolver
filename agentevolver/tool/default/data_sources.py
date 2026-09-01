@@ -66,6 +66,8 @@ class HttpRequestTool(Tool):
         message = response.text if isinstance(parsed, str) else _json.dumps(parsed, ensure_ascii=False)
         return Response(
             type=ResponseType.TOOL, success=ok,
-            message=message if ok else f"HTTP {response.status_code}: {message[:500]}",
+            # The universal tool-output funnel handles large bodies losslessly through
+            # spill storage. Do not silently turn an HTTP error body into a 500-char fact.
+            message=message if ok else f"HTTP {response.status_code}: {message}",
             data={"status": response.status_code, "body": parsed, "headers": dict(response.headers)},
         )

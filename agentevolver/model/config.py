@@ -271,7 +271,10 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # OpenAI's published spec. Codex reports 272k for its own bundle — that is a
             # billing threshold (input above it is priced 2x), not a capacity limit.
             "context_window": 1_050_000,
-            "reasoning": {"effort": "low", "context": "all_turns"},
+            # Keep reasoning-capable demo roles on the framework-wide default.  This is
+            # also the effort used by the SWE-bench MetaAgent unless a run explicitly
+            # overrides it; role-specific model routing must not silently lower it.
+            "reasoning": {"effort": "high", "context": "all_turns"},
             "max_output_tokens": max_tokens,
             "timeout": default_timeout,
         },

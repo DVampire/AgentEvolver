@@ -304,8 +304,7 @@ def test_an_emptied_history_still_reports_its_open_bracket():
 # --------------------------------------------------------------------------- #
 # The size backstop keeps the tail
 # --------------------------------------------------------------------------- #
-def test_memory_truncation_keeps_the_spill_locator():
-    """The locator is the last thing in a bounded tool result, so head-only loses it."""
+def test_memory_references_an_oversized_detail_without_splicing_it():
     memory, state = _memory(), _state()
     locator = "[The full output is saved at `/output/.runtime/spill/s/abc-bash_tool.txt`.]"
     detail = ("X" * 30_000) + "\n\n" + locator
@@ -315,9 +314,10 @@ def test_memory_truncation_keeps_the_spill_locator():
     )
 
     stored = state.recent[0].detail
-    assert "saved at" in stored, "the way back to the full output was cut off"
-    assert stored.startswith("XXX")  # head still leads
-    assert "more characters not kept in memory" in stored  # and says what it dropped
+    assert "saved at" not in stored
+    assert not stored.startswith("XXX")
+    assert "Exact detail omitted inline as one complete unit" in stored
+    assert "source_seq=" in stored
     assert len(stored) < _RECORD_DETAIL_MAX + 200
 
 

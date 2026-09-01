@@ -84,26 +84,35 @@ class ContextEnvelope:
     def _validate_tool_turns(self) -> None:
         pending: set[str] = set()
         seen: set[str] = set()
+        previous_assistant = False
         for message in self.recent:
             if isinstance(message, AssistantMessage):
                 if pending:
                     raise ContextProtocolError(
                         f"assistant turn started before tool results arrived: {sorted(pending)}"
                     )
+                if previous_assistant:
+                    raise ContextProtocolError(
+                        "adjacent assistant turns cannot preserve provider-owned reasoning state"
+                    )
                 ids = [str(call.id) for call in message.tool_calls]
                 if len(ids) != len(set(ids)) or any(call_id in seen for call_id in ids):
                     raise ContextProtocolError("tool-call ids must be unique in the exact tail")
                 pending.update(ids)
                 seen.update(ids)
+                previous_assistant = True
             elif isinstance(message, ToolMessage):
                 call_id = str(message.tool_call_id)
                 if call_id not in pending:
                     raise ContextProtocolError(f"orphan tool result: {call_id}")
                 pending.remove(call_id)
+                previous_assistant = False
             elif pending:
                 raise ContextProtocolError(
                     f"tool results must immediately follow their assistant turn: {sorted(pending)}"
                 )
+            else:
+                previous_assistant = False
         if pending:
             raise ContextProtocolError(f"tool turn is incomplete: {sorted(pending)}")
 
@@ -163,8 +172,6 @@ def strip_rendered_comments(rendered: List[Message]) -> List[Message]:
 class ContextBuilder:
     """Create a cache-friendly task/checkpoint/conversation/live-state layout."""
 
-    TOOL_RESULT_MAX = 8_000
-
     def build(self, rendered: List[Message], events: List[Any], ctx: Any) -> List[Message]:
         return self.build_envelope(rendered, events, ctx).flatten()
 
@@ -187,9 +194,10 @@ class ContextBuilder:
         task = self._task(events)
         checkpoints = self._checkpoints(events)
         checkpoint_texts = [str(event.message or "") for event in checkpoints]
-        recent = self._bound_tool_results(
-            self._recent_messages(derived, task, checkpoint_texts)
-        )
+        # Tool execution already owns the large-output policy: full output is spilled
+        # and the result carries its durable locator. Slicing it again here silently
+        # changed the canonical conversation and could even remove that locator.
+        recent = self._recent_messages(derived, task, checkpoint_texts)
 
         if not anchor:
             anchor = [HumanMessage(content=f"<task>\n{task}\n</task>")]
@@ -263,7 +271,7 @@ class ContextBuilder:
     def _recent_messages(
         messages: List[Message], task: str, checkpoints: List[str]
     ) -> List[Message]:
-        """Remove context-bearing user turns; they are represented once in the anchor."""
+        """Remove duplicate context turns and non-replayable empty assistant seams."""
         checkpoint_set = set(checkpoints)
         recent: List[Message] = []
         task_removed = False
@@ -278,6 +286,23 @@ class ContextBuilder:
                     task_removed = True
                     continue
                 if text in checkpoint_set:
+                    continue
+            if (
+                isinstance(message, AssistantMessage)
+                and recent
+                and isinstance(recent[-1], AssistantMessage)
+            ):
+                previous = recent[-1]
+                previous_empty = not previous.text and not previous.tool_calls
+                current_empty = not message.text and not message.tool_calls
+                # A no-action response may contain provider-owned reasoning state for
+                # audit. It is replayable while it is the latest assistant response,
+                # but not beside another assistant turn: Anthropic combines adjacent
+                # roles and then rejects the signed blocks as modified. Preserve the
+                # actionable/newer turn; keep standalone persisted reasoning intact.
+                if previous_empty:
+                    recent.pop()
+                elif current_empty:
                     continue
             recent.append(message)
         return recent
@@ -326,25 +351,6 @@ class ContextBuilder:
             return [HumanMessage(content=body)] if re.sub(r"<[^>]+>", "", body).strip() else []
 
         return turn("\n".join(anchor_parts)), turn(text)
-
-    def _bound_tool_results(self, messages: List[Message]) -> List[Message]:
-        """Keep prompt history bounded while retaining each result's head and locator tail."""
-        bounded: List[Message] = []
-        for message in messages:
-            if not isinstance(message, ToolMessage) or len(message.content) <= self.TOOL_RESULT_MAX:
-                bounded.append(message)
-                continue
-            head = int(self.TOOL_RESULT_MAX * 0.8)
-            tail = self.TOOL_RESULT_MAX - head
-            dropped = len(message.content) - self.TOOL_RESULT_MAX
-            content = (
-                f"{message.content[:head]}\n"
-                f"[... {dropped:,} characters omitted from active context ...]\n"
-                f"{message.content[-tail:]}"
-            )
-            bounded.append(message.model_copy(update={"content": content}))
-        return bounded
-
 
 context_builder = ContextBuilder()
 

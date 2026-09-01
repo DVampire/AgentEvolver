@@ -17,7 +17,9 @@ _COMMON = dict(
     review_steps=5,
     log_max_length=1000,
     enable_evolving=False,
-    use_memory=False,
+    # A subscriber handles six serialized release turns (V0 through V5), so retain
+    # durable checkpoints between events just like the MetaAgent context pipeline.
+    use_memory=True,
     subscription_topics=["website.releases"],
 )
 

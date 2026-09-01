@@ -243,6 +243,39 @@ def validate_local_artifacts(
             f"after V0, got {config.get('optimization_cycles')!r}"
         )
 
+    # All long-running roles use the same bounded-history protocol proven by the
+    # SWE-bench MetaAgent.  A role-specific model may choose native or portable
+    # compaction, but no role may silently disable compaction altogether.
+    expected_context_policy = {
+        "retain_recent_steps": 4,
+        "compact_after_steps": 24,
+        "compact_body_tokens": 100000,
+        "fold_at_pressure": 0.85,
+    }
+    context_roles = (
+        "website_builder_agent",
+        "code_agent",
+        "general_agent",
+        "reviewer_agent",
+        "generate_agent",
+        "optimize_agent",
+        "evaluate_agent",
+        "website_user1_agent",
+        "website_user2_agent",
+        "website_user3_agent",
+    )
+    for role in context_roles:
+        role_config = dict(getattr(config, role))
+        actual_policy = {
+            key: role_config.get(key) for key in expected_context_policy
+        }
+        if actual_policy != expected_context_policy or not role_config.get("use_memory"):
+            raise ValueError(
+                f"{role} must use the SWE-bench bounded-history policy: "
+                f"expected={expected_context_policy}, actual={actual_policy}, "
+                f"use_memory={role_config.get('use_memory')!r}"
+            )
+
     task_text = build_task_text(task_path, site_brief, personas)
     if "runtime-input-manifest" not in task_text:
         raise ValueError("runtime input manifest was not appended")

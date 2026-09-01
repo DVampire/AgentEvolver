@@ -585,6 +585,21 @@ async def build_response_from_stream(
         "provider_state": acc.get("provider_state", {}),
     }
 
+    if stop_reason == "max_tokens":
+        # A provider can stop in the middle of text, structured JSON, or native tool
+        # arguments. Preserve the exact partial bytes in data for diagnosis, but never
+        # advertise them as a successful answer or executable function call.
+        return Response(
+            type=ResponseType.LLM,
+            success=False,
+            message="Model response stopped at max_tokens before completing the turn.",
+            data={**common, "partial_tool_calls": [
+                {"id": call.id, "name": call.name, "input": call.input}
+                for call in acc["tool_calls"]
+            ]},
+            usage=usage,
+        )
+
     # 0) Structured output via a synthetic schema-tool. When ``structured_tool_name``
     #    is set (tools were present, so the schema rode along as a tool), structured
     #    output is a tool call of that name, not message content — validate THAT

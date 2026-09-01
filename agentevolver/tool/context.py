@@ -1163,6 +1163,14 @@ class ToolContextManager(BaseModel):
             session_key=str((getattr(ctx, "extra", {}) or {}).get("project_root") or ""),
             suggested_name=f"{name}.txt",
         )
-        excerpt = clip_output(message)
-        response.message = excerpt if ref is None else f"{excerpt}\n\n[{ref.retrieval_hint}]"
+        if ref is None:
+            # Storage failure is the sole degraded case: keep a bounded observation
+            # rather than allowing one unbounded command to make every later request
+            # unsendable. Normal operation below never slices the original string.
+            response.message = clip_output(message)
+        else:
+            response.message = (
+                f"[Tool result omitted inline as one complete unit: "
+                f"original_chars={len(message):,}. {ref.retrieval_hint}]"
+            )
         return response

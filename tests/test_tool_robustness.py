@@ -631,7 +631,7 @@ def test_bash_flood_is_clipped_by_the_pipeline(tmp_path):
 
     assert resp.success is True
     assert len(resp.message) < OUTPUT_LIMIT * 2
-    assert "characters elided" in resp.message
+    assert "omitted inline as one complete unit" in resp.message
 
 
 def test_bash_clips_each_stream_separately(tmp_path):
@@ -670,7 +670,7 @@ def test_memory_caps_one_entry_even_if_a_tool_does_not():
 
     stored = state.recent[0].detail
     assert len(stored) < _RECORD_DETAIL_MAX + 200
-    assert "more characters not kept in memory" in stored
+    assert "Exact detail omitted inline as one complete unit" in stored
     assert _RECORD_DETAIL_MAX < 32_000, "must be tighter than a single tool's own limit"
 
 

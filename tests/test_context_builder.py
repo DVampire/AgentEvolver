@@ -175,6 +175,13 @@ def test_envelope_accepts_one_complete_parallel_tool_batch():
     assert len(envelope.validate().flatten()) == 3
 
 
+def test_envelope_rejects_adjacent_assistant_protocol_turns():
+    with pytest.raises(ContextProtocolError, match="adjacent assistant turns"):
+        ContextEnvelope(
+            recent=(AssistantMessage(content="one"), AssistantMessage(content="two"))
+        ).validate()
+
+
 def test_private_reasoning_is_not_replayed_as_assistant_text():
     event = agent_call_event("s", "t", "a", 1, reasoning="hidden chain", assistant_text="")
     events = _number(
@@ -188,6 +195,46 @@ def test_private_reasoning_is_not_replayed_as_assistant_text():
     messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
 
     assert all("hidden chain" not in message.text for message in messages)
+
+
+def test_empty_signed_turn_does_not_corrupt_the_next_tool_turn():
+    empty_state = {
+        "anthropic": {
+            "thinking_blocks": [
+                {"type": "thinking", "thinking": "", "signature": "empty-signed"}
+            ]
+        }
+    }
+    next_state = {
+        "anthropic": {
+            "thinking_blocks": [
+                {"type": "thinking", "thinking": "", "signature": "next-signed"}
+            ]
+        }
+    }
+    events = _number(
+        [
+            agent_start_event("s", "t", "a", "task"),
+            agent_call_event(
+                "s", "t", "a", 1, assistant_text="", provider_state=empty_state
+            ),
+            tool_start_event("s", "t", "a", 2, 0, "bash_tool", {}, "call-2"),
+            tool_call_event(
+                "s", "t", "a", 2, 0, "bash_tool", "ok", True, call_id="call-2"
+            ),
+            agent_call_event(
+                "s", "t", "a", 2, assistant_text="", provider_state=next_state
+            ),
+        ]
+    )
+    rendered = [SystemMessage(content="rules"), HumanMessage(content="<task>task</task>")]
+
+    messages = ContextBuilder().build(rendered, events, type("C", (), {"extra": {}})())
+    assistants = [m for m in messages if isinstance(m, AssistantMessage)]
+
+    assert len(assistants) == 1
+    assert assistants[0].provider_state == next_state
+    assert assistants[0].tool_calls[0].id == "call-2"
 
 
 def test_native_claude_checkpoint_becomes_the_cache_anchor():

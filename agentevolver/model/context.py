@@ -1104,6 +1104,17 @@ class ModelContextManager:
             snapshot_kwargs["reasoning_effort"] = reasoning_effort
             if isinstance(client, ResponseLLMHub):
                 wire_kwargs["reasoning"] = {"effort": reasoning_effort}
+            elif config and config.model_type == "anthropic/messages":
+                # Native Anthropic has no reasoning_effort field. Its equivalent is
+                # output_config.effort while adaptive thinking remains configured on
+                # the client. This keeps a delegated per-call effort override provider
+                # neutral instead of silently ignoring it on Claude.
+                output_config = {"effort": reasoning_effort}
+                wire_kwargs["output_config"] = output_config
+                snapshot_kwargs["output_config"] = output_config
+                effective_reasoning = dict(config.reasoning or {})
+                effective_reasoning["output_config"] = output_config
+                snapshot_kwargs["reasoning"] = effective_reasoning
             elif config and config.provider in ("openai", "openrouter"):
                 wire_kwargs["reasoning_effort"] = reasoning_effort
         if isinstance(client, ResponseLLMHub):
@@ -1584,7 +1595,7 @@ class ModelContextManager:
             per_call_output = max(1, int(per_call_output))
             if model_config and model_config.model_type == "responses":
                 kwargs.setdefault("max_output_tokens", per_call_output)
-            elif model_config and model_config.provider == "anthropic":
+            elif model_config and model_config.model_type == "anthropic/messages":
                 kwargs.setdefault("max_tokens", per_call_output)
             elif model_config and model_config.provider == "google":
                 kwargs.setdefault("max_output_tokens", per_call_output)

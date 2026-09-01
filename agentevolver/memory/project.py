@@ -11,7 +11,6 @@ from agentevolver.paths import P, path_manager
 from agentevolver.utils.file_utils import atomic_json_update
 
 _MAX_ENTRIES_PER_SECTION = 100
-_MAX_ENTRY_CHARS = 1_000
 _SECRET = re.compile(
     r"(?i)(api[_-]?key|access[_-]?token|password|secret|authorization)\s*[:=]"
 )
@@ -52,7 +51,7 @@ class ProjectMemoryStore:
         if self.path is None:
             return False
         section = re.sub(r"[^a-z0-9_]+", "_", str(section).lower()).strip("_")
-        value = " ".join(str(text or "").strip().split())[:_MAX_ENTRY_CHARS]
+        value = " ".join(str(text or "").strip().split())
         if not section or not value or _SECRET.search(value):
             return False
         digest = hashlib.sha256(f"{section}\0{value}".encode("utf-8")).hexdigest()
@@ -92,6 +91,7 @@ class ProjectMemoryStore:
         except (OSError, ValueError):
             return ""
         lines = ["Evidence-derived project memory; every item cites its source Trace."]
+        omitted = 0
         for section, entries in (document.get("sections") or {}).items():
             if not entries:
                 continue
@@ -99,10 +99,16 @@ class ProjectMemoryStore:
             for item in entries:
                 if not isinstance(item, dict) or not item.get("text"):
                     continue
-                lines.append(f"- {item['text']}  [source: {item.get('source', 'unknown')}]")
-                if sum(len(line) + 1 for line in lines) >= max_chars:
-                    lines.append("\n[older auto-memory entries omitted]")
-                    return "\n".join(lines)[:max_chars]
+                line = f"- {item['text']}  [source: {item.get('source', 'unknown')}]"
+                if sum(len(value) + 1 for value in [*lines, line]) > max_chars:
+                    omitted += 1
+                    continue
+                lines.append(line)
+        if omitted:
+            lines.append(
+                f"\n[{omitted} complete auto-memory entries omitted from this fixed "
+                "context; their exact values remain in the project memory store]"
+            )
         return "\n".join(lines) if len(lines) > 1 else ""
 
     def learn_trace(self, events: Iterable[Any], *, session_id: str) -> int:
@@ -133,7 +139,7 @@ class ProjectMemoryStore:
                     ))
             if getattr(event, "success", None) is False:
                 raw = str(getattr(event, "error", None) or getattr(event, "message", None) or "")
-                signature = " ".join(raw.split())[:240]
+                signature = " ".join(raw.split())
                 if signature:
                     count, first = failures.get(signature, (0, event))
                     failures[signature] = (count + 1, first)

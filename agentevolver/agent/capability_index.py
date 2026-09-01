@@ -143,9 +143,7 @@ def search(
         f"Loaded {len(matches)} matching capability schema(s) for the next step:"
     ]
     for _, _, name, description, route in matches:
-        lines.append(
-            f"- {name} [{route[0]}]: {description[:240]}"
-        )
+        lines.append(f"- {name} [{route[0]}]: {description}")
     return "\n".join(lines)
 
 

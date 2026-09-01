@@ -135,8 +135,8 @@ def test_small_results_are_untouched(spill_root, tmp_path):
     assert "saved at `" not in resp.message
 
 
-def test_an_oversized_result_is_excerpted_and_recoverable(spill_root, tmp_path):
-    """The excerpt keeps both ends, and carries the way back to the middle."""
+def test_an_oversized_result_is_referenced_without_splicing_its_text(spill_root, tmp_path):
+    """The exact result is stored once; the model receives its durable locator."""
     import re
     from pathlib import Path
 
@@ -145,8 +145,8 @@ def test_an_oversized_result_is_excerpted_and_recoverable(spill_root, tmp_path):
 
     assert resp.success is True
     assert len(resp.message) < OUTPUT_LIMIT * 2
-    assert "HEAD-MARKER" in resp.message and "TAIL-MARKER" in resp.message
-    assert "characters elided" in resp.message
+    assert "HEAD-MARKER" not in resp.message and "TAIL-MARKER" not in resp.message
+    assert "omitted inline as one complete unit" in resp.message
 
     # The locator is in the message, and what it points at is the whole thing.
     match = re.search(r"saved at `([^`]+)`", resp.message)

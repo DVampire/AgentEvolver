@@ -108,10 +108,12 @@ class MetaAgent(Agent):
                 "call done_tool with the best verified partial result.",
             ]
             run.step += 1
-            await self._advance(run)
+            run.retry_now = True
             return None
 
-        run.done = True
+        # A guard stop is a terminal *failure*, not completion. TaskManager uses the
+        # Response success bit to decide whether the archived task is done or failed.
+        run.done = False
         run.result = (
             "Stopped by the no-progress guard after the same action batch was proposed "
             "three times. The requested task is incomplete; inspect the trace for the "

@@ -185,17 +185,15 @@ def _replace_tool_content(message: Any, content: str) -> Any:
 
 
 def _excerpt(content: str, keep_chars: int) -> str:
+    """Replace a pressured result with a whole-result reference, never a text slice."""
     keep_chars = max(MIN_TOOL_RESULT_CHARS, int(keep_chars))
     if len(content) <= keep_chars:
         return content
-    marker = (
-        f"\n\n[AgentEvolver request-pressure excerpt: original_chars={len(content)}; "
-        "the complete tool result remains in Trace]\n\n"
+    return (
+        f"[AgentEvolver request-pressure omission: original_chars={len(content)}; "
+        "the complete, unmodified tool result remains in Trace. Retrieve that result "
+        "or run a narrower query before relying on its contents.]"
     )
-    payload = max(2, keep_chars - len(marker))
-    head = payload // 2
-    tail = payload - head
-    return content[:head] + marker + content[-tail:]
 
 
 #: What each provider says when the request exceeded *its* window. Matched as lowercase

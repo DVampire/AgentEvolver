@@ -13,6 +13,7 @@ from agentevolver.hook.types import HookEvent
 from agentevolver.agent.types import (
     Agent,
     AgentContext,
+    _TRUNCATED_TURNS_BEFORE_GIVING_UP,
 )
 from agentevolver.message import ContentPartImage, ContentPartText, ImageURL, Message
 from agentevolver.response.types import Response, ResponseType
@@ -233,6 +234,7 @@ class BrowserAgent(Agent):
 
         step_number = 0
         action_errors: list = []
+        truncated_turns = 0
         response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
 
         while step_number < self.max_step:
@@ -257,6 +259,21 @@ class BrowserAgent(Agent):
             response = await self._think_and_act(messages, task_id, step_number, ctx=ctx)
             step_number += 1
             action_errors = response.get("action_errors") or []
+            if response.get("truncated"):
+                truncated_turns += 1
+                if truncated_turns >= _TRUNCATED_TURNS_BEFORE_GIVING_UP:
+                    response = {
+                        "done": False,
+                        "result": (
+                            f"The model hit its output-token limit {truncated_turns} "
+                            "times before completing an action."
+                        ),
+                        "reasoning": "Repeated incomplete max_tokens responses.",
+                        "action_errors": action_errors,
+                    }
+                    break
+            else:
+                truncated_turns = 0
             if response["done"]:
                 break
 

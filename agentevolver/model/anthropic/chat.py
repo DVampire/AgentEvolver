@@ -174,7 +174,8 @@ class ChatAnthropic(BaseChatModel):
         raw = await self.get_client().beta.messages.create(**params)
         payload = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
         blocks = [
-            dict(block) for block in payload.get("content") or []
+            {key: value for key, value in dict(block).items() if value is not None}
+            for block in payload.get("content") or []
             if block.get("type") == "compaction"
         ]
         if payload.get("stop_reason") != "compaction" or not blocks:

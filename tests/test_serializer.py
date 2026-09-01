@@ -231,18 +231,39 @@ def test_anthropic_replays_signed_thinking_before_tool_use():
     out = serializer.serialize(
         AssistantMessage(
             content="",
+            cache=True,
             provider_state={"anthropic": {"thinking_blocks": [thinking]}},
             tool_calls=[ToolCall(id="c1", function=Function(name="t", arguments="{}"))],
         )
     )
 
     assert out["content"][0] == thinking
+    assert "cache_control" not in out["content"][0]
     assert out["content"][1]["type"] == "tool_use"
+    assert out["content"][1]["cache_control"]["type"] == "ephemeral"
+
+
+def test_anthropic_does_not_put_cache_metadata_on_a_thinking_only_turn():
+    serializer = _serializer("anthropic", "AnthropicChatSerializer")
+    thinking = {"type": "thinking", "thinking": "private", "signature": "signed"}
+    out = serializer.serialize(
+        AssistantMessage(
+            content="", cache=True,
+            provider_state={"anthropic": {"thinking_blocks": [thinking]}},
+        )
+    )
+
+    assert out["content"] == [thinking]
+    assert "cache_control" not in out["content"][0]
 
 
 def test_anthropic_replays_a_native_compaction_block_as_assistant_state():
     serializer = _serializer("anthropic", "AnthropicChatSerializer")
-    block = {"type": "compaction", "content": "canonical summary"}
+    block = {
+        "type": "compaction",
+        "content": "canonical summary",
+        "encrypted_content": None,
+    }
     out = serializer.serialize(
         CompactionMessage(
             content="portable fallback",
@@ -254,6 +275,7 @@ def test_anthropic_replays_a_native_compaction_block_as_assistant_state():
     assert out["role"] == "assistant"
     assert out["content"][0]["type"] == "compaction"
     assert out["content"][0]["content"] == "canonical summary"
+    assert "encrypted_content" not in out["content"][0]
     assert out["content"][0]["cache_control"]["type"] == "ephemeral"
     assert "cache_control" not in block, "serializer mutated provider-owned state"
 

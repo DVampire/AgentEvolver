@@ -103,6 +103,11 @@ _THINK_FAILURES_BEFORE_GIVING_UP = 3
 #: that out one empty step at a time.
 _EMPTY_TURNS_BEFORE_GIVING_UP = 5
 
+# A max-token stop is a successful transport response but not a complete protocol turn.
+# In particular, a streamed tool-use JSON object may end after only ``{"path": ...}``.
+# Never execute it; allow a small number of corrected retries, then fail honestly.
+_TRUNCATED_TURNS_BEFORE_GIVING_UP = 3
+
 #: Hard runaway guard, not the ordinary cadence. Early compaction keeps a long run near a
 #: bounded working set, so a 400-step benchmark legitimately folds more than three times;
 #: the retained exact tail and one rolling checkpoint keep every fold structurally safe.
@@ -211,7 +216,10 @@ def _child_result_envelope(
     payload = {
         "schema_version": 1,
         "status": status,
-        "summary": str(getattr(response, "message", "") or "")[:4000],
+        # This payload is the parent agent's canonical observation of its child. A
+        # character slice can remove the blocker or artifact locator at the end and
+        # makes the parent reason about an answer nobody actually returned.
+        "summary": str(getattr(response, "message", "") or ""),
         "artifacts": items(data.get("artifacts") or getattr(response, "files", None)),
         "patch": patch or data.get("patch") or "",
         "tests": items(data.get("tests")),
@@ -538,6 +546,7 @@ class _AgentRun:
         #: overflow rather than as the model error logged on the first one.
         self.think_failures = 0
         self.empty_turns = 0
+        self.truncated_turns = 0
         #: Action mix, so an agent can see about itself what it otherwise cannot: that it
         #: has been measuring rather than changing anything. Measuring always succeeds and
         #: never breaks the build, so an unsure agent keeps doing it and its history reads
@@ -1108,11 +1117,28 @@ class Agent(BaseModel):
 
         lines = [f"{getattr(m, 'role', '?')}: {getattr(m, 'text', '') or ''}".strip()
                  for m in derived]
-        body = "\n\n".join(line for line in lines if line.strip())
-        if len(body) > _INHERITED_CONTEXT_MAX:
-            kept = body[-_INHERITED_CONTEXT_MAX:]
-            body = (f"[earlier turns omitted: {len(body) - _INHERITED_CONTEXT_MAX:,} "
-                    f"characters]\n\n{kept}")
+        lines = [line for line in lines if line.strip()]
+        total_chars = sum(len(line) + 2 for line in lines)
+        kept: List[str] = []
+        kept_chars = 0
+        # Bound a fork by complete messages, never by cutting through one string or a
+        # tool-call/result pair. The append-only parent Trace remains the exact source.
+        for line in reversed(lines):
+            cost = len(line) + (2 if kept else 0)
+            if kept and kept_chars + cost > _INHERITED_CONTEXT_MAX:
+                break
+            kept.append(line)
+            kept_chars += cost
+            if kept_chars >= _INHERITED_CONTEXT_MAX:
+                break
+        kept.reverse()
+        omitted = max(0, len(lines) - len(kept))
+        body = "\n\n".join(kept)
+        if omitted:
+            body = (
+                f"[earlier turns omitted: {omitted} complete messages; exact history remains "
+                f"in parent Trace; original_chars={total_chars:,}]\n\n{body}"
+            )
         inherited = (
             "This is what the agent that dispatched you had already done, for context. "
             "It is not your own history and you did not take these actions.\n\n" + body
@@ -1687,6 +1713,25 @@ class Agent(BaseModel):
         # THINK: one LLM turn → a batch of tool_calls (+ routing). Pure decision.
         decision = await self._think(messages, task_id, step_number, ctx)
 
+        if decision.get("truncated"):
+            await self._post_step(
+                task_id, step_number, ctx, messages,
+                reasoning="Model response stopped at max_tokens before a complete action.",
+                assistant_text="", provider_state={}, plan=[],
+                step_tokens=decision["step_tokens"],
+                step_usage=decision.get("step_usage"), done=False,
+            )
+            return {
+                "done": False, "result": None,
+                "reasoning": "Incomplete max_tokens response.",
+                "action_errors": [
+                    "Your previous response hit max_tokens and its partial action was "
+                    "discarded. Retry with a substantially smaller action payload."
+                ],
+                "constraint_status": [], "stopped_by_constraint": False,
+                "truncated": True,
+            }
+
         # DISPATCH: run this turn's batch concurrently, each call routed to its manager.
         outcome = await self._dispatch(decision, task_id, step_number, ctx)
 
@@ -1798,6 +1843,7 @@ class Agent(BaseModel):
         step_usage: Optional[Dict[str, Any]] = None
         think_error: Optional[str] = None
         overflowed = False
+        truncated = False
         try:
             acc = await accumulate_stream(
                 model_manager.stream(
@@ -1860,6 +1906,13 @@ class Agent(BaseModel):
             provider_state = acc.get("provider_state") or {}
             reasoning = acc.get("thinking") or assistant_text
             tool_calls = acc.get("tool_calls") or []
+            truncated = acc.get("stop_reason") == "max_tokens"
+            if truncated:
+                # Tool arguments assembled from deltas are deliberately lossless, but a
+                # max-token stop means the provider never supplied their suffix. Parsing
+                # or dispatching such a turn turns transport truncation into a bogus tool
+                # failure and encourages the model to repeat the same expensive call.
+                tool_calls = []
         except Exception as e:
             from agentevolver.model.pressure import ContextOverflowError
             from agentevolver.trace.checkpoint import TraceIntegrityError
@@ -1886,7 +1939,7 @@ class Agent(BaseModel):
                 "assistant_text": assistant_text,
                 "provider_state": provider_state,
                 "step_tokens": step_tokens, "step_usage": step_usage, "error": think_error,
-                "overflowed": overflowed}
+                "overflowed": overflowed, "truncated": truncated}
 
     def _cap_actions(self, tool_calls: List[Any]) -> List[Any]:
         """Hold a turn's batch to ``max_actions``, keeping the earliest calls.
@@ -2811,6 +2864,38 @@ class Agent(BaseModel):
             # smaller. Deliberately not counted toward `think_failures` — this is the one
             # model error the run can do something about.
             return True
+
+        if decision.get("truncated"):
+            run.truncated_turns += 1
+            run.round_step = run.step
+            # This was not a complete assistant/tool protocol turn. Record its usage and
+            # a compact diagnostic, but never replay partial tool state or signed thinking.
+            await self._post_step(
+                run.task_id, run.step, run.ctx, messages,
+                reasoning="Model response stopped at max_tokens before a complete action.",
+                assistant_text="", provider_state={}, plan=[],
+                step_tokens=decision["step_tokens"],
+                step_usage=decision.get("step_usage"), done=False,
+            )
+            if run.truncated_turns >= _TRUNCATED_TURNS_BEFORE_GIVING_UP:
+                run.done = False
+                run.result = (
+                    f"The model hit its output-token limit {run.truncated_turns} times "
+                    "before completing a tool call; no partial call was executed."
+                )
+                run.reasoning = "Repeated incomplete max_tokens responses."
+                await self._conclude(run)
+                return False
+            run.action_errors = [
+                "Your previous response hit max_tokens before the action was complete; "
+                "its partial tool call was discarded. Do not retry the same whole-file "
+                "payload. Use a much smaller action: split a large new file into bounded "
+                "chunks, or make a targeted edit, then continue in later turns."
+            ]
+            run.step += 1
+            return True
+
+        run.truncated_turns = 0
 
         if decision.get("error"):
             run.think_failures += 1

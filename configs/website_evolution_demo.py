@@ -156,9 +156,12 @@ file_system_memory.update(
     # Keep the demonstration attributable: feedback may evolve a missing website-building
     # capability, not opportunistically rewrite the runtime's memory implementation.
     enable_evolving=False,
-    record_detail_max=3000,
-    recent_fetch=8,
-    working_fetch=10,
+    # Keep the same cache-aware memory window used by the SWE-bench MetaAgent.
+    # The website roles differ in their task and model route, not in the context
+    # protocol that bounds exact history and carries durable checkpoints.
+    record_detail_max=2500,
+    recent_fetch=6,
+    working_fetch=8,
 )
 
 
@@ -168,19 +171,19 @@ BUILDER_MAX_STEP = 520
 WALL_CLOCK = 28800
 MAX_TOKEN = 10000000
 
-# Every role shares memory identity and a provider-safe context policy. Models are assigned below
-# by role: Builder/Code use Opus 5, while the co-design panel spans three model families.
+# Every role uses the same cache-aware context policy as the SWE-bench MetaAgent.  Native
+# compaction is selected by the configured memory model when supported and otherwise falls
+# back to a portable text checkpoint, so a heterogeneous user panel is not a reason to turn
+# compaction off globally. Models are assigned below by role: Builder/Code use Opus 5, while
+# the co-design panel spans three model families.
 _AGENT_CORE = dict(
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
-    # llm_hub/deepseek-v4-flash currently returns an empty assistant message for the
-    # memory-compaction operation. Keep every role on the same non-compacting policy so
-    # a worker does not fail after the Builder successfully delegated to it.
-    retain_recent_steps=8,
-    compact_after_steps=0,
-    compact_body_tokens=0,
-    fold_at_pressure=0.0,
+    retain_recent_steps=4,
+    compact_after_steps=24,
+    compact_body_tokens=100000,
+    fold_at_pressure=0.85,
 )
 
 _WORKER = {
@@ -209,7 +212,9 @@ _USER = {
     **_AGENT_CORE,
     "prompt_name": "website_user_agent",
     "env_name": "browser_environment",
-    "use_memory": False,
+    # Subscribers live across V0→V5. They need the same durable checkpoint + exact-tail
+    # protocol as every other long-running Agent, especially after browser state resets.
+    "use_memory": True,
     "max_step": 50,
     "timeout": 2700,
     "max_token": 1000000,

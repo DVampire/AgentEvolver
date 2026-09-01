@@ -434,6 +434,8 @@ def test_an_oversized_event_is_parked_rather_than_pasted(tree):
     response = asyncio.run(SessionEventReadTool()(session_id="huge", seq_no=1))
     assert response.success
     assert len(response.message) < INLINE_EVENT_CHARS * 2
+    assert "omitted inline as one complete unit" in response.message
+    assert "XXX" not in response.message
     locator = next(part for part in response.message.split("`") if part.endswith(".json"))
     assert Path(locator).read_text(encoding="utf-8").count("X") == INLINE_EVENT_CHARS * 3
 

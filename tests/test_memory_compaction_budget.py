@@ -14,5 +14,6 @@ def test_summary_item_packing_obeys_the_total_budget_for_many_records():
 
     packed = memory._pack_summary_items(items)
 
-    assert len(packed) == len(items)
+    assert len(packed) < len(items)
+    assert "complete unmodified sources remain in Trace" in packed[0]
     assert len("\n".join(packed)) <= 128 * 4

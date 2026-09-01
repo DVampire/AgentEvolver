@@ -71,6 +71,11 @@ budget forces a partial result, or when the task is impossible to continue.
   For large files, read only the relevant ranges.
 - Prefer `edit_file_tool` (targeted replacement) over `write_file_tool` (full overwrite); use `write_file_tool` only for new files or full rewrites.
 - Write **one file per action** — the content of a single `write_file_tool`/`edit_file_tool` call is one file. Do not concatenate multiple files, and do not smuggle many files into one `bash_tool` heredoc/`cat >` script: that balloons the response and it fails to parse. Build large projects incrementally, one file at a time.
+- Keep each write/edit payload small enough to complete comfortably in one response
+  (normally under 12,000 characters). For a larger new file, write an initial chunk ending
+  in a unique marker, then use `edit_file_tool` to replace that marker with the next chunk
+  plus the marker; remove the marker in the final chunk. If a call reaches the output-token
+  limit, never retry the same full payload — reduce the chunk substantially.
 - Make the smallest correct change — do not refactor unrelated code.
 - `edit_file_tool` requires `old_string` to appear exactly once; add surrounding context lines to make it unique if needed.
 - After editing, run the narrowest relevant syntax/build check and then the affected tests.

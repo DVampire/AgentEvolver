@@ -152,6 +152,46 @@ async def test_llm_hub_builds_opus_5_with_the_native_anthropic_client():
     assert str(client.base_url) == "https://relay.invalid/v1"
 
 
+@pytest.mark.asyncio
+async def test_llm_hub_native_anthropic_route_maps_per_call_output_to_max_tokens():
+    """The relay identity must not leak an OpenAI-only token parameter to Messages."""
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig
+    from agentevolver.response.types import Response, ResponseType
+
+    calls = []
+
+    class Client:
+        async def __call__(self, **kwargs):
+            calls.append(kwargs)
+            return Response(type=ResponseType.LLM, success=True, message="ok")
+
+        def set_api_key(self, _key):
+            pass
+
+    manager = ModelContextManager()
+    manager.models["opus"] = ModelConfig(
+        model_name="opus",
+        model_id="claude-opus-5",
+        model_type="anthropic/messages",
+        provider="llm_hub",
+    )
+    manager.model_clients["opus"] = Client()
+
+    result = await manager(
+        name="opus",
+        input={
+            "messages": [HumanMessage(content="compact this")],
+            "max_output_tokens": 2048,
+            "max_retries": 1,
+        },
+    )
+
+    assert result.success is True
+    assert calls[0]["max_tokens"] == 2048
+    assert "max_completion_tokens" not in calls[0]
+
+
 def test_native_anthropic_stream_keeps_the_signed_thinking_block():
     from agentevolver.model.anthropic.chat import ChatAnthropic
 
@@ -196,7 +236,11 @@ async def test_native_anthropic_compaction_returns_a_round_trippable_block(monke
         return SimpleNamespace(
             model_dump=lambda: {
                 "stop_reason": "compaction",
-                "content": [{"type": "compaction", "content": "summary"}],
+                "content": [{
+                    "type": "compaction",
+                    "content": "summary",
+                    "encrypted_content": None,
+                }],
                 "usage": {
                     "iterations": [
                         {"type": "compaction", "input_tokens": 50_000, "output_tokens": 800},
@@ -221,6 +265,7 @@ async def test_native_anthropic_compaction_returns_a_round_trippable_block(monke
     assert edit["pause_after_compaction"] is True
     assert result["summary"] == "summary"
     assert result["provider_state"]["anthropic"]["compaction_blocks"][0]["type"] == "compaction"
+    assert "encrypted_content" not in result["provider_state"]["anthropic"]["compaction_blocks"][0]
     assert result["usage"]["input_tokens"] == 50_000
     assert result["usage"]["output_tokens"] == 800
 

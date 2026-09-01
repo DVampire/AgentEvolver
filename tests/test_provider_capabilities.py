@@ -217,6 +217,26 @@ def test_per_invocation_reasoning_effort_reaches_wire_and_snapshot():
     assert wire["reasoning_effort"] == "low"
     assert snapshot["reasoning_effort"] == "low"
 
+    anthropic_config = ModelConfig(
+        model_name="claude",
+        model_id="claude",
+        model_type="anthropic/messages",
+        provider="llm_hub",
+    )
+    anthropic_client = SimpleNamespace(
+        provider="llm_hub", base_url=None, _disabled_features=set(),
+    )
+    manager.models["claude"] = anthropic_config
+    manager.model_clients["claude"] = anthropic_client
+    wire, snapshot = manager._runtime_call_kwargs(
+        "claude", anthropic_client,
+        {"reasoning_effort": "medium"}, {},
+    )
+    assert wire["output_config"] == {"effort": "medium"}
+    assert snapshot["reasoning_effort"] == "medium"
+    assert snapshot["output_config"] == {"effort": "medium"}
+    assert snapshot["reasoning"]["output_config"] == {"effort": "medium"}
+
 
 def test_expired_rejection_clears_adapter_suppression():
     now = [100.0]

@@ -141,7 +141,10 @@ Stage A — Build V0 blind
    guidance already supplied by capability context; do not browse framework or skill source before
    implementation. Choose the simplest architecture that meets the shared co-design contract. Write
    that decision and the complete bounded implementation requirements to `website_v0_spec.html`,
-   then attach the spec and site brief to a concise Code Agent dispatch.
+   then attach the spec and site brief to a concise Code Agent dispatch. Set that
+   implementation-heavy dispatch's `reasoning_effort` to `medium`: it needs enough
+   reasoning to follow the spec while leaving ample completion budget for bounded code
+   chunks.
 2. Build the initial product, deploy it with a stable site ID, and verify the live URL, main journey,
    preference preview/save/restore/reset flow, contribution submission/status/receipt flow,
    responsive behavior, keyboard basics, and browser console. V0 must offer real design agency even

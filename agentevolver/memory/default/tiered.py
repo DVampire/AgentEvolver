@@ -224,11 +224,8 @@ class TieredMemory(Memory):
     recent_max: int = Field(default=30, description="Retention floor for direct/legacy compaction.")
     recent_fetch: int = Field(default=10, description="Recent records injected by get().")
     working_max: int = Field(default=10, description="Max working-memory summaries kept.")
-    #: Per-entry detail cap. Every recent record is re-rendered into every subsequent prompt
-    #: and re-read UNCACHED each step (the live state sits past the cache breakpoint), so a
-    #: window of big raw outputs (a file dump, a long listing) is the main reducible input
-    #: cost. Lower it to trim that at the cost of detail; a truncated entry keeps a head and a
-    #: tail (the tail carries the spill locator to the full output).
+    #: Per-entry inline detail cap. Oversized exact details remain in Trace and memory stores
+    #: a source reference as a whole unit; it never splices a head and tail into a new fact.
     record_detail_max: int = Field(default=_RECORD_DETAIL_MAX,
                                    description="Max characters kept for one recent entry's detail.")
     working_fetch: int = Field(default=5, description="Working summaries injected by get().")
@@ -498,19 +495,20 @@ class TieredMemory(Memory):
         # agent reads. This is the backstop, so that no future tool — or a tool whose limit
         # is raised — can make the prompt unsendable.
         #
-        # Head *and* tail, because the last thing in a bounded tool result is the
-        # reference to where the unbounded original was saved. Keeping only the head
-        # would drop it and leave a note about missing text with no way to reach it.
-        if record.detail and len(record.detail) > self.record_detail_max:
-            head = int(self.record_detail_max * _RECORD_HEAD_SHARE)
-            tail = self.record_detail_max - head
-            dropped = len(record.detail) - self.record_detail_max
+        # Never manufacture a head+tail hybrid and then let later turns mistake it for
+        # the result. Trace is the exact source of truth; memory carries its locator.
+        if (
+            self.record_detail_max > 0
+            and record.detail
+            and len(record.detail) > self.record_detail_max
+        ):
             record = record.model_copy(update={
                 "detail": (
-                    f"{record.detail[:head]}\n"
-                    f"[... {dropped:,} more characters not kept in memory ...]\n"
-                    f"{record.detail[-tail:]}"
-                )
+                    f"[Exact detail omitted inline as one complete unit: "
+                    f"original_chars={len(record.detail):,}; "
+                    f"source_seq={record.seq if record.seq is not None else 'unknown'}. "
+                    "Retrieve the corresponding Trace event before relying on it.]"
+                ),
             })
         state.recent.append(record)
 
@@ -753,7 +751,7 @@ class TieredMemory(Memory):
             )
 
     def _pack_summary_items(self, items: List[str]) -> List[str]:
-        """Bound one summariser input to the configured aggregate character budget."""
+        """Bound a summary request without cutting through any source string."""
         if not items:
             return []
         # Four characters/token is intentionally conservative for code-heavy traces.
@@ -761,26 +759,22 @@ class TieredMemory(Memory):
         joined = "\n".join(items)
         if len(joined) <= budget:
             return items
-        # Account for the separators before distributing the remaining bytes. A fixed
-        # 256-character minimum made the list exceed the total budget when a long run
-        # contained hundreds of small source records.
-        content_budget = max(1, budget - max(0, len(items) - 1))
-        base, remainder = divmod(content_budget, len(items))
+        notice = (
+            f"[{len(items)} source items exceed this compaction input budget; complete "
+            "unmodified sources remain in Trace. Recent whole items follow.]"
+        )
         packed: List[str] = []
-        for index, item in enumerate(items):
-            per_item = base + int(index < remainder)
-            if len(item) <= per_item:
-                packed.append(item)
+        used = len(notice)
+        # Recent evidence is most likely to describe the current state. Retain only
+        # complete items that fit; an individual oversized item is omitted as a whole.
+        for item in reversed(items):
+            cost = len(item) + 1
+            if used + cost > budget:
                 continue
-            source = re.search(r"\[source_seq=[^\]]+\]", item)
-            marker = source.group(0) if source else "[source excerpt]"
-            notice = f"\n{marker} [... source clipped for compaction ...]\n"
-            if per_item <= len(notice):
-                packed.append((marker + " [… clipped …]")[:per_item])
-                continue
-            room = per_item - len(notice)
-            head = int(room * 0.65)
-            packed.append(item[:head] + notice + item[-(room - head):])
+            packed.append(item)
+            used += cost
+        packed.reverse()
+        packed.insert(0, notice)
         # Keep the invariant local: callers cannot accidentally add an oversized
         # summarizer request if the allocation logic changes later.
         assert len("\n".join(packed)) <= budget
@@ -825,16 +819,8 @@ class TieredMemory(Memory):
         direct = {record.seq for record in chunk if record.seq is not None}
         lines: List[str] = []
 
-        def clipped(value: Any) -> str:
-            text = _as_text(value)
-            if len(text) <= self.record_detail_max:
-                return text
-            head = int(self.record_detail_max * _RECORD_HEAD_SHARE)
-            tail = self.record_detail_max - head
-            return (
-                f"{text[:head]}\n[... {len(text) - self.record_detail_max:,} "
-                f"characters omitted ...]\n{text[-tail:]}"
-            )
+        def exact(value: Any) -> str:
+            return _as_text(value)
 
         for event in events:
             seq = event.seq_no
@@ -842,7 +828,7 @@ class TieredMemory(Memory):
             if event.event_type == TraceEventType.AGENT_START and seq in direct:
                 lines.append(
                     f"[source_seq={seq}] user task: "
-                    f"{clipped((event.input or {}).get('task', ''))}"
+                    f"{exact((event.input or {}).get('task', ''))}"
                 )
             in_turn = any(
                 record_step == step and (not agent or agent == (event.agent_name or ""))
@@ -852,7 +838,7 @@ class TieredMemory(Memory):
                 visible = event.assistant_text or ""
                 if visible.strip():
                     lines.append(
-                        f"[source_seq={seq} step={step}] assistant: {clipped(visible)}"
+                        f"[source_seq={seq} step={step}] assistant: {exact(visible)}"
                     )
             elif in_turn and event.event_type in {
                 TraceEventType.TOOL_START,
@@ -863,7 +849,7 @@ class TieredMemory(Memory):
                 )
                 lines.append(
                     f"[source_seq={seq} step={step}] call {event.action_name}: "
-                    f"{clipped(arguments)}"
+                    f"{exact(arguments)}"
                 )
             elif in_turn and event.event_type in {
                 TraceEventType.TOOL_CALL,
@@ -873,7 +859,7 @@ class TieredMemory(Memory):
                 status = "ok" if event.success else "error"
                 lines.append(
                     f"[source_seq={seq} step={step}] result {event.action_name} "
-                    f"({status}): {clipped(result)}"
+                    f"({status}): {exact(result)}"
                 )
 
         return lines or [

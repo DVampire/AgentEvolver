@@ -27,7 +27,12 @@ class _ContextBlock:
 
 
 def _read_direct_file(root: Path, filename: str, limit: int) -> Optional[str]:
-    """Read one regular direct child without following a swapped-in symlink."""
+    """Read one regular direct child without following a swapped-in symlink.
+
+    ``limit`` remains in the signature for compatibility with callers, but source text
+    is read whole. Aggregate selection below includes or references a source as one unit;
+    it never returns a prefix that looks like the complete instruction file.
+    """
     path = path_manager.entry_under(root, filename)
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -40,7 +45,7 @@ def _read_direct_file(root: Path, filename: str, limit: int) -> Optional[str]:
         with os.fdopen(
             descriptor, "r", encoding="utf-8", errors="replace", closefd=False,
         ) as handle:
-            return handle.read(max(0, limit) + 1).strip()
+            return handle.read().strip()
     except OSError:
         return None
     finally:
@@ -135,7 +140,6 @@ def load_project_context(
     selected: List[tuple[int, str]] = []
     remaining = MAX_PROJECT_CONTEXT_CHARS
     separator = "\n\n"
-    clip_notice = "\n[project context source clipped to fit the context budget]"
     for block in reversed(blocks):
         separator_cost = len(separator) if selected else 0
         available = remaining - separator_cost
@@ -147,19 +151,15 @@ def load_project_context(
             remaining -= separator_cost + len(rendered)
             continue
 
-        header = render(block, "")
-        if len(header) >= available:
-            # Even the source header does not fit. Lower-priority sources cannot fit
-            # either, and emitting a severed header would not be actionable.
-            break
-        body_room = available - len(header)
-        if body_room > len(clip_notice):
-            clipped = block.text[: body_room - len(clip_notice)] + clip_notice
-        else:
-            clipped = block.text[:body_room]
-        selected.append((block.order, render(block, clipped)))
-        remaining = 0
-        break
+        reference = render(
+            block,
+            "[Source omitted as one complete unit because it exceeds the fixed-context "
+            f"budget; read the exact file at {block.directory / block.filename}]",
+        )
+        if len(reference) <= available:
+            selected.append((block.order, reference))
+            remaining -= separator_cost + len(reference)
+        # Continue: a later, lower-priority block can still fit even if this one cannot.
 
     return separator.join(text for _, text in sorted(selected))
 

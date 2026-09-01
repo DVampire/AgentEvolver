@@ -386,11 +386,13 @@ class SessionEventReadTool(Tool):
                 session_key=_session_key(kwargs),
                 suggested_name=f"{session_id}-{seq_no}.json",
             )
-            preview = body[:INLINE_EVENT_CHARS]
-            tail = (f"\n\n[{ref.retrieval_hint}]" if ref is not None else
-                    f"\n\n[{len(body) - INLINE_EVENT_CHARS:,} more characters; they could not be "
-                    f"saved, so narrow with session_event_search_tool instead.]")
-            body = preview + tail
+            body = (
+                f"[Event omitted inline as one complete unit: original_chars={len(body):,}. "
+                f"{ref.retrieval_hint}]"
+                if ref is not None else
+                f"[Event has {len(body):,} characters and could not be saved; narrow with "
+                "session_event_search_tool instead.]"
+            )
 
         context = ""
         if window.before or window.after:

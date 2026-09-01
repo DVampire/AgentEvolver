@@ -270,7 +270,13 @@ class AnthropicChatSerializer:
         """Serialize a custom message to an Anthropic message format."""
         if isinstance(message, CompactionMessage):
             state = (message.provider_state or {}).get("anthropic") or {}
-            blocks = [dict(block) for block in state.get("compaction_blocks") or []]
+            # The Anthropic SDK includes unset optional fields as ``None`` in
+            # ``model_dump()``. Some compatible relays validate compaction blocks
+            # strictly and reject those null extension fields as extra input.
+            blocks = [
+                {key: value for key, value in dict(block).items() if value is not None}
+                for block in state.get("compaction_blocks") or []
+            ]
             if blocks:
                 # A Claude compaction block is assistant protocol state. Replaying it as
                 # user prose would lose the API's rule that everything before the block
@@ -335,10 +341,17 @@ class AnthropicChatSerializer:
             if message.tool_calls:
                 for tool_call in message.tool_calls:
                     content_parts.append(AnthropicChatSerializer._serialize_tool_call(tool_call))
-            if message.cache and content_parts:
-                content_parts[-1]["cache_control"] = {
-                    "type": "ephemeral", "ttl": CACHE_TTL
-                }
+            if message.cache:
+                # Signed/redacted thinking is opaque provider state: Anthropic requires
+                # it to be replayed byte-for-byte and strict relays reject cache_control
+                # on those blocks. Put the rolling breakpoint on the last ordinary
+                # assistant block only. A thinking-only turn has no legal breakpoint.
+                for block in reversed(content_parts):
+                    if block.get("type") in {"text", "tool_use"}:
+                        block["cache_control"] = {
+                            "type": "ephemeral", "ttl": CACHE_TTL
+                        }
+                        break
             
             # Content is always an array (may be empty)
             result['content'] = content_parts

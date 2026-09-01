@@ -69,8 +69,8 @@ def test_pressure_prunes_oldest_tool_results_without_mutating_the_history():
     assert first.pressure["pruned_message_indices"] == [2]
     assert first.messages[0] == messages[0]
     assert first.messages[3].content == recent_result
-    assert "HEAD-" in first.messages[2].content and "-TAIL" in first.messages[2].content
-    assert "complete tool result remains in Trace" in first.messages[2].content
+    assert "HEAD-" not in first.messages[2].content and "-TAIL" not in first.messages[2].content
+    assert "complete, unmodified tool result remains in Trace" in first.messages[2].content
     assert messages[2].content == old_result  # append-only history was not changed
 
 
