@@ -42,6 +42,8 @@ from agentevolver.memory import memory_manager
 from agentevolver.tool import tool_manager
 from agentevolver.skill import skill_manager
 from agentevolver.connector import connector_manager
+from agentevolver.plugins import plugin_manager
+from agentevolver.workflow import workflow_manager
 from agentevolver.environment import environment_manager
 from agentevolver.agent import agent_manager
 from agentevolver.extension import extension_manager
@@ -227,16 +229,20 @@ async def main():
         await environment_manager.initialize(env_names=env_names)
         logger.info(f"| ✅ Environments: {await environment_manager.list()}")
 
-    plugin_names = args.plugins if args.plugins is not None else getattr(config, "plugin_names", None)
-    if plugin_names:
-        logger.info("| 🧩 Initializing plugins...")
-        from agentevolver.plugins import plugin_manager
-        await plugin_manager.initialize(plugin_names=plugin_names)
-        logger.info(f"| ✅ Plugins: {await plugin_manager.list()}")
+    plugin_names = args.plugins if args.plugins is not None else getattr(config, "plugin_names", [])
+    logger.info("| 🧩 Initializing plugins...")
+    await plugin_manager.initialize(plugin_names=plugin_names)
+    logger.info(f"| ✅ Plugins: {await plugin_manager.list()}")
 
     logger.info("| 🤖 Initializing agents...")
     await agent_manager.initialize(agent_names=config.agent_names)
     logger.info(f"| ✅ Agents: {await agent_manager.list()}")
+
+    logger.info("| 🔀 Initializing workflows...")
+    await workflow_manager.initialize(
+        workflow_names=getattr(config, "workflow_names", [])
+    )
+    logger.info(f"| ✅ Workflows: {workflow_manager.list()}")
 
     # Layer hot-pluggable extensions (external `extension/`) on top of built-ins.
     _ext_manifest = await extension_manager.initialize()
@@ -322,6 +328,14 @@ async def main():
         await environment_manager.cleanup()
     except Exception as e:  # noqa: BLE001
         logger.warning(f"| ⚠️ environment cleanup: {e}")
+    try:
+        await workflow_manager.cleanup()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"| ⚠️ workflow cleanup: {e}")
+    try:
+        await plugin_manager.cleanup()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"| ⚠️ plugin cleanup: {e}")
     try:
         from agentevolver.sandbox import sandbox_manager
         await sandbox_manager.cleanup()

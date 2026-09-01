@@ -608,7 +608,38 @@ async def test_the_dispatch_schema_offers_backgrounding_to_the_model():
     assert "run_in_background" in properties
     assert "continuable" in properties
     assert "subscription_topics" in properties
+    assert "plugin_allowlist" in properties
     assert "continuable=true" in properties["subscription_topics"]["description"]
+
+
+def test_a_child_can_enforce_narrow_capability_allowlists_at_registration():
+    """A browser-only subscriber must reject widening before an event is published."""
+    from agentevolver.protocol import protocol_manager
+
+    class RestrictedChild:
+        name = "restricted_child"
+
+        @staticmethod
+        def _required_capability_allowlists():
+            return {
+                "tool_allowlist": ["done_tool"],
+                "plugin_allowlist": [],
+            }
+
+    parent = SimpleNamespace(id="root", extra={})
+    _, child_ctx = protocol_manager.child_brief(
+        RestrictedChild(), "observe", parent_ctx=parent,
+    )
+    assert child_ctx.extra["tool_allowlist"] == ["done_tool"]
+    assert child_ctx.extra["plugin_allowlist"] == []
+
+    with pytest.raises(ValueError, match="requires tool_allowlist"):
+        protocol_manager.child_brief(
+            RestrictedChild(),
+            "observe",
+            parent_ctx=parent,
+            allowlists={"tool_allowlist": ["bash_tool"]},
+        )
 
 
 def test_dispatch_schema_bounds_prose_and_prefers_structured_artifacts():

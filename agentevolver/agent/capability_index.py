@@ -57,6 +57,12 @@ def catalog(ctx: Any, agent_name: str):
 def forget(ctx: Any, agent_name: str) -> None:
     """Drop one run's deferred catalog when its agent concludes."""
     _CATALOGS.pop((str(getattr(ctx, "id", "") or ""), agent_name), None)
+    extra = getattr(ctx, "extra", None)
+    if extra is not None:
+        revisions = extra.get("_capability_catalog_revisions") or {}
+        revisions.pop(agent_name, None)
+        if not revisions:
+            extra.pop("_capability_catalog_revisions", None)
 
 
 def _tokens(value: str) -> set[str]:

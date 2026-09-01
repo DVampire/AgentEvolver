@@ -2399,7 +2399,7 @@ class Agent(BaseModel):
                 allowlists={
                     k: inp.get(k) for k in (
                         "tool_allowlist", "skill_allowlist", "connector_allowlist",
-                        "environment_allowlist", "workflow_allowlist",
+                        "plugin_allowlist", "environment_allowlist", "workflow_allowlist",
                     )
                 },
                 parent_ref=parent_ref,

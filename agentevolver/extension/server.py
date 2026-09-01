@@ -79,6 +79,7 @@ class ExtensionManagerServer(BaseModel):
     _change_listeners: set[ExtensionChangeListener] = PrivateAttr(default_factory=set)
     _rollouts: RolloutController = PrivateAttr(default_factory=RolloutController)
     _rollout_configs: Dict[str, object] = PrivateAttr(default_factory=dict)
+    _capability_revision: int = PrivateAttr(default=0)
 
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
@@ -91,10 +92,16 @@ class ExtensionManagerServer(BaseModel):
         os.makedirs(self.base_dir, exist_ok=True)
         self._rollouts = RolloutController()
         self._rollout_configs.clear()
+        self._capability_revision += 1
 
     def subscribe(self, listener: ExtensionChangeListener) -> None:
         """Receive hot-extension lifecycle changes after a component is live."""
         self._change_listeners.add(listener)
+
+    @property
+    def capability_revision(self) -> int:
+        """Monotonic generation of the live extension-backed capability registry."""
+        return self._capability_revision
 
     def unsubscribe(self, listener: ExtensionChangeListener) -> None:
         self._change_listeners.discard(listener)
@@ -102,6 +109,10 @@ class ExtensionManagerServer(BaseModel):
     async def _notify_change(
         self, action: str, module: str, name: str, *, version: Optional[str] = None
     ) -> None:
+        # Agent native-schema catalogs are intentionally cached per run. Bump before
+        # listeners so the very next model turn can rebuild once and call the component
+        # that just became live (or stop offering one that was rolled back/unloaded).
+        self._capability_revision += 1
         change = {"action": action, "module": module, "name": name}
         if version:
             change["version"] = version

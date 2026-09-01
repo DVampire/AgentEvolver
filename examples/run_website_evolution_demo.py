@@ -1,9 +1,9 @@
 """Launch the participatory website self-evolution demonstration.
 
-This is intentionally a thin adapter over the generic orchestrator launcher: it validates the
-domain brief and exactly three persona briefs, appends a role-only input manifest to the
-general task document, then launches the dedicated ``website_builder_agent`` through the
-standard Agent runtime lifecycle.
+This is intentionally a thin adapter over the generic orchestrator launcher: it validates one
+scenario brief and exactly three persona briefs, appends a role-only input manifest to the
+scenario task, then launches the dedicated ``website_builder_agent`` through the standard Agent
+runtime lifecycle. Generic evolution policy belongs to the Builder prompt, not a duplicate task.
 
 Examples
 --------
@@ -38,7 +38,6 @@ from typing import Sequence
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT_DIR = ROOT / "examples" / "inputs" / "website_evolution_demo"
 DEFAULT_ECHO_INPUT_DIR = DEFAULT_INPUT_DIR / "echo_ark"
-DEFAULT_TASK = ROOT / "examples" / "tasks" / "website_feedback_evolution_demo.html"
 DEFAULT_SITE_BRIEF = (
     ROOT / "examples" / "tasks" / "website_evolution_scenarios" / "echo_ark.html"
 )
@@ -56,11 +55,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         description="Run a three-persona, participatory website self-evolution demo."
     )
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Demo config path.")
-    parser.add_argument("--task-file", default=str(DEFAULT_TASK), help="General task HTML.")
     parser.add_argument(
         "--site-brief",
         default=str(DEFAULT_SITE_BRIEF),
-        help="Domain-specific website brief passed to the Website Builder.",
+        help="Domain-specific scenario task passed to the Website Builder.",
     )
     parser.add_argument(
         "--persona-brief",
@@ -125,9 +123,8 @@ def _existing_file(raw: str, role: str) -> Path:
     return path
 
 
-def resolve_inputs(args: argparse.Namespace) -> tuple[Path, Path, Path, list[Path]]:
+def resolve_inputs(args: argparse.Namespace) -> tuple[Path, Path, list[Path]]:
     config_path = _existing_file(args.config, "config")
-    task_path = _existing_file(args.task_file, "task")
     site_brief = _existing_file(args.site_brief, "site brief")
     personas = [
         _existing_file(path, f"persona {index}")
@@ -139,18 +136,17 @@ def resolve_inputs(args: argparse.Namespace) -> tuple[Path, Path, Path, list[Pat
             "site/persona attachment basenames must be unique so the blind role manifest "
             "can route them without exposing their contents"
         )
-    return config_path, task_path, site_brief, personas
+    return config_path, site_brief, personas
 
 
 def build_task_text(
-    task_path: Path,
     site_brief: Path,
     personas: list[Path],
     user_models: Sequence[str] | None = None,
 ) -> str:
     from agentevolver.task.loader import load_task_document
 
-    document = load_task_document(str(task_path))
+    document = load_task_document(str(site_brief))
     manifest = {
         "site_brief": str(site_brief),
         "persona_01": str(personas[0]),
@@ -174,7 +170,6 @@ def build_task_text(
 
 def validate_local_artifacts(
     config_path: Path,
-    task_path: Path,
     site_brief: Path,
     personas: list[Path],
 ) -> None:
@@ -243,9 +238,9 @@ def validate_local_artifacts(
         if prompt.name != name or not prompt.system_template or not prompt.user_template:
             raise ValueError(f"invalid prompt artifact: {name}")
 
-    task = load_task_document(str(task_path))
-    if not task.content or "## objective" not in task.content:
-        raise ValueError("task HTML did not produce the expected semantic clean text")
+    scenario = load_task_document(str(site_brief))
+    if not scenario.content:
+        raise ValueError("scenario HTML did not produce semantic task text")
     if int(config.get("optimization_cycles", 0)) != OPTIMIZATION_CYCLES:
         raise ValueError(
             "website evolution config must require exactly five optimization cycles "
@@ -283,7 +278,7 @@ def validate_local_artifacts(
                 f"use_memory={role_config.get('use_memory')!r}"
             )
 
-    task_text = build_task_text(task_path, site_brief, personas)
+    task_text = build_task_text(site_brief, personas)
     if "runtime-input-manifest" not in task_text:
         raise ValueError("runtime input manifest was not appended")
 
@@ -302,6 +297,10 @@ def validate_local_artifacts(
         raise ValueError(f"missing required skills: {sorted(missing_skills)}")
     if "publish_event_tool" not in config.tool_names:
         raise ValueError("publish_event_tool is required for release notifications")
+    if "website_release_gate_tool" not in config.tool_names:
+        raise ValueError("website_release_gate_tool is required for atomic release gates")
+    if "send_message_tool" not in config.tool_names:
+        raise ValueError("send_message_tool is required for targeted subscriber recovery")
     agent_class = registry_agents["website_user_agent"]
     key = inflection.underscore(agent_class.__name__)
     instance_config = dict(getattr(config, key))
@@ -318,6 +317,20 @@ def validate_local_artifacts(
             f"{key} resolved to an invalid Website User Agent template: "
             f"name={instance.name!r}, prompt={instance.prompt_name!r}, "
             f"environment={instance.env_name!r}"
+        )
+    expected_user_allowlists = {
+        "tool_allowlist": ["done_tool", "escalate_tool"],
+        "skill_allowlist": [],
+        "connector_allowlist": [],
+        "plugin_allowlist": [],
+        "environment_allowlist": ["browser_environment"],
+        "workflow_allowlist": [],
+    }
+    actual_user_allowlists = instance._required_capability_allowlists()
+    if actual_user_allowlists != expected_user_allowlists:
+        raise ValueError(
+            "website_user_agent must remain browser-only: "
+            f"expected={expected_user_allowlists}, actual={actual_user_allowlists}"
         )
 
     expected_models = {
@@ -341,8 +354,7 @@ def validate_local_artifacts(
 
     print("Website evolution demo validation: OK")
     print(f"  config: {config_path}")
-    print(f"  task: {task_path}")
-    print(f"  site brief: {site_brief}")
+    print(f"  scenario task: {site_brief}")
     print(f"  personas: {', '.join(str(path) for path in personas)}")
     print("  role models:")
     for role, model in actual_models.items():
@@ -350,15 +362,15 @@ def validate_local_artifacts(
 
 
 def launch(args: argparse.Namespace) -> None:
-    config_path, task_path, site_brief, personas = resolve_inputs(args)
+    config_path, site_brief, personas = resolve_inputs(args)
     if args.validate_only:
-        validate_local_artifacts(config_path, task_path, site_brief, personas)
+        validate_local_artifacts(config_path, site_brief, personas)
         return
 
     user_models = list(args.user_model or DEFAULT_USER_MODELS)
     if args.model:
         user_models = [args.model] * 3
-    task_text = build_task_text(task_path, site_brief, personas, user_models)
+    task_text = build_task_text(site_brief, personas, user_models)
     forwarded = [
         "run_meta_agent.py",
         "--config",
@@ -370,7 +382,6 @@ def launch(args: argparse.Namespace) -> None:
         "--plan-mode",
         args.plan_mode,
         "--attach",
-        str(task_path),
         str(site_brief),
         *(str(path) for path in personas),
     ]

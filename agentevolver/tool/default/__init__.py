@@ -33,6 +33,7 @@ from .session_query import (
 from .reply import ReplyTool
 from .send_message import SendMessageTool
 from .publish_event import PublishEventTool
+from .website_release_gate import WebsiteReleaseGateTool
 from .report import ReportTool
 from .glob_search import GlobSearchTool
 from .grep_search import GrepSearchTool
@@ -62,6 +63,7 @@ __all__ = [
     "MediaSearchTool",
     "SendMessageTool",
     "PublishEventTool",
+    "WebsiteReleaseGateTool",
     "ReportTool",
     "ReadImageTool",
     "BatchCallTool",

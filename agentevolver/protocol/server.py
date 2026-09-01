@@ -167,6 +167,16 @@ class ProtocolManager(metaclass=Singleton):
         if fork and parent_ctx is not None and getattr(parent_ctx, "id", None):
             ctx.extra["forked_from"] = str(parent_ctx.id)
         effective_allowlists = dict(allowlists or {})
+        if hasattr(child, "_required_capability_allowlists"):
+            required = child._required_capability_allowlists()
+            for key, value in required.items():
+                requested = effective_allowlists.get(key)
+                if requested is not None and list(requested) != list(value):
+                    raise ValueError(
+                        f"{getattr(child, 'name', 'child')} requires {key}={list(value)!r}; "
+                        f"requested {list(requested)!r}"
+                    )
+                effective_allowlists[key] = list(value)
         if hasattr(child, "_target_capability_allowlists"):
             for key, value in child._target_capability_allowlists(target_name, target_type).items():
                 if effective_allowlists.get(key) is None:

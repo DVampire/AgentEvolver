@@ -124,6 +124,9 @@ These are transactional release gates, not a fixed implementation workflow. With
 plan from current evidence and freely choose the useful increment, capability mix, and delegation.
 For each release enforce:
 `BUILDING → VERIFYING → FROZEN → PUBLISHED → COLLECTING → SYNTHESIZING → PLANNING_NEXT`.
+Advance every boundary with `website_release_gate_tool`, passing the state just observed and the
+required evidence. The tool atomically updates only `run_manifest.json.release_gates`; it is the
+authoritative concurrency guard, while the release contents and next increment remain your decision.
 
 Stage A — Build V0 blind
 1. Read the site brief and inspect only the shared workspace. Apply the relevant resident web-skill
@@ -147,7 +150,8 @@ Stage B — Three independent V0 co-design turns
    `runtime-input-manifest.user_models`, evaluator ID, and persona. For every call set `run_in_background=true`,
    `continuable=true`, `subscription_topics=["website.releases"]`, and
    `environment_allowlist=["browser_environment"]`, `tool_allowlist=["done_tool", "escalate_tool"]`,
-   `skill_allowlist=[]`, and `isolate_workspace=true`. Its `task` is a standing co-designer brief
+   `skill_allowlist=[]`, `connector_allowlist=[]`, `plugin_allowlist=[]`,
+   `workflow_allowlist=[]`, and `isolate_workspace=true`. Its `task` is a standing co-designer brief
    containing its unique evaluator ID and the exact absolute path of its assigned persona; its
    `files` contains exactly that same persona and no other persona. A file attachment without the
    explicit assigned path in the standing task is invalid because the participant must not guess or
@@ -180,9 +184,12 @@ Stage C — Contribution synthesis and capability decisions
       failure persists after at least two materially different attempts.
    A first weak attempt, a prompt reminder, domain content, or ordinary website code bug is not
    framework evolution.
-9. Before evolving, inspect the capability roster and try an already-mounted suitable skill. Audit
-   potential gaps across the Builder prompt/role, reusable Skill, executable Tool, and specialist
-   Agent. A run should demonstrate more than website-file mutation: evaluate candidates from at
+9. Before evolving, inspect the capability roster and try an already-mounted suitable capability.
+   Audit potential gaps across the Builder Agent/prompt and the six orchestration families: Tool,
+   Skill, Connector, Plugin, specialist Agent, and Workflow. Connector/Plugin candidates require a
+   real external-service need; Workflow candidates require repeated reusable orchestration rather
+   than merely the six release labels. A run should demonstrate more than website-file mutation:
+   evaluate candidates from at
    least two different framework entity types when user evidence genuinely supports them. Never
    manufacture a component merely to meet a count; if the evidence supports fewer, mark the
    multi-entity evolution objective unmet. For each
@@ -216,8 +223,14 @@ Stage D — Execute five optimization cycles (V1 through V5)
 </stage-gates>
 
 <tool-and-skill-policy>
+- Choose the smallest fitting capability: Tool for a concrete operation, Skill for a reusable
+  method, Connector or Plugin for a necessary external service, Agent for bounded delegated
+  judgment/work, and Workflow only for an already-proven reusable orchestration. If a named
+  capability is present in the compact roster but its schema is deferred, call
+  `search_capabilities` once to load it for the next step.
 - Use file/search/bash/git/image tools for implementation and evidence; use `deploy_tool` for the
-  live service and `publish_event_tool` for release notifications. Inspect before editing and
+  live service, `website_release_gate_tool` for atomic stage boundaries, and `publish_event_tool`
+  for release notifications. Inspect before editing and
   preserve unrelated workspace content.
 - Invoke `frontend_ui_engineering_skill` for product UI, `api_and_interface_design_skill` for the
   shared feedback boundary, `webapp_testing_skill` for hands-on checks, and `deploy_skill` for the

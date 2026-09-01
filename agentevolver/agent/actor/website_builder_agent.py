@@ -1,11 +1,57 @@
-"""Dedicated orchestrator for the participatory website evolution workflow."""
+"""Dedicated orchestrator for participatory website evolution."""
 
-from typing import Any, Dict, Optional
+import json
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
 from agentevolver.agent.actor.meta_agent import MetaAgent
 from agentevolver.registry import AGENT
+
+
+_MANIFEST_MARKER = "## runtime-input-manifest"
+
+
+def bind_runtime_input_manifest(task: str, files: Optional[List[str]]) -> str:
+    """Replace launcher source paths with the session-staged attachment paths.
+
+    Attachment staging happens inside AgentManager, after the launcher built the task.
+    Binding here keeps the role-only manifest truthful without reading persona content.
+    """
+    attachments = [str(path) for path in (files or [])]
+    if len(attachments) != 4:
+        raise ValueError(
+            "website evolution requires four staged attachments in role order: "
+            "site brief, persona_01, persona_02, persona_03"
+        )
+    before, marker, after = str(task).partition(_MANIFEST_MARKER)
+    if not marker:
+        raise ValueError("website evolution task is missing runtime-input-manifest")
+    start = after.find("{")
+    if start < 0:
+        raise ValueError("runtime-input-manifest has no JSON object")
+    try:
+        manifest = json.loads(after[start:])
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"runtime-input-manifest is invalid JSON: {error}") from error
+    if not isinstance(manifest, dict):
+        raise ValueError("runtime-input-manifest must be a JSON object")
+
+    manifest.update(
+        {
+            "site_brief": attachments[0],
+            "persona_01": attachments[1],
+            "persona_02": attachments[2],
+            "persona_03": attachments[3],
+            "paths_staged": True,
+        }
+    )
+    explanation = after[:start].strip()
+    return (
+        f"{before.rstrip()}\n\n{_MANIFEST_MARKER}\n"
+        f"{explanation}\n"
+        f"{json.dumps(manifest, ensure_ascii=False, indent=2)}"
+    )
 
 
 @AGENT.register_module(force=True)
@@ -48,5 +94,10 @@ class WebsiteBuilderAgent(MetaAgent):
             **kwargs,
         )
 
+    async def on_start(self, task, files, ctx, ref, **kwargs):
+        """Bind staged role paths, then use MetaAgent's ordinary event-driven loop."""
+        task = bind_runtime_input_manifest(task, files)
+        return await super().on_start(task, files, ctx, ref, **kwargs)
 
-__all__ = ["WebsiteBuilderAgent"]
+
+__all__ = ["WebsiteBuilderAgent", "bind_runtime_input_manifest"]

@@ -141,6 +141,48 @@ async def test_native_catalog_discovery_is_reused_for_the_whole_run(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_hot_extension_refreshes_native_catalog_once_on_the_next_turn(monkeypatch):
+    """A generated capability is useful only if its parent can actually call it."""
+    import agentevolver.agent.native_tools as native_tools
+    from agentevolver.extension import extension_manager
+
+    class Manager:
+        names = ["done_tool"]
+        discoveries = 0
+
+        async def list(self):
+            self.discoveries += 1
+            return list(self.names)
+
+        async def get_info(self, name):
+            return SimpleNamespace(description=name)
+
+        async def get_schema(self, name, **_kwargs):
+            return _pair(name)[0]
+
+    manager = Manager()
+    entry = SimpleNamespace(type="tool", manager=lambda: manager)
+    monkeypatch.setattr(native_tools, "MOUNTED_TYPES", (entry,))
+    monkeypatch.setattr(extension_manager, "_capability_revision", 10)
+    ctx = SimpleNamespace(id="hot-extension", extra={})
+    agent = SimpleNamespace(name="worker", defer_capabilities_after=40)
+
+    first, _ = await native_tools.assemble_native_tools(agent, ctx)
+    again, _ = await native_tools.assemble_native_tools(agent, ctx)
+    manager.names.append("newly_evolved_tool")
+    extension_manager._capability_revision += 1
+    refreshed, _ = await native_tools.assemble_native_tools(agent, ctx)
+    stable, _ = await native_tools.assemble_native_tools(agent, ctx)
+
+    assert [tool.name for tool in first] == ["done_tool"]
+    assert [tool.name for tool in again] == ["done_tool"]
+    assert [tool.name for tool in refreshed] == ["done_tool", "newly_evolved_tool"]
+    assert [tool.name for tool in stable] == ["done_tool", "newly_evolved_tool"]
+    assert manager.discoveries == 2
+    forget(ctx, "worker")
+
+
+@pytest.mark.asyncio
 async def test_one_broken_catalog_source_does_not_hide_healthy_types(monkeypatch):
     import agentevolver.agent.native_tools as native_tools
 

@@ -32,6 +32,8 @@ with read_base():
     from .tools.escalate import escalate_tool
     from .tools.exit_plan_mode import exit_plan_mode
     from .tools.publish_event import publish_event_tool
+    from .tools.website_release_gate import website_release_gate_tool
+    from .tools.send_message import send_message_tool
     from .memory.file_system_memory import file_system_memory
 
 
@@ -91,6 +93,8 @@ tool_names = [
     "done_tool",
     "exit_plan_mode",
     "publish_event_tool",
+    "website_release_gate_tool",
+    "send_message_tool",
     "evolution_tool",
 ]
 
@@ -146,6 +150,8 @@ ask_user_question.update(enable_evolving=False)
 escalate_tool.update(enable_evolving=False)
 exit_plan_mode.update(enable_evolving=False)
 publish_event_tool.update(enable_evolving=False)
+website_release_gate_tool.update(enable_evolving=False, max_release=optimization_cycles)
+send_message_tool.update(enable_evolving=False)
 
 
 # ---------------- Memory configuration ----------------

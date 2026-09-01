@@ -206,16 +206,25 @@ async def assemble_native_tools(
     sub-agent (except the caller) as a callable — used by MetaAgent, which dispatches
     agents; ordinary sub-agents leave it off.
     """
-    extra = getattr(ctx, "extra", None) or {}
+    extra = getattr(ctx, "extra", None)
+    if extra is None:
+        extra = {}
     agent_name = getattr(agent, "name", "agent")
     from agentevolver.agent.capability_index import catalog, remember_catalog, select
 
     metadata = catalog(ctx, agent_name)
-    if not metadata:
+    from agentevolver.extension import extension_manager
+
+    revision = extension_manager.capability_revision
+    revisions = extra.setdefault("_capability_catalog_revisions", {})
+    if not metadata or revisions.get(agent_name) != revision:
         # Freeze the lightweight index for one run. Full JSON schemas are built only
-        # for the stable core and names the session has selected.
+        # for the stable core and names the session has selected. A hot extension bumps
+        # the registry revision, causing exactly one rebuild so the new capability is
+        # callable on the next turn without re-discovering unchanged catalogs every step.
         metadata = await _metadata_catalog(agent, extra, include_agents)
         remember_catalog(ctx, agent_name, metadata)
+        revisions[agent_name] = revision
 
     selected, _deferred = select(
         metadata,

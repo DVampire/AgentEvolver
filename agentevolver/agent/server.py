@@ -282,6 +282,7 @@ class AgentManagerServer(BaseModel):
                 "tool_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these tools (empty list = baseline with none)."},
                 "skill_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these skills."},
                 "connector_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these connectors."},
+                "plugin_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Restrict the sub-agent to exactly these plugins (empty list = none)."},
                 "environment_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Restrict the sub-agent to these Environment capabilities."},
                 "workflow_allowlist": {"type": "array", "items": {"type": "string"}, "description": "Evolution probe only: restrict the sub-agent to exactly these workflows."},
             },

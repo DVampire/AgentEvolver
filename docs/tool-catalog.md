@@ -72,9 +72,10 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`update_goal_tool`](#update_goal_tool) | `workspace_write` | yes | `UpdateGoalTool` | `agentevolver.tool.default.goal` |
 | [`web_fetcher_tool`](#web_fetcher_tool) | `workspace_write` | no | `WebFetcherTool` | `agentevolver.tool.default.web_fetcher` |
 | [`web_searcher_tool`](#web_searcher_tool) | `workspace_write` | no | `WebSearcherTool` | `agentevolver.tool.default.web_searcher` |
+| [`website_release_gate_tool`](#website_release_gate_tool) | `workspace_write` | yes | `WebsiteReleaseGateTool` | `agentevolver.tool.default.website_release_gate` |
 | [`write_file_tool`](#write_file_tool) | `workspace_write` | yes | `WriteFileTool` | `agentevolver.tool.default.write_file` |
 
-45 tools.
+46 tools.
 
 ## `ask_user_question`
 
@@ -594,6 +595,19 @@ Permission mode: `workspace_write` · reports only · call budget 120s
 | `lang` | `Optional[str]` | no | `'en'` |
 | `country` | `Optional[str]` | no | `'us'` |
 | `filter_year` | `Optional[int]` | no | `None` |
+
+## `website_release_gate_tool`
+
+Atomically advance one website release through the audited build, freeze, publish, collection, and synthesis gates. This enforces release integrity without prescribing what the website iteration must contain.
+
+Permission mode: `workspace_write` · changes state
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `release_id` | `str` | yes | — |
+| `expected_state` | `str` | yes | — |
+| `next_state` | `str` | yes | — |
+| `evidence` | `Dict[str, Any]` | yes | — |
 
 ## `write_file_tool`
 

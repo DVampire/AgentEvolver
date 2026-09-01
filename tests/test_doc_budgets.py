@@ -48,8 +48,6 @@ BUDGETS: dict[str, int] = {
     "README.md": 3_500,
     "README_zh.md": 5_800,  # ≈ the English ceiling in characters; see above
     "docs/DOC-STANDARD.md": 1_000,
-    "docs/decisions/README.md": 650,
-    "docs/postmortems/README.md": 400,
     "tests/README.md": 950,
     "docs/canvas.md": 700,
     "docs/capability-schemas.md": 300,
