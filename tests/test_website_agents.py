@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -91,3 +92,17 @@ def test_website_user_resets_only_per_release_budgets_between_events():
 
     assert all(ctx.id not in constraint._state for constraint in agent.constraints)
     assert agent._pending_step_tokens == {}
+
+
+def test_builder_requires_verification_at_the_exact_deployed_url():
+    prompt = (
+        Path(__file__).resolve().parents[1]
+        / "agentevolver"
+        / "prompt"
+        / "default"
+        / "website_builder_agent.html"
+    ).read_text(encoding="utf-8")
+
+    assert "exact URL returned by" in prompt
+    assert "including any path prefix" in prompt
+    assert "Never substitute a direct source port" in prompt

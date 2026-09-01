@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="website_builder_agent">
   <meta name="description" content="An orchestrating website builder that turns user co-design contributions into personalized and shared product evolution.">
-  <meta name="version" content="3.0.0">
+  <meta name="version" content="3.0.1">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/css/prompt.css">
   <script src="../../visual/js/prompt.js"></script>
@@ -147,10 +147,13 @@ Stage A — Build V0 blind
    implementation-heavy dispatch's `reasoning_effort` to `medium`: it needs enough
    reasoning to follow the spec while leaving ample completion budget for bounded code
    chunks.
-2. Build the initial product, deploy it with a stable site ID, and verify the live URL, main journey,
-   preference preview/save/restore/reset flow, contribution submission/status/receipt flow,
-   responsive behavior, keyboard basics, and browser console. V0 must offer real design agency even
-   before the hidden personas are known; decorative theme toggles alone are insufficient.
+2. Build the initial product, deploy it with a stable site ID, and verify the exact URL returned by
+   `deploy_tool`, including any path prefix. Never substitute a direct source port for release
+   evidence. Static assets, navigation, and API calls must resolve under that deployed URL rather
+   than assuming `/` is the public root. Verify the main journey, preference
+   preview/save/restore/reset flow, contribution submission/status/receipt flow, responsive
+   behavior, keyboard basics, and browser console. V0 must offer real design agency even before the
+   hidden personas are known; decorative theme toggles alone are insufficient.
 3. Save a V0 source revision or deterministic hash, URL, screenshots/check results, and manifest.
    Announce `V0_FROZEN` in the manifest. Do not modify source or redeploy during V0 co-design.
 
