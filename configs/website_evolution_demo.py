@@ -41,15 +41,20 @@ with read_base():
 
 tag = "website_evolution_demo"
 log_path = "agent.log"
+# V0 is the blind baseline; these are five material optimization transitions
+# ending at V5.  The launcher repeats this value in the runtime manifest and
+# validation rejects drift between the config and task contract.
+optimization_cycles = 5
 # Keep this demonstration's generated/optimized components isolated from the global
 # extension library.  Besides making rollback auditable, this avoids depending on a
 # machine-wide manifest that may belong to another OS user.
 extension_root = "output/website_evolution_demo/extension"
 
-# process_agent() deliberately normalizes configured agents to this global model.  Keep the
-# demo explicit and reproducible: the builder and its co-design/evolution workers all use
-# this route unless the launcher supplies an explicit `--model` override.
+# The global model remains the default for memory and support workers.  This demo deliberately
+# preserves role-specific agent models so independent co-designers do not simulate three users
+# with the same model family.
 model_name = "llm_hub/claude-opus-5"
+agent_model_policy = "per_agent"
 
 memory_names = ["file_system_memory"]
 
@@ -159,15 +164,13 @@ file_system_memory.update(
 
 WORKER_MAX_STEP = 60
 EVOLUTION_MAX_STEP = 60
-BUILDER_MAX_STEP = 180
-WALL_CLOCK = 14400
-MAX_TOKEN = 5000000
+BUILDER_MAX_STEP = 520
+WALL_CLOCK = 28800
+MAX_TOKEN = 10000000
 
-# Every role shares the same model, memory identity, and provider-safe context policy.
-# Role configs below override only genuine behavioral differences (browser environment,
-# memory use, step budget, and whether the Builder may evolve capabilities).
+# Every role shares memory identity and a provider-safe context policy. Models are assigned below
+# by role: Builder/Code use Opus 5, while the co-design panel spans three model families.
 _AGENT_CORE = dict(
-    model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,
@@ -182,6 +185,7 @@ _AGENT_CORE = dict(
 
 _WORKER = {
     **_AGENT_CORE,
+    "model_name": model_name,
     "max_step": WORKER_MAX_STEP,
     "timeout": WALL_CLOCK,
     "max_token": MAX_TOKEN,
@@ -192,6 +196,7 @@ reviewer_agent.update(**_WORKER)
 
 _EVOLUTION_WORKER = {
     **_AGENT_CORE,
+    "model_name": model_name,
     "max_step": EVOLUTION_MAX_STEP,
     "timeout": WALL_CLOCK,
     "max_token": MAX_TOKEN,
@@ -212,12 +217,22 @@ _USER = {
     "max_screenshots": 2,
     "subscription_topics": ["website.releases"],
 }
-website_user1_agent.update(**_USER)
-website_user2_agent.update(**_USER)
-website_user3_agent.update(**_USER)
+website_user1_agent.update(**_USER, model_name="llm_hub/claude-opus-5")
+website_user2_agent.update(**_USER, model_name="llm_hub/gpt-5.6-sol")
+website_user3_agent.update(**_USER, model_name="llm_hub/deepseek-v4-flash")
+
+# The manager binds these concrete classes through their inflected keys above
+# (website_user1_agent, and so on), while the public roster uses the instances'
+# readable runtime names. Expose matching aliases so generic config audits and
+# introspection can resolve every item in ``agent_names`` without changing the
+# manager binding contract.
+website_user_1_agent = website_user1_agent
+website_user_2_agent = website_user2_agent
+website_user_3_agent = website_user3_agent
 
 website_builder_agent.update(**{
     **_AGENT_CORE,
+    "model_name": "llm_hub/claude-opus-5",
     "prompt_name": "website_builder_agent",
     "enable_evolving": True,
     "max_step": BUILDER_MAX_STEP,

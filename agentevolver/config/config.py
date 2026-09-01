@@ -113,6 +113,17 @@ def process_memory(config: MMConfig)->MMConfig:
     return config
 
 def process_agent(config: MMConfig) -> MMConfig:
+    # Most existing configs intentionally use one run-wide model, even when the
+    # imported agent templates contain their own defaults.  Some orchestrations
+    # (for example multi-persona evaluation) need independently selected models.
+    # Keep the historical behavior unless the config explicitly opts into the
+    # per-agent policy.
+    model_policy = config.get("agent_model_policy", "global")
+    if model_policy not in {"global", "per_agent"}:
+        raise ValueError(
+            "agent_model_policy must be either 'global' or 'per_agent', "
+            f"got {model_policy!r}"
+        )
     for key in config:
         if key != "agent" and not key.endswith("_agent"):
             continue
@@ -126,7 +137,7 @@ def process_agent(config: MMConfig) -> MMConfig:
         config[key].update(dict(
             base_dir = str(assemble_workspace_path(base_dir))
         ))
-        if entry.get("model_name") is not None:
+        if entry.get("model_name") is not None and model_policy == "global":
             config[key].update(dict(
                 model_name = config.model_name
             ))

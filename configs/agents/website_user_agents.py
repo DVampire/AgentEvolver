@@ -6,7 +6,6 @@ _COMMON = dict(
         "A browser-only user co-designer that follows one assigned persona, attempts "
         "realistic goals, personalizes the experience, and submits a design contribution."
     ),
-    model_name="llm_hub/claude-opus-5",
     prompt_name="website_user_agent",
     memory_name="file_system_memory",
     env_name="browser_environment",
@@ -25,6 +24,18 @@ _COMMON = dict(
 # Config keys follow ``inflection.underscore(<class name>)``, which is how
 # AgentContextManager binds registered classes to their instance configuration.  Runtime
 # names retain the more readable numbered form used by prompts and delegation calls.
-website_user1_agent = dict(name="website_user_1_agent", **_COMMON)
-website_user2_agent = dict(name="website_user_2_agent", **_COMMON)
-website_user3_agent = dict(name="website_user_3_agent", **_COMMON)
+website_user1_agent = dict(
+    name="website_user_1_agent",
+    model_name="llm_hub/claude-opus-5",
+    **_COMMON,
+)
+website_user2_agent = dict(
+    name="website_user_2_agent",
+    model_name="llm_hub/gpt-5.6-sol",
+    **_COMMON,
+)
+website_user3_agent = dict(
+    name="website_user_3_agent",
+    model_name="llm_hub/deepseek-v4-flash",
+    **_COMMON,
+)

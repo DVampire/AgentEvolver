@@ -982,6 +982,13 @@ class EnvironmentContextManager(BaseModel):
                 raise ValueError(f"Action {action} not found in environment {name}")
             action_function = action_config.function
             
+            # ``ctx`` is owned by the runtime.  Older persisted schemas and provider
+            # caches may still send it, so remove it again at the execution boundary
+            # before injecting the authoritative EnvironmentContext.  This makes the
+            # compatibility guarantee independent of schema refresh timing.
+            action_input = dict(input or {})
+            action_input.pop("ctx", None)
+
             # Environment args
             env_args = {
                 "ctx": ctx,
@@ -991,9 +998,9 @@ class EnvironmentContextManager(BaseModel):
             # Bound methods have __self__ attribute, unbound methods don't
             if hasattr(action_function, '__self__'):
                 # Bound method: call directly without passing instance
-                return await action_function(**input, **env_args)
+                return await action_function(**action_input, **env_args)
             else:
                 # Unbound method: pass instance as first argument
-                return await action_function(env_instance, **input, **env_args)
+                return await action_function(env_instance, **action_input, **env_args)
         else:
             raise ValueError(f"Environment {name} not found")

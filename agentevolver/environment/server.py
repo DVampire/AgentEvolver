@@ -2,6 +2,7 @@
 
 Server implementation for the Environment Context Protocol with lazy loading support.
 """
+import copy
 import json
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
@@ -194,6 +195,20 @@ class EnvironmentManagerServer(BaseModel):
         if not isinstance(parameters, dict):
             parameters = {"type": "object", "additionalProperties": True}
             source = SchemaSource.LEGACY_FALLBACK
+        else:
+            # ``ctx`` is runtime-owned injection state, not model input.  Environment
+            # action methods declare it so the manager can supply the active session,
+            # but exposing it in the native tool schema lets strict providers emit a
+            # second value and makes ``action(**input, ctx=ctx)`` fail before the
+            # action runs.  Project a defensive copy so persisted action metadata is
+            # unchanged while every provider sees only user-controlled arguments.
+            parameters = copy.deepcopy(parameters)
+            properties = parameters.get("properties")
+            if isinstance(properties, dict):
+                properties.pop("ctx", None)
+            required = parameters.get("required")
+            if isinstance(required, list):
+                parameters["required"] = [item for item in required if item != "ctx"]
         return CapabilitySchema(
             name=f"{name}__{action}",
             description=getattr(item, "description", "") or f"{name}: {action}",

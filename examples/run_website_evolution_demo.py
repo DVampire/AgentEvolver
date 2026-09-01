@@ -12,11 +12,10 @@ Validate config, prompts, and inputs without calling a model or starting a brows
     /home/wtzhang/miniconda3/envs/agentos/bin/python \
         examples/run_website_evolution_demo.py --validate-only
 
-Run the bundled demonstration::
+Run the bundled ECHO Ark demonstration with its configured heterogeneous panel::
 
     /home/wtzhang/miniconda3/envs/agentos/bin/python \
-        examples/run_website_evolution_demo.py \
-        --model llm_hub/deepseek-v4-flash
+        examples/run_website_evolution_demo.py
 
 Use another domain and three hidden personas::
 
@@ -38,8 +37,13 @@ from typing import Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT_DIR = ROOT / "examples" / "inputs" / "website_evolution_demo"
+DEFAULT_ECHO_INPUT_DIR = DEFAULT_INPUT_DIR / "echo_ark"
 DEFAULT_TASK = ROOT / "examples" / "tasks" / "website_feedback_evolution_demo.html"
+DEFAULT_SITE_BRIEF = (
+    ROOT / "examples" / "tasks" / "website_evolution_scenarios" / "echo_ark.html"
+)
 DEFAULT_CONFIG = ROOT / "configs" / "website_evolution_demo.py"
+OPTIMIZATION_CYCLES = 5
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -50,14 +54,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--task-file", default=str(DEFAULT_TASK), help="General task HTML.")
     parser.add_argument(
         "--site-brief",
-        default=str(DEFAULT_INPUT_DIR / "site_brief.html"),
+        default=str(DEFAULT_SITE_BRIEF),
         help="Domain-specific website brief passed to the Website Builder.",
     )
     parser.add_argument(
         "--persona-brief",
         nargs=3,
         metavar=("PERSONA_1", "PERSONA_2", "PERSONA_3"),
-        default=[str(DEFAULT_INPUT_DIR / f"persona_{index:02d}.html") for index in range(1, 4)],
+        default=[
+            str(DEFAULT_ECHO_INPUT_DIR / f"persona_{index:02d}.html")
+            for index in range(1, 4)
+        ],
         help="Exactly three persona files, routed one-to-one to the three browser co-designers.",
     )
     parser.add_argument(
@@ -69,7 +76,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--model",
         default=None,
-        help="Override the configured model route for every demo agent (for example llm_hub/deepseek-v4-flash).",
+        help=(
+            "Override every demo agent with one model (compatibility/debug option). "
+            "By default the role-specific models in the config are preserved."
+        ),
+    )
+    parser.add_argument(
+        "--builder-model",
+        default=None,
+        help="Override only the Website Builder model route.",
+    )
+    parser.add_argument(
+        "--code-model",
+        default=None,
+        help="Override only the Code Agent model route.",
+    )
+    parser.add_argument(
+        "--user-model",
+        nargs=3,
+        metavar=("USER_1", "USER_2", "USER_3"),
+        default=None,
+        help="Override the three Website User Agent model routes in persona order.",
     )
     parser.add_argument(
         "--cfg-options",
@@ -115,13 +142,15 @@ def build_task_text(task_path: Path, site_brief: Path, personas: list[Path]) -> 
 
     document = load_task_document(str(task_path))
     manifest = {
-        "site_brief": site_brief.name,
-        "persona_01": personas[0].name,
-        "persona_02": personas[1].name,
-        "persona_03": personas[2].name,
+        "site_brief": str(site_brief),
+        "persona_01": str(personas[0]),
+        "persona_02": str(personas[1]),
+        "persona_03": str(personas[2]),
+        "optimization_cycles": OPTIMIZATION_CYCLES,
+        "required_versions": [f"V{index}" for index in range(OPTIMIZATION_CYCLES + 1)],
         "privacy_rule": (
-            "The Website Builder routes persona files by basename but never reads their "
-            "contents; each file is read only by its assigned Website User Agent."
+            "The Website Builder routes each exact persona path but never reads its contents; "
+            "each file is read only by its assigned Website User Agent."
         ),
     }
     return (
@@ -208,6 +237,11 @@ def validate_local_artifacts(
     task = load_task_document(str(task_path))
     if not task.content or "## objective" not in task.content:
         raise ValueError("task HTML did not produce the expected semantic clean text")
+    if int(config.get("optimization_cycles", 0)) != OPTIMIZATION_CYCLES:
+        raise ValueError(
+            "website evolution config must require exactly five optimization cycles "
+            f"after V0, got {config.get('optimization_cycles')!r}"
+        )
 
     task_text = build_task_text(task_path, site_brief, personas)
     if "runtime-input-manifest" not in task_text:
@@ -251,12 +285,30 @@ def validate_local_artifacts(
                 f"environment={instance.env_name!r}"
             )
 
+    expected_models = {
+        "website_builder_agent": "llm_hub/claude-opus-5",
+        "code_agent": "llm_hub/claude-opus-5",
+        "website_user1_agent": "llm_hub/claude-opus-5",
+        "website_user2_agent": "llm_hub/gpt-5.6-sol",
+        "website_user3_agent": "llm_hub/deepseek-v4-flash",
+    }
+    actual_models = {
+        key: str(getattr(config, key).get("model_name")) for key in expected_models
+    }
+    if actual_models != expected_models:
+        raise ValueError(
+            "default role model routing is invalid: "
+            f"expected={expected_models}, actual={actual_models}"
+        )
+
     print("Website evolution demo validation: OK")
     print(f"  config: {config_path}")
     print(f"  task: {task_path}")
     print(f"  site brief: {site_brief}")
     print(f"  personas: {', '.join(str(path) for path in personas)}")
-    print(f"  model: {config.model_name}")
+    print("  role models:")
+    for role, model in actual_models.items():
+        print(f"    {role}: {model}")
 
 
 def launch(args: argparse.Namespace) -> None:
@@ -283,7 +335,31 @@ def launch(args: argparse.Namespace) -> None:
     ]
     cfg_options = list(args.cfg_options)
     if args.model:
-        cfg_options.insert(0, f"model_name={args.model}")
+        cfg_options[:0] = [
+            f"model_name={args.model}",
+            f"website_builder_agent.model_name={args.model}",
+            f"code_agent.model_name={args.model}",
+            f"general_agent.model_name={args.model}",
+            f"reviewer_agent.model_name={args.model}",
+            f"generate_agent.model_name={args.model}",
+            f"optimize_agent.model_name={args.model}",
+            f"evaluate_agent.model_name={args.model}",
+            f"website_user1_agent.model_name={args.model}",
+            f"website_user2_agent.model_name={args.model}",
+            f"website_user3_agent.model_name={args.model}",
+        ]
+    else:
+        if args.builder_model:
+            cfg_options.insert(
+                0, f"website_builder_agent.model_name={args.builder_model}"
+            )
+        if args.code_model:
+            cfg_options.insert(0, f"code_agent.model_name={args.code_model}")
+        if args.user_model:
+            cfg_options[:0] = [
+                f"website_user{index}_agent.model_name={model}"
+                for index, model in enumerate(args.user_model, start=1)
+            ]
     if cfg_options:
         forwarded.extend(["--cfg-options", *cfg_options])
 

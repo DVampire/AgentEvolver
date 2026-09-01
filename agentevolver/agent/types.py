@@ -479,6 +479,11 @@ class _AgentRun:
         #: mid-action with nothing committed. See `_LANDING_RESERVE_STEPS`.
         self.landing = False
         self.action_errors: List[str] = []
+        #: Guidance-producing external events (notably child escalations) that arrive
+        #: while a tool batch is in flight.  They must wait for the batch's assistant
+        #: call and every tool result to be recorded as one complete protocol turn;
+        #: rendering a second model request mid-round corrupts native tool-call history.
+        self.pending_external_notes: List[str] = []
         # the round currently in flight (this turn's batch)
         self.round_step = 0
         self.decision: Optional[Dict[str, Any]] = None
@@ -2940,7 +2945,8 @@ class Agent(BaseModel):
                               plan=getattr(run, "step_plan", []),
                               step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"),
                               done=run.round_done)
-        run.action_errors = list(run.round_errors)
+        run.action_errors = [*run.round_errors, *run.pending_external_notes]
+        run.pending_external_notes.clear()
         run.step = run.round_step + 1
         if run.round_done:
             run.done = True

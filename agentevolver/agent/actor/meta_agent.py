@@ -29,7 +29,7 @@ from agentevolver.agent.types import Agent, AgentContext
 from agentevolver.response.types import Response
 from agentevolver.logger import logger
 from agentevolver.registry import AGENT
-from agentevolver.protocol import protocol_manager, EscalationMessage
+from agentevolver.protocol import EscalationMessage
 
 
 # ---------------------------------------------------------------------------
@@ -133,10 +133,15 @@ class MetaAgent(Agent):
         return {"available_workflows": available}
 
     async def _handle_extra_event(self, run, msg: Any) -> None:
-        """A blocked sub-agent escalated (its EscalationMessage landed in our inbox). Reply
-        with a focused think turn — mid-round, so we do NOT dispatch new work; the round in
-        flight keeps running. The reply resumes the suspended sub-agent over the escalation
-        channel (``protocol_manager.reply`` → runtime.resume)."""
+        """Queue a blocked child's escalation for the next protocol-safe turn.
+
+        Environment/tool actions execute concurrently and post their results back to this
+        same inbox.  Starting a second model request here while ``run.outstanding`` is
+        non-empty exposes an assistant tool-call before all of its results exist (or a
+        result after its assistant call has been compacted), which strict context
+        validation correctly rejects.  Put the escalation in the next ordinary turn;
+        the mounted ``reply_tool`` then resumes the child through the normal action path.
+        """
         if not isinstance(msg, EscalationMessage):
             return  # progress updates etc. — nothing to do
 
@@ -146,15 +151,15 @@ class MetaAgent(Agent):
             f"Call reply_tool now with this exact task_id and concrete, actionable guidance "
             f"(or tell it to stop gracefully). Do not start new work in this turn."
         )
-        messages = await self._get_messages(
-            run.task, ctx=run.ctx, files=run.files, step_number=run.step,
-            action_errors=[note], constraint_status=[], _run=run,
-        )
-        decision = await self._think(messages, run.task_id, run.step, run.ctx, include_agents=True)
-        guidance = next(
-            (c.input.get("reply") for c in decision["tool_calls"]
-             if c.name == "reply_tool" and (c.input or {}).get("task_id") == msg.task_id),
-            None,
-        ) or "No specific guidance available. Use your best judgement or stop gracefully."
-        protocol_manager.reply(msg.task_id, guidance)
-        logger.info(f"| 💬 MetaAgent replied to escalation [{msg.task_id}]")
+        if run.outstanding:
+            run.pending_external_notes.append(note)
+            logger.info(
+                f"| 📨 MetaAgent queued escalation [{msg.task_id}] until the current "
+                "tool turn is complete"
+            )
+            return
+
+        run.action_errors = [*(run.action_errors or []), note]
+        logger.info(f"| 📨 MetaAgent scheduled escalation reply [{msg.task_id}]")
+        if not run.paused and not run.done:
+            await self._advance(run)

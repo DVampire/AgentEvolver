@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="website_feedback_evolution_demo">
   <meta name="description" content="General protocol for a participatory, preference-driven website builder self-evolution demonstration">
-  <meta name="version" content="2.1.0">
+  <meta name="version" content="2.2.0">
   <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
   <script src="../../agentevolver/visual/js/task.js"></script>
 </head>
@@ -15,9 +15,11 @@
     Build and deploy an initial website from the attached site brief, then let three independent
     persona-based user agents participate as active co-designers rather than passive reviewers.
     Each user must experience the product, shape a personal version, originate a design
-    contribution, and later accept or revise what the system delivered. Produce a verified second
-    version that demonstrates user preference, user customization, user participation in
-    development, and automatic fulfillment—not only developer-led bug fixing.
+    contribution, and later accept or revise what the system delivered. Starting from the frozen V0
+    baseline, execute exactly five successive optimization cycles and freeze V1, V2, V3, V4, and
+    V5. The resulting six-version history must demonstrate user preference, user customization,
+    continuous user participation in development, and automatic fulfillment—not only developer-led
+    bug fixing or five cosmetic rebuilds.
 
     The run must also demonstrate genuine AgentEvolver self-evolution when user contributions
     expose reusable capabilities that the Builder system does not already possess. Relevant
@@ -48,18 +50,23 @@
     3. Require each participant to exercise the main journey, make and save meaningful personal
        choices, and submit a structured design contribution through the website. Verify its profile
        ID and immutable contribution receipt in shared storage.
-    4. Normalize observations, explicit preferences, and desired experiences without flattening
-       minority preferences. Separate personal variants from justified shared product changes;
-       record delivered, deferred, and declined contributions with reasons.
-    5. Implement feasible user-originated contributions automatically. Fix ordinary product defects
-       directly. Use framework evolution only for a demonstrated
-       reusable capability gap, following generate/optimize, evaluate, baseline comparison, and
-       explicit keep or rollback/unload.
-    6. Build, independently verify, deploy, and freeze V1.
-    7. Publish the V1 release event to the same three live subscribers rather than dispatching new
-       agents. Each keeps its user identity but receives a fresh browser context, restores its
-       server-side preference profile, sees how its receipt was handled, and accepts or revises the
-       delivered experience.
+    4. For optimization cycle K from 1 through 5, normalize the observations, explicit preferences,
+       follow-up verdicts, and desired experiences from V(K-1) without flattening minority
+       preferences. Separate personal variants from justified shared product changes; record
+       delivered, deferred, and declined contributions with reasons.
+    5. In every cycle, implement a coherent, evidence-backed increment for VK. Fix ordinary product
+       defects directly. Use framework evolution only for a demonstrated reusable capability gap,
+       following generate/optimize, evaluate, baseline comparison, and explicit keep or
+       rollback/unload. Each cycle must materially advance at least one accepted user need and must
+       not merely rename, redeploy, or restyle an unchanged product.
+    6. Independently verify, deploy, hash, and freeze VK before any participant sees it. Preserve a
+       distinct source/deployment/evidence record for V1, V2, V3, V4, and V5.
+    7. Publish each VK release event to the same three live subscribers rather than dispatching new
+       agents. Each keeps its evaluator/resident identity but receives a fresh browser context,
+       restores its server-side preference profile, sees how its earlier receipt was handled,
+       retries affected goals, and accepts or revises the delivered experience. V1 through V4 also
+       collect the next evidence-backed co-design contribution that drives the following cycle; V5
+       is the final acceptance/revision evaluation, with unresolved revisions recorded as backlog.
   </div>
 
   <div class="co-design-contract">
@@ -96,14 +103,14 @@
 
     A candidate capability is provisional. Evaluate it, compare the same representative task with
     and without it, and obtain independent review when substantial. Keep it only when it measurably
-    helps and a downstream implementation agent actually uses it in V1. Otherwise rollback an
+    helps and a downstream implementation agent actually uses it in a later version. Otherwise rollback an
     optimized component or unload a new component, and record the negative result honestly.
   </div>
 
   <div class="evidence-and-deliverables">
-    Preserve a reproducible audit trail in the workspace: run manifest, V0/V1 source revisions or
-    hashes, the bounded `website_v0_spec.html` used for implementation delegation, deployment URLs,
-    verification evidence, preference profiles, raw contribution receipts,
+    Preserve a reproducible audit trail in the workspace: run manifest, V0 through V5 source
+    revisions or hashes, the bounded `website_v0_spec.html` used for initial implementation
+    delegation, deployment URLs, per-iteration verification evidence, preference profiles, raw contribution receipts,
     contribution/disposition ledgers, evolution ledger, and a final report. Detailed specifications
     travel as attached files; agent-to-agent task strings remain concise and structured.
 
@@ -117,16 +124,20 @@
 
   <div class="acceptance">
     The task is complete only when:
-    - V0 and V1 are live, frozen, and independently verified;
-    - three isolated participants were registered once, the V0 and V1 release publishes each reported
-      fan-out three, and all three subscribers attempted each iteration with the same persona routing;
+    - V0, V1, V2, V3, V4, and V5 are live/frozen records with distinct hashes and independent
+      verification, and V5 remains deployed as the final live release;
+    - exactly five optimization cycles occurred after V0; each maps prior-iteration user evidence to
+      a material accepted change, a new frozen release, and subsequent participant evaluation;
+    - three isolated participants were registered once, all six release publishes each reported
+      fan-out three, and all three subscribers attempted every iteration with the same persona routing;
     - successful turns have website-issued profile/contribution IDs verified in shared storage;
-    - every participant made an explicit choice, originated a contribution, and later accepted or
-      revised its implementation;
+    - every participant made an explicit choice, originated a contribution, and on V1 through V5
+      restored its identity/preferences and accepted or revised the relevant implementation;
     - every preference and contribution has a recorded disposition and evidence-linked outcome;
     - every evolution attempt has an observed trigger, evaluation, baseline comparison, explicit
       keep/rollback decision, and actual downstream use when kept;
-    - V1 preserves the original primary journey while fulfilling accepted contributions; and
+    - V1 through V5 preserve the original primary journey while progressively fulfilling accepted
+      contributions; and
     - the final report exposes exact artifact paths, live URL, receipts, before/after measures,
       evolution decisions, and limitations.
   </div>
