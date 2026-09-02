@@ -292,10 +292,6 @@ class WebsiteBuilderAgent(MetaAgent):
             "collected_turns": {},
             "evolution_runs": [],
             "evolution_decisions": [],
-            "minimum_kept_evolutions": max(
-                0,
-                int(manifest.get("minimum_kept_evolutions") or 0),
-            ),
             "initial_step_budget": max(
                 8,
                 int(manifest.get("initial_step_budget") or self.initial_step_budget),
@@ -340,11 +336,6 @@ class WebsiteBuilderAgent(MetaAgent):
                 "then call job__output with turn equal to that release number before "
                 "choosing the next change."
             ),
-            "evolution_audit": (
-                "After collecting each release, record exactly one evidence-based "
-                "record_decision through evolution_tool before the next release."
-            ),
-            "minimum_kept_evolutions": contract["minimum_kept_evolutions"],
             "initial_step_budget": contract["initial_step_budget"],
             "iteration_step_budget": contract["iteration_step_budget"],
         }
@@ -458,7 +449,8 @@ class WebsiteBuilderAgent(MetaAgent):
             f"Iteration budget reached ({budget} model turns since release {releases}). "
             "Stop exploratory checks. Use deploy_tool preview on the current workspace, "
             "make at most one bounded root-cause patch if that evidence fails, then publish; "
-            "or run/record the capability evolution decision and report an honest blocker."
+            "or finish any capability evolution you already chose to start and report "
+            "an honest blocker."
         )
         await self._post_step(
             run.task_id,
@@ -569,22 +561,50 @@ class WebsiteBuilderAgent(MetaAgent):
             return f"release {len(history)} feedback has not been collected from: " + ", ".join(
                 uncollected
             )
-        if "evolution_decisions" not in contract:
-            return None
+        # Runtime never decides whether this task should evolve. It only prevents an
+        # evolution the Builder already started from being left as an unvalidated,
+        # implicitly-active extension.
+        runs = list(contract.get("evolution_runs") or [])
         decisions = list(contract.get("evolution_decisions") or [])
-        audited = {int(item.get("release_number") or 0) for item in decisions}
-        missing_audits = [release for release in range(1, required + 1) if release not in audited]
-        if missing_audits:
-            return "capability evolution decisions were not recorded for release(s): " + ", ".join(
-                str(item) for item in missing_audits
+        changed = {
+            (
+                str(item.get("module") or ""),
+                str(item.get("name") or ""),
+                str(item.get("version") or ""),
             )
-        kept = sum(1 for item in decisions if item.get("decision") == "keep")
-        minimum_kept = int(contract.get("minimum_kept_evolutions") or 0)
-        if kept < minimum_kept:
-            return (
-                f"the task requires {minimum_kept} evaluated capability evolution(s); "
-                f"only {kept} were kept"
+            for item in runs
+            if item.get("success")
+            and item.get("agent") in {"generate_agent", "optimize_agent"}
+            and item.get("module")
+            and item.get("name")
+            and item.get("version")
+        }
+        for module, name, version in sorted(changed):
+            evaluated = any(
+                item.get("success")
+                and item.get("agent") == "evaluate_agent"
+                and item.get("module") == module
+                and item.get("name") == name
+                and item.get("version") == version
+                for item in runs
             )
+            decided = any(
+                item.get("module") == module
+                and item.get("name") == name
+                and item.get("version") == version
+                and item.get("decision") in {"keep", "rollback", "unload"}
+                for item in decisions
+            )
+            if not evaluated or not decided:
+                missing = (
+                    "evaluation and decision"
+                    if not evaluated and not decided
+                    else ("evaluation" if not evaluated else "keep/rollback/unload decision")
+                )
+                return (
+                    f"self-initiated evolution {module}:{name} v{version} is incomplete; "
+                    f"missing {missing}"
+                )
         return None
 
     async def on_start(self, task, files, ctx, ref, **kwargs):

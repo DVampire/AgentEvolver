@@ -42,7 +42,6 @@ SCENARIO_ROOT = ROOT / "examples" / "tasks" / "website_evolution"
 DEFAULT_SCENARIO_DIR = SCENARIO_ROOT / "echo_ark"
 DEFAULT_CONFIG = ROOT / "configs" / "website_evolution_demo.py"
 OPTIMIZATION_CYCLES = 5
-MINIMUM_KEPT_EVOLUTIONS = 1
 INITIAL_STEP_BUDGET = 36
 ITERATION_STEP_BUDGET = 30
 DEFAULT_USER_MODELS = [
@@ -186,7 +185,6 @@ def build_task_text(
             ],
         ],
         "optimization_cycles": OPTIMIZATION_CYCLES,
-        "minimum_kept_evolutions": MINIMUM_KEPT_EVOLUTIONS,
         "initial_step_budget": INITIAL_STEP_BUDGET,
         "iteration_step_budget": ITERATION_STEP_BUDGET,
         "participants": [
@@ -212,8 +210,6 @@ def build_task_text(
         },
         "run_policy": {
             "blind_initial_build": True,
-            "evolve_only_proven_reusable_capability_gaps": True,
-            "require_evolution_audit_after_each_release": True,
         },
         "privacy_rule": (
             "Runtime privately routes each persona attachment to exactly one Website User "
@@ -312,12 +308,6 @@ def validate_local_artifacts(
             "website evolution config must require exactly five optimization cycles "
             f"after the initial build, got {config.get('optimization_cycles')!r}"
         )
-    if int(config.get("minimum_kept_evolutions", 0)) != MINIMUM_KEPT_EVOLUTIONS:
-        raise ValueError(
-            "website evolution config and task contract disagree on the required "
-            "number of evaluated capability evolutions"
-        )
-
     # All long-running roles use the same bounded-history protocol proven by the
     # SWE-bench MetaAgent.  A role-specific model may choose native or portable
     # compaction, but no role may silently disable compaction altogether.

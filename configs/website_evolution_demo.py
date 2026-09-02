@@ -29,9 +29,6 @@ log_path = "agent.log"
 # transitions. The launcher repeats the count in the task manifest and validation
 # rejects drift between configuration and task contract.
 optimization_cycles = 5
-# This is an evolution demonstration, not only a product iteration benchmark: at
-# least one evidence-backed framework capability must complete the full lifecycle.
-minimum_kept_evolutions = 1
 initial_step_budget = 36
 iteration_step_budget = 30
 # Keep this demonstration's generated/optimized components isolated from the global

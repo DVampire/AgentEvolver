@@ -221,7 +221,7 @@ Permission mode: `workspace_write` · does not declare whether it changes state
 | `elapsed_ms` | `float` | no | `0.0` |
 | `notes` | `str` | no | `''` |
 | `release_number` | `Optional[int]` | no | `None` |
-| `decision` | `Optional[Literal['keep', 'no_gap', 'rollback', 'unload']]` | no | `None` |
+| `decision` | `Optional[Literal['keep', 'rollback', 'unload']]` | no | `None` |
 | `evidence` | `str` | no | `''` |
 | `evaluation` | `str` | no | `''` |
 

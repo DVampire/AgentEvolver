@@ -165,16 +165,6 @@ class DeployTool(Tool):
                 f"job__output(turn={release_number}) "
                 f"before another deploy: {', '.join(unread)}"
             )
-        if "evolution_decisions" in contract:
-            audited = {
-                int(item.get("release_number") or 0)
-                for item in contract.get("evolution_decisions") or []
-            }
-            if release_number not in audited:
-                return (
-                    f"release {release_number} needs an evidence-based capability audit; "
-                    "call evolution_tool action=record_decision before the next preview/deploy"
-                )
         return ""
 
     @staticmethod

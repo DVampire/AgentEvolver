@@ -33,10 +33,12 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
 - `rollback`: restore a component to a previous version (becomes live immediately). Args: `module`, `name`, `version`.
 - `unload`: unregister an evolved component (its archive is kept). Args: `module`, `name`.
 - `record_workflow_evaluation`: append one version-scoped Workflow evaluation. Successful evidence requires a real terminal `run_id`; static failures require `case_id`. Args: `name`, `version`, `success`, `quality_score`, plus optional `run_id`, `case_id`, `token_cost`, `elapsed_ms`, `notes`.
-- `record_decision`: record a task-scoped capability audit after evidence was collected. Args:
-  `release_number`, `decision` (`keep|no_gap|rollback|unload`), `evidence`; a `keep`
-  also requires `module`, `name`, and `evaluation`. The tool verifies that the current
-  run actually changed and evaluated the kept component.
+- `record_decision`: record the outcome of an evolution the agent chose to start. Args:
+  `release_number`, `decision` (`keep|rollback|unload`), `module`, `name`, `evidence`,
+  and `evaluation`. `rollback` and `unload` also require the rejected candidate's
+  `version`; perform the matching lifecycle action separately. The tool verifies that
+  the current run actually changed and evaluated the candidate. Do not call this action
+  when no evolution was started.
 
 `module` is one of: tool | agent | prompt | skill | environment | connector | workflow.
 
@@ -94,7 +96,7 @@ class EvolutionTool(Tool):
         elapsed_ms: float = 0.0,
         notes: str = "",
         release_number: Optional[int] = None,
-        decision: Optional[Literal["keep", "no_gap", "rollback", "unload"]] = None,
+        decision: Optional[Literal["keep", "rollback", "unload"]] = None,
         evidence: str = "",
         evaluation: str = "",
         **kwargs: Any,
@@ -117,10 +119,10 @@ class EvolutionTool(Tool):
             token_cost: Tokens consumed by a workflow evaluation.
             elapsed_ms: Workflow evaluation duration in milliseconds.
             notes: Optional workflow evaluation notes.
-            release_number: Published release whose capability evidence is being audited.
-            decision: Audit result: keep, no_gap, rollback, or unload.
-            evidence: Grounded reason for the task-scoped audit result.
-            evaluation: Baseline comparison supporting a kept capability.
+            release_number: Published release whose evidence led to the evolution.
+            decision: Evaluated candidate outcome: keep, rollback, or unload.
+            evidence: Grounded reason for the task-scoped evolution decision.
+            evaluation: Baseline comparison supporting the decision.
             **kwargs: Runtime-only injected values, including the current context.
         """
         from agentevolver.extension import (
@@ -264,45 +266,49 @@ class EvolutionTool(Tool):
                         + ", ".join(unread)
                     )
 
-                active_version = None
+                if not module or not name or not evaluation.strip():
+                    raise KeyError("module, name, and evaluation")
+
+                candidate_version = version or ""
                 if decision == "keep":
-                    if not module or not name or not evaluation.strip():
-                        raise KeyError("module, name, and evaluation for keep")
                     component = extension_manager.read_manifest().find(module, name)
                     if component is None:
                         raise RuntimeError(
                             f"cannot keep inactive extension component {module}:{name}"
                         )
-                    active_version = component.version
-                    runs = list(contract.get("evolution_runs") or [])
-                    changed = any(
-                        row.get("success")
-                        and row.get("agent") in {"generate_agent", "optimize_agent"}
-                        and row.get("module") == module
-                        and row.get("name") == name
-                        and row.get("version") == active_version
-                        for row in runs
+                    candidate_version = component.version
+                elif not candidate_version:
+                    raise KeyError("version for rollback or unload decision")
+
+                runs = list(contract.get("evolution_runs") or [])
+                changed = any(
+                    row.get("success")
+                    and row.get("agent") in {"generate_agent", "optimize_agent"}
+                    and row.get("module") == module
+                    and row.get("name") == name
+                    and row.get("version") == candidate_version
+                    for row in runs
+                )
+                evaluated = any(
+                    row.get("success")
+                    and row.get("agent") == "evaluate_agent"
+                    and row.get("module") == module
+                    and row.get("name") == name
+                    and row.get("version") == candidate_version
+                    for row in runs
+                )
+                if not changed or not evaluated:
+                    raise RuntimeError(
+                        "decision requires a successful generate/optimize and evaluate run "
+                        f"for {module}:{name} v{candidate_version}"
                     )
-                    evaluated = any(
-                        row.get("success")
-                        and row.get("agent") == "evaluate_agent"
-                        and row.get("module") == module
-                        and row.get("name") == name
-                        and row.get("version") == active_version
-                        for row in runs
-                    )
-                    if not changed or not evaluated:
-                        raise RuntimeError(
-                            "keep requires a successful generate/optimize and evaluate run "
-                            f"for the active {module}:{name} v{active_version}"
-                        )
 
                 record = {
                     "release_number": release_number,
                     "decision": decision,
                     "module": module or "",
                     "name": name or "",
-                    "version": active_version or version or "",
+                    "version": candidate_version,
                     "evidence": evidence.strip(),
                     "evaluation": evaluation.strip(),
                 }
@@ -310,7 +316,12 @@ class EvolutionTool(Tool):
                 decisions[:] = [
                     row
                     for row in decisions
-                    if int(row.get("release_number") or 0) != release_number
+                    if not (
+                        int(row.get("release_number") or 0) == release_number
+                        and row.get("module") == module
+                        and row.get("name") == name
+                        and row.get("version") == candidate_version
+                    )
                 ]
                 decisions.append(record)
                 return Response(
@@ -318,8 +329,7 @@ class EvolutionTool(Tool):
                     success=True,
                     message=(
                         f"Recorded release {release_number} capability decision: "
-                        f"{decision}"
-                        + (f" {module}:{name} v{active_version}" if active_version else "")
+                        f"{decision}" + f" {module}:{name} v{candidate_version}"
                     ),
                     data={"decision": record},
                 )

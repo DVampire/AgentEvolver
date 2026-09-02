@@ -393,7 +393,7 @@ def test_next_deploy_waits_until_every_subscriber_feedback_is_read(monkeypatch):
     assert DeployTool._previous_release_blocker(ctx) == ""
 
 
-def test_next_release_requires_a_capability_audit_when_contract_enables_it(monkeypatch):
+def test_next_release_does_not_require_an_evolution_decision(monkeypatch):
     from agentevolver.runtime import runtime_manager
 
     ready = SimpleNamespace(
@@ -416,13 +416,6 @@ def test_next_release_requires_a_capability_audit_when_contract_enables_it(monke
         }
     )
 
-    assert "capability audit" in DeployTool._previous_release_blocker(ctx)
-    contract["evolution_decisions"].append(
-        {
-            "release_number": 1,
-            "decision": "no_gap",
-        }
-    )
     assert DeployTool._previous_release_blocker(ctx) == ""
 
 
@@ -518,7 +511,7 @@ async def test_builder_completion_requires_release_feedback_collection(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_builder_completion_requires_configured_evolution_evidence(monkeypatch, tmp_path):
+async def test_builder_completion_only_closes_self_initiated_evolution(monkeypatch, tmp_path):
     from agentevolver.runtime import runtime_manager
 
     ready = SimpleNamespace(
@@ -535,8 +528,8 @@ async def test_builder_completion_requires_configured_evolution_evidence(monkeyp
         "subscriber_job_ids": ["acceptance"],
         "acceptance_job_id": "acceptance",
         "collected_turns": {"acceptance": 1},
+        "evolution_runs": [],
         "evolution_decisions": [],
-        "minimum_kept_evolutions": 1,
     }
     ctx = SimpleNamespace(
         extra={
@@ -546,15 +539,39 @@ async def test_builder_completion_requires_configured_evolution_evidence(monkeyp
     )
     builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
 
-    assert "not recorded" in await builder._completion_blocker(ctx)
+    assert await builder._completion_blocker(ctx) is None
+
+    contract["evolution_runs"] = [
+        {
+            "agent": "generate_agent",
+            "module": "skill",
+            "name": "adaptive_ui",
+            "version": "1.0.0",
+            "success": True,
+        }
+    ]
+    assert "missing evaluation and decision" in await builder._completion_blocker(ctx)
+
+    contract["evolution_runs"].append(
+        {
+            "agent": "evaluate_agent",
+            "module": "skill",
+            "name": "adaptive_ui",
+            "version": "1.0.0",
+            "success": True,
+        }
+    )
+    assert "missing keep/rollback/unload decision" in await builder._completion_blocker(ctx)
+
     contract["evolution_decisions"] = [
         {
             "release_number": 1,
-            "decision": "no_gap",
+            "decision": "keep",
+            "module": "skill",
+            "name": "adaptive_ui",
+            "version": "1.0.0",
         }
     ]
-    assert "only 0 were kept" in await builder._completion_blocker(ctx)
-    contract["evolution_decisions"][0]["decision"] = "keep"
     assert await builder._completion_blocker(ctx) is None
 
 
@@ -657,6 +674,8 @@ def test_website_task_manifest_routes_independent_acceptance(tmp_path):
         "independent_from_user_codesign": True,
     }
     assert manifest["codesign_policy"]["participants_are_evaluators"] is False
+    assert manifest["run_policy"] == {"blind_initial_build": True}
+    assert "minimum_kept_evolutions" not in manifest
     assert all("source_path" not in item for item in manifest["attachments"])
     assert all(str(path) not in task for path in personas)
 
