@@ -151,7 +151,7 @@ Permission mode: `danger_full_access` · changes state
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
-| `action` | `Literal['deploy', 'list', 'get', 'stop', 'redeploy']` | no | `'list'` |
+| `action` | `Literal['preview', 'deploy', 'list', 'get', 'stop', 'redeploy']` | no | `'list'` |
 | `site_id` | `Optional[str]` | no | `None` |
 | `runtime` | `str` | no | `'static'` |
 | `source_dir` | `Optional[str]` | no | `None` |
@@ -201,13 +201,29 @@ Permission mode: `read_only` · does not declare whether it changes state
 
 ## `evolution_tool`
 
-Manage evolved (extension) components: list active, list versions, roll back, or unload.
+Manage and record the evaluated lifecycle of evolved extension components.
 
 Permission mode: `workspace_write` · does not declare whether it changes state
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
-| `action` | `str` | no | `'list_active'` |
+| `action` | `Literal['list_active', 'list_versions', 'diff', 'rollback', 'unload', 'record_workflow_evaluation', 'record_decision']` | no | `'list_active'` |
+| `module` | `Optional[str]` | no | `None` |
+| `name` | `Optional[str]` | no | `None` |
+| `version` | `Optional[str]` | no | `None` |
+| `version_a` | `Optional[str]` | no | `None` |
+| `version_b` | `Optional[str]` | no | `None` |
+| `success` | `Optional[bool]` | no | `None` |
+| `quality_score` | `Optional[float]` | no | `None` |
+| `run_id` | `Optional[str]` | no | `None` |
+| `case_id` | `Optional[str]` | no | `None` |
+| `token_cost` | `int` | no | `0` |
+| `elapsed_ms` | `float` | no | `0.0` |
+| `notes` | `str` | no | `''` |
+| `release_number` | `Optional[int]` | no | `None` |
+| `decision` | `Optional[Literal['keep', 'no_gap', 'rollback', 'unload']]` | no | `None` |
+| `evidence` | `str` | no | `''` |
+| `evaluation` | `str` | no | `''` |
 
 ## `exit_plan_mode`
 

@@ -21,6 +21,7 @@ included — deliberately.
 """
 
 import asyncio
+import json
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import ConfigDict, Field
@@ -54,9 +55,9 @@ class JobEnvironment(Environment):
     name: str = Field(default="job")
     description: str = Field(
         default="Background work this session started — a backgrounded command, a "
-                "backgrounded terminal send, a dispatched sub-agent, a reminder. What is "
-                "still running is shown every step; the actions collect output and stop "
-                "things."
+        "backgrounded terminal send, a dispatched sub-agent, a reminder. What is "
+        "still running is shown every step; the actions collect output and stop "
+        "things."
     )
     metadata: Dict[str, Any] = Field(default={"has_vision": False})
     enable_evolving: bool = Field(default=False)
@@ -76,12 +77,17 @@ class JobEnvironment(Environment):
         if job is not None and (not owner or job.session_id == owner):
             return job, None
         known = [j.id for j in job_manager.list(owner)]
-        return None, _fail(f"No job {job_id!r}. This session has: "
-                           f"{', '.join(known) if known else '(none)'}")
+        return None, _fail(
+            f"No job {job_id!r}. This session has: {', '.join(known) if known else '(none)'}"
+        )
 
     @staticmethod
     def _record_subscriber_collection(
-        job_id: str, ctx, *, full: bool, turn: Optional[int] = None,
+        job_id: str,
+        ctx,
+        *,
+        full: bool,
+        turn: Optional[int] = None,
     ) -> int:
         """A full read acknowledges the latest finished subscription turn."""
         if not full:
@@ -106,7 +112,8 @@ class JobEnvironment(Environment):
             return 0
         collected = contract.setdefault("collected_turns", {})
         collected[job_id] = max(
-            int(collected.get(job_id) or 0), completed_turn,
+            int(collected.get(job_id) or 0),
+            completed_turn,
         )
         return int(collected[job_id])
 
@@ -136,8 +143,10 @@ class JobEnvironment(Environment):
         # how a listing shows work as pending after it has already fired.
         now = job_manager.clock()
         body = "\n".join(j.summary(now) for j in jobs)
-        return _ok(f"{len(jobs)} job(s), {running} still running:\n{body}",
-                   jobs=[j.model_dump(exclude={"handle", "output"}) for j in jobs])
+        return _ok(
+            f"{len(jobs)} job(s), {running} still running:\n{body}",
+            jobs=[j.model_dump(exclude={"handle", "output"}) for j in jobs],
+        )
 
     @environment_manager.action(
         name="output",
@@ -153,9 +162,14 @@ class JobEnvironment(Environment):
             "that say what happened."
         ),
     )
-    async def output(self, job_id: str, tail: Optional[int] = None,
-                     turn: Optional[int] = None,
-                     ctx=None, **kwargs: Any) -> Dict[str, Any]:
+    async def output(
+        self,
+        job_id: str,
+        tail: Optional[int] = None,
+        turn: Optional[int] = None,
+        ctx=None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
         job, failure = self._resolve(job_id, ctx)
         if failure:
             return failure
@@ -171,25 +185,29 @@ class JobEnvironment(Environment):
             if ref is None or turn not in ref.turn_results:
                 available = sorted((getattr(ref, "turn_results", None) or {}).keys())
                 return _fail(
-                    f"No completed turn {turn} for {job_id}; available: "
-                    f"{available or '(none)'}"
+                    f"No completed turn {turn} for {job_id}; available: {available or '(none)'}"
                 )
             text = ref.turn_results[turn]
+            diagnostics = (getattr(ref, "turn_diagnostics", None) or {}).get(turn)
+            if diagnostics:
+                text = (
+                    f"{text}\n\n[runtime diagnostics]\n"
+                    f"{json.dumps(diagnostics, ensure_ascii=False, sort_keys=True)}"
+                )
         else:
             text = job_manager.output(job_id, tail=tail) or ""
         collected_turn = self._record_subscriber_collection(
-            job_id, ctx, full=tail is None, turn=turn,
+            job_id,
+            ctx,
+            full=tail is None,
+            turn=turn,
         )
         header = f"{job.id} — {job.status.value}"
         if job.status.is_final and job.exit_code is not None:
             header += f" (exit {job.exit_code})"
         header += f", {job.elapsed:.1f}s"
         idle_after_turn = bool(
-            ref
-            and ref.alive
-            and ref.continuable
-            and not ref.busy
-            and ref._tasks.empty()
+            ref and ref.alive and ref.continuable and not ref.busy and ref._tasks.empty()
         )
         if idle_after_turn:
             header += f" — IDLE AFTER TURN {ref.turns}, ready for a later event"
@@ -201,14 +219,18 @@ class JobEnvironment(Environment):
             header += " (earlier output dropped; the cap keeps the tail)"
         if job.error:
             header += f"\nerror: {job.error}"
-        return _ok(f"{header}\n\n{text}" if text else f"{header}\n\n(no output yet)",
-                   job_id=job_id, status=job.status.value, exit_code=job.exit_code,
-                   collected_turn=collected_turn or None,
-                   requested_turn=turn,
-                   idle_after_turn=idle_after_turn,
-                   # Stated as data as well as prose: a caller deciding whether to come
-                   # back should not have to parse a header for it.
-                   running=not job.status.is_final)
+        return _ok(
+            f"{header}\n\n{text}" if text else f"{header}\n\n(no output yet)",
+            job_id=job_id,
+            status=job.status.value,
+            exit_code=job.exit_code,
+            collected_turn=collected_turn or None,
+            requested_turn=turn,
+            idle_after_turn=idle_after_turn,
+            # Stated as data as well as prose: a caller deciding whether to come
+            # back should not have to parse a header for it.
+            running=not job.status.is_final,
+        )
 
     @environment_manager.action(
         name="wait",
@@ -274,9 +296,7 @@ class JobEnvironment(Environment):
                     row["error"] = job.error or "sub-agent ended before reaching the requested turn"
                     terminal_failure = True
                 else:
-                    row["ready"] = (
-                        ref.turns >= min_turns and not ref.busy and ref._tasks.empty()
-                    )
+                    row["ready"] = ref.turns >= min_turns and not ref.busy and ref._tasks.empty()
                 all_ready = all_ready and bool(row["ready"])
                 rows.append(row)
             return rows, all_ready, terminal_failure
@@ -288,18 +308,27 @@ class JobEnvironment(Environment):
             if ready:
                 return _ok(
                     f"All {len(rows)} job(s) reached {condition} after {elapsed:.1f}s.",
-                    condition=condition, min_turns=min_turns, timed_out=False, jobs=rows,
+                    condition=condition,
+                    min_turns=min_turns,
+                    timed_out=False,
+                    jobs=rows,
                 )
             if failed:
                 return _fail(
                     f"A job ended before all targets reached {condition}.",
-                    condition=condition, min_turns=min_turns, timed_out=False, jobs=rows,
+                    condition=condition,
+                    min_turns=min_turns,
+                    timed_out=False,
+                    jobs=rows,
                 )
             remaining = timeout - elapsed
             if remaining <= 0:
                 return _fail(
                     f"Timed out after {timeout:.1f}s waiting for {condition}.",
-                    condition=condition, min_turns=min_turns, timed_out=True, jobs=rows,
+                    condition=condition,
+                    min_turns=min_turns,
+                    timed_out=True,
+                    jobs=rows,
                 )
             await asyncio.sleep(min(0.2, remaining))
 
@@ -323,9 +352,12 @@ class JobEnvironment(Environment):
         if job.status.is_final:
             # Already over is not a failure — the agent's intent is satisfied either way,
             # and reporting it as an error invites a retry loop against a dead process.
-            return _ok(f"{job_id} had already {job.status.value} after {job.elapsed:.1f}s; "
-                       f"nothing to stop. Its output is still readable with job__output.",
-                       job_id=job_id, status=job.status.value)
+            return _ok(
+                f"{job_id} had already {job.status.value} after {job.elapsed:.1f}s; "
+                f"nothing to stop. Its output is still readable with job__output.",
+                job_id=job_id,
+                status=job.status.value,
+            )
 
         was_reminder = job.is_reminder and not job.deliveries
         killed = job_manager.kill(job_id)
@@ -333,11 +365,17 @@ class JobEnvironment(Environment):
         if was_reminder:
             # A reminder printed nothing, so "output before the kill is kept" would be an
             # offer of nothing. What the agent needs to know is that it will not fire.
-            return _ok(f"Cancelled {job_id}. It will not come due: {job.label[:80]}",
-                       job_id=job_id, status=job.status.value)
-        return _ok(f"Stopped {job_id} after {job.elapsed:.1f}s. Output printed before the "
-                   f"kill is kept — read it with job__output.",
-                   job_id=job_id, status=job.status.value)
+            return _ok(
+                f"Cancelled {job_id}. It will not come due: {job.label[:80]}",
+                job_id=job_id,
+                status=job.status.value,
+            )
+        return _ok(
+            f"Stopped {job_id} after {job.elapsed:.1f}s. Output printed before the "
+            f"kill is kept — read it with job__output.",
+            job_id=job_id,
+            status=job.status.value,
+        )
 
     # ------------------------------------------------------------------ state
     async def get_state(self, ctx=None, **kwargs: Any) -> Dict[str, Any]:
@@ -355,7 +393,7 @@ class JobEnvironment(Environment):
         session = self._session(ctx)
         try:
             jobs = [j for j in job_manager.list(session) if not j.status.is_final]
-        except Exception as error:                                   # noqa: BLE001
+        except Exception as error:  # noqa: BLE001
             logger.warning(f"| ⚠️ could not read job state: {error}")
             return {"success": True, "state": f"[job state unavailable — {error}]"}
         if not jobs:

@@ -42,6 +42,9 @@ SCENARIO_ROOT = ROOT / "examples" / "tasks" / "website_evolution"
 DEFAULT_SCENARIO_DIR = SCENARIO_ROOT / "echo_ark"
 DEFAULT_CONFIG = ROOT / "configs" / "website_evolution_demo.py"
 OPTIMIZATION_CYCLES = 5
+MINIMUM_KEPT_EVOLUTIONS = 1
+INITIAL_STEP_BUDGET = 36
+ITERATION_STEP_BUDGET = 30
 DEFAULT_USER_MODELS = [
     "llm_hub/claude-opus-5",
     "llm_hub/gpt-5.6-sol",
@@ -58,9 +61,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--scenario-dir",
         default=str(DEFAULT_SCENARIO_DIR),
-        help=(
-            "Self-contained scenario directory with scenario.html and three persona files."
-        ),
+        help=("Self-contained scenario directory with scenario.html and three persona files."),
     )
     parser.add_argument(
         "--site-brief",
@@ -145,8 +146,7 @@ def resolve_inputs(args: argparse.Namespace) -> tuple[Path, Path, list[Path]]:
         "site brief",
     )
     persona_briefs = args.persona_brief or [
-        str(scenario_dir / f"persona_{index:02d}.html")
-        for index in range(1, 4)
+        str(scenario_dir / f"persona_{index:02d}.html") for index in range(1, 4)
     ]
     personas = [
         _existing_file(path, f"persona {index}")
@@ -186,6 +186,9 @@ def build_task_text(
             ],
         ],
         "optimization_cycles": OPTIMIZATION_CYCLES,
+        "minimum_kept_evolutions": MINIMUM_KEPT_EVOLUTIONS,
+        "initial_step_budget": INITIAL_STEP_BUDGET,
+        "iteration_step_budget": ITERATION_STEP_BUDGET,
         "participants": [
             {
                 "id": f"participant_{index:02d}",
@@ -210,6 +213,7 @@ def build_task_text(
         "run_policy": {
             "blind_initial_build": True,
             "evolve_only_proven_reusable_capability_gaps": True,
+            "require_evolution_audit_after_each_release": True,
         },
         "privacy_rule": (
             "Runtime privately routes each persona attachment to exactly one Website User "
@@ -308,6 +312,11 @@ def validate_local_artifacts(
             "website evolution config must require exactly five optimization cycles "
             f"after the initial build, got {config.get('optimization_cycles')!r}"
         )
+    if int(config.get("minimum_kept_evolutions", 0)) != MINIMUM_KEPT_EVOLUTIONS:
+        raise ValueError(
+            "website evolution config and task contract disagree on the required "
+            "number of evaluated capability evolutions"
+        )
 
     # All long-running roles use the same bounded-history protocol proven by the
     # SWE-bench MetaAgent.  A role-specific model may choose native or portable
@@ -327,9 +336,7 @@ def validate_local_artifacts(
     )
     for role in context_roles:
         role_config = dict(getattr(config, role))
-        actual_policy = {
-            key: role_config.get(key) for key in expected_context_policy
-        }
+        actual_policy = {key: role_config.get(key) for key in expected_context_policy}
         if actual_policy != expected_context_policy or not role_config.get("use_memory"):
             raise ValueError(
                 f"{role} must use the SWE-bench bounded-history policy: "
@@ -411,16 +418,16 @@ def validate_local_artifacts(
     acceptance_key = inflection.underscore(acceptance_class.__name__)
     acceptance = acceptance_class(**dict(getattr(config, acceptance_key)))
     if acceptance._required_capability_allowlists() != expected_user_allowlists:
-        raise ValueError("browser_agent acceptance must expose only done_tool and browser_environment")
+        raise ValueError(
+            "browser_agent acceptance must expose only done_tool and browser_environment"
+        )
 
     expected_models = {
         "website_builder_agent": "llm_hub/claude-opus-5",
         "browser_agent": DEFAULT_ACCEPTANCE_MODEL,
         "website_user_agent": "llm_hub/claude-opus-5",
     }
-    actual_models = {
-        key: str(getattr(config, key).get("model_name")) for key in expected_models
-    }
+    actual_models = {key: str(getattr(config, key).get("model_name")) for key in expected_models}
     if actual_models != expected_models:
         raise ValueError(
             "default role model routing is invalid: "
@@ -454,7 +461,10 @@ def launch(args: argparse.Namespace) -> None:
     if args.model:
         acceptance_model = args.model
     task_text = build_task_text(
-        site_brief, personas, user_models, acceptance_model=acceptance_model,
+        site_brief,
+        personas,
+        user_models,
+        acceptance_model=acceptance_model,
     )
     forwarded = [
         "run_meta_agent.py",
@@ -483,9 +493,7 @@ def launch(args: argparse.Namespace) -> None:
         ]
     else:
         if args.builder_model:
-            cfg_options.insert(
-                0, f"website_builder_agent.model_name={args.builder_model}"
-            )
+            cfg_options.insert(0, f"website_builder_agent.model_name={args.builder_model}")
         if args.acceptance_model:
             cfg_options.insert(0, f"browser_agent.model_name={args.acceptance_model}")
     if cfg_options:

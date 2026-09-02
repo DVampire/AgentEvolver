@@ -6,7 +6,10 @@ The per-framework knowledge lives in pluggable deploy *profiles* (``runtime``),
 so this tool stays stable as new target types are added.
 """
 
+import os
+import socket
 from typing import Any, Dict, List, Literal, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import Field
 
@@ -22,7 +25,9 @@ _GUIDANCE = """
 Deploy a web app and bind it to a reachable URL, then manage deployed sites. Each site is keyed by `site_id`; deploy many and each gets its own URL. Spans lightweight (a single inline HTML page served locally, instantly) to heavy (a full frontend build or backend service in an isolated container).
 
 ### Actions (pass `action`)
-- `deploy`: start a site, return its URL. Args:
+- `preview`: start the current source without publishing a release event. Under a website
+  iteration contract, test this exact URL before `deploy`; the source hash must still match.
+- `deploy`: publish a site and return its URLs. Args:
   - `site_id` (str, required): stable id / reuse key for the site.
   - `runtime` (str): `static` (plain HTML/CSS/JS or a pre-built SPA — the frontend/artifact default), `node` (build a React/Vue/Vite app and serve it), `python` (FastAPI/Flask/ASGI backend via uvicorn), `custom` (you supply image/build/start in `overrides`), `llm` (NOT implemented yet). Default `static`.
   - App source — give exactly one:
@@ -62,9 +67,14 @@ class DeployTool(Tool):
     guidance: str = _GUIDANCE
     examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
+    enable_evolving: bool = Field(
+        default=False, description="Whether the tool may be evolved (self-optimized)"
+    )
     mutates: bool = True
-    permission_mode: str = Field(default="danger_full_access", description="Runs build/start commands inside an isolated sandbox.")
+    permission_mode: str = Field(
+        default="danger_full_access",
+        description="Runs build/start commands inside an isolated sandbox.",
+    )
 
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
@@ -76,6 +86,39 @@ class DeployTool(Tool):
         Columns: site id, runtime, status, and URL (or "-" when not yet assigned).
         """
         return f"{rec.site_id}\t{rec.runtime}\t{rec.status.value}\t{rec.url or '-'}"
+
+    @staticmethod
+    def _access_urls(rec) -> Dict[str, str]:
+        """Return loopback for agents plus a routable host URL for remote users."""
+        internal = str(rec.url or "")
+        urls = {"internal_url": internal}
+        if not internal:
+            return urls
+        parsed = urlsplit(internal)
+        if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            urls["public_url"] = internal
+            return urls
+        host = (os.environ.get("DEPLOY_PUBLIC_HOST") or "").strip()
+        if not host:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                probe.connect(("8.8.8.8", 80))
+                host = str(probe.getsockname()[0])
+            except OSError:
+                host = ""
+            finally:
+                probe.close()
+        if host and parsed.port:
+            urls["public_url"] = urlunsplit(
+                (
+                    parsed.scheme,
+                    f"{host}:{parsed.port}",
+                    parsed.path,
+                    parsed.query,
+                    parsed.fragment,
+                )
+            )
+        return urls
 
     @staticmethod
     def _previous_release_blocker(ctx: Any) -> str:
@@ -104,19 +147,16 @@ class DeployTool(Tool):
             elif ref.last_turn_success is not True:
                 failed.append(str(job_id))
         if pending:
-            return (
-                f"release {release_number} subscriber turns are not complete: "
-                + ", ".join(pending)
+            return f"release {release_number} subscriber turns are not complete: " + ", ".join(
+                pending
             )
         if failed:
-            return (
-                f"release {release_number} subscriber turns failed: "
-                + ", ".join(failed)
-            )
+            return f"release {release_number} subscriber turns failed: " + ", ".join(failed)
 
         collected = dict(contract.get("collected_turns") or {})
         unread = [
-            str(job_id) for job_id in contract.get("subscriber_job_ids") or []
+            str(job_id)
+            for job_id in contract.get("subscriber_job_ids") or []
             if int(collected.get(str(job_id)) or 0) < release_number
         ]
         if unread:
@@ -125,6 +165,36 @@ class DeployTool(Tool):
                 f"job__output(turn={release_number}) "
                 f"before another deploy: {', '.join(unread)}"
             )
+        if "evolution_decisions" in contract:
+            audited = {
+                int(item.get("release_number") or 0)
+                for item in contract.get("evolution_decisions") or []
+            }
+            if release_number not in audited:
+                return (
+                    f"release {release_number} needs an evidence-based capability audit; "
+                    "call evolution_tool action=record_decision before the next preview/deploy"
+                )
+        return ""
+
+    @staticmethod
+    def _preview_site_id(site_id: str, ctx: Any) -> str:
+        context_id = str(getattr(ctx, "id", "") or "runtime")[:8]
+        return f"{site_id}--preview-{context_id}"
+
+    @staticmethod
+    def _preview_blocker(ctx: Any, site_id: str, revision: str) -> str:
+        extra = getattr(ctx, "extra", None) or {}
+        contract = extra.get("website_runtime_contract")
+        if not isinstance(contract, dict):
+            return ""
+        preview = contract.get("latest_preview")
+        if not isinstance(preview, dict):
+            return "preview the current workspace with deploy_tool action=preview first"
+        if preview.get("site_id") != site_id:
+            return f"latest preview belongs to site {preview.get('site_id')!r}, not {site_id!r}"
+        if not revision or preview.get("source_revision") != revision:
+            return "workspace source changed after preview; preview and verify the current revision again"
         return ""
 
     @staticmethod
@@ -153,6 +223,7 @@ class DeployTool(Tool):
             "runtime": rec.runtime,
             "url": rec.url,
             "source_revision": rec.source_revision,
+            **DeployTool._access_urls(rec),
             "deployed_at": rec.updated_at,
         }
         try:
@@ -169,7 +240,7 @@ class DeployTool(Tool):
                 "topic": scoped.split("::", 1)[-1],
                 "fanout": sent,
             }
-        except Exception as error:                                  # noqa: BLE001
+        except Exception as error:  # noqa: BLE001
             logger.warning(f"| ⚠️ deployment.ready publication failed: {error}")
             receipt = {
                 **payload,
@@ -183,7 +254,7 @@ class DeployTool(Tool):
 
     async def __call__(
         self,
-        action: Literal["deploy", "list", "get", "stop", "redeploy"] = "list",
+        action: Literal["preview", "deploy", "list", "get", "stop", "redeploy"] = "list",
         site_id: Optional[str] = None,
         runtime: str = "static",
         source_dir: Optional[str] = None,
@@ -200,7 +271,7 @@ class DeployTool(Tool):
         """Deploy, inspect, and tear down sites.
 
         Args:
-            action: Operation to run: deploy, list, get, stop, or redeploy.
+            action: Operation to run: preview, deploy, list, get, stop, or redeploy.
             site_id: Stable site identifier. Required except for list.
             runtime: Deployment profile, such as static, node, python, or custom.
             source_dir: Absolute host directory containing the application.
@@ -216,7 +287,7 @@ class DeployTool(Tool):
         """
         action = (action or "list").lower().strip()
         try:
-            if action == "deploy":
+            if action in {"preview", "deploy"}:
                 if not site_id:
                     raise KeyError("site_id")
                 blocker = self._previous_release_blocker(kwargs.get("ctx"))
@@ -226,6 +297,7 @@ class DeployTool(Tool):
                         success=False,
                         message=f"Deployment blocked: {blocker}",
                     )
+                requested_site_id = site_id
                 req = DeployRequest(
                     site_id=site_id,
                     runtime=runtime,
@@ -239,48 +311,122 @@ class DeployTool(Tool):
                     env=env or {},
                     overrides=overrides or {},
                 )
+                revision = deployment_manager.source_revision(req)
+                ctx = kwargs.get("ctx")
+                if action == "preview":
+                    req.site_id = self._preview_site_id(site_id, ctx)
+                else:
+                    preview_blocker = self._preview_blocker(ctx, site_id, revision)
+                    if preview_blocker:
+                        return Response(
+                            type=ResponseType.TOOL,
+                            success=False,
+                            message=f"Deployment blocked: {preview_blocker}",
+                        )
                 rec = await deployment_manager.deploy(req)
                 ok = rec.status.value == "running"
                 release = {}
+                if ok and action == "preview":
+                    contract = (getattr(ctx, "extra", None) or {}).get("website_runtime_contract")
+                    preview = {
+                        "site_id": requested_site_id,
+                        "preview_site_id": rec.site_id,
+                        "url": rec.url,
+                        "source_revision": rec.source_revision,
+                        **self._access_urls(rec),
+                    }
+                    if isinstance(contract, dict):
+                        contract["latest_preview"] = preview
+                    urls = self._access_urls(rec)
+                    msg = f"✅ Preview for '{requested_site_id}' is running at {rec.url}"
+                    if urls.get("public_url") and urls["public_url"] != rec.url:
+                        msg += f"; remote browser URL: {urls['public_url']}"
+                    return Response(
+                        type=ResponseType.TOOL,
+                        success=True,
+                        message=msg,
+                        data={**rec.model_dump(), **urls, "preview": True},
+                    )
                 if ok:
                     release = await self._publish_ready(
-                        rec, action="deploy", ctx=kwargs.get("ctx"),
+                        rec,
+                        action="deploy",
+                        ctx=kwargs.get("ctx"),
                     )
-                msg = (f"✅ '{rec.site_id}' deployed at {rec.url}" if ok
-                       else f"❌ '{rec.site_id}' status={rec.status.value}: {rec.error}")
+                msg = (
+                    f"✅ '{rec.site_id}' deployed at {rec.url}"
+                    if ok
+                    else f"❌ '{rec.site_id}' status={rec.status.value}: {rec.error}"
+                )
+                urls = self._access_urls(rec)
+                if ok and urls.get("public_url") and urls["public_url"] != rec.url:
+                    msg += f"; remote browser URL: {urls['public_url']}"
                 if release:
                     msg += (
                         f"; release {release['release_number']} queued to "
                         f"{release['fanout']} subscriber(s)"
                     )
+                if ok:
+                    contract = (getattr(ctx, "extra", None) or {}).get("website_runtime_contract")
+                    preview = (
+                        contract.pop("latest_preview", None) if isinstance(contract, dict) else None
+                    )
+                    preview_id = (preview or {}).get("preview_site_id")
+                    if preview_id:
+                        try:
+                            await deployment_manager.stop_site(preview_id)
+                        except Exception as error:  # noqa: BLE001
+                            logger.warning(
+                                f"| ⚠️ could not stop consumed preview {preview_id}: {error}"
+                            )
                 return Response(
                     type=ResponseType.TOOL,
                     success=ok,
                     message=msg,
-                    data={**rec.model_dump(), "subscription_event": release or None},
+                    data={**rec.model_dump(), **urls, "subscription_event": release or None},
                 )
 
             if action == "list":
                 sites = await deployment_manager.list_sites()
                 if not sites:
-                    return Response(type=ResponseType.TOOL, success=True, message="No deployed sites.")
-                body = "\n".join(["site_id\truntime\tstatus\turl"] + [self._site_line(s) for s in sites])
-                return Response(type=ResponseType.TOOL, success=True, message=body,
-                                data={"sites": [s.model_dump() for s in sites]})
+                    return Response(
+                        type=ResponseType.TOOL, success=True, message="No deployed sites."
+                    )
+                body = "\n".join(
+                    ["site_id\truntime\tstatus\turl"] + [self._site_line(s) for s in sites]
+                )
+                return Response(
+                    type=ResponseType.TOOL,
+                    success=True,
+                    message=body,
+                    data={"sites": [s.model_dump() for s in sites]},
+                )
 
             if action == "get":
                 if not site_id:
                     raise KeyError("site_id")
                 rec = await deployment_manager.get_site(site_id)
                 if rec is None:
-                    return Response(type=ResponseType.TOOL, success=False, message=f"No such site {site_id!r}.")
-                return Response(type=ResponseType.TOOL, success=True, message=self._site_line(rec), data=rec.model_dump())
+                    return Response(
+                        type=ResponseType.TOOL, success=False, message=f"No such site {site_id!r}."
+                    )
+                return Response(
+                    type=ResponseType.TOOL,
+                    success=True,
+                    message=self._site_line(rec),
+                    data=rec.model_dump(),
+                )
 
             if action == "stop":
                 if not site_id:
                     raise KeyError("site_id")
                 rec = await deployment_manager.stop_site(site_id)
-                return Response(type=ResponseType.TOOL, success=True, message=f"Stopped '{rec.site_id}'.", data=rec.model_dump())
+                return Response(
+                    type=ResponseType.TOOL,
+                    success=True,
+                    message=f"Stopped '{rec.site_id}'.",
+                    data=rec.model_dump(),
+                )
 
             if action == "redeploy":
                 if not site_id:
@@ -292,15 +438,39 @@ class DeployTool(Tool):
                         success=False,
                         message=f"Deployment blocked: {blocker}",
                     )
+                current = await deployment_manager.get_site(site_id)
+                if current is None or not current.request:
+                    return Response(
+                        type=ResponseType.TOOL,
+                        success=False,
+                        message=f"No redeployable request stored for site {site_id!r}.",
+                    )
+                revision = deployment_manager.source_revision(DeployRequest(**current.request))
+                preview_blocker = self._preview_blocker(
+                    kwargs.get("ctx"),
+                    site_id,
+                    revision,
+                )
+                if preview_blocker:
+                    return Response(
+                        type=ResponseType.TOOL,
+                        success=False,
+                        message=f"Deployment blocked: {preview_blocker}",
+                    )
                 rec = await deployment_manager.redeploy(site_id)
                 ok = rec.status.value == "running"
                 release = {}
                 if ok:
                     release = await self._publish_ready(
-                        rec, action="redeploy", ctx=kwargs.get("ctx"),
+                        rec,
+                        action="redeploy",
+                        ctx=kwargs.get("ctx"),
                     )
-                msg = (f"✅ '{rec.site_id}' redeployed at {rec.url}" if ok
-                       else f"❌ redeploy '{rec.site_id}' status={rec.status.value}: {rec.error}")
+                msg = (
+                    f"✅ '{rec.site_id}' redeployed at {rec.url}"
+                    if ok
+                    else f"❌ redeploy '{rec.site_id}' status={rec.status.value}: {rec.error}"
+                )
                 if release:
                     msg += (
                         f"; release {release['release_number']} queued to "
@@ -313,10 +483,13 @@ class DeployTool(Tool):
                     data={**rec.model_dump(), "subscription_event": release or None},
                 )
 
-            return Response(type=ResponseType.TOOL, success=False,
-                            message=f"Unknown action {action!r}. Use deploy | list | get | stop | redeploy.")
+            return Response(
+                type=ResponseType.TOOL, success=False, message=f"Unknown action {action!r}."
+            )
         except KeyError as e:
-            return Response(type=ResponseType.TOOL, success=False, message=f"Missing required arg: {e}")
+            return Response(
+                type=ResponseType.TOOL, success=False, message=f"Missing required arg: {e}"
+            )
         except Exception as e:
             logger.error(f"| ❌ deploy_tool {action} failed: {e}")
             return Response(type=ResponseType.TOOL, success=False, message=f"Error: {e}")

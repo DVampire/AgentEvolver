@@ -4,18 +4,18 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict, Field
 
+from agentevolver.agent.types import (
+    _TRUNCATED_TURNS_BEFORE_GIVING_UP,
+    Agent,
+    AgentContext,
+)
 from agentevolver.config import config
-from agentevolver.logger import logger
-from agentevolver.registry import AGENT
 from agentevolver.environment.server import environment_manager
 from agentevolver.hook.server import hook_manager
 from agentevolver.hook.types import HookEvent
-from agentevolver.agent.types import (
-    Agent,
-    AgentContext,
-    _TRUNCATED_TURNS_BEFORE_GIVING_UP,
-)
+from agentevolver.logger import logger
 from agentevolver.message import ContentPartImage, ContentPartText, ImageURL, Message
+from agentevolver.registry import AGENT
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.utils.name_utils import make_id
 
@@ -33,8 +33,8 @@ class BrowserAgent(Agent):
     name: str = Field(default="browser_agent")
     description: str = Field(
         default="A browser agent that navigates and operates web pages through the "
-                "browser environment: clicking, typing, scrolling, and running "
-                "Playwright commands as a fallback."
+        "browser environment: clicking, typing, scrolling, and running "
+        "Playwright commands as a fallback."
     )
     metadata: Dict[str, Any] = Field(default={})
     enable_evolving: bool = Field(default=False)
@@ -130,8 +130,9 @@ class BrowserAgent(Agent):
         """
         slots = await super()._get_environment_context(ctx)
         observed = getattr(self, "_observed_state", None)
-        slots["environment_state"] = (observed.get("state") if observed
-                                      else "[Environment state unavailable.]")
+        slots["environment_state"] = (
+            observed.get("state") if observed else "[Environment state unavailable.]"
+        )
         return slots
 
     async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
@@ -176,7 +177,7 @@ class BrowserAgent(Agent):
 
         user_message = messages[-1]
         if unique and isinstance(user_message.content, list):
-            for shot in unique[-self.max_screenshots:]:
+            for shot in unique[-self.max_screenshots :]:
                 b64 = getattr(shot, "screenshot", None)
                 if not b64:
                     continue
@@ -184,7 +185,9 @@ class BrowserAgent(Agent):
                 user_message.content.append(ContentPartText(text=f"\n[{description}]"))
                 user_message.content.append(
                     ContentPartImage(
-                        image_url=ImageURL(url=f"data:image/png;base64,{b64}", media_type="image/png")
+                        image_url=ImageURL(
+                            url=f"data:image/png;base64,{b64}", media_type="image/png"
+                        )
                     )
                 )
         return messages
@@ -200,6 +203,26 @@ class BrowserAgent(Agent):
             for constraint in self.constraints:
                 constraint._cleanup(context_id)
         self._pending_step_tokens.clear()
+
+    @staticmethod
+    def _diagnostic_category(message: str) -> str:
+        text = str(message or "").lower()
+        if any(
+            marker in text
+            for marker in (
+                "accepts async playwright python",
+                "invalid syntax",
+                ".slice",
+                "unexpected token",
+                "is not defined",
+            )
+        ):
+            return "browser_command_language"
+        if "timed out" in text or "timeout" in text:
+            return "browser_command_timeout"
+        if "intercepts pointer events" in text:
+            return "browser_interaction_blocked"
+        return "browser_action_failure"
 
     async def on_start(self, task, files, ctx, ref, **kwargs) -> Response:
         """BrowserAgent keeps its own bespoke loop (browser-action turns), so it runs
@@ -224,9 +247,7 @@ class BrowserAgent(Agent):
         finally:
             self._reset_turn_budget(ctx)
             if environment is not None:
-                await environment.close_session(
-                    str(getattr(ctx, "id", "") or "default")
-                )
+                await environment.close_session(str(getattr(ctx, "id", "") or "default"))
 
     async def __call__(
         self,
@@ -256,22 +277,38 @@ class BrowserAgent(Agent):
         # ON_START
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.ON_START, "agent_name": self.name, "task_id": task_id, "task": enhanced_task, "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
+            input={
+                "event": HookEvent.ON_START,
+                "agent_name": self.name,
+                "task_id": task_id,
+                "task": enhanced_task,
+                "memory_name": self.memory_name,
+                "use_memory": self.use_memory,
+                "parent_session_id": parent_session_id,
+                "subtask_id": subtask_id,
+            },
             ctx=ctx,
         )
 
         step_number = 0
         action_errors: list = []
+        diagnostic_counts: Dict[str, int] = {}
+        diagnostic_samples: Dict[str, str] = {}
         truncated_turns = 0
         response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
 
         while step_number < self.max_step:
-            logger.info(f"| 🔄 Step {step_number+1}/{self.max_step}")
+            logger.info(f"| 🔄 Step {step_number + 1}/{self.max_step}")
             reason, constraint_status = await self._constraint_check(task_id, ctx)
             if reason is not None:
                 logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
-                response = {"done": True, "result": reason, "reasoning": None,
-                            "action_errors": [], "stopped_by_constraint": True}
+                response = {
+                    "done": True,
+                    "result": reason,
+                    "reasoning": None,
+                    "action_errors": [],
+                    "stopped_by_constraint": True,
+                }
                 break
             # Observe the fresh page before reasoning over it
             browser_state = await environment_manager.get_state(self.env_name, ctx=ctx)
@@ -287,6 +324,10 @@ class BrowserAgent(Agent):
             response = await self._think_and_act(messages, task_id, step_number, ctx=ctx)
             step_number += 1
             action_errors = response.get("action_errors") or []
+            for error in action_errors:
+                category = self._diagnostic_category(error)
+                diagnostic_counts[category] = diagnostic_counts.get(category, 0) + 1
+                diagnostic_samples.setdefault(category, str(error))
             if response.get("truncated"):
                 truncated_turns += 1
                 if truncated_turns >= _TRUNCATED_TURNS_BEFORE_GIVING_UP:
@@ -318,13 +359,30 @@ class BrowserAgent(Agent):
         # ON_STOP
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "success": success, "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
+            input={
+                "event": HookEvent.ON_STOP,
+                "agent_name": self.name,
+                "task_id": task_id,
+                "result": response.get("result"),
+                "success": success,
+                "memory_name": self.memory_name,
+                "use_memory": self.use_memory,
+                "parent_session_id": parent_session_id,
+                "subtask_id": subtask_id,
+            },
             ctx=ctx,
         )
 
         logger.info(f"| ✅ BrowserAgent completed after {step_number}/{self.max_step} steps")
 
-        return Response(type=ResponseType.AGENT,
+        response["diagnostics"] = {
+            "action_error_total": sum(diagnostic_counts.values()),
+            "action_error_counts": diagnostic_counts,
+            "action_error_samples": diagnostic_samples,
+        }
+
+        return Response(
+            type=ResponseType.AGENT,
             success=success,
             message=response["result"],
             data=response,

@@ -2402,7 +2402,9 @@ class Agent(BaseModel):
             )
             if resp.success:
                 logger.info(f"| ✅ [{self.name}] Sub-agent '{route[1]}' completed (success=True)")
-                return output, False, None, None, None, None
+                return output, False, None, None, None, {
+                    "child_status": "finished", "child_success": True,
+                }
             # A not-finished dispatch splits two ways. A worker that hit its step ceiling or a
             # resource limit has usually produced real work (a tight worker budget makes this
             # routine) — that is a partial result to build on, not an error, so its work and
@@ -2418,9 +2420,13 @@ class Agent(BaseModel):
             if partial_stop:
                 logger.warning(f"| ⚠️ [{self.name}] Sub-agent '{route[1]}' did not finish "
                                f"(step {step}/{max_step}) — handing back its partial result")
-                return output, False, None, None, None, None
+                return output, False, None, None, None, {
+                    "child_status": "partial", "child_success": False,
+                }
             logger.warning(f"| ❌ [{self.name}] Sub-agent '{route[1]}' failed: {(resp.message or '')[:120]}")
-            return output, False, None, None, (resp.message or f"Sub-agent {route[1]!r} failed"), None
+            return output, False, None, None, (resp.message or f"Sub-agent {route[1]!r} failed"), {
+                "child_status": "failed", "child_success": False,
+            }
         if capability_type in _PLAIN_CAPABILITY_TYPES:
             # Skill, connector, environment, workflow and plugin differ only in which
             # manager answers and whether the route names a member. Four copies of

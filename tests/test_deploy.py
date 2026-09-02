@@ -23,6 +23,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from agentevolver.agent.types import AgentContext
 from agentevolver.deploy.server import DeploymentManagerServer
 from agentevolver.deploy.types import (
     DeploymentSpec,
@@ -35,8 +36,8 @@ from agentevolver.deploy.types import (
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.default.deployment.deploy import DeployTool, deployment_manager
+from agentevolver.tool.default.evolution import EvolutionTool
 from agentevolver.tool.types import ToolContext
-from agentevolver.agent.types import AgentContext
 
 
 def test_deploy_tool_native_schema_exposes_every_action_argument():
@@ -63,6 +64,7 @@ def test_deploy_tool_native_schema_exposes_every_action_argument():
         "overrides",
     }
     assert parameters["properties"]["action"]["enum"] == [
+        "preview",
         "deploy",
         "list",
         "get",
@@ -84,6 +86,32 @@ def test_deploy_tool_accepts_runtime_context_without_exposing_it_to_model():
         for parameter in signature.parameters.values()
     )
     assert "ctx" not in dynamic_manager.get_parameters(DeployTool)["properties"]
+
+
+def test_evolution_tool_exposes_lifecycle_arguments_to_strict_providers():
+    parameters = dynamic_manager.get_parameters(EvolutionTool)
+
+    assert {
+        "action",
+        "module",
+        "name",
+        "version",
+        "version_a",
+        "version_b",
+        "success",
+        "quality_score",
+        "run_id",
+        "case_id",
+        "token_cost",
+        "elapsed_ms",
+        "notes",
+        "release_number",
+        "decision",
+        "evidence",
+        "evaluation",
+    } == set(parameters["properties"])
+    assert "record_decision" in parameters["properties"]["action"]["enum"]
+    assert parameters["additionalProperties"] is False
 
 
 @pytest.mark.asyncio
@@ -455,10 +483,13 @@ async def test_release_publish_receipt_updates_the_parent_context_in_place(monke
         return 4, "root::deployment.ready", SimpleNamespace(id="event-1")
 
     monkeypatch.setattr(protocol_manager, "publish_event", publish_event)
-    parent = AgentContext(id="root", extra={
-        "website_runtime_contract": {"subscriber_job_ids": ["a", "b", "c", "d"]},
-        "deployment_release_history": [],
-    })
+    parent = AgentContext(
+        id="root",
+        extra={
+            "website_runtime_contract": {"subscriber_job_ids": ["a", "b", "c", "d"]},
+            "deployment_release_history": [],
+        },
+    )
     tool_ctx = ToolContext.from_context(parent)
     record = SiteRecord(
         site_id="site",
@@ -488,13 +519,57 @@ async def test_generic_deploy_context_does_not_publish_a_website_event(monkeypat
 
     monkeypatch.setattr(protocol_manager, "publish_event", publish_event)
     record = SiteRecord(
-        site_id="site", runtime="static", status=SiteStatus.RUNNING,
+        site_id="site",
+        runtime="static",
+        status=SiteStatus.RUNNING,
     )
 
-    assert await DeployTool._publish_ready(
-        record, action="deploy", ctx=ToolContext(id="ordinary"),
-    ) == {}
+    assert (
+        await DeployTool._publish_ready(
+            record,
+            action="deploy",
+            ctx=ToolContext(id="ordinary"),
+        )
+        == {}
+    )
     assert called is False
+
+
+def test_website_release_must_match_the_latest_preview_revision():
+    contract = {
+        "latest_preview": {
+            "site_id": "echo",
+            "source_revision": "revision-2",
+        }
+    }
+    ctx = SimpleNamespace(extra={"website_runtime_contract": contract})
+
+    assert DeployTool._preview_blocker(ctx, "echo", "revision-2") == ""
+    assert "changed after preview" in DeployTool._preview_blocker(
+        ctx,
+        "echo",
+        "revision-3",
+    )
+    assert "belongs to site" in DeployTool._preview_blocker(
+        ctx,
+        "other",
+        "revision-2",
+    )
+
+
+def test_deploy_reports_a_remote_url_for_a_loopback_site(monkeypatch):
+    monkeypatch.setenv("DEPLOY_PUBLIC_HOST", "10.20.30.40")
+    record = SiteRecord(
+        site_id="site",
+        runtime="static",
+        status=SiteStatus.RUNNING,
+        url="http://localhost:8123/path",
+    )
+
+    assert DeployTool._access_urls(record) == {
+        "internal_url": "http://localhost:8123/path",
+        "public_url": "http://10.20.30.40:8123/path",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -508,7 +583,10 @@ def test_the_registry_survives_a_restart(manager, tmp_path):
     is unreachable through the framework that started it.
     """
     manager._sites["a"] = SiteRecord(
-        site_id="a", runtime="static", url="http://x", port=8000,
+        site_id="a",
+        runtime="static",
+        url="http://x",
+        port=8000,
         resource_id="123:456:123",
     )
     manager._save()
@@ -596,7 +674,8 @@ async def test_a_site_without_a_url_is_never_considered_reachable(manager):
 
 @pytest.mark.asyncio
 async def test_stop_uses_the_persisted_resource_identity_after_handle_loss(
-    manager, monkeypatch,
+    manager,
+    monkeypatch,
 ):
     manager._sites["a"] = SiteRecord(
         site_id="a",
@@ -617,7 +696,9 @@ async def test_stop_uses_the_persisted_resource_identity_after_handle_loss(
     record = await manager.stop_site("a")
 
     assert captured == {
-        "type": "host", "reuse_key": "a", "resource_id": "123:456:123",
+        "type": "host",
+        "reuse_key": "a",
+        "resource_id": "123:456:123",
     }
     assert record.status is SiteStatus.STOPPED
     assert record.url is None
@@ -626,11 +707,15 @@ async def test_stop_uses_the_persisted_resource_identity_after_handle_loss(
 
 @pytest.mark.asyncio
 async def test_stop_refuses_to_claim_success_when_a_live_resource_cannot_be_verified(
-    manager, monkeypatch,
+    manager,
+    monkeypatch,
 ):
     manager._sites["a"] = SiteRecord(
-        site_id="a", runtime="static", status=SiteStatus.RUNNING,
-        url="http://example.test", resource_id="stale",
+        site_id="a",
+        runtime="static",
+        status=SiteStatus.RUNNING,
+        url="http://example.test",
+        resource_id="stale",
     )
 
     async def not_released(*_args, **_kwargs):
@@ -646,12 +731,16 @@ async def test_stop_refuses_to_claim_success_when_a_live_resource_cannot_be_veri
 
 @pytest.mark.asyncio
 async def test_stop_keeps_an_unverified_resource_even_when_its_url_is_down(
-    manager, monkeypatch,
+    manager,
+    monkeypatch,
 ):
     """An unavailable URL does not prove that its process/container is gone."""
     manager._sites["a"] = SiteRecord(
-        site_id="a", runtime="static", status=SiteStatus.DETACHED,
-        url="http://example.test", resource_id="persisted-resource",
+        site_id="a",
+        runtime="static",
+        status=SiteStatus.DETACHED,
+        url="http://example.test",
+        resource_id="persisted-resource",
     )
 
     async def not_released(*_args, **_kwargs):
@@ -668,10 +757,13 @@ async def test_stop_keeps_an_unverified_resource_even_when_its_url_is_down(
 
 @pytest.mark.asyncio
 async def test_global_cleanup_does_not_stop_a_site_loaded_from_another_run(
-    manager, monkeypatch,
+    manager,
+    monkeypatch,
 ):
     manager._sites["old"] = SiteRecord(
-        site_id="old", runtime="static", status=SiteStatus.RUNNING,
+        site_id="old",
+        runtime="static",
+        status=SiteStatus.RUNNING,
         resource_id="persisted-resource",
     )
     calls = []

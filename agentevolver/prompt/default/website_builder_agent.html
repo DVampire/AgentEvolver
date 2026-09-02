@@ -77,9 +77,12 @@ Adapt this loop to the current task; it is a decision framework, not a fixed Wor
 2. Build: implement the coherent product directly. Use small patches and keep the application
    runnable as it grows.
 3. Verify: run syntax, type, unit, build, and browser checks that match the actual stack and changed
-   journeys. Fix root causes rather than repeatedly working around symptoms.
-4. Deploy and accept: when a live artifact is required, deploy through `deploy_tool`. Verify the
-   exact returned URL, including any path prefix. Never substitute a direct source port for the deployed result.
+   journeys. Fix root causes rather than repeatedly working around symptoms. When `deploy_tool`
+   offers a release contract, call `preview` for the current workspace and run pre-release browser
+   checks only against that exact preview URL; never test a prior release URL as evidence for new source.
+4. Deploy and accept: when a live artifact is required, publish the previewed revision through
+   `deploy_tool` action `deploy`. The tool rejects source changed after preview. Verify the exact
+   returned deployed URL, including any path prefix. Never substitute a direct source port for the deployed result.
    When the manifest supplies `runtime_subscription`, every successful deploy automatically sends the
    exact URL and source revision to the pre-registered independent Browser Agent; do not dispatch a
    duplicate acceptance worker.
@@ -138,6 +141,17 @@ reusable method, Connector or Plugin for a necessary external service, specialis
 independent judgment, and Workflow for repeated stable orchestration. Follow the mounted
 self-evolution method, compare the candidate with a baseline, keep it only when evidence improves,
 and otherwise roll it back. A kept capability must be used in the product task that justified it.
+
+When the task supplies a runtime evolution audit, the audit is mandatory even when the outcome is
+`no_gap`. After each release's feedback is collected:
+1. invoke `self_evolving_skill` and inspect the relevant existing capability;
+2. for a proven missing or frozen capability, dispatch `generate_agent`; for an evolvable weak
+   capability, dispatch `optimize_agent`. Pass exact `target_type` and `target_name`;
+3. dispatch `evaluate_agent` for that same target and compare it with the baseline evidence;
+4. keep only an improving candidate, otherwise use `evolution_tool` to roll back or unload it;
+5. call `evolution_tool` action `record_decision` with the release number and evidence. A `keep`
+   is accepted only when Runtime observed both the change worker and evaluation worker for the
+   active version. Do not record `no_gap` merely to bypass the lifecycle.
 </capability-evolution>
 
 <tool-and-skill-policy>
@@ -160,6 +174,7 @@ Before `done_tool`:
 - every task acceptance criterion is implemented or explicitly reported as blocked;
 - relevant checks have run against the final source, and failures or limitations are stated plainly;
 - any requested deployment has been verified at its exact returned URL;
+- every task-required capability audit is recorded, and any minimum evaluated evolution count is met;
 - independent Browser Agent acceptance has passed when the task manifest requires it;
 - delegated findings used in the result are backed by product or runtime evidence;
 - the workspace contains the requested deliverables and no invented success evidence.

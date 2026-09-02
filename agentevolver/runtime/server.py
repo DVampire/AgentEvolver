@@ -167,8 +167,8 @@ class RuntimeManager(metaclass=Singleton):
     ) -> AgentRef:
         """Start a pump for one agent instance and register the ref."""
         agent_name = getattr(agent, "name", agent.__class__.__name__)
-        ref_name   = name or f"{agent_name}-{make_id()}"
-        existing   = self._refs.get(ref_name)
+        ref_name = name or f"{agent_name}-{make_id()}"
+        existing = self._refs.get(ref_name)
         if existing is not None and existing.status == AgentStatus.RUNNING:
             raise ValueError(f"AgentRef name collision: {ref_name!r} is already RUNNING")
 
@@ -230,9 +230,7 @@ class RuntimeManager(metaclass=Singleton):
         drivers = {
             ref._driver
             for ref in self._delegated.values()
-            if ref._driver is not None
-            and ref._driver is not current
-            and not ref._driver.done()
+            if ref._driver is not None and ref._driver is not current and not ref._driver.done()
         }
         for driver in drivers:
             driver.cancel()
@@ -333,7 +331,7 @@ class RuntimeManager(metaclass=Singleton):
             on_spawn(ref)
         try:
             task = task_kwargs.pop("task", None)
-            msg  = TaskMessage(task=task, kwargs=task_kwargs)
+            msg = TaskMessage(task=task, kwargs=task_kwargs)
             return await self.ask(ref, msg, timeout=timeout)
         finally:
             await self.stop(ref, drain=False)
@@ -379,23 +377,39 @@ class RuntimeManager(metaclass=Singleton):
         # something `job__kill` can actually signal. Without it the registry would
         # accept a kill, mark the job dead, and leave the child running — the one failure
         # the job registry exists to prevent.
-        inner = asyncio.ensure_future(protocol_manager.delegate(
-            child, text, files=brief.get("files"),
-            parent_ref=brief.get("parent_ref"), ctx=ctx, on_spawn=bind_ref,
-        ))
+        inner = asyncio.ensure_future(
+            protocol_manager.delegate(
+                child,
+                text,
+                files=brief.get("files"),
+                parent_ref=brief.get("parent_ref"),
+                ctx=ctx,
+                on_spawn=bind_ref,
+            )
+        )
         job.handle = inner
         try:
             response = await inner
         except asyncio.CancelledError:
             job_manager.finish(job.id, error="stopped before it finished")
             await self._emit_subagent(
-                "subagent_stop", child, job, ctx, success=False, reason="cancelled",
+                "subagent_stop",
+                child,
+                job,
+                ctx,
+                success=False,
+                reason="cancelled",
             )
             raise
-        except Exception as error:                                  # noqa: BLE001
+        except Exception as error:  # noqa: BLE001
             job_manager.finish(job.id, error=str(error))
             await self._emit_subagent(
-                "subagent_stop", child, job, ctx, success=False, reason=str(error),
+                "subagent_stop",
+                child,
+                job,
+                ctx,
+                success=False,
+                reason=str(error),
             )
             raise
         finally:
@@ -416,17 +430,23 @@ class RuntimeManager(metaclass=Singleton):
         job_manager.append_output(job.id, f"{getattr(response, 'message', '') or ''}\n")
         job_manager.finish(job.id, exit_code=0 if getattr(response, "success", False) else 1)
         await self._emit_subagent(
-            "subagent_stop", child, job, ctx,
+            "subagent_stop",
+            child,
+            job,
+            ctx,
             success=bool(getattr(response, "success", False)),
         )
         if reported.strip():
-            return response.model_copy(update={
-                "message": f"{response.message}\n\nWhat it reported along the way:\n{reported.strip()}"
-            })
+            return response.model_copy(
+                update={
+                    "message": f"{response.message}\n\nWhat it reported along the way:\n{reported.strip()}"
+                }
+            )
         return response
 
-    async def delegate_background(self, child: "Agent", task: str, *,
-                                  continuable: bool = False, **brief: Any) -> Any:
+    async def delegate_background(
+        self, child: "Agent", task: str, *, continuable: bool = False, **brief: Any
+    ) -> Any:
         """Delegate without waiting. Returns as soon as the child holds its first turn.
 
         Returning early is the whole point, so nothing here waits for the turn to begin:
@@ -436,9 +456,7 @@ class RuntimeManager(metaclass=Singleton):
         from agentevolver.response import Response, ResponseType
 
         text, ctx = self._brief(child, task, brief)
-        requested_topics = list(
-            brief.get("subscription_topics") or []
-        )
+        requested_topics = list(brief.get("subscription_topics") or [])
         if requested_topics and not continuable:
             raise ValueError(
                 "subscription_topics requires continuable=true so the subscriber remains "
@@ -461,10 +479,16 @@ class RuntimeManager(metaclass=Singleton):
             # idle and the first queued publish becomes turn 1.
             ref.busy = False
         else:
-            await ref._tasks.put(TaskMessage(task=text, kwargs={
-                "ctx": ctx, "files": ref.subscription_files or None,
-                "parent_ref": brief.get("parent_ref"),
-            }))
+            await ref._tasks.put(
+                TaskMessage(
+                    task=text,
+                    kwargs={
+                        "ctx": ctx,
+                        "files": ref.subscription_files or None,
+                        "parent_ref": brief.get("parent_ref"),
+                    },
+                )
+            )
         # Wait for the driver's first step — not for the turn, which is the whole point of
         # backgrounding, but for the coroutine to be *inside* its try block. A task
         # cancelled before it has ever run is closed without executing, so its cleanup
@@ -474,14 +498,21 @@ class RuntimeManager(metaclass=Singleton):
         # in it.
         running = asyncio.Event()
         ref._driver = asyncio.get_running_loop().create_task(
-            self._drive(ref, running), name=f"delegated-{job.id}")
+            self._drive(ref, running), name=f"delegated-{job.id}"
+        )
         job.handle, job.label = ref._driver, ref.label()
         await running.wait()
-        logger.info(f"| 🧑‍🚀 Delegated {ref.agent_name} in the background as {job.id} "
-                    f"({'subscriber' if requested_topics else ('continuable' if continuable else 'one-shot')})")
+        logger.info(
+            f"| 🧑‍🚀 Delegated {ref.agent_name} in the background as {job.id} "
+            f"({'subscriber' if requested_topics else ('continuable' if continuable else 'one-shot')})"
+        )
 
-        return Response(type=ResponseType.AGENT, success=True,
-                        message=self._handoff(ref), data={"job_id": job.id})
+        return Response(
+            type=ResponseType.AGENT,
+            success=True,
+            message=self._handoff(ref),
+            data={"job_id": job.id},
+        )
 
     def _bind_delegated_ref(
         self,
@@ -497,9 +528,7 @@ class RuntimeManager(metaclass=Singleton):
         ref.parent_session_id = job.session_id
         ref.session_id = str(getattr(ctx, "id", "") or "")
         extra = getattr(ctx, "extra", None) or {}
-        ref.root_session_id = str(
-            extra.get("root_session_id") or ref.parent_session_id or ""
-        )
+        ref.root_session_id = str(extra.get("root_session_id") or ref.parent_session_id or "")
         ref.project_id = str(extra.get("project_id") or "")
         ref.continuable, ref.busy = continuable, True
         ref._ctx = ctx
@@ -521,12 +550,17 @@ class RuntimeManager(metaclass=Singleton):
             f'  job__kill(job_id="{ref.job_id}")    — stop it',
         ]
         if ref.continuable:
-            lines.insert(1, f'  send_message_tool(job_id="{ref.job_id}", message=...) — give it more '
-                            f"work on the same conversation")
+            lines.insert(
+                1,
+                f'  send_message_tool(job_id="{ref.job_id}", message=...) — give it more '
+                f"work on the same conversation",
+            )
             lines.append("It stays alive between turns, so collect its result before you finish.")
         else:
-            lines.append("It answers once and ends. Collect the result before you finish; "
-                         "an uncollected sub-agent is work you paid for and threw away.")
+            lines.append(
+                "It answers once and ends. Collect the result before you finish; "
+                "an uncollected sub-agent is work you paid for and threw away."
+            )
         if ref.subscriptions:
             logical = [topic.split("::", 1)[-1] for topic in sorted(ref.subscriptions)]
             lines[0] = (
@@ -534,8 +568,10 @@ class RuntimeManager(metaclass=Singleton):
                 f"under {ref.job_id}; no model turn was spent waiting."
             )
             lines.insert(1, f"  subscribed topics: {', '.join(logical)}")
-            lines.append("A published event becomes its next serialized turn; collect each result "
-                         "with job__output before publishing the next iteration.")
+            lines.append(
+                "A published event becomes its next serialized turn; collect each result "
+                "with job__output before publishing the next iteration."
+            )
         return "\n".join(lines)
 
     async def send_to_child(self, job_id: str, message: str, *, session_id: str = "") -> Any:
@@ -553,8 +589,10 @@ class RuntimeManager(metaclass=Singleton):
         ref = self._delegated.get(job_id)
         if ref is None:
             known = [r.job_id for r in self.children(session_id) if r.alive]
-            return refused(f"No background sub-agent {job_id!r}. Live ones: "
-                           f"{', '.join(known) if known else '(none)'}")
+            return refused(
+                f"No background sub-agent {job_id!r}. Live ones: "
+                f"{', '.join(known) if known else '(none)'}"
+            )
         owner_session = ref.root_session_id or ref.parent_session_id
         if session_id and owner_session and owner_session != session_id:
             return refused(f"{job_id} is not your sub-agent; it belongs to another session.")
@@ -562,11 +600,13 @@ class RuntimeManager(metaclass=Singleton):
             return refused(
                 f"{job_id} is a one-shot sub-agent: it answers once and ends, so there is "
                 f"nothing to continue. Read what it returned with job__output, and "
-                f"start a continuable one if you need a worker you can keep talking to.")
+                f"start a continuable one if you need a worker you can keep talking to."
+            )
         if not ref.alive:
             return refused(
                 f"{job_id} has already ended, so the message was NOT delivered. Its output "
-                f"is still readable with job__output.")
+                f"is still readable with job__output."
+            )
 
         # Read before the message is queued, and counting what is already queued as busy:
         # a message sent a moment after another lands behind it, and reporting that one as
@@ -574,13 +614,19 @@ class RuntimeManager(metaclass=Singleton):
         waiting = ref.busy or not ref._tasks.empty()
         await ref._tasks.put(TaskMessage(task=message, kwargs={"ctx": ref._ctx}))
         logger.info(f"| 📮 Message queued for sub-agent {job_id}: {message[:60]}")
-        when = ("It already has work in hand, so this waits its turn — a message cannot "
-                "redirect work already underway." if waiting else
-                "It was idle, so it starts on this now.")
+        when = (
+            "It already has work in hand, so this waits its turn — a message cannot "
+            "redirect work already underway."
+            if waiting
+            else "It was idle, so it starts on this now."
+        )
         return Response(
-            type=ResponseType.AGENT, success=True,
-            message=(f"Delivered to {job_id}. {when}\nIt does not answer here — read the "
-                     f'result with job__output(job_id="{job_id}").'),
+            type=ResponseType.AGENT,
+            success=True,
+            message=(
+                f"Delivered to {job_id}. {when}\nIt does not answer here — read the "
+                f'result with job__output(job_id="{job_id}").'
+            ),
             data={"job_id": job_id},
         )
 
@@ -590,9 +636,11 @@ class RuntimeManager(metaclass=Singleton):
 
     def children(self, session_id: str = "") -> List[AgentRef]:
         """Background descendants in one task tree; all of them when none is given."""
-        return [r for r in self._delegated.values()
-                if not session_id
-                or (r.root_session_id or r.parent_session_id) == session_id]
+        return [
+            r
+            for r in self._delegated.values()
+            if not session_id or (r.root_session_id or r.parent_session_id) == session_id
+        ]
 
     def project_children(self, project_id: str) -> List[AgentRef]:
         """Delegated Agents visible to one Gateway project, across conversations."""
@@ -643,10 +691,11 @@ class RuntimeManager(metaclass=Singleton):
                 ref.busy = True
                 self._relabel(ref)
                 job_manager.append_output(
-                    ref.job_id, f"\n--- turn {ref.turns + 1}: {(message.task or '')[:120]} ---\n")
+                    ref.job_id, f"\n--- turn {ref.turns + 1}: {(message.task or '')[:120]} ---\n"
+                )
                 try:
                     response = await self.ask(ref, message)
-                except Exception as error:                          # noqa: BLE001
+                except Exception as error:  # noqa: BLE001
                     # A turn that raised is the child's end, not a turn to retry: the error
                     # is a dead ref or a crashed pump, and both mean nothing is left to
                     # send the next message to. A cancellation is not caught here — it is a
@@ -657,18 +706,23 @@ class RuntimeManager(metaclass=Singleton):
                 ref.turns += 1
                 succeeded = bool(getattr(response, "success", False))
                 ref.last_turn_success = succeeded
-                ref.turn_results[ref.turns] = str(
-                    getattr(response, "message", "") or ""
-                )
+                ref.turn_results[ref.turns] = str(getattr(response, "message", "") or "")
+                response_data = getattr(response, "data", None) or {}
+                diagnostics = response_data.get("diagnostics")
+                if isinstance(diagnostics, dict) and diagnostics:
+                    ref.turn_diagnostics[ref.turns] = diagnostics
                 # A continuable Agent is intentionally bounded by its own memory; its
                 # Runtime handoff index should be bounded too. Website evolution needs
                 # only a handful of turns, while long-lived subscribers keep the latest.
                 while len(ref.turn_results) > 32:
-                    ref.turn_results.pop(min(ref.turn_results))
+                    oldest = min(ref.turn_results)
+                    ref.turn_results.pop(oldest)
+                    ref.turn_diagnostics.pop(oldest, None)
                 verdict = "finished" if succeeded else "ended without finishing"
                 job_manager.append_output(
                     ref.job_id,
-                    f"[turn {ref.turns} {verdict}]\n{getattr(response, 'message', '') or ''}\n")
+                    f"[turn {ref.turns} {verdict}]\n{getattr(response, 'message', '') or ''}\n",
+                )
                 if not ref.continuable:
                     job_manager.finish(ref.job_id, exit_code=0 if succeeded else 1)
                     return
@@ -690,13 +744,16 @@ class RuntimeManager(metaclass=Singleton):
         ref._ctx, ref._driver = None, None
         try:
             await self.stop(ref, drain=False, reason="sub-agent released")
-        except Exception as error:                                  # noqa: BLE001
+        except Exception as error:  # noqa: BLE001
             logger.warning(f"| ⚠️ Could not stop sub-agent {ref.job_id}: {error}")
         job_manager.finish(ref.job_id, exit_code=0)
         job = job_manager.get(ref.job_id)
         if job is not None:
             await self._emit_subagent(
-                "subagent_stop", None, job, None,
+                "subagent_stop",
+                None,
+                job,
+                None,
                 success=not bool(getattr(job, "error", None)),
             )
 
@@ -727,10 +784,13 @@ class RuntimeManager(metaclass=Singleton):
         from agentevolver.protocol import protocol_manager
 
         return protocol_manager.child_brief(
-            child, task,
-            target_name=brief.get("target_name"), target_type=brief.get("target_type"),
+            child,
+            task,
+            target_name=brief.get("target_name"),
+            target_type=brief.get("target_type"),
             allowlists=brief.get("allowlists"),
-            parent_ref=brief.get("parent_ref"), parent_ctx=brief.get("parent_ctx"),
+            parent_ref=brief.get("parent_ref"),
+            parent_ctx=brief.get("parent_ctx"),
             fork=bool(brief.get("fork")),
         )
 
@@ -741,7 +801,8 @@ class RuntimeManager(metaclass=Singleton):
 
         name = getattr(child, "name", "agent")
         job = job_manager.register(
-            type="agent", label=f"{name} · {task[:60]}",
+            type="agent",
+            label=f"{name} · {task[:60]}",
             session_id=str(getattr(parent_ctx, "id", "") or ""),
         )
         # How ``report_tool`` finds the transcript to write into. On the context rather

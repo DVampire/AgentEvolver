@@ -7,14 +7,15 @@ Supports two launch modes:
 
 import asyncio
 import base64
+import re
 import textwrap
-from datetime import timedelta
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from playwright.async_api import async_playwright, Browser, Page, Playwright
+from playwright.async_api import Browser, Page, Playwright, async_playwright
 
 from agentevolver.logger import logger
 from agentevolver.response.types import Response, ResponseType
+
 # Scans the page for visible interactive elements and collects scroll/focus info.
 # Coordinates are CSS pixels relative to the viewport, matching page.mouse coordinates.
 _OBSERVE_JS = """
@@ -73,6 +74,20 @@ _OBSERVE_JS = """
 }
 """
 
+
+_JAVASCRIPT_COMMAND_PATTERNS = (
+    re.compile(r"\b(?:const|let|var)\s+[A-Za-z_$]"),
+    re.compile(r"=>"),
+    re.compile(r"\.slice\s*\("),
+    re.compile(r"\.get_by_(?:role|text|label)\([^\n]*,\s*\{"),
+)
+
+
+def _javascript_command_hint(code: str) -> bool:
+    """Recognize unambiguous JavaScript accidentally sent to the Python action."""
+    return any(pattern.search(code or "") for pattern in _JAVASCRIPT_COMMAND_PATTERNS)
+
+
 # Returns page HTML with non-content nodes stripped (scripts, styles, svg, hidden elements).
 _CLEAN_HTML_JS = """
 () => {
@@ -91,7 +106,7 @@ class BrowserService:
         headless: bool = True,
         viewport: Dict[str, int] = None,
         use_sandbox: bool = False,
-        sandbox_domain: Optional[str] = None,   # None -> resolved via the port manager
+        sandbox_domain: Optional[str] = None,  # None -> resolved via the port manager
         sandbox_api_key: Optional[str] = None,
         sandbox_image: str = "opensandbox/chrome:latest",
         sandbox_timeout_minutes: int = 30,
@@ -199,6 +214,7 @@ class BrowserService:
         always be destroyed so it can't leak, and the process can exit cleanly (which
         is what lets the launcher chown outputs back to the host user).
         """
+
         async def _guard(label: str, coro, timeout: float = 15.0):
             try:
                 await asyncio.wait_for(coro, timeout=timeout)
@@ -282,7 +298,11 @@ class BrowserService:
         return [p.url for p in page.context.pages]
 
     def _record_diagnostic(
-        self, session_id: str, type: str, message: str, url: str = "",
+        self,
+        session_id: str,
+        type: str,
+        message: str,
+        url: str = "",
     ) -> None:
         """Record browser-native failures without modifying the inspected page."""
         sess = self._sessions.get(session_id)
@@ -313,7 +333,9 @@ class BrowserService:
                 return
             location = getattr(message, "location", None) or {}
             self._record_diagnostic(
-                session_id, f"console.{level}", getattr(message, "text", ""),
+                session_id,
+                f"console.{level}",
+                getattr(message, "text", ""),
                 location.get("url", "") if isinstance(location, dict) else "",
             )
 
@@ -350,7 +372,8 @@ class BrowserService:
         }
 
     def _unavailable(self, action: str) -> Response:
-        return Response(type=ResponseType.ENVIRONMENT, 
+        return Response(
+            type=ResponseType.ENVIRONMENT,
             success=False,
             message="Browser not available",
             data={"error": "Browser not available", "action": action},
@@ -358,7 +381,9 @@ class BrowserService:
 
     # ------------------------------------------------------------------ actions
 
-    async def goto(self, url: str, wait_until: str = "domcontentloaded", session_id: str = "default") -> Response:
+    async def goto(
+        self, url: str, wait_until: str = "domcontentloaded", session_id: str = "default"
+    ) -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("goto")
@@ -366,14 +391,20 @@ class BrowserService:
             if not url.startswith(("http://", "https://", "file://", "about:")):
                 url = "https://" + url
             await page.goto(url, wait_until=wait_until, timeout=30000)
-            return Response(type=ResponseType.ENVIRONMENT, 
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=True,
                 message=f"Navigated to {page.url}",
                 data={"url": page.url},
             )
         except Exception as e:
             logger.error(f"| ❌ goto failed: {e}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=f"Failed to navigate to {url}: {e}", data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT,
+                success=False,
+                message=f"Failed to navigate to {url}: {e}",
+                data={"error": str(e)},
+            )
 
     async def search(self, query: str, num_results: int = 5) -> Response:
         """Web search via Firecrawl (server-side crawl, bypasses local IP blocks).
@@ -386,16 +417,29 @@ class BrowserService:
         api_key = hvac_client.get("FIRECRAWL_API_KEY") or ""
         api_base = hvac_client.get("FIRECRAWL_API_BASE") or "https://api.firecrawl.dev/v2"
         if not api_key:
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message="FIRECRAWL_API_KEY not set", data={"error": "no_api_key"})
+            return Response(
+                type=ResponseType.ENVIRONMENT,
+                success=False,
+                message="FIRECRAWL_API_KEY not set",
+                data={"error": "no_api_key"},
+            )
         if not query or not query.strip():
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message="Search query cannot be empty", data={"error": "empty_query"})
+            return Response(
+                type=ResponseType.ENVIRONMENT,
+                success=False,
+                message="Search query cannot be empty",
+                data={"error": "empty_query"},
+            )
 
         import httpx
+
         try:
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
             payload = {"query": query.strip(), "limit": num_results}
             async with httpx.AsyncClient() as client:
-                resp = await client.post(f"{api_base}/search", json=payload, headers=headers, timeout=httpx.Timeout(60.0))
+                resp = await client.post(
+                    f"{api_base}/search", json=payload, headers=headers, timeout=httpx.Timeout(60.0)
+                )
                 resp.raise_for_status()
                 data = resp.json()
 
@@ -406,40 +450,65 @@ class BrowserService:
                     "position": i + 1,
                     "title": it.get("title", "") or it.get("metadata", {}).get("title", ""),
                     "url": it.get("url", ""),
-                    "description": it.get("description", "") or it.get("metadata", {}).get("description", ""),
+                    "description": it.get("description", "")
+                    or it.get("metadata", {}).get("description", ""),
                 }
                 for i, it in enumerate(web[:num_results])
             ]
             if not results:
-                return Response(type=ResponseType.ENVIRONMENT, success=True, message=f"No search results for: {query}", data={"query": query, "results": []})
+                return Response(
+                    type=ResponseType.ENVIRONMENT,
+                    success=True,
+                    message=f"No search results for: {query}",
+                    data={"query": query, "results": []},
+                )
 
-            lines = [f"[{r['position']}] {r['title']}\n    {r['url']}\n    {r['description']}" for r in results]
-            return Response(type=ResponseType.ENVIRONMENT, 
+            lines = [
+                f"[{r['position']}] {r['title']}\n    {r['url']}\n    {r['description']}"
+                for r in results
+            ]
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=True,
                 message=f"Search results for '{query}':\n" + "\n".join(lines),
                 data={"query": query, "results": results},
             )
         except httpx.HTTPStatusError as e:
             logger.error(f"| ❌ search HTTP error: {e.response.status_code}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=f"Search failed: HTTP {e.response.status_code} — {e.response.text}", data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT,
+                success=False,
+                message=f"Search failed: HTTP {e.response.status_code} — {e.response.text}",
+                data={"error": str(e)},
+            )
         except Exception as e:
             logger.error(f"| ❌ search failed: {e}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=f"Search failed: {e}", data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT,
+                success=False,
+                message=f"Search failed: {e}",
+                data={"error": str(e)},
+            )
 
-    async def click(self, x: int, y: int, button: str = "left", session_id: str = "default") -> Response:
+    async def click(
+        self, x: int, y: int, button: str = "left", session_id: str = "default"
+    ) -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("click")
         try:
             await page.mouse.click(x, y, button=button)
-            return Response(type=ResponseType.ENVIRONMENT, 
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=True,
                 message=f"Clicked at ({x}, {y}) with {button} button",
                 data={"x": x, "y": y, "button": button},
             )
         except Exception as e:
             logger.error(f"| ❌ click failed: {e}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)}
+            )
 
     async def double_click(self, x: int, y: int, session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
@@ -447,30 +516,38 @@ class BrowserService:
             return self._unavailable("double_click")
         try:
             await page.mouse.dblclick(x, y)
-            return Response(type=ResponseType.ENVIRONMENT, 
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=True,
                 message=f"Double-clicked at ({x}, {y})",
                 data={"x": x, "y": y},
             )
         except Exception as e:
             logger.error(f"| ❌ double_click failed: {e}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)}
+            )
 
-    async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int, session_id: str = "default") -> Response:
+    async def scroll(
+        self, x: int, y: int, scroll_x: int, scroll_y: int, session_id: str = "default"
+    ) -> Response:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("scroll")
         try:
             await page.mouse.move(x, y)
             await page.mouse.wheel(scroll_x, scroll_y)
-            return Response(type=ResponseType.ENVIRONMENT, 
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=True,
                 message=f"Scrolled at ({x}, {y}) by ({scroll_x}, {scroll_y})",
                 data={"x": x, "y": y, "scroll_x": scroll_x, "scroll_y": scroll_y},
             )
         except Exception as e:
             logger.error(f"| ❌ scroll failed: {e}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)}
+            )
 
     async def type(self, text: str, session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
@@ -478,14 +555,17 @@ class BrowserService:
             return self._unavailable("type")
         try:
             await page.keyboard.type(text)
-            return Response(type=ResponseType.ENVIRONMENT, 
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=True,
                 message=f"Typed: {text}",
                 data={"text": text},
             )
         except Exception as e:
             logger.error(f"| ❌ type failed: {e}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)}
+            )
 
     async def wait(self, ms: int, session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
@@ -493,14 +573,17 @@ class BrowserService:
             return self._unavailable("wait")
         try:
             await asyncio.sleep(ms / 1000.0)
-            return Response(type=ResponseType.ENVIRONMENT, 
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=True,
                 message=f"Waited {ms}ms",
                 data={"ms": ms},
             )
         except Exception as e:
             logger.error(f"| ❌ wait failed: {e}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)}
+            )
 
     async def move(self, x: int, y: int, session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
@@ -508,14 +591,17 @@ class BrowserService:
             return self._unavailable("move")
         try:
             await page.mouse.move(x, y)
-            return Response(type=ResponseType.ENVIRONMENT, 
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=True,
                 message=f"Moved to ({x}, {y})",
                 data={"x": x, "y": y},
             )
         except Exception as e:
             logger.error(f"| ❌ move failed: {e}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)}
+            )
 
     async def keypress(self, keys: List[str], session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
@@ -524,14 +610,17 @@ class BrowserService:
         try:
             combo = "+".join(keys)
             await page.keyboard.press(combo)
-            return Response(type=ResponseType.ENVIRONMENT, 
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=True,
                 message=f"Pressed {keys}",
                 data={"keys": keys},
             )
         except Exception as e:
             logger.error(f"| ❌ keypress failed: {e}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)}
+            )
 
     async def drag(self, path: List[List[int]], session_id: str = "default") -> Response:
         page = await self._page_for(session_id)
@@ -546,16 +635,21 @@ class BrowserService:
             for point in path[1:]:
                 await page.mouse.move(point[0], point[1])
             await page.mouse.up()
-            return Response(type=ResponseType.ENVIRONMENT, 
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=True,
                 message=f"Dragged along {len(path)} points",
                 data={"path": path},
             )
         except Exception as e:
             logger.error(f"| ❌ drag failed: {e}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT, success=False, message=str(e), data={"error": str(e)}
+            )
 
-    async def command(self, code: str, timeout: float = 30.0, session_id: str = "default") -> Response:
+    async def command(
+        self, code: str, timeout: float = 30.0, session_id: str = "default"
+    ) -> Response:
         """Run a Playwright Python snippet with `page` and `context` in scope.
 
         The code is wrapped into an async function, so it may use `await`
@@ -564,28 +658,56 @@ class BrowserService:
         page = await self._page_for(session_id)
         if not page:
             return self._unavailable("command")
+        if _javascript_command_hint(code):
+            message = (
+                "Browser command accepts async Playwright Python, not JavaScript. "
+                "Use Python keyword arguments and slicing (for example "
+                "`page.get_by_role('button', name='Save')` and `text[:80]`). "
+                "Run page JavaScript only through `await page.evaluate('...')`."
+            )
+            return Response(
+                type=ResponseType.ENVIRONMENT,
+                success=False,
+                message=message,
+                data={"error": "wrong_command_language"},
+            )
+        task: Optional[asyncio.Task] = None
         try:
             src = "async def __cmd__(page, context):\n" + textwrap.indent(code, "    ")
             ns: Dict[str, Any] = {}
             exec(src, ns)
-            result = await asyncio.wait_for(ns["__cmd__"](page, page.context), timeout=timeout)
+            task = asyncio.create_task(ns["__cmd__"](page, page.context))
+            # Playwright locators default to a 30s timeout. Give that native error a
+            # moment to settle before the outer guard cancels the coroutine; cancelling
+            # both at the same instant is what produced an un-retrieved Future exception.
+            result = await asyncio.wait_for(task, timeout=timeout + 1.0)
             result_repr = repr(result)
-            return Response(type=ResponseType.ENVIRONMENT, 
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=True,
                 message=f"Command executed. Return value: {result_repr}",
                 data={"result": result_repr},
             )
         except asyncio.TimeoutError:
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
             logger.error(f"| ❌ command timed out after {timeout}s")
-            return Response(type=ResponseType.ENVIRONMENT, 
+            return Response(
+                type=ResponseType.ENVIRONMENT,
                 success=False,
                 message=f"Command timed out after {timeout}s. Locators auto-wait up to 30s by default; "
-                        f"pass a shorter timeout in the code, e.g. page.locator(...).click(timeout=5000).",
-                data={"error": "timeout"},
+                f"pass a shorter timeout in the code, e.g. page.locator(...).click(timeout=5000).",
+                data={"error": "command_timeout"},
             )
         except Exception as e:
             logger.error(f"| ❌ command failed: {e}")
-            return Response(type=ResponseType.ENVIRONMENT, success=False, message=f"Command failed: {e}", data={"error": str(e)})
+            return Response(
+                type=ResponseType.ENVIRONMENT,
+                success=False,
+                message=f"Command failed: {e}",
+                data={"error": str(e)},
+            )
 
     async def observe(self, page: Page) -> Dict[str, Any]:
         """Scan the page for interactive elements, scroll position, and focus.
@@ -602,17 +724,31 @@ class BrowserService:
         try:
             html = await page.evaluate(_CLEAN_HTML_JS)
             if max_chars and len(html) > max_chars:
-                html = html[:max_chars] + f"\n<!-- ... truncated, {len(html) - max_chars} more chars -->"
+                html = (
+                    html[:max_chars]
+                    + f"\n<!-- ... truncated, {len(html) - max_chars} more chars -->"
+                )
             return html
         except Exception as e:
             logger.error(f"| ❌ get_html failed: {e}")
             return ""
 
-    async def get_state(self, include_elements: bool = True, include_html: bool = False, session_id: str = "default") -> Dict[str, Any]:
+    async def get_state(
+        self, include_elements: bool = True, include_html: bool = False, session_id: str = "default"
+    ) -> Dict[str, Any]:
         """Return current page state for a session including a base64 screenshot."""
-        empty = {"url": None, "title": None, "tabs": [], "screenshot": None,
-                 "elements": [], "scroll": {}, "focus": "none", "iframes": 0,
-                 "html": "", "diagnostics": self.diagnostics(session_id)}
+        empty = {
+            "url": None,
+            "title": None,
+            "tabs": [],
+            "screenshot": None,
+            "elements": [],
+            "scroll": {},
+            "focus": "none",
+            "iframes": 0,
+            "html": "",
+            "diagnostics": self.diagnostics(session_id),
+        }
         page = await self._page_for(session_id)
         if not page:
             return empty
@@ -630,12 +766,26 @@ class BrowserService:
                 title = await page.title()
                 tabs = self._tabs(page)
                 screenshot = await self._screenshot_b64(page)
-                state: Dict[str, Any] = {"url": url, "title": title, "tabs": tabs, "screenshot": screenshot,
-                                         "elements": [], "scroll": {}, "focus": "none", "iframes": 0,
-                                         "html": "", "diagnostics": self.diagnostics(session_id)}
+                state: Dict[str, Any] = {
+                    "url": url,
+                    "title": title,
+                    "tabs": tabs,
+                    "screenshot": screenshot,
+                    "elements": [],
+                    "scroll": {},
+                    "focus": "none",
+                    "iframes": 0,
+                    "html": "",
+                    "diagnostics": self.diagnostics(session_id),
+                }
                 if include_elements:
                     observed = await self.observe(page)
-                    state.update({k: observed.get(k, state[k]) for k in ("elements", "scroll", "focus", "iframes")})
+                    state.update(
+                        {
+                            k: observed.get(k, state[k])
+                            for k in ("elements", "scroll", "focus", "iframes")
+                        }
+                    )
                 if include_html:
                     state["html"] = await self.get_html(page)
                 return state

@@ -9,16 +9,17 @@ from types import SimpleNamespace
 
 import pytest
 
+from agentevolver.agent.actor.browser_agent import BrowserAgent
 from agentevolver.agent.actor.website_builder_agent import (
     WebsiteBuilderAgent,
     _bound_runtime_input_manifest,
     bind_runtime_input_manifest,
 )
 from agentevolver.agent.actor.website_user_agent import WebsiteUserAgent
-from agentevolver.agent.actor.browser_agent import BrowserAgent
 from agentevolver.environment.default.browser.service import BrowserService
 from agentevolver.environment.default.job.environment import JobEnvironment
 from agentevolver.tool.default.deployment.deploy import DeployTool
+from agentevolver.tool.default.evolution import EvolutionTool
 
 
 def _task(manifest=None):
@@ -42,10 +43,13 @@ def _task(manifest=None):
 def test_builder_rebinds_role_manifest_to_staged_files_without_reading_them():
     staged = [f"/session/log/inputs/00{index}_input.html" for index in range(4)]
     bound = bind_runtime_input_manifest(_task(), staged)
-    manifest = json.loads(bound[bound.index("{"):])
+    manifest = json.loads(bound[bound.index("{") :])
 
     assert [item["role"] for item in manifest["attachments"]] == [
-        "requirements", "user_context", "user_context", "user_context",
+        "requirements",
+        "user_context",
+        "user_context",
+        "user_context",
     ]
     assert manifest["attachments"][0]["path"] == staged[0]
     assert manifest["attachments"][0]["staged"] is True
@@ -72,16 +76,19 @@ def test_builder_accepts_an_ordinary_task_without_a_manifest():
 
 
 def test_builder_manifest_supports_task_defined_attachment_counts():
-    task = _task({
-        "attachments": [
-            {"id": "requirements", "role": "brief", "source_path": "/old/a"},
-            {"id": "brand", "role": "reference", "source_path": "/old/b"},
-        ]
-    })
+    task = _task(
+        {
+            "attachments": [
+                {"id": "requirements", "role": "brief", "source_path": "/old/a"},
+                {"id": "brand", "role": "reference", "source_path": "/old/b"},
+            ]
+        }
+    )
     bound = bind_runtime_input_manifest(task, ["/staged/a", "/staged/b"])
-    manifest = json.loads(bound[bound.index("{"):])
+    manifest = json.loads(bound[bound.index("{") :])
     assert [item["path"] for item in manifest["attachments"]] == [
-        "/staged/a", "/staged/b",
+        "/staged/a",
+        "/staged/b",
     ]
 
 
@@ -97,10 +104,7 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
     manifest = {
         "attachments": [
             {"id": "brief", "role": "requirements"},
-            *[
-                {"id": f"persona_{index}", "role": "user_context"}
-                for index in range(1, 4)
-            ],
+            *[{"id": f"persona_{index}", "role": "user_context"} for index in range(1, 4)],
         ],
         "optimization_cycles": 5,
         "participants": [
@@ -115,7 +119,8 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
     }
     task = _task(manifest)
     private = _bound_runtime_input_manifest(
-        task, [str(requirement), *(str(path) for path in personas)],
+        task,
+        [str(requirement), *(str(path) for path in personas)],
     )
     assert private is not None
     before, explanation, bound = private
@@ -132,13 +137,17 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
     contract = await builder._bootstrap_subscribers(bound, ctx, ref=None)
 
     assert [name for name, _kwargs in calls] == [
-        "website_user_agent", "website_user_agent", "website_user_agent", "browser_agent",
+        "website_user_agent",
+        "website_user_agent",
+        "website_user_agent",
+        "browser_agent",
     ]
     for index, (_name, kwargs) in enumerate(calls[:3], start=1):
         assert f"Private user {index} goal." in kwargs["task"]
         assert all(
             f"Private user {other} goal." not in kwargs["task"]
-            for other in range(1, 4) if other != index
+            for other in range(1, 4)
+            if other != index
         )
         assert kwargs.get("files") is None
     assert "Public product requirement." in calls[3][1]["task"]
@@ -195,7 +204,8 @@ def test_browser_acceptance_is_browser_only_and_has_explicit_completion():
 def test_browser_native_diagnostics_aggregate_identical_events_losslessly():
     service = BrowserService()
     service._sessions["release"] = {
-        "diagnostics": {}, "diagnostic_seq": 0,
+        "diagnostics": {},
+        "diagnostic_seq": 0,
     }
     message = "TypeError: cannot read properties of undefined"
     service._record_diagnostic("release", "pageerror", message, "https://site.test/")
@@ -205,14 +215,31 @@ def test_browser_native_diagnostics_aggregate_identical_events_losslessly():
 
     assert diagnostics["total"] == 2
     assert diagnostics["counts"] == {"pageerror": 2}
-    assert diagnostics["events"] == [{
-        "type": "pageerror",
-        "message": message,
-        "url": "https://site.test/",
-        "count": 2,
-        "first_seq": 1,
-        "last_seq": 2,
-    }]
+    assert diagnostics["events"] == [
+        {
+            "type": "pageerror",
+            "message": message,
+            "url": "https://site.test/",
+            "count": 2,
+            "first_seq": 1,
+            "last_seq": 2,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_browser_command_rejects_javascript_with_python_guidance(monkeypatch):
+    service = BrowserService()
+
+    async def page_for(_session_id):
+        return SimpleNamespace(context=object())
+
+    monkeypatch.setattr(service, "_page_for", page_for)
+    response = await service.command("const button = page.get_by_role('button', {name: /Save/});")
+
+    assert response.success is False
+    assert response.data["error"] == "wrong_command_language"
+    assert "Playwright Python" in response.message
 
 
 @pytest.mark.asyncio
@@ -258,10 +285,9 @@ async def test_concurrent_browser_users_get_distinct_contexts_and_pages():
 
     assert len(browser.contexts) == 3
     assert len({id(first), id(second), id(third)}) == 3
-    assert {
-        id(service._sessions[user]["context"])
-        for user in ("user-1", "user-2", "user-3")
-    } == {id(context) for context in browser.contexts}
+    assert {id(service._sessions[user]["context"]) for user in ("user-1", "user-2", "user-3")} == {
+        id(context) for context in browser.contexts
+    }
 
 
 @pytest.mark.asyncio
@@ -279,7 +305,10 @@ async def test_browser_refuses_a_backend_that_cannot_isolate_sessions():
 
 def test_website_user_resets_only_per_task_budgets_between_turns():
     agent = WebsiteUserAgent(
-        base_dir=".", max_step=30, max_token=1000, timeout=60,
+        base_dir=".",
+        max_step=30,
+        max_token=1000,
+        timeout=60,
     )
     ctx = SimpleNamespace(id="resident-session")
     for constraint in agent.constraints:
@@ -296,19 +325,33 @@ def test_full_job_output_read_acknowledges_one_subscriber_turn(monkeypatch):
     from agentevolver.runtime import runtime_manager
 
     ref = SimpleNamespace(
-        alive=True, busy=False, turns=2,
+        alive=True,
+        busy=False,
+        turns=2,
         _tasks=SimpleNamespace(empty=lambda: True),
     )
-    monkeypatch.setattr(runtime_manager, "child", lambda job_id: ref if job_id == "user-job" else None)
+    monkeypatch.setattr(
+        runtime_manager, "child", lambda job_id: ref if job_id == "user-job" else None
+    )
     contract = {"subscriber_job_ids": ["user-job"], "collected_turns": {}}
     ctx = SimpleNamespace(extra={"website_runtime_contract": contract})
 
-    assert JobEnvironment._record_subscriber_collection(
-        "user-job", ctx, full=False,
-    ) == 0
-    assert JobEnvironment._record_subscriber_collection(
-        "user-job", ctx, full=True,
-    ) == 2
+    assert (
+        JobEnvironment._record_subscriber_collection(
+            "user-job",
+            ctx,
+            full=False,
+        )
+        == 0
+    )
+    assert (
+        JobEnvironment._record_subscriber_collection(
+            "user-job",
+            ctx,
+            full=True,
+        )
+        == 2
+    )
     assert contract["collected_turns"] == {"user-job": 2}
 
 
@@ -323,25 +366,110 @@ def test_next_deploy_waits_until_every_subscriber_feedback_is_read(monkeypatch):
         turn_results={1: "user feedback"},
         _tasks=SimpleNamespace(empty=lambda: True),
     )
-    acceptance = SimpleNamespace(**{
-        **ready.__dict__, "turn_results": {1: "VERDICT: PASS\nAll journeys passed."},
-    })
+    acceptance = SimpleNamespace(
+        **{
+            **ready.__dict__,
+            "turn_results": {1: "VERDICT: PASS\nAll journeys passed."},
+        }
+    )
     monkeypatch.setattr(
-        runtime_manager, "child",
+        runtime_manager,
+        "child",
         lambda job_id: acceptance if job_id == "acceptance" else ready,
     )
     contract = {
         "subscriber_job_ids": ["user-1", "acceptance"],
         "collected_turns": {"user-1": 1},
     }
-    ctx = SimpleNamespace(extra={
-        "website_runtime_contract": contract,
-        "deployment_release_history": [{"release_number": 1}],
-    })
+    ctx = SimpleNamespace(
+        extra={
+            "website_runtime_contract": contract,
+            "deployment_release_history": [{"release_number": 1}],
+        }
+    )
 
     assert "acceptance" in DeployTool._previous_release_blocker(ctx)
     contract["collected_turns"]["acceptance"] = 1
     assert DeployTool._previous_release_blocker(ctx) == ""
+
+
+def test_next_release_requires_a_capability_audit_when_contract_enables_it(monkeypatch):
+    from agentevolver.runtime import runtime_manager
+
+    ready = SimpleNamespace(
+        alive=True,
+        busy=False,
+        turns=1,
+        last_turn_success=True,
+        _tasks=SimpleNamespace(empty=lambda: True),
+    )
+    monkeypatch.setattr(runtime_manager, "child", lambda _job_id: ready)
+    contract = {
+        "subscriber_job_ids": ["user"],
+        "collected_turns": {"user": 1},
+        "evolution_decisions": [],
+    }
+    ctx = SimpleNamespace(
+        extra={
+            "website_runtime_contract": contract,
+            "deployment_release_history": [{"release_number": 1}],
+        }
+    )
+
+    assert "capability audit" in DeployTool._previous_release_blocker(ctx)
+    contract["evolution_decisions"].append(
+        {
+            "release_number": 1,
+            "decision": "no_gap",
+        }
+    )
+    assert DeployTool._previous_release_blocker(ctx) == ""
+
+
+@pytest.mark.asyncio
+async def test_keep_decision_requires_real_change_and_evaluation(monkeypatch):
+    from agentevolver.extension import extension_manager
+
+    component = SimpleNamespace(version="1.0.0")
+    manifest = SimpleNamespace(find=lambda module, name: component)
+    monkeypatch.setattr(extension_manager, "read_manifest", lambda: manifest)
+    contract = {
+        "evolution_runs": [
+            {
+                "agent": "generate_agent",
+                "module": "skill",
+                "name": "adaptive_ui",
+                "version": "1.0.0",
+                "success": True,
+            },
+            {
+                "agent": "evaluate_agent",
+                "module": "skill",
+                "name": "adaptive_ui",
+                "version": "1.0.0",
+                "success": True,
+            },
+        ],
+        "evolution_decisions": [],
+    }
+    response = await EvolutionTool()(
+        action="record_decision",
+        release_number=1,
+        decision="keep",
+        module="skill",
+        name="adaptive_ui",
+        evidence="Repeated measured gap.",
+        evaluation="Candidate passed the baseline comparison.",
+        ctx=SimpleNamespace(
+            extra={
+                "website_runtime_contract": contract,
+                "deployment_release_history": [{"release_number": 1}],
+            }
+        ),
+    )
+
+    assert response.success is True
+    assert contract["evolution_decisions"][0]["decision"] == "keep"
 
 
 @pytest.mark.asyncio
@@ -356,11 +484,15 @@ async def test_builder_completion_requires_release_feedback_collection(monkeypat
         turn_results={1: "user feedback"},
         _tasks=SimpleNamespace(empty=lambda: True),
     )
-    acceptance = SimpleNamespace(**{
-        **ready.__dict__, "turn_results": {1: "VERDICT: PASS\nAll journeys passed."},
-    })
+    acceptance = SimpleNamespace(
+        **{
+            **ready.__dict__,
+            "turn_results": {1: "VERDICT: PASS\nAll journeys passed."},
+        }
+    )
     monkeypatch.setattr(
-        runtime_manager, "child",
+        runtime_manager,
+        "child",
         lambda job_id: acceptance if job_id == "acceptance" else ready,
     )
     contract = {
@@ -369,10 +501,12 @@ async def test_builder_completion_requires_release_feedback_collection(monkeypat
         "acceptance_job_id": "acceptance",
         "collected_turns": {"user-1": 1},
     }
-    ctx = SimpleNamespace(extra={
-        "website_runtime_contract": contract,
-        "deployment_release_history": [{"source_revision": "one", "fanout": 2}],
-    })
+    ctx = SimpleNamespace(
+        extra={
+            "website_runtime_contract": contract,
+            "deployment_release_history": [{"source_revision": "one", "fanout": 2}],
+        }
+    )
     builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
 
     assert "acceptance" in await builder._completion_blocker(ctx)
@@ -381,6 +515,47 @@ async def test_builder_completion_requires_release_feedback_collection(monkeypat
 
     acceptance.turn_results[1] = "VERDICT: FAIL\nCheckout is broken."
     assert "did not pass" in await builder._completion_blocker(ctx)
+
+
+@pytest.mark.asyncio
+async def test_builder_completion_requires_configured_evolution_evidence(monkeypatch, tmp_path):
+    from agentevolver.runtime import runtime_manager
+
+    ready = SimpleNamespace(
+        alive=True,
+        busy=False,
+        turns=1,
+        last_turn_success=True,
+        turn_results={1: "VERDICT: PASS\nPassed."},
+        _tasks=SimpleNamespace(empty=lambda: True),
+    )
+    monkeypatch.setattr(runtime_manager, "child", lambda _job_id: ready)
+    contract = {
+        "required_releases": 1,
+        "subscriber_job_ids": ["acceptance"],
+        "acceptance_job_id": "acceptance",
+        "collected_turns": {"acceptance": 1},
+        "evolution_decisions": [],
+        "minimum_kept_evolutions": 1,
+    }
+    ctx = SimpleNamespace(
+        extra={
+            "website_runtime_contract": contract,
+            "deployment_release_history": [{"source_revision": "one", "fanout": 1}],
+        }
+    )
+    builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
+
+    assert "not recorded" in await builder._completion_blocker(ctx)
+    contract["evolution_decisions"] = [
+        {
+            "release_number": 1,
+            "decision": "no_gap",
+        }
+    ]
+    assert "only 0 were kept" in await builder._completion_blocker(ctx)
+    contract["evolution_decisions"][0]["decision"] = "keep"
+    assert await builder._completion_blocker(ctx) is None
 
 
 def test_builder_requires_verification_at_the_exact_deployed_url():
@@ -400,7 +575,9 @@ def test_builder_requires_verification_at_the_exact_deployed_url():
 def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
     from mmengine import Config
 
-    cfg = Config.fromfile(str(Path(__file__).resolve().parents[1] / "configs" / "website_evolution_demo.py"))
+    cfg = Config.fromfile(
+        str(Path(__file__).resolve().parents[1] / "configs" / "website_evolution_demo.py")
+    )
 
     assert cfg.agent_names == [
         "website_builder_agent",
@@ -469,7 +646,7 @@ def test_website_task_manifest_routes_independent_acceptance(tmp_path):
         personas.append(path)
 
     task = build_task_text(scenario, personas)
-    manifest = json.loads(task[task.index("{", task.index("runtime-input-manifest")):])
+    manifest = json.loads(task[task.index("{", task.index("runtime-input-manifest")) :])
 
     assert manifest["release_acceptance"] == {
         "agent": "browser_agent",
@@ -491,7 +668,12 @@ def test_website_prompts_do_not_encode_one_demo_protocol():
         for name in ("website_builder_agent.html", "website_user_agent.html")
     )
     for fixed_demo_term in (
-        "V0", "V1", "V5", "exactly five", "website_evolution_demo",
-        "feedback_ledger.json", "preference_ledger.json",
+        "V0",
+        "V1",
+        "V5",
+        "exactly five",
+        "website_evolution_demo",
+        "feedback_ledger.json",
+        "preference_ledger.json",
     ):
         assert fixed_demo_term not in text

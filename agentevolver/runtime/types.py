@@ -20,10 +20,10 @@ from agentevolver.utils import make_id
 
 
 class AgentStatus(str, Enum):
-    RUNNING  = "running"
+    RUNNING = "running"
     STOPPING = "stopping"
-    STOPPED  = "stopped"
-    DEAD     = "dead"
+    STOPPED = "stopped"
+    DEAD = "dead"
 
 
 class AgentDeadError(RuntimeError):
@@ -79,16 +79,18 @@ class SubscriptionEventMessage(TaskMessage):
     ) -> "SubscriptionEventMessage":
         body = dict(payload or {})
         published_at = datetime.now(timezone.utc).isoformat()
-        task = "\n".join([
-            "A subscribed event was published to this agent.",
-            f"Topic: {topic}",
-            f"Event type: {event_type}",
-            f"Publisher: {publisher or '(unspecified)'}",
-            f"Published at: {published_at}",
-            "Payload:",
-            json.dumps(body, ensure_ascii=False, indent=2, default=str),
-            "Handle this event according to your standing subscriber brief.",
-        ])
+        task = "\n".join(
+            [
+                "A subscribed event was published to this agent.",
+                f"Topic: {topic}",
+                f"Event type: {event_type}",
+                f"Publisher: {publisher or '(unspecified)'}",
+                f"Published at: {published_at}",
+                "Payload:",
+                json.dumps(body, ensure_ascii=False, indent=2, default=str),
+                "Handle this event according to your standing subscriber brief.",
+            ]
+        )
         return cls(
             task=task,
             topic=topic,
@@ -118,32 +120,36 @@ class AgentRef(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    name:       str
+    name: str
     agent_name: str
-    status:     AgentStatus = AgentStatus.RUNNING
+    status: AgentStatus = AgentStatus.RUNNING
 
     #: Set only on a delegated ref. ``job_id`` is the id the parent's model is given —
     #: `job__list` / `job__output` / `job__kill` all take the same string.
-    job_id:            str  = ""
-    task:              str  = ""
-    parent_session_id: str  = ""
+    job_id: str = ""
+    task: str = ""
+    parent_session_id: str = ""
     #: Root conversation/task-tree identity used for sibling and descendant messaging.
-    root_session_id:   str  = ""
+    root_session_id: str = ""
     #: Gateway project identity used only for human visibility/authorization.
-    project_id:        str  = ""
+    project_id: str = ""
     #: The child's OWN session, stable across turns so a continuable child keeps one memory.
-    session_id:        str  = ""
-    continuable:       bool = False
-    turns:             int  = 0
+    session_id: str = ""
+    continuable: bool = False
+    turns: int = 0
     last_turn_success: Optional[bool] = None
     #: Final handoff for each completed continuable turn. Job transcripts remain the
     #: durable/debug view; this bounded structured view lets a parent collect one new
     #: subscriber response without replaying every earlier response into its context.
-    turn_results:      Dict[int, str] = Field(default_factory=dict)
+    turn_results: Dict[int, str] = Field(default_factory=dict)
+    #: Bounded machine-readable diagnostics for each completed turn. They stay out
+    #: of the standing conversation and are included only when a parent collects
+    #: that exact turn.
+    turn_diagnostics: Dict[int, Dict[str, Any]] = Field(default_factory=dict)
     #: Session-scoped topics this live ref consumes. Subscription is a relationship of
     #: a running ref, not a second kind of Agent, so lifecycle and addressability remain
     #: in the one runtime registry.
-    subscriptions:     Set[str] = Field(default_factory=set)
+    subscriptions: Set[str] = Field(default_factory=set)
     #: Standing instructions and attachments prepended to every published event turn.
     #: A subscription-only child does not spend a model turn "waiting"; its first turn
     #: begins when an event arrives.
@@ -153,13 +159,13 @@ class AgentRef(BaseModel):
     #: continuable child that finished a turn is idle, not finished — it still holds its
     #: context and can be sent more work — so collapsing the two would report either a
     #: live child as collectable or a finished one as still running.
-    busy:              bool = False
+    busy: bool = False
     #: Last control state accepted by the protocol. Kept on the ref so a human-facing
     #: Agent view can distinguish an intentionally paused worker from an idle one.
-    paused:            bool = False
+    paused: bool = False
 
-    _inbox:         asyncio.Queue            = PrivateAttr(default_factory=asyncio.Queue)
-    _pump_task:     Optional[asyncio.Task]   = PrivateAttr(default=None)
+    _inbox: asyncio.Queue = PrivateAttr(default_factory=asyncio.Queue)
+    _pump_task: Optional[asyncio.Task] = PrivateAttr(default=None)
     _pending_reply: Optional[asyncio.Future] = PrivateAttr(default=None)
 
     #: Turns waiting to be run, in the order they were sent.
@@ -169,10 +175,10 @@ class AgentRef(BaseModel):
     #: overwrites the run keyed under that ref name — and the first turn's result is then
     #: lost with no error anywhere. Queueing here is what makes "your message becomes its
     #: next turn" true rather than aspirational.
-    _tasks:  asyncio.Queue          = PrivateAttr(default_factory=asyncio.Queue)
+    _tasks: asyncio.Queue = PrivateAttr(default_factory=asyncio.Queue)
     #: The one coroutine allowed to run a turn on this ref.
     _driver: Optional[asyncio.Task] = PrivateAttr(default=None)
-    _ctx:    Optional[Any]          = PrivateAttr(default=None)
+    _ctx: Optional[Any] = PrivateAttr(default=None)
     #: Runtime-owned scheduling gate. Published events and follow-up tasks may queue
     #: while paused, but the continuable driver cannot start another turn.
     _resume_gate: asyncio.Event = PrivateAttr(default_factory=asyncio.Event)
@@ -199,7 +205,9 @@ class AgentRef(BaseModel):
         return f"{self.agent_name} · {doing} · {self.task[:60]}"
 
     def __repr__(self) -> str:
-        return f"AgentRef(name={self.name!r}, agent={self.agent_name!r}, status={self.status.value})"
+        return (
+            f"AgentRef(name={self.name!r}, agent={self.agent_name!r}, status={self.status.value})"
+        )
 
     __str__ = __repr__
 

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from agentevolver.deploy.types import Deployer, DeploymentSpec, DeployRequest, HealthCheck
 from agentevolver.registry import DEPLOYER
-from agentevolver.deploy.types import Deployer, DeploymentSpec, HealthCheck, DeployRequest
 
 
 @DEPLOYER.register_module(name="static", force=True)
@@ -23,7 +23,10 @@ class StaticDeployer(Deployer):
             image=self.default_image,
             workspace_root="/app",
             build=[],
-            start=f"python -m http.server {port} --bind 0.0.0.0",
+            # Host deployments run in a non-conda shell where ``python`` is not
+            # guaranteed to exist. ``python3`` is the portable executable on the
+            # supported Linux hosts and is also present in the container image.
+            start=f"python3 -m http.server {port} --bind 0.0.0.0",
             port=port,
             health=HealthCheck(type="http", path="/"),
         )

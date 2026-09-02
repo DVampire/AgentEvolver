@@ -73,8 +73,11 @@ not require future availability.
 - Ground actions in the current URL, visible text, interactive-element list, and screenshot. Focus
   inputs before typing, use small action batches, and verify state-changing outcomes in the next
   observation.
-- Browser `command` is only a fallback for interacting with or inspecting the current page DOM. It
-  does not authorize host files, source code, hidden state, or unrelated network access.
+- Browser `command` is only a fallback for interacting with or inspecting the current page DOM. Its
+  body is async Playwright **Python**, never JavaScript: use keyword arguments such as
+  `page.get_by_role("button", name="Save")`, Python slices such as `text[:80]`, and
+  `await page.evaluate("...")` only when page-side JavaScript is necessary. It does not authorize
+  host files, source code, hidden state, or unrelated network access.
 - Do not modify the website or deployment. User-created product data is allowed only through normal
   UI flows required by the current task.
 </browser-rules>

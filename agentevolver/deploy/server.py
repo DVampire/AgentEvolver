@@ -34,12 +34,6 @@ from typing import Any, Dict, List, Optional
 import httpx
 from pydantic import BaseModel, ConfigDict
 
-from agentevolver.config import config
-from agentevolver.paths import P, path_manager
-from agentevolver.logger import logger
-from agentevolver.registry import DEPLOYER
-from agentevolver.sandbox import sandbox_manager
-from agentevolver.utils.file_utils import atomic_json_update
 from agentevolver.deploy.types import (
     Deployer,
     DeploymentSpec,
@@ -48,9 +42,25 @@ from agentevolver.deploy.types import (
     SiteRecord,
     SiteStatus,
 )
+from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
+from agentevolver.registry import DEPLOYER
+from agentevolver.sandbox import sandbox_manager
+from agentevolver.utils.file_utils import atomic_json_update
 
 # Directories skipped when uploading a host source tree into a container.
-_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".next", ".cache", "dist", "build", ".DS_Store"}
+_SKIP_DIRS = {
+    ".git",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".next",
+    ".cache",
+    "dist",
+    "build",
+    ".DS_Store",
+}
 _SANDBOX_KIND = "opensandbox"
 
 
@@ -103,6 +113,7 @@ class DeploymentManagerServer(BaseModel):
     # --------------------------------------------------------------- discovery
     async def list_profiles(self) -> List[str]:
         import agentevolver.deploy.default  # noqa: F401
+
         return sorted(DEPLOYER.module_dict.keys())
 
     def _profile(self, runtime: str) -> Deployer:
@@ -139,8 +150,11 @@ class DeploymentManagerServer(BaseModel):
         if not choice:
             choice = (os.environ.get("DEPLOY_BACKEND") or "").lower().strip()
         if not choice:
-            inline = request is not None and (request.content or request.files) \
+            inline = (
+                request is not None
+                and (request.content or request.files)
                 and not (request.source_dir or request.git_url)
+            )
             choice = "host" if inline else "auto"
         if choice in ("host", "local"):
             return "host"
@@ -168,6 +182,7 @@ class DeploymentManagerServer(BaseModel):
         own isolated port space.
         """
         from agentevolver.port import port_manager
+
         return port_manager.register(f"deploy:{site_id}", preferred=preferred, type="host")["port"]
 
     async def _reconcile_on_start(self) -> None:
@@ -181,7 +196,9 @@ class DeploymentManagerServer(BaseModel):
         for rec in self._sites.values():
             if rec.status in (SiteStatus.STOPPED, SiteStatus.FAILED):
                 continue
-            rec.status = SiteStatus.RUNNING if await self._url_reachable(rec.url) else SiteStatus.DETACHED
+            rec.status = (
+                SiteStatus.RUNNING if await self._url_reachable(rec.url) else SiteStatus.DETACHED
+            )
 
     @staticmethod
     async def _url_reachable(url: Optional[str]) -> bool:
@@ -199,6 +216,7 @@ class DeploymentManagerServer(BaseModel):
     def _release_host_port(record: SiteRecord) -> None:
         if record.backend == "host":
             from agentevolver.port import port_manager
+
             port_manager.unregister(f"deploy:{record.site_id}")
 
     # --------------------------------------------------------------- registry io
@@ -234,7 +252,9 @@ class DeploymentManagerServer(BaseModel):
             if field in ov and ov[field] is not None:
                 setattr(spec, field, ov[field])
         if "health" in ov and ov["health"]:
-            spec.health = HealthCheck(**ov["health"]) if isinstance(ov["health"], dict) else ov["health"]
+            spec.health = (
+                HealthCheck(**ov["health"]) if isinstance(ov["health"], dict) else ov["health"]
+            )
         if request.port:
             spec.port = request.port
         if request.env:
@@ -250,12 +270,18 @@ class DeploymentManagerServer(BaseModel):
         (a {relpath: text} map) wins over ``content`` (a single ``filename``); giving
         both merges them, with ``content`` filling in ``filename`` if absent.
         """
-        base = (os.path.dirname(self._registry_path) if self._registry_path
-                else str(path_manager.get(P.DEPLOY, create=True)))
-        staging = str(path_manager.resolve_under(path_manager.resolve_under(base, "staging"), request.site_id))
+        base = (
+            os.path.dirname(self._registry_path)
+            if self._registry_path
+            else str(path_manager.get(P.DEPLOY, create=True))
+        )
+        staging = str(
+            path_manager.resolve_under(path_manager.resolve_under(base, "staging"), request.site_id)
+        )
         # A redeploy must not serve stale files from a previous materialization.
         if os.path.isdir(staging):
             import shutil
+
             shutil.rmtree(staging, ignore_errors=True)
         os.makedirs(staging, exist_ok=True)
 
@@ -284,9 +310,14 @@ class DeploymentManagerServer(BaseModel):
                 "content": request.content,
                 "files": request.files or {},
             }
-            digest.update(json.dumps(
-                payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-            ).encode("utf-8"))
+            digest.update(
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            )
             return digest.hexdigest()
         if request.source_dir and os.path.isdir(request.source_dir):
             root = os.path.abspath(request.source_dir)
@@ -310,10 +341,24 @@ class DeploymentManagerServer(BaseModel):
             return digest.hexdigest()
         return ""
 
+    def source_revision(self, request: DeployRequest) -> str:
+        """Public, side-effect-free source identity used by release gates."""
+        return self._source_revision(request)
+
     # --------------------------------------------------------------- deploy
     async def deploy(self, request: DeployRequest) -> SiteRecord:
         """Build and start a site in a fresh container, bind it to a URL, and record it."""
         await self._ensure_initialized()
+
+        # ``site_id`` is documented as a stable reuse key. Re-deploying that key must
+        # replace the old process; starting a second server beside it either leaks the
+        # first process or reports the old artifact healthy on the reused port.
+        previous = self._sites.get(request.site_id)
+        if previous is not None and previous.status not in {
+            SiteStatus.STOPPED,
+            SiteStatus.FAILED,
+        }:
+            await self.stop_site(request.site_id)
 
         # Decide the backend *before* materializing inline content — materialization sets
         # source_dir, which would otherwise mask the "inline ⇒ host by default" rule.
@@ -331,14 +376,19 @@ class DeploymentManagerServer(BaseModel):
         # and write the server log beside it (containers keep a per-container /tmp log).
         if backend == "host":
             spec.workspace_root = self._host_site_dir(request.site_id)
-            log_path = str(path_manager.resolve_under(
-                os.path.dirname(spec.workspace_root), "server.log",
-            ))
+            log_path = str(
+                path_manager.resolve_under(
+                    os.path.dirname(spec.workspace_root),
+                    "server.log",
+                )
+            )
             # Host sites share the machine's ports: if the requested one is taken, move to
             # a free port and reflect it in the start command (literal port) and PORT env.
             free = self._reserve_host_port(request.site_id, spec.port)
             if free != spec.port:
-                logger.info(f"| 🖥️  port {spec.port} busy → using free port {free} for '{request.site_id}'")
+                logger.info(
+                    f"| 🖥️  port {spec.port} busy → using free port {free} for '{request.site_id}'"
+                )
                 spec.start = spec.start.replace(str(spec.port), str(free))
                 spec.port = free
         else:
@@ -357,7 +407,10 @@ class DeploymentManagerServer(BaseModel):
             backend=backend,
             reuse_key=request.site_id,
             source_revision=source_revision,
-            created_at=self._sites.get(request.site_id, SiteRecord(site_id=request.site_id, runtime=spec.runtime)).created_at or _now(),
+            created_at=self._sites.get(
+                request.site_id, SiteRecord(site_id=request.site_id, runtime=spec.runtime)
+            ).created_at
+            or _now(),
             updated_at=_now(),
             log_path=log_path,
             request=request.model_dump(),
@@ -369,10 +422,14 @@ class DeploymentManagerServer(BaseModel):
         try:
             if backend == "host":
                 sandbox = await sandbox_manager.acquire(
-                    "host", reuse_key=request.site_id, env=spec.env,
+                    "host",
+                    reuse_key=request.site_id,
+                    env=spec.env,
                     host_base=os.path.dirname(os.path.dirname(spec.workspace_root)),
                 )
-                logger.info(f"| 🖥️  '{request.site_id}': no container runtime → deploying on HOST (no isolation)")
+                logger.info(
+                    f"| 🖥️  '{request.site_id}': no container runtime → deploying on HOST (no isolation)"
+                )
             else:
                 sandbox = await sandbox_manager.acquire(
                     _SANDBOX_KIND,
@@ -388,7 +445,9 @@ class DeploymentManagerServer(BaseModel):
 
             # --- upload source ---------------------------------------------------
             if request.git_url:
-                res = await sandbox.run_command(f"git clone {shlex.quote(request.git_url)} {shlex.quote(spec.workspace_root)}")
+                res = await sandbox.run_command(
+                    f"git clone {shlex.quote(request.git_url)} {shlex.quote(spec.workspace_root)}"
+                )
                 if not res.success:
                     raise RuntimeError(f"git clone failed: {res.as_message()}")
             else:
@@ -398,12 +457,16 @@ class DeploymentManagerServer(BaseModel):
 
             # --- build (fail-fast) -----------------------------------------------
             for cmd in spec.build:
-                res = await sandbox.run_command(cmd, workspace_root=spec.workspace_root, timeout=1800)
+                res = await sandbox.run_command(
+                    cmd, workspace_root=spec.workspace_root, timeout=1800
+                )
                 if not res.success:
                     raise RuntimeError(f"build step failed ({cmd!r}): {res.as_message()}")
 
             # --- start server in the background ----------------------------------
-            start_cmd = f"nohup sh -c {shlex.quote(spec.start)} > {shlex.quote(rec.log_path)} 2>&1 &"
+            start_cmd = (
+                f"nohup sh -c {shlex.quote(spec.start)} > {shlex.quote(rec.log_path)} 2>&1 &"
+            )
             res = await sandbox.run_command(start_cmd, workspace_root=spec.workspace_root)
             if not res.success:
                 raise RuntimeError(f"failed to launch start command: {res.as_message()}")
@@ -417,7 +480,9 @@ class DeploymentManagerServer(BaseModel):
             ready = await self._health(sandbox, spec, url)
             if not ready:
                 tail = await self._log_tail(sandbox, rec.log_path)
-                raise RuntimeError(f"service did not become healthy within {spec.health.timeout_s}s. Log tail:\n{tail}")
+                raise RuntimeError(
+                    f"service did not become healthy within {spec.health.timeout_s}s. Log tail:\n{tail}"
+                )
 
             rec.url = url
             rec.status = SiteStatus.RUNNING
@@ -439,9 +504,7 @@ class DeploymentManagerServer(BaseModel):
                     self._owned_sites.discard(request.site_id)
                     self._release_host_port(rec)
             except Exception as cleanup_error:  # noqa: BLE001
-                logger.warning(
-                    f"| ⚠️ Deploy '{request.site_id}' failure cleanup: {cleanup_error}"
-                )
+                logger.warning(f"| ⚠️ Deploy '{request.site_id}' failure cleanup: {cleanup_error}")
             rec.status = SiteStatus.FAILED
             rec.error = str(e)
             rec.updated_at = _now()
@@ -479,11 +542,13 @@ class DeploymentManagerServer(BaseModel):
         probe_url = url.rstrip("/") + hc.path
         while asyncio.get_event_loop().time() < deadline:
             if alive_check is not None and not alive_check():
-                logger.warning(f"| ⚠️ deploy: launched server process exited before becoming healthy")
+                logger.warning("| ⚠️ deploy: launched server process exited before becoming healthy")
                 return False
             try:
                 if hc.type == "command" and hc.command:
-                    res = await sandbox.run_command(hc.command, workspace_root=spec.workspace_root, timeout=15)
+                    res = await sandbox.run_command(
+                        hc.command, workspace_root=spec.workspace_root, timeout=15
+                    )
                     if res.success:
                         return True
                 else:  # http
@@ -543,17 +608,9 @@ class DeploymentManagerServer(BaseModel):
         rec = self._sites.get(site_id)
         if rec is None or not rec.request:
             raise ValueError(f"No redeployable request stored for site {site_id!r}")
-        stopped = await sandbox_manager.release(
-            rec.backend or _SANDBOX_KIND,
-            reuse_key=site_id,
-            resource_id=rec.resource_id,
-        )
-        if not stopped and (rec.resource_id or await self._url_reachable(rec.url)):
-            raise RuntimeError(
-                f"Cannot redeploy {site_id!r}: the previous backend identity could not "
-                "be stopped or verified absent"
-            )
-        return await self.deploy(DeployRequest(**rec.request))
+        request = DeployRequest(**rec.request)
+        await self.stop_site(site_id)
+        return await self.deploy(request)
 
     async def cleanup(self) -> None:
         """Stop only sites acquired by this process (called on global teardown)."""

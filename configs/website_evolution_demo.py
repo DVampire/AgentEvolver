@@ -8,8 +8,8 @@ browser sessions, memories, and dispatcher-scoped scratch workspaces.
 from mmengine.config import read_base
 
 with read_base():
-    from .agents.evaluate_agent import evaluate_agent
     from .agents.browser_agent import browser_agent
+    from .agents.evaluate_agent import evaluate_agent
     from .agents.generate_agent import generate_agent
     from .agents.optimize_agent import optimize_agent
     from .agents.website_builder_agent import website_builder_agent
@@ -29,6 +29,11 @@ log_path = "agent.log"
 # transitions. The launcher repeats the count in the task manifest and validation
 # rejects drift between configuration and task contract.
 optimization_cycles = 5
+# This is an evolution demonstration, not only a product iteration benchmark: at
+# least one evidence-backed framework capability must complete the full lifecycle.
+minimum_kept_evolutions = 1
+initial_step_budget = 36
+iteration_step_budget = 30
 # Keep this demonstration's generated/optimized components isolated from the global
 # extension library.  Besides making rollback auditable, this avoids depending on a
 # machine-wide manifest that may belong to another OS user.
@@ -180,25 +185,31 @@ website_user_agent.update(**_USER)
 
 # Independent release acceptance is stateless and bounded. It validates the exact deployed
 # artifact; it does not inherit a participant persona or participate in co-design.
-browser_agent.update(**{
-    **_AGENT_CORE,
-    "model_name": "llm_hub/gpt-5.6-sol",
-    "prompt_name": "browser_agent",
-    "env_name": "browser_environment",
-    "use_memory": False,
-    "max_step": 20,
-    "timeout": 1200,
-    "max_token": 500000,
-    "max_actions": 3,
-    "max_screenshots": 2,
-})
+browser_agent.update(
+    **{
+        **_AGENT_CORE,
+        "model_name": "llm_hub/gpt-5.6-sol",
+        "prompt_name": "browser_agent",
+        "env_name": "browser_environment",
+        "use_memory": False,
+        "max_step": 20,
+        "timeout": 1200,
+        "max_token": 500000,
+        "max_actions": 3,
+        "max_screenshots": 2,
+    }
+)
 
-website_builder_agent.update(**{
-    **_AGENT_CORE,
-    "model_name": "llm_hub/claude-opus-5",
-    "prompt_name": "website_builder_agent",
-    "enable_evolving": True,
-    "max_step": BUILDER_MAX_STEP,
-    "timeout": WALL_CLOCK,
-    "max_token": MAX_TOKEN,
-})
+website_builder_agent.update(
+    **{
+        **_AGENT_CORE,
+        "model_name": "llm_hub/claude-opus-5",
+        "prompt_name": "website_builder_agent",
+        "enable_evolving": True,
+        "max_step": BUILDER_MAX_STEP,
+        "timeout": WALL_CLOCK,
+        "max_token": MAX_TOKEN,
+        "initial_step_budget": initial_step_budget,
+        "iteration_step_budget": iteration_step_budget,
+    }
+)
