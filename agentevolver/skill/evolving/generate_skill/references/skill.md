@@ -57,7 +57,7 @@ Skills use a three-level loading system:
 2. **SKILL.md body** — in context whenever the skill triggers (<500 lines ideal).
 3. **Bundled resources** (scripts/, references/) — loaded/executed only as needed (unlimited; scripts run without loading into context).
 
-Keep SKILL.md under ~500 lines. If you approach that, add a layer of hierarchy: move detail into `references/` and point to it clearly from SKILL.md ("read `references/x.md` when you need Y"). For large reference files (>300 lines), include a table of contents.
+Keep SKILL.md under ~500 lines. If you approach that, add a layer of hierarchy: move detail into `references/` and point to it clearly from SKILL.md ("read the deployment reference when you need to ship"). For large reference files (>300 lines), include a table of contents.
 
 **Domain organization**: when a skill supports multiple variants, organize by variant so the agent reads only the relevant reference:
 ```

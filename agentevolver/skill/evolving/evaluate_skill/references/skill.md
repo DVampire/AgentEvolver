@@ -15,7 +15,7 @@ Goal: measure whether the skill actually helps, and how good its outputs are —
 
 ### Static check (always do this)
 
-Read the SKILL.md and score it on: instruction clarity, completeness, structure/format, and whether the description states both what-it-does and when-to-use. Run `scripts/skill/quick_validate.py` for the structural pass (frontmatter present, required fields, sane layout). Use `inspect_skill_tool` to confirm the skill is registered and to get its directory.
+Read the SKILL.md and score it on: instruction clarity, completeness, structure/format, and whether the description states both what-it-does and when-to-use. Run `scripts/skill/quick_validate.py` for the structural pass (frontmatter present, required fields, sane layout). Use `inspect_tool` (`capability_type="skill"`) to confirm the skill is registered and to get its directory.
 
 ### Empirical check (with-skill vs baseline)
 

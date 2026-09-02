@@ -9,7 +9,7 @@ changes every agent configured with `use_memory`.
 
 ## Evaluating a memory system
 
-Call `inspect_memory_tool` (or `inspect_tool` with capability_type="tool" on the name) for its registry facts. Score across:
+Call `inspect_tool` with `capability_type="memory"` and the target name for its registry facts. Score across:
 1. **Interface Compliance** — `@MEMORY_SYSTEM.register_module`, subclasses `TieredMemory`/`Memory`, `name` matches the file stem, `enable_evolving` declared.
 2. **Code Quality** — valid, clean, no unbounded growth, per-session state correctly keyed.
 3. **Retention Quality** — does what it keeps actually serve the next step? Is anything load-bearing dropped? Is anything useless retained?

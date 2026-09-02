@@ -14,7 +14,7 @@ Goal: measure whether the connector's actions actually let an agent accomplish t
 
 ### Static check (always)
 
-Read the `CONNECTOR.md` and score it: are the required frontmatter fields present (`connection`, `actions`); is each action documented with purpose + arguments; does the description state what-it-does and when-to-use. Use `inspect_connector_tool` to confirm the connector is registered and to get its connection, actions, and directory. Validate structure with:
+Read the `CONNECTOR.md` and score it: are the required frontmatter fields present (`connection`, `actions`); is each action documented with purpose + arguments; does the description state what-it-does and when-to-use. Use `inspect_tool` (`capability_type="connector"`) to confirm the connector is registered and to get its connection, actions, and directory. Validate structure with:
 ```bash
 python {skill_dir}/scripts/connector/validate_connector.py <connector_dir>
 ```

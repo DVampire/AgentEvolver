@@ -56,11 +56,17 @@ class HLEBenchmark(Benchmark):
         # Created on first use, not at construction: the registry builds every
         # benchmark at startup, before any session is bound, so doing it in
         # __init__ scaffolded empty directories under the unbound root.
-        os.makedirs(self.base_dir, exist_ok=True)
-        from datasets import load_dataset
+        # Deferred because `datasets` is heavy and only this method needs it. `os` is
+        # NOT re-imported: it is a module-level import, and importing it here again made
+        # it a *local* for the whole function, so `os.makedirs` below raised
+        # UnboundLocalError and this benchmark could never initialize at all.
         import pathlib
+
+        from datasets import load_dataset
+
         from agentevolver.benchmark.utils import ensure_dataset
-        import os
+
+        os.makedirs(self.base_dir, exist_ok=True)
         local_path = pathlib.Path(ensure_dataset(os.path.basename(self.path), self.hf_repo_id))
         dataset = load_dataset(str(local_path), split="test")
         self._data_records = self._apply_slice(list(dataset))
