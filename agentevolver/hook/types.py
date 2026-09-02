@@ -1,4 +1,9 @@
-"""Hook types — HookEvent, HookContext, HookResult, and Hook base class."""
+"""Hook models — HookContext, HookResult, and the Hook base class.
+
+``HookEvent`` is re-exported here for the many call sites that import it from this
+module; it now lives in the dependency-free ``hook.events`` so any layer can name an
+event without importing the message and session packages.
+"""
 
 from __future__ import annotations
 
@@ -7,48 +12,9 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentevolver.hook.events import HookEvent  # noqa: F401 - re-exported
 from agentevolver.message import Message
 from agentevolver.session import BaseContext
-
-
-class HookEvent(str, Enum):
-    """Lifecycle events that middleware can intercept."""
-
-    # Message pipeline — fires inside _get_messages before returning to agent
-    PRE_MESSAGES = "pre_messages"
-
-    # Action lifecycle — fires around each action in _think_and_act
-    PRE_ACTION = "pre_action"
-    POST_ACTION = "post_action"
-
-    # Step lifecycle — fires around each full agent step
-    PRE_STEP = "pre_step"
-    POST_STEP = "post_step"
-
-    # Agent lifecycle
-    ON_START = "on_start"
-    ON_STOP = "on_stop"       # agent is about to call done_tool
-    ON_ESCALATE = "on_escalate"  # agent is blocked and requests Meta guidance
-    ON_CALL = "on_call"
-
-    # Provider-neutral host lifecycle.  Names deliberately align with the public
-    # concepts exposed by Claude Code/Codex while remaining independent of either.
-    SESSION_START = "session_start"
-    SESSION_END = "session_end"
-    USER_PROMPT_SUBMIT = "user_prompt_submit"
-    PRE_TOOL_USE = "pre_tool_use"
-    PERMISSION_REQUEST = "permission_request"
-    POST_TOOL_USE = "post_tool_use"
-    POST_TOOL_USE_FAILURE = "post_tool_use_failure"
-    SUBAGENT_START = "subagent_start"
-    SUBAGENT_STOP = "subagent_stop"
-    PRE_COMPACT = "pre_compact"
-    POST_COMPACT = "post_compact"
-    NOTIFICATION = "notification"
-    TASK_COMPLETED = "task_completed"
-    WORKTREE_CREATE = "worktree_create"
-    WORKTREE_REMOVE = "worktree_remove"
-    CONFIG_CHANGE = "config_change"
 
 
 class HookContext(BaseContext):

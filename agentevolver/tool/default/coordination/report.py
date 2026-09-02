@@ -68,11 +68,24 @@ class ReportTool(Tool):
             output: Actionable content. Summarize the conclusion and name the shared
                 paths you touched; do not paste transcripts.
         """
-        from agentevolver.runtime import runtime_manager
+        # Delivered as a message to the parent process, which is what a report is.
+        # This used to append to a job transcript keyed by `ctx.extra["report_job_id"]`
+        # — a key nothing sets any more, so every report was silently discarded as
+        # "top_level" whether or not there was a parent.
+        from agentevolver.runtime import kernel
 
         ctx = kwargs.get("ctx")
+        extra = getattr(ctx, "extra", None) or {}
+        process = kernel.get(str(extra.get("process_pid") or ""))
         try:
-            status, job_id = runtime_manager.report_to_parent(ctx, output)
+            if process is None:
+                status, job_id = "top_level", ""
+            elif not process.parent_pid:
+                status, job_id = "top_level", ""
+            elif await process.report(output):
+                status, job_id = "delivered", process.parent_pid
+            else:
+                status, job_id = "parent_gone", process.parent_pid
         except Exception as error:                                  # noqa: BLE001
             logger.error(f"| ❌ report_tool failed: {error}")
             return Response(type=ResponseType.TOOL, success=False,

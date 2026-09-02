@@ -1082,7 +1082,7 @@ class TieredMemory(Memory):
     async def _summarise(self, items: list[str], existing: str) -> str:
         from agentevolver.hook import HookEvent, hook_manager
         res = await hook_manager(name=self.compact_hook, input={
-            "event": HookEvent.ON_CALL, "items": items,
+            "event": HookEvent.DIRECT_CALL, "items": items,
             "existing_summary": existing, "model_name": self.model_name,
             "max_output_tokens": self.compact_output_tokens,
         })

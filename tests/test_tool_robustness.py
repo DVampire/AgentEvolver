@@ -29,8 +29,8 @@ import pytest
 from agentevolver.config import config
 from agentevolver.permission import PermissionMode, permission_manager
 from agentevolver.tool.context import ToolContextManager
-from agentevolver.tool.default.workspace.bash import BashTool
 from agentevolver.tool.default.lifecycle.done import DoneTool
+from agentevolver.tool.default.workspace.bash import BashTool
 from agentevolver.utils.terminal import render_terminal
 
 

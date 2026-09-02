@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
+from agentevolver.hook.events import HookEvent
 from agentevolver.logger import logger
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.utils import make_id
@@ -225,9 +226,18 @@ BeforeInvoke = Callable[[], Union[None, Awaitable[None]]]
 
 
 class ToolExecutionPipeline:
-    """Ordered, extensible, fail-closed execution funnel for one Tool registry."""
+    """Ordered, extensible, fail-closed execution funnel for one capability registry.
 
-    def __init__(self) -> None:
+    Not tool-only, despite the name: `tool`, `environment` and `connector` each own an
+    instance, so `capability_type` says which kind is running and rides on every
+    invocation event. Without it a hook watching `pre_invoke` could not tell a shell
+    command from an environment action from a call out to a connector, and the events
+    used to be named `pre_tool_use` — which was simply false for two of the three.
+    """
+
+    def __init__(self, capability_type: str = "tool") -> None:
+        #: One of the seven capability kinds; the three that funnel through here.
+        self.capability_type = str(capability_type)
         self._guards: List[ToolGuard] = []
         self._postprocessors: List[ToolPostprocessor] = []
         self._observers: List[ToolResultObserver] = []
@@ -279,14 +289,14 @@ class ToolExecutionPipeline:
         started = time.monotonic()
 
         lifecycle = await self._emit_lifecycle(
-            "pre_tool_use",
+            HookEvent.PRE_INVOKE,
             execution,
             {"arguments": execution.arguments},
         )
         if lifecycle is not None and getattr(lifecycle, "decision", None) == "block":
             return await self._finish(
                 execution,
-                self._failure(getattr(lifecycle, "reason", None) or "Blocked by pre-tool hook."),
+                self._failure(getattr(lifecycle, "reason", None) or "Blocked by a pre-invoke hook."),
                 started,
                 timeout,
                 ToolExecutionStage.GUARD,
@@ -441,7 +451,7 @@ class ToolExecutionPipeline:
             if decision.type == ToolPolicyType.DENY:
                 return ToolErrorCode.POLICY_DENIED, decision.reason or "Tool call denied."
             lifecycle = await self._emit_lifecycle(
-                "permission_request",
+                HookEvent.PERMISSION_REQUEST,
                 execution,
                 {"reason": decision.reason},
             )
@@ -528,7 +538,7 @@ class ToolExecutionPipeline:
                     f"| ⚠️ Tool result observer failed for {execution.tool_name}: {error}"
                 )
         await self._emit_lifecycle(
-            "post_tool_use" if settled.success else "post_tool_use_failure",
+            HookEvent.POST_INVOKE if settled.success else HookEvent.INVOKE_FAILED,
             execution,
             {
                 "response": settled.model_dump(mode="json"),
@@ -537,16 +547,21 @@ class ToolExecutionPipeline:
         )
         return settled
 
-    @staticmethod
-    async def _emit_lifecycle(event: str, execution: ToolExecution, payload: Dict[str, Any]):
-        """Publish optional host hooks without making the tool kernel depend on them."""
+    async def _emit_lifecycle(
+        self, event: HookEvent, execution: ToolExecution, payload: Dict[str, Any]
+    ):
+        """Publish optional host hooks without making the kernel depend on them."""
         try:
             from agentevolver.hook import hook_manager
             from agentevolver.session import SessionContext
 
             return await hook_manager.emit(
                 event,
-                {"execution": execution.identity_dict(), **payload},
+                {
+                    "capability_type": self.capability_type,
+                    "execution": execution.identity_dict(),
+                    **payload,
+                },
                 ctx=SessionContext(id=execution.session_id or execution.project_id),
             )
         except Exception as error:  # lifecycle observation cannot silently break tools

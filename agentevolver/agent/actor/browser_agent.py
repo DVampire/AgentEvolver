@@ -1,222 +1,156 @@
-"""BrowserAgent — drives the browser environment via env actions in an observe-act loop."""
+"""BrowserAgent — drives a browser through its environment's actions.
 
-from typing import Any, Dict, List, Optional
+An observe-act loop: read the page, plan against exactly what was read, act. The reading
+is the only thing this agent needs that a leaf agent does not, and the base class already
+re-reads every mounted environment before each step — so what is left here is caching
+that one read so the screenshots attached to the prompt describe the same page the plan
+was made against, and classifying the failures a browser produces.
+
+It used to carry its own copy of the whole loop, because the previous base class had no
+environment step and no attachment hook. Both exist now, so the copy is gone.
+"""
+
+from typing import Any, Dict, List
 
 from pydantic import ConfigDict, Field
 
-from agentevolver.agent.types import (
-    _TRUNCATED_TURNS_BEFORE_GIVING_UP,
-    Agent,
-    AgentContext,
-)
-from agentevolver.config import config
+from agentevolver.agent.loop.decision import ActionResult, Decision
+from agentevolver.agent.types import Agent
 from agentevolver.environment.server import environment_manager
-from agentevolver.hook.server import hook_manager
-from agentevolver.hook.types import HookEvent
 from agentevolver.logger import logger
-from agentevolver.message import ContentPartImage, ContentPartText, ImageURL, Message
+from agentevolver.message.types import (
+    ContentPartImage,
+    ContentPartText,
+    HumanMessage,
+    ImageURL,
+    Message,
+)
 from agentevolver.registry import AGENT
-from agentevolver.response.types import Response, ResponseType
-from agentevolver.utils.name_utils import make_id
+from agentevolver.response.types import Response
 
 
 @AGENT.register_module(force=True)
 class BrowserAgent(Agent):
-    """Agent dedicated to the browser environment.
-
-    Each step it observes the environment state (text + screenshots), plans a
-    small batch of env actions, and executes them via the environment manager.
-    """
+    """An agent that operates a web browser through its environment's actions."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = Field(default="browser_agent")
     description: str = Field(
-        default="A browser agent that navigates and operates web pages through the "
-        "browser environment: clicking, typing, scrolling, and running "
-        "Playwright commands as a fallback."
+        default="An agent that operates a web browser: navigating, reading pages, "
+        "filling forms and clicking through flows using its environment's actions."
     )
     metadata: Dict[str, Any] = Field(default={})
+    prompt_name: str = Field(default="browser_agent")
+    max_actions: int = Field(default=3)
+    max_step: int = Field(default=40)
     enable_evolving: bool = Field(default=False)
+    env_names: List[str] = Field(default=["browser_environment"])
+    #: Screenshots attached per request: the previous annotated action and the current
+    #: page. More does not help a model that plans one action at a time, and each is
+    #: expensive.
+    max_screenshots: int = Field(default=2)
+    #: The minimal contract a browser worker runs under: it acts through environment
+    #: actions, so the only tool it needs is the one that ends the run.
+    capability_allowlists: Dict[str, List[str]] = Field(default={
+        "tool": ["done_tool"],
+        "skill": [],
+        "connector": [],
+        "plugin": [],
+        "workflow": [],
+    })
 
-    def __init__(
-        self,
-        base_dir: str,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        model_name: Optional[str] = None,
-        prompt_name: Optional[str] = None,
-        memory_name: Optional[str] = None,
-        env_name: str = "browser_environment",
-        max_actions: int = 3,
-        max_step: int = 30,
-        max_screenshots: int = 2,
-        review_steps: int = 5,
-        enable_evolving: bool = False,
-        **kwargs,
-    ):
-        super().__init__(
-            base_dir=base_dir,
-            name=name,
-            description=description,
-            metadata=metadata,
-            model_name=model_name,
-            prompt_name=prompt_name or "browser_agent",
-            memory_name=memory_name,
-            max_actions=max_actions,
-            max_step=max_step,
-            review_steps=review_steps,
-            enable_evolving=enable_evolving,
-            **kwargs,
-        )
-        self.env_name = env_name
-        # Only the latest screenshots are attached to the prompt to bound tokens
-        self.max_screenshots = max_screenshots
+    def __init__(self, base_dir: str = "", **kwargs: Any) -> None:
+        super().__init__(base_dir=base_dir, **kwargs)
+        #: The page this step planned against, kept so the attached screenshots and the
+        #: rendered state describe the same observation rather than two reads a moment
+        #: apart — for a browser, the second read costs another screenshot of a page the
+        #: plan was not made against.
+        self._observed: Dict[str, Any] = {}
+        self._failures: Dict[str, int] = {}
+        self._samples: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
-    # Environment access
+    # Observation
     # ------------------------------------------------------------------
 
-    # ------------------------------------------------------------------
-    # Context builders
-    # ------------------------------------------------------------------
+    @property
+    def env_name(self) -> str:
+        """The single environment this agent drives."""
+        return self.env_names[0] if self.env_names else "browser_environment"
 
-    def _required_capability_allowlists(self) -> Dict[str, List[str]]:
-        """Keep the generic browser worker on the same minimal contract as user agents."""
-        return {
-            "tool_allowlist": ["done_tool"],
-            "skill_allowlist": [],
-            "connector_allowlist": [],
-            "plugin_allowlist": [],
-            "environment_allowlist": [self.env_name],
-            "workflow_allowlist": [],
-        }
+    async def environment_state(self, ctx: Any) -> str:
+        """Read the page once per step, and hold it for the attachments."""
+        try:
+            self._observed = await environment_manager.get_state(
+                self.env_name, ctx=ctx,
+            ) or {}
+        except Exception as error:  # noqa: BLE001 - a dead browser is a fact, not a stop
+            logger.warning(f"| ⚠️ [{self.name}] could not read the browser: {error}")
+            self._observed = {}
+        state = self._observed.get("state") if isinstance(self._observed, dict) else None
+        body = state or "[Environment state unavailable.]"
+        return f'<environment name="{self.env_name}">\n{body}\n</environment>'
 
-    async def _get_agent_context(
-        self,
-        task: str,
-        step_number: int = 0,
-        ctx: Optional[AgentContext] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        """Extend the base prompt context with browser-specific fields.
+    def attachments(self) -> List[Message]:
+        """The screenshots from this step's observation, so a vision model can ground.
 
-        Adds the observed ``environment_state``, a ``workspace`` snapshot, any
-        ``errors`` from the previous step's actions, and the rendered environment
-        actions, so the template can ground the next batch of env actions.
+        Deduplicated by path: the previous annotated action and the current page often
+        come back as the same file, and sending it twice pays twice for one image.
         """
-        base = await super()._get_agent_context(task, step_number=step_number, ctx=ctx, **kwargs)
-
-        # `environment_state` is filled by `_get_environment_context` below, not here: the
-        # base class fills that slot after this method returns, so a value set here would
-        # be overwritten — and re-fetched, which for a browser means a second screenshot of
-        # the page this step already observed.
-        self._observed_state = kwargs.get("browser_state")
-        base["workspace"] = self._workspace_snapshot(ctx)
-
-        action_errors = kwargs.get("action_errors") or []
-        base["errors"] = "\n".join(f"- {e}" for e in action_errors) if action_errors else ""
-
-        return base
-
-    async def _get_environment_context(self, ctx: AgentContext) -> Dict[str, Any]:
-        """The page this step already observed, rather than a fresh read of it.
-
-        This agent runs an observe-act loop: it fetches the state at the top of each step
-        and plans against it. The base class would fetch it again here, one screenshot
-        later and describing a page the plan was not made against — so the observation is
-        reused and only the roster comes from the base.
-        """
-        slots = await super()._get_environment_context(ctx)
-        observed = getattr(self, "_observed_state", None)
-        slots["environment_state"] = (
-            observed.get("state") if observed else "[Environment state unavailable.]"
-        )
-        return slots
-
-    async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """Omit rendered tool prose; ``done_tool`` is supplied provider-natively."""
-        return {"tool_context": ""}
-
-    async def _capability_skill_slots(self, ctx: AgentContext) -> Dict[str, Any]:
-        """No skills: this agent drives a browser and has no use for one.
-
-        The empty slot is what the shared capability module tests, so the block is
-        omitted rather than rendered with a notice inside it.
-        """
-        return {"available_skills": ""}
-
-    async def _get_messages(
-        self,
-        task: str,
-        ctx: AgentContext,
-        **kwargs,
-    ) -> List[Message]:
-        """Build the prompt messages and attach the most recent screenshots.
-
-        Beyond the base text messages, appends up to ``max_screenshots`` deduplicated
-        images (previous annotated action + current state) as image content parts on
-        the final user message, so vision models can ground their actions.
-        """
-        messages = await super()._get_messages(task, ctx=ctx, **kwargs)
-
-        # Attach the latest screenshots (previous annotated action + current state)
-        # to the user message so vision models can ground their actions.
-        browser_state = kwargs.get("browser_state") or {}
-        screenshots = (browser_state.get("extra") or {}).get("screenshots") or []
-
-        unique = []
-        seen_paths = set()
-        for shot in screenshots:
+        extra = (self._observed or {}).get("extra") or {}
+        shots = extra.get("screenshots") or []
+        unique, seen = [], set()
+        for shot in shots:
             path = getattr(shot, "screenshot_path", None)
-            if path in seen_paths:
+            if path in seen:
                 continue
-            seen_paths.add(path)
+            seen.add(path)
             unique.append(shot)
+        if not unique:
+            return []
 
-        user_message = messages[-1]
-        if unique and isinstance(user_message.content, list):
-            for shot in unique[-self.max_screenshots :]:
-                b64 = getattr(shot, "screenshot", None)
-                if not b64:
-                    continue
-                description = getattr(shot, "screenshot_description", "") or "Screenshot"
-                user_message.content.append(ContentPartText(text=f"\n[{description}]"))
-                user_message.content.append(
-                    ContentPartImage(
-                        image_url=ImageURL(
-                            url=f"data:image/png;base64,{b64}", media_type="image/png"
-                        )
-                    )
-                )
-        return messages
+        parts: List[Any] = []
+        for shot in unique[-self.max_screenshots:]:
+            encoded = getattr(shot, "screenshot", None)
+            if not encoded:
+                continue
+            label = getattr(shot, "screenshot_description", "") or "Screenshot"
+            parts.append(ContentPartText(text=f"\n[{label}]"))
+            parts.append(ContentPartImage(image_url=ImageURL(
+                url=f"data:image/png;base64,{encoded}", media_type="image/png",
+            )))
+        return [HumanMessage(content=parts)] if parts else []
 
     # ------------------------------------------------------------------
-    # Main entry point
+    # Failures
     # ------------------------------------------------------------------
 
-    def _reset_turn_budget(self, ctx: Any) -> None:
-        """Reset per-task limits while a continuable browser identity stays alive."""
-        context_id = str(getattr(ctx, "id", "") or "")
-        if context_id:
-            for constraint in self.constraints:
-                constraint._cleanup(context_id)
-        self._pending_step_tokens.clear()
+    async def act(self, decision: Decision) -> List[ActionResult]:
+        """Run the batch, and tally what kind of browser failure came back.
+
+        Counted here rather than at the end because the categories are what a later run
+        or an optimizer reads: "the model wrote the wrong dialect of Playwright" and "the
+        page was covered by an overlay" call for different fixes, and both arrive as an
+        ordinary action error.
+        """
+        results = await super().act(decision)
+        for result in results:
+            if not result.error:
+                continue
+            category = self.classify(result.error)
+            self._failures[category] = self._failures.get(category, 0) + 1
+            self._samples.setdefault(category, str(result.error))
+        return results
 
     @staticmethod
-    def _diagnostic_category(message: str) -> str:
+    def classify(message: str) -> str:
+        """Which kind of browser failure this is."""
         text = str(message or "").lower()
-        if any(
-            marker in text
-            for marker in (
-                "accepts async playwright python",
-                "invalid syntax",
-                ".slice",
-                "unexpected token",
-                "is not defined",
-            )
-        ):
+        if any(marker in text for marker in (
+            "accepts async playwright python", "invalid syntax", ".slice",
+            "unexpected token", "is not defined",
+        )):
             return "browser_command_language"
         if "timed out" in text or "timeout" in text:
             return "browser_command_timeout"
@@ -224,166 +158,43 @@ class BrowserAgent(Agent):
             return "browser_interaction_blocked"
         return "browser_action_failure"
 
-    async def on_start(self, task, files, ctx, ref, **kwargs) -> Response:
-        """BrowserAgent keeps its own bespoke loop (browser-action turns), so it runs
-        via ``__call__`` rather than the base event-driven round loop. Returning the
-        Response here lets the runtime resolve the caller synchronously."""
-        # `env_name` and the config's `env_names` name the same environment in two
-        # places, and nothing made them agree. A mismatch — a typo, or a roster that
-        # dropped this environment — degraded silently: state came back empty, the
-        # prompt block was absent, and the agent behaved like a browser agent with no
-        # browser rather than reporting that it had none.
+    async def finalize(self, response: Response) -> Response:
+        """Carry the failure tally out with the result."""
+        data = dict(response.data or {})
+        data["diagnostics"] = {
+            "action_error_total": sum(self._failures.values()),
+            "action_error_counts": dict(self._failures),
+            "action_error_samples": dict(self._samples),
+        }
+        return response.model_copy(update={"data": data})
+
+    # ------------------------------------------------------------------
+    # Session
+    # ------------------------------------------------------------------
+
+    async def on_start(self, task: str, proc: Any) -> None:
+        """Start on a clean page, and refuse to pretend when there is no browser."""
         if await environment_manager.get_info(self.env_name) is None:
             raise RuntimeError(
                 f"environment {self.env_name!r} is not registered; "
                 f"add it to this config's `env_names`"
             )
-        environment = await environment_manager.get(self.env_name)
-        if environment is not None:
-            await environment.close_session(str(getattr(ctx, "id", "") or "default"))
-        self._observed_state = None
+        self._failures, self._samples, self._observed = {}, {}, {}
+        await self._close_session()
+
+    async def on_exit(self, status: Any) -> None:
+        """Release the page. A continuable identity keeps its memory, not its tab."""
+        await self._close_session()
+        await super().on_exit(status)
+
+    async def _close_session(self) -> None:
+        session = str(getattr(self.ctx, "id", "") or "default")
         try:
-            return await self.__call__(task=task, files=files, ctx=ctx, **kwargs)
-        finally:
-            self._reset_turn_budget(ctx)
+            environment = await environment_manager.get(self.env_name)
             if environment is not None:
-                await environment.close_session(str(getattr(ctx, "id", "") or "default"))
+                await environment.close_session(session)
+        except Exception as error:  # noqa: BLE001 - never fail a run over a tab
+            logger.warning(f"| ⚠️ [{self.name}] could not close {self.env_name}: {error}")
 
-    async def __call__(
-        self,
-        task: str,
-        files: Optional[List[str]] = None,
-        **kwargs,
-    ) -> Response:
-        logger.info(f"| 🚀 Starting BrowserAgent: {task}")
 
-        ctx = kwargs.get("ctx", None)
-        if ctx is None:
-            ctx = AgentContext()
-
-        if not config.workspace_root:
-            config.workspace_root = self.base_dir
-
-        if files:
-            logger.info(f"| 📂 Attached files: {files}")
-        enhanced_task = task
-
-        task_id = make_id()
-        logger.info(f"| 📝 Context ID: {ctx.id}, Task ID: {task_id}")
-
-        parent_session_id = ctx.parent_session_id if ctx else None
-        subtask_id = ctx.subtask_id if ctx else None
-
-        # ON_START
-        await hook_manager(
-            name="trace_hook",
-            input={
-                "event": HookEvent.ON_START,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "task": enhanced_task,
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-                "parent_session_id": parent_session_id,
-                "subtask_id": subtask_id,
-            },
-            ctx=ctx,
-        )
-
-        step_number = 0
-        action_errors: list = []
-        diagnostic_counts: Dict[str, int] = {}
-        diagnostic_samples: Dict[str, str] = {}
-        truncated_turns = 0
-        response = {"done": False, "result": None, "reasoning": None, "action_errors": []}
-
-        while step_number < self.max_step:
-            logger.info(f"| 🔄 Step {step_number + 1}/{self.max_step}")
-            reason, constraint_status = await self._constraint_check(task_id, ctx)
-            if reason is not None:
-                logger.warning(f"| 🛑 {self.name} constraint violated: {reason}")
-                response = {
-                    "done": True,
-                    "result": reason,
-                    "reasoning": None,
-                    "action_errors": [],
-                    "stopped_by_constraint": True,
-                }
-                break
-            # Observe the fresh page before reasoning over it
-            browser_state = await environment_manager.get_state(self.env_name, ctx=ctx)
-            messages = await self._get_messages(
-                enhanced_task,
-                ctx=ctx,
-                files=files,
-                browser_state=browser_state,
-                step_number=step_number,
-                action_errors=action_errors,
-                constraint_status=constraint_status,
-            )
-            response = await self._think_and_act(messages, task_id, step_number, ctx=ctx)
-            step_number += 1
-            action_errors = response.get("action_errors") or []
-            for error in action_errors:
-                category = self._diagnostic_category(error)
-                diagnostic_counts[category] = diagnostic_counts.get(category, 0) + 1
-                diagnostic_samples.setdefault(category, str(error))
-            if response.get("truncated"):
-                truncated_turns += 1
-                if truncated_turns >= _TRUNCATED_TURNS_BEFORE_GIVING_UP:
-                    response = {
-                        "done": False,
-                        "result": (
-                            f"The model hit its output-token limit {truncated_turns} "
-                            "times before completing an action."
-                        ),
-                        "reasoning": "Repeated incomplete max_tokens responses.",
-                        "action_errors": action_errors,
-                    }
-                    break
-            else:
-                truncated_turns = 0
-            if response["done"]:
-                break
-
-        if step_number >= self.max_step and not response["done"]:
-            logger.warning(f"| 🛑 Reached max steps ({self.max_step}), stopping...")
-            response = {
-                "done": False,
-                "result": "The task has not been completed.",
-                "reasoning": "Reached the maximum number of steps.",
-            }
-
-        success = response["done"] and not response.get("stopped_by_constraint", False)
-
-        # ON_STOP
-        await hook_manager(
-            name="trace_hook",
-            input={
-                "event": HookEvent.ON_STOP,
-                "agent_name": self.name,
-                "task_id": task_id,
-                "result": response.get("result"),
-                "success": success,
-                "memory_name": self.memory_name,
-                "use_memory": self.use_memory,
-                "parent_session_id": parent_session_id,
-                "subtask_id": subtask_id,
-            },
-            ctx=ctx,
-        )
-
-        logger.info(f"| ✅ BrowserAgent completed after {step_number}/{self.max_step} steps")
-
-        response["diagnostics"] = {
-            "action_error_total": sum(diagnostic_counts.values()),
-            "action_error_counts": diagnostic_counts,
-            "action_error_samples": diagnostic_samples,
-        }
-
-        return Response(
-            type=ResponseType.AGENT,
-            success=success,
-            message=response["result"],
-            data=response,
-        )
+__all__ = ["BrowserAgent"]

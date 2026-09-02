@@ -285,21 +285,23 @@ def test_the_turn_the_agent_builds_carries_the_live_images(tmp_path, vision_mode
     difference between an image delivered and an image merely announced — and the model
     would go on to describe a picture it never saw.
     """
-    from agentevolver.agent.types import Agent
-    from agentevolver.message import HumanMessage
-
     vision_model(supports_vision=True)
     image = tmp_path / "chart.png"
     image.write_bytes(_png_bytes())
     _read(image, ctx)
 
-    messages = Agent._with_attachments([HumanMessage(content="the turn so far")], ctx)
+    from tests.agent_probe import AgentProbe
 
-    assert len(messages) == 2
-    assert messages[0].content == "the turn so far", "the existing turn must not be rewritten"
-    images = [part for part in messages[1].content if isinstance(part, ContentPartImage)]
+    agent = AgentProbe(base_dir=str(tmp_path))
+    agent.ctx = ctx
+    attached = agent.attachments()
+
+    # One trailing user turn, never a rewrite of the turn so far: attachments ride in
+    # the live layer, which the assembler places after everything else.
+    assert len(attached) == 1
+    images = [part for part in attached[0].content if isinstance(part, ContentPartImage)]
     assert len(images) == 1
-    assert str(image) in messages[1].text
+    assert str(image) in attached[0].text
 
 
 def test_a_run_with_no_images_gets_the_turn_it_would_have_had(tmp_path, ctx):
@@ -309,11 +311,12 @@ def test_a_run_with_no_images_gets_the_turn_it_would_have_had(tmp_path, ctx):
     the prompt for every agent in the framework, and an empty content list is rejected by
     some providers outright.
     """
-    from agentevolver.agent.types import Agent
-    from agentevolver.message import HumanMessage
 
-    original = [HumanMessage(content="the turn so far")]
-    assert Agent._with_attachments(original, ctx) is original
+    from tests.agent_probe import AgentProbe
+
+    agent = AgentProbe(base_dir=str(tmp_path))
+    agent.ctx = ctx
+    assert agent.attachments() == []
 
 
 def test_the_stored_copy_is_read_back_not_the_original_file(tmp_path):

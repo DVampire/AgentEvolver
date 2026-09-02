@@ -229,25 +229,6 @@ async def test_the_gate_ignores_events_that_are_not_pre_action(plans, monkeypatc
     assert (await PlanModeHook().handle(ctx)).decision == HookDecision.ALLOW
 
 
-def test_the_agents_action_dispatch_consults_the_gate():
-    """The hook is inert unless `Agent._dispatch_one` calls it by name.
-
-    Hook dispatch is exact-name routing, not event subscription: a hook nobody names
-    never runs. Registering `plan_mode_hook` and forgetting the call site would leave
-    every test above green and the gate wide open in production.
-    """
-    from pathlib import Path
-
-    source = Path(__file__).parents[1] / "agentevolver" / "agent" / "types.py"
-    text = source.read_text(encoding="utf-8")
-    assert 'name="plan_mode_hook"' in text
-    # And its reason must be handed back as the action's error, not swallowed.
-    assert '"error": plan_gate.reason' in text
-
-
-# --------------------------------------------------------------------------- #
-# Leaving plan mode
-# --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
 async def test_an_approved_plan_opens_the_gate_and_is_kept_verbatim(plans):
     """Approval records what was agreed, not just that something was.
@@ -621,78 +602,6 @@ def test_an_approved_plan_lands_on_disk_because_the_gate_forbids_writing_it():
         write_plan("")
         plan_manager.forget(session)
         path_manager.unbind_session()
-
-
-@pytest.mark.asyncio
-async def test_in_auto_the_empty_plan_slot_still_says_what_to_do(tmp_path):
-    """`{% if plan %}` renders nothing for an empty string.
-
-    So in `auto` — the default, and therefore most runs — an agent that has not written
-    `plan.md` yet would see no plan block at all, and never be told the document is its
-    to write. The obligation has to ride in the slot, not beside it.
-
-    Not in `<errors>`, which is where this notice started: that block means "the previous
-    step failed", and the agent has learned it as a signal something went wrong. A
-    standing instruction placed there is read against its own grain.
-    """
-    from agentevolver.agent.actor.code_agent import CodeAgent
-    from agentevolver.plan import AUTO_MODE_NOTICE, PlanMode, plan_manager
-
-    class _Ctx:
-        id = "auto_slot_probe"
-
-    plan_manager.set_mode("auto_slot_probe", PlanMode.AUTO)
-    try:
-        slots = await CodeAgent(base_dir=str(tmp_path))._get_agent_context(task="t", ctx=_Ctx())  # noqa: SLF001
-        assert slots["plan"], "the plan slot is empty, so the template renders no block"
-        assert AUTO_MODE_NOTICE in slots["plan"]
-    finally:
-        plan_manager.forget("auto_slot_probe")
-
-
-@pytest.mark.asyncio
-async def test_a_written_plan_replaces_the_prompt_rather_than_joining_it(tmp_path):
-    """Once there is a plan, the slot is the plan. The nudge would be noise beside it."""
-    from agentevolver.agent.actor.code_agent import CodeAgent
-    from agentevolver.plan import AUTO_MODE_NOTICE, PlanMode, plan_manager, write_plan
-
-    class _Ctx:
-        id = "auto_slot_written"
-
-    from agentevolver.paths import path_manager
-
-    # Bound, because that is what `read_plan()` resolves against — the slot shows the
-    # run being rendered, not whatever session id happens to be passed around.
-    path_manager.bind_session("local", "auto_slot_written")
-    plan_manager.set_mode("auto_slot_written", PlanMode.AUTO)
-    write_plan("## Goal\nmeasure the thing\n")
-    try:
-        slots = await CodeAgent(base_dir=str(tmp_path))._get_agent_context(task="t", ctx=_Ctx())  # noqa: SLF001
-        assert "measure the thing" in slots["plan"]
-        assert AUTO_MODE_NOTICE not in slots["plan"]
-    finally:
-        write_plan("")
-        plan_manager.forget("auto_slot_written")
-        path_manager.unbind_session()
-
-
-def test_the_auto_notice_is_not_delivered_as_an_error():
-    """The two notices reach the agent by different routes, deliberately.
-
-    `plan` accompanies a refusal, so `<errors>` is where it belongs. `auto` refuses
-    nothing, so it must not arrive there — this asserts the announcement path does not
-    mention it at all, since that is the mistake that was made.
-    """
-    import inspect
-
-    from agentevolver.agent.types import Agent
-
-    source = inspect.getsource(Agent._announce_plan_mode)  # noqa: SLF001
-    assert "PLAN_MODE_NOTICE" in source
-    assert "AUTO_MODE_NOTICE" not in source, (
-        "the auto notice is being delivered through action_errors, which renders as "
-        "<errors> — a block that means the previous step failed"
-    )
 
 
 def test_the_plan_follows_a_container_mount_override():

@@ -9,7 +9,7 @@ turns into text.
 Contract
 --------
 input:
-    event:            required (any HookEvent; callers use ON_CALL)
+    event:            required (any HookEvent; callers use DIRECT_CALL)
     items:            list[str]  — records to compress
     existing_summary: str        — optional prior summary, to avoid repetition
     instruction:      str        — optional summary instruction

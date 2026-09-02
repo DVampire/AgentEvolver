@@ -58,7 +58,7 @@ async def test_lifecycle_broadcast_calls_only_explicit_subscribers():
 
     class ToolSubscriber(Hook):
         name: str = "tool_subscriber"
-        events: list = [HookEvent.PRE_TOOL_USE]
+        events: list = [HookEvent.PRE_INVOKE]
 
         async def handle(self, _ctx):
             seen.append("subscriber")
@@ -68,7 +68,7 @@ async def test_lifecycle_broadcast_calls_only_explicit_subscribers():
     await manager.register(LegacyNamedHook)
     await manager.register(ToolSubscriber)
 
-    result = await manager.emit(HookEvent.PRE_TOOL_USE, {"arguments": {}})
+    result = await manager.emit(HookEvent.PRE_INVOKE, {"arguments": {}})
 
     assert result.decision is HookDecision.ALLOW
     assert seen == ["subscriber"]

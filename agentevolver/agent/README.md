@@ -1,6 +1,6 @@
 ---
 name: agent
-description: "Defines executable agents and their lifecycle. `Agent` provides the event-driven run loop; `ProceduralAgent` supports deterministic procedures; `AgentManagerServer` exposes agents to callers and multi-agent orchestrators."
+description: "Defines executable agents and their lifecycle. `Agent` is the declaration plus the think-and-act loop; `AgentManagerServer` exposes agents to callers and orchestrators."
 version: 1.0.0
 type: module
 category: agent
@@ -9,17 +9,26 @@ metadata: {}
 ---
 # Agent
 
-Defines executable agents and their lifecycle. `Agent` provides the event-driven run loop;
-`ProceduralAgent` supports deterministic procedures; `AgentManagerServer` exposes agents
-to callers and multi-agent orchestrators.
+Defines executable agents and their lifecycle. `Agent` is the declaration plus the
+think-and-act loop; `AgentManagerServer` exposes agents to callers and orchestrators.
+Scheduling, suspension and messaging belong to `agentevolver.runtime`'s kernel.
 
 | Path | Responsibility |
 |---|---|
-| `types.py` | Agent contracts, contexts, execution loop, and dispatch behavior |
-| `context.py` | Registration/lifecycle plus fixed → checkpoint → recent → live model context |
+| `loop/` | The current agent: declaration plus `__call__ → think → act` |
+| `context/` | The agent registry, and the context window a request fills |
+| `types.py` | Agent contracts: context, config, execution-contract enum |
 | `server.py` | Thin public manager API and sub-agent capability schemas |
 | `capabilities.py` | Capability discovery, deferred schema loading, and dispatch routes |
 | `actor/`, `generator/`, `evaluator/`, `optimizer/` | Built-in agent roles |
+
+`loop/` and `context/` are the rebuilt stack: an agent is a process driven by
+`agentevolver.runtime`'s kernel, and prompt assembly belongs to `ContextAssembler`.
+`context/` keeps the manager convention — `AgentContextManager` is still what
+`agentevolver.agent.context` gives you — while the prompt assembly it used to share a
+file with sits beside it in its own modules.
+The previous base class is gone: every actor runs on the loop, and what each one adds
+is a declaration, a `think` override, a step middleware, or a lifecycle hook.
 
 Git worktree isolation is a sandbox concern and lives in `sandbox/worktree.py`; Agent
 requests it through that public boundary when a writing child must be isolated.

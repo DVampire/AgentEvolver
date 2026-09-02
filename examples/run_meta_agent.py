@@ -175,11 +175,11 @@ async def run_agent(record: TaskRecord, ctx: SessionContext, agent_name: str):
 async def teardown() -> None:
     """Release one launcher run in dependency order; safe after partial startup."""
     from agentevolver.deploy import deployment_manager
-    from agentevolver.runtime import runtime_manager
+    from agentevolver.runtime import kernel
 
     cleanups = (
         ("task", task_manager.stop),
-        ("runtime", runtime_manager.shutdown),
+        ("runtime", kernel.shutdown),
         ("environment", environment_manager.cleanup),
         ("deployment", deployment_manager.cleanup),
         ("workflow", workflow_manager.cleanup),

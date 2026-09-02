@@ -1,4 +1,26 @@
-"""Dedicated website product engineer with MetaAgent orchestration mechanics."""
+"""WebsiteBuilderAgent — an orchestrator the runtime drives in subscription mode.
+
+Same loop, same declaration shape, same base class as every other agent. What makes it
+different is not its code but how the runtime drives it: it registers *resident* children
+subscribed to ``deployment.ready``, so every release it publishes becomes one turn for a
+panel of website users and an independent acceptance worker. Registering a subscriber is
+an ordinary sub-agent dispatch that names ``subscription_topics`` — the mechanism is the
+kernel's, not this file's.
+
+Four overrides, each a policy this domain has and other agents do not: what counts as
+evolution work worth recording, how long one product iteration may spend observing, when
+the run may call itself finished, and which half of its own brief it may read.
+
+The module-level half of the file is what must be settled *before* the agent starts, and
+therefore cannot be a tool call it makes:
+
+``bind_runtime_input_manifest``   what the task is, and which attachments stay private
+``bootstrap_subscribers``         the rubric each release is judged by
+
+An agent that could read the acceptance brief could write to the rubric instead of to the
+product, and one that could build its own review panel could build one that passes it.
+The ordering is the guarantee.
+"""
 
 import json
 from typing import Any, Dict, List, Optional
@@ -8,17 +30,27 @@ from pydantic import Field
 from agentevolver.agent.actor.meta_agent import MetaAgent
 from agentevolver.registry import AGENT
 
-_MANIFEST_MARKER = "## runtime-input-manifest"
-_PRIVATE_ATTACHMENT_ROLES = {"user_context"}
+#: The three agents whose runs the contract records. Not a permission list: this agent
+#: may call anything mounted, and these are simply the calls that leave a component
+#: behind worth citing.
+EVOLUTION_WORKERS = frozenset({"generate_agent", "optimize_agent", "evaluate_agent"})
 
 
-def _bound_runtime_input_manifest(
+# ---------------------------------------------------------------------------
+# What the task is, and which half of it stays private
+# ---------------------------------------------------------------------------
+
+MANIFEST_MARKER = "## runtime-input-manifest"
+PRIVATE_ATTACHMENT_ROLES = {"user_context"}
+
+
+def bound_runtime_input_manifest(
     task: str,
     files: Optional[List[str]],
 ) -> Optional[tuple[str, str, Dict[str, Any]]]:
     """Parse and privately bind a role manifest to the staged attachment paths."""
     attachments = [str(path) for path in (files or [])]
-    before, marker, after = str(task).partition(_MANIFEST_MARKER)
+    before, marker, after = str(task).partition(MANIFEST_MARKER)
     if not marker:
         return None
     start = after.find("{")
@@ -52,13 +84,13 @@ def _bound_runtime_input_manifest(
     return before.rstrip(), after[:start].strip(), manifest
 
 
-def _render_runtime_input_manifest(
+def render_runtime_input_manifest(
     before: str,
     explanation: str,
     manifest: Dict[str, Any],
 ) -> str:
     return (
-        f"{before}\n\n{_MANIFEST_MARKER}\n"
+        f"{before}\n\n{MANIFEST_MARKER}\n"
         f"{explanation}\n"
         f"{json.dumps(manifest, ensure_ascii=False, indent=2)}"
     )
@@ -72,25 +104,241 @@ def bind_runtime_input_manifest(task: str, files: Optional[List[str]]) -> str:
     happens after the launcher builds the task. User-context paths remain available to
     Runtime for subscriber creation but never enter the Builder's model message.
     """
-    bound = _bound_runtime_input_manifest(task, files)
+    bound = bound_runtime_input_manifest(task, files)
     if bound is None:
         return str(task)
     before, explanation, manifest = bound
     visible = []
     for entry in manifest["attachments"]:
         bound = dict(entry)
-        if bound.get("role") in _PRIVATE_ATTACHMENT_ROLES:
+        if bound.get("role") in PRIVATE_ATTACHMENT_ROLES:
             bound.pop("path", None)
             bound.pop("staged", None)
             bound["routing"] = "runtime_private"
         visible.append(bound)
     manifest["attachments"] = visible
-    return _render_runtime_input_manifest(before, explanation, manifest)
+    return render_runtime_input_manifest(before, explanation, manifest)
 
+
+# ---------------------------------------------------------------------------
+# What judges each release
+# ---------------------------------------------------------------------------
+
+def bind_runtime_environment(ctx: Any) -> None:
+    """Mount only the coordinator environment on the Builder itagent."""
+    # BrowserEnvironment is registered globally because Website User children need
+    # it. The Builder itself coordinates those children and only works in JobEnvironment;
+    # mounting the browser here creates an unused page and pushes critical schemas into
+    # deferred discovery. Keep the runtime boundary explicit before the first prompt.
+    if ctx is not None and getattr(ctx, "extra", None) is not None:
+        ctx.extra["environment_allowlist"] = ["job"]
+
+async def start_subscriber(
+    name: str,
+    *,
+    model: str,
+    task: str,
+    files: Optional[List[str]] = None,
+    ctx: Any,
+    proc: Any,
+) -> str:
+    """Start one private subscriber from a registered template.
+
+    A subscriber is a resident process with a topic edge, so ``task`` becomes its
+    standing brief and it registers idle — no turn is spent waiting for a release
+    that has not happened yet. Its pid is what identifies it afterwards.
+    """
+    from agentevolver.agent.server import agent_manager
+    from agentevolver.runtime import kernel
+
+    template = await agent_manager.get(name)
+    if template is None:
+        raise RuntimeError(f"subscriber Agent {name!r} is not registered")
+    # The registry holds the program; each subscriber is its own process.
+    child = template.fresh()
+    child.model_name = model
+    subscriber = await kernel.spawn(
+        child,
+        task,
+        files=list(files or ()),
+        ctx=ctx,
+        parent=proc,
+        topics=["deployment.ready"],
+    )
+    return subscriber.pid
+
+def document_text(paths: List[str], *, label: str) -> str:
+    """Render routed documents for an Agent that intentionally has no file tool."""
+    from agentevolver.task.context import load_task_document
+
+    documents = []
+    for path in paths:
+        document = load_task_document(path)
+        if not document.content.strip():
+            raise ValueError(f"{label} attachment is empty: {path}")
+        documents.append(document.content.strip())
+    return "\n\n".join(documents)
+
+async def bootstrap_subscribers(
+    agent: Any,
+    manifest: Dict[str, Any],
+    ctx: Any,
+    proc: Any,
+) -> Dict[str, Any]:
+    """Create the private user panel and independent release acceptance worker."""
+    extra = getattr(ctx, "extra", None)
+    if extra is None:
+        raise RuntimeError("website subscriptions require an Agent context")
+    existing = extra.get("website_runtime_contract")
+    if isinstance(existing, dict):
+        return existing
+
+    attachments = {
+        str(item.get("id")): item
+        for item in manifest.get("attachments") or []
+        if isinstance(item, dict) and item.get("id")
+    }
+    participants = manifest.get("participants") or []
+    if not isinstance(participants, list):
+        raise ValueError("runtime-input-manifest participants must be a list")
+
+    jobs = []
+    for participant in participants:
+        participant_id = str(participant.get("id") or "").strip()
+        attachment_id = str(participant.get("user_context_attachment") or "").strip()
+        attachment = attachments.get(attachment_id)
+        if (
+            not participant_id
+            or attachment is None
+            or attachment.get("role") != "user_context"
+            or not attachment.get("path")
+        ):
+            raise ValueError(
+                f"participant {participant_id or '(missing id)'} has no private "
+                "user_context attachment"
+            )
+        private_context = document_text(
+            [str(attachment["path"])],
+            label=f"participant {participant_id}",
+        )
+        job_id = await start_subscriber(
+            "website_user_agent",
+            model=str(participant.get("model") or ""),
+            task=(
+                f"You are {participant_id}, a continuable website co-design participant. "
+                "For every "
+                "deployment.ready event, open only its exact URL, pursue your own "
+                "personal goals through the visible UI, and return concise grounded "
+                "needs, preferences, successful outcomes, and blockers.\n\n"
+                "--- private user context (assigned only to you) ---\n"
+                f"{private_context}"
+            ),
+            ctx=ctx,
+            proc=proc,
+        )
+        jobs.append({"participant_id": participant_id, "job_id": job_id})
+
+    acceptance = dict(manifest.get("release_acceptance") or {})
+    requirement_paths = [
+        str(item["path"])
+        for item in attachments.values()
+        if item.get("role") == "requirements" and item.get("path")
+    ]
+    if not requirement_paths:
+        raise ValueError("release acceptance requires at least one requirements attachment")
+    acceptance_requirements = document_text(
+        requirement_paths,
+        label="release acceptance requirements",
+    )
+    acceptance_job = await start_subscriber(
+        str(acceptance.get("agent") or "browser_agent"),
+        model=str(acceptance.get("model") or ""),
+        task=(
+            "Act as the independent release acceptance browser. For every "
+            "deployment.ready event, test only the exact deployed URL against the "
+            "release requirements below and event acceptance scope. Verify visible user "
+            "journeys and native browser diagnostics. The first non-empty line of your "
+            "final result must be exactly `VERDICT: PASS` only when every required journey "
+            "passes, otherwise `VERDICT: FAIL`; follow it with grounded evidence.\n\n"
+            "--- release requirements ---\n"
+            f"{acceptance_requirements}"
+        ),
+        ctx=ctx,
+        proc=proc,
+    )
+
+    cycles = max(0, int(manifest.get("optimization_cycles") or 0))
+    contract = {
+        "topic": "deployment.ready",
+        "required_releases": cycles + 1,
+        "participants": jobs,
+        "acceptance_job_id": acceptance_job,
+        "subscriber_job_ids": [
+            *(item["job_id"] for item in jobs),
+            acceptance_job,
+        ],
+        # Mutated in place by JobEnvironment when the Builder reads a completed
+        # subscriber turn. Keeping this inside the contract makes the feedback
+        # handshake survive context conversion without a second registry.
+        "collected_turns": {},
+        "evolution_runs": [],
+        "evolution_decisions": [],
+        "initial_step_budget": max(
+            8,
+            int(manifest.get("initial_step_budget") or agent.initial_step_budget),
+        ),
+        "iteration_step_budget": max(
+            8,
+            int(manifest.get("iteration_step_budget") or agent.iteration_step_budget),
+        ),
+    }
+    extra["website_runtime_contract"] = contract
+    extra["deployment_release_history"] = []
+    return contract
+
+def public_manifest(
+    before: str,
+    explanation: str,
+    manifest: Dict[str, Any],
+    contract: Dict[str, Any],
+) -> str:
+    public = json.loads(json.dumps(manifest))
+    for entry in public.get("attachments") or []:
+        entry.pop("source_path", None)
+        if entry.get("role") in PRIVATE_ATTACHMENT_ROLES:
+            entry.pop("path", None)
+            entry.pop("staged", None)
+            entry["routing"] = "runtime_private"
+    public["participants"] = list(contract["participants"])
+    acceptance = dict(public.get("release_acceptance") or {})
+    acceptance.pop("model", None)
+    acceptance["job_id"] = contract["acceptance_job_id"]
+    acceptance["automatic_subscription"] = True
+    public["release_acceptance"] = acceptance
+    public["runtime_subscription"] = {
+        "topic": contract["topic"],
+        "automatic_deploy_publish": True,
+        "required_releases": contract["required_releases"],
+        "subscriber_job_ids": contract["subscriber_job_ids"],
+        "collection": (
+            "After each successful deploy, call job__wait for these ids with "
+            "condition=idle_after_turn and min_turns equal to that release number; "
+            "then call job__output with turn equal to that release number before "
+            "choosing the next change."
+        ),
+        "initial_step_budget": contract["initial_step_budget"],
+        "iteration_step_budget": contract["iteration_step_budget"],
+    }
+    return render_runtime_input_manifest(before, explanation, public)
+
+
+# ---------------------------------------------------------------------------
+# The agent
+# ---------------------------------------------------------------------------
 
 @AGENT.register_module(force=True)
 class WebsiteBuilderAgent(MetaAgent):
-    """Direct website builder with MetaAgent's reusable event lifecycle.
+    """An orchestrator whose releases are consumed by resident subscribers.
 
     This is a distinct registered Agent rather than a renamed MetaAgent configuration:
     it has its own runtime identity, version history, prompt default, permissions, memory,
@@ -116,7 +364,7 @@ class WebsiteBuilderAgent(MetaAgent):
 
     def __init__(
         self,
-        base_dir: str,
+        base_dir: str = "",
         prompt_name: Optional[str] = None,
         max_step: int = 180,
         initial_step_budget: int = 36,
@@ -131,352 +379,103 @@ class WebsiteBuilderAgent(MetaAgent):
         )
         self.initial_step_budget = max(8, int(initial_step_budget))
         self.iteration_step_budget = max(8, int(iteration_step_budget))
-
-    @staticmethod
-    def _bind_runtime_environment(ctx: Any) -> None:
-        """Mount only the coordinator environment on the Builder itself."""
-        # BrowserEnvironment is registered globally because Website User children need
-        # it. The Builder itself coordinates those children and only works in JobEnvironment;
-        # mounting the browser here creates an unused page and pushes critical schemas into
-        # deferred discovery. Keep the runtime boundary explicit before the first prompt.
-        if ctx is not None and getattr(ctx, "extra", None) is not None:
-            ctx.extra["environment_allowlist"] = ["job"]
-
-    @staticmethod
-    async def _subscriber(
-        name: str,
-        *,
-        model: str,
-        task: str,
-        files: Optional[List[str]] = None,
-        ctx: Any,
-        ref: Any,
-    ) -> str:
-        """Start one private, continuable subscriber from a registered template."""
-        from agentevolver.agent.server import agent_manager
-        from agentevolver.agent.types import Agent
-        from agentevolver.runtime import runtime_manager
-
-        template = await agent_manager.get(name)
-        if not isinstance(template, Agent):
-            raise RuntimeError(f"subscriber Agent {name!r} is not registered")
-        child = template.clone_for_run(model_name=model)
-        response = await runtime_manager.delegate_background(
-            child,
-            task,
-            continuable=True,
-            subscription_topics=["deployment.ready"],
-            files=files or None,
-            parent_ref=ref,
-            parent_ctx=ctx,
-        )
-        job_id = str((response.data or {}).get("job_id") or "")
-        if not response.success or not job_id:
-            raise RuntimeError(f"could not start {name!r} subscriber: {response.message}")
-        return job_id
-
-    @staticmethod
-    def _document_text(paths: List[str], *, label: str) -> str:
-        """Render routed documents for an Agent that intentionally has no file tool."""
-        from agentevolver.task.context import load_task_document
-
-        documents = []
-        for path in paths:
-            document = load_task_document(path)
-            if not document.content.strip():
-                raise ValueError(f"{label} attachment is empty: {path}")
-            documents.append(document.content.strip())
-        return "\n\n".join(documents)
-
-    async def _bootstrap_subscribers(
-        self,
-        manifest: Dict[str, Any],
-        ctx: Any,
-        ref: Any,
-    ) -> Dict[str, Any]:
-        """Create the private user panel and independent release acceptance worker."""
-        extra = getattr(ctx, "extra", None)
-        if extra is None:
-            raise RuntimeError("website subscriptions require an Agent context")
-        existing = extra.get("website_runtime_contract")
-        if isinstance(existing, dict):
-            return existing
-
-        attachments = {
-            str(item.get("id")): item
-            for item in manifest.get("attachments") or []
-            if isinstance(item, dict) and item.get("id")
-        }
-        participants = manifest.get("participants") or []
-        if not isinstance(participants, list):
-            raise ValueError("runtime-input-manifest participants must be a list")
-
-        jobs = []
-        for participant in participants:
-            participant_id = str(participant.get("id") or "").strip()
-            attachment_id = str(participant.get("user_context_attachment") or "").strip()
-            attachment = attachments.get(attachment_id)
-            if (
-                not participant_id
-                or attachment is None
-                or attachment.get("role") != "user_context"
-                or not attachment.get("path")
-            ):
-                raise ValueError(
-                    f"participant {participant_id or '(missing id)'} has no private "
-                    "user_context attachment"
-                )
-            private_context = self._document_text(
-                [str(attachment["path"])],
-                label=f"participant {participant_id}",
-            )
-            job_id = await self._subscriber(
-                "website_user_agent",
-                model=str(participant.get("model") or ""),
-                task=(
-                    f"You are {participant_id}, a continuable website co-design participant. "
-                    "For every "
-                    "deployment.ready event, open only its exact URL, pursue your own "
-                    "personal goals through the visible UI, and return concise grounded "
-                    "needs, preferences, successful outcomes, and blockers.\n\n"
-                    "--- private user context (assigned only to you) ---\n"
-                    f"{private_context}"
-                ),
-                ctx=ctx,
-                ref=ref,
-            )
-            jobs.append({"participant_id": participant_id, "job_id": job_id})
-
-        acceptance = dict(manifest.get("release_acceptance") or {})
-        requirement_paths = [
-            str(item["path"])
-            for item in attachments.values()
-            if item.get("role") == "requirements" and item.get("path")
+        self._release_count: Optional[int] = None
+        self._iteration_start = 0
+        # The orchestrator's guards, plus this agent's own iteration budget.
+        self.middleware = [
+            *self.middleware,
+            lambda agent, step: agent.iteration_budget(step),
         ]
-        if not requirement_paths:
-            raise ValueError("release acceptance requires at least one requirements attachment")
-        acceptance_requirements = self._document_text(
-            requirement_paths,
-            label="release acceptance requirements",
-        )
-        acceptance_job = await self._subscriber(
-            str(acceptance.get("agent") or "browser_agent"),
-            model=str(acceptance.get("model") or ""),
-            task=(
-                "Act as the independent release acceptance browser. For every "
-                "deployment.ready event, test only the exact deployed URL against the "
-                "release requirements below and event acceptance scope. Verify visible user "
-                "journeys and native browser diagnostics. The first non-empty line of your "
-                "final result must be exactly `VERDICT: PASS` only when every required journey "
-                "passes, otherwise `VERDICT: FAIL`; follow it with grounded evidence.\n\n"
-                "--- release requirements ---\n"
-                f"{acceptance_requirements}"
-            ),
-            ctx=ctx,
-            ref=ref,
-        )
 
-        cycles = max(0, int(manifest.get("optimization_cycles") or 0))
-        contract = {
-            "topic": "deployment.ready",
-            "required_releases": cycles + 1,
-            "participants": jobs,
-            "acceptance_job_id": acceptance_job,
-            "subscriber_job_ids": [
-                *(item["job_id"] for item in jobs),
-                acceptance_job,
-            ],
-            # Mutated in place by JobEnvironment when the Builder reads a completed
-            # subscriber turn. Keeping this inside the contract makes the feedback
-            # handshake survive context conversion without a second registry.
-            "collected_turns": {},
-            "evolution_runs": [],
-            "evolution_decisions": [],
-            "initial_step_budget": max(
-                8,
-                int(manifest.get("initial_step_budget") or self.initial_step_budget),
-            ),
-            "iteration_step_budget": max(
-                8,
-                int(manifest.get("iteration_step_budget") or self.iteration_step_budget),
-            ),
-        }
-        extra["website_runtime_contract"] = contract
-        extra["deployment_release_history"] = []
-        return contract
+    async def act(self, decision):
+        """Run the batch, then note any evolution work in the task contract.
 
-    @staticmethod
-    def _public_manifest(
-        before: str,
-        explanation: str,
-        manifest: Dict[str, Any],
-        contract: Dict[str, Any],
-    ) -> str:
-        public = json.loads(json.dumps(manifest))
-        for entry in public.get("attachments") or []:
-            entry.pop("source_path", None)
-            if entry.get("role") in _PRIVATE_ATTACHMENT_ROLES:
-                entry.pop("path", None)
-                entry.pop("staged", None)
-                entry["routing"] = "runtime_private"
-        public["participants"] = list(contract["participants"])
-        acceptance = dict(public.get("release_acceptance") or {})
-        acceptance.pop("model", None)
-        acceptance["job_id"] = contract["acceptance_job_id"]
-        acceptance["automatic_subscription"] = True
-        public["release_acceptance"] = acceptance
-        public["runtime_subscription"] = {
-            "topic": contract["topic"],
-            "automatic_deploy_publish": True,
-            "required_releases": contract["required_releases"],
-            "subscriber_job_ids": contract["subscriber_job_ids"],
-            "collection": (
-                "After each successful deploy, call job__wait for these ids with "
-                "condition=idle_after_turn and min_turns equal to that release number; "
-                "then call job__output with turn equal to that release number before "
-                "choosing the next change."
-            ),
-            "initial_step_budget": contract["initial_step_budget"],
-            "iteration_step_budget": contract["iteration_step_budget"],
-        }
-        return _render_runtime_input_manifest(before, explanation, public)
+        Records, never restricts. Every action in the batch has already run by the time
+        this method has a result to look at, and this agent is deliberately unrestricted:
+        its capability allowlist is empty — which means *everything* mounted, not nothing
+        — it may dispatch any registered agent, and ``enable_evolving`` is on, so it can
+        generate and optimize its own capabilities. Nothing here gates that.
 
-    async def _run_one(
-        self,
-        call,
-        index,
-        routing,
-        task_id,
-        step_number,
-        ctx,
-        parent_ref=None,
-        parent_call_id=None,
-    ):
-        """Capture real evolution worker executions in the task contract."""
-        outcome = await super()._run_one(
-            call,
-            index,
-            routing,
-            task_id,
-            step_number,
-            ctx,
-            parent_ref=parent_ref,
-            parent_call_id=parent_call_id,
+        What it does is bookkeeping the contract needs and the model cannot be trusted
+        for: which component was actually registered, and at what version. The agent's
+        own account of a generate run is a claim; the extension manifest is the fact.
+        """
+        results = await super().act(decision)
+        contract = (getattr(self.ctx, "extra", None) or {}).get(
+            "website_runtime_contract"
         )
-        if call.name not in {"generate_agent", "optimize_agent", "evaluate_agent"}:
-            return outcome
-        contract = (getattr(ctx, "extra", None) or {}).get("website_runtime_contract")
         if not isinstance(contract, dict):
-            return outcome
+            return results
+        for result in results:
+            entry = self._evolution_entry(result)
+            if entry is not None:
+                contract.setdefault("evolution_runs", []).append(entry)
+        return results
 
-        target = dict(call.input or {})
+    def _evolution_entry(self, result) -> Optional[Dict[str, Any]]:
+        """One contract row for an evolution-worker result, or None for anything else.
+
+        ``None`` is the ordinary case — most actions are not evolution — and says only
+        "nothing to record about this one".
+        """
+        if result.call.name not in EVOLUTION_WORKERS:
+            return None
+        from agentevolver.extension import extension_manager
+
+        target = dict(result.call.args or {})
         module = str(target.get("target_type") or "")
         name = str(target.get("target_name") or "")
         version = ""
         if module and name:
-            from agentevolver.extension import extension_manager
-
             component = extension_manager.read_manifest().find(module, name)
             if component is not None:
                 version = component.version
-        contract.setdefault("evolution_runs", []).append(
-            {
-                "agent": call.name,
-                "module": module,
-                "name": name,
-                "version": version,
-                "release_number": len(
-                    (getattr(ctx, "extra", None) or {}).get("deployment_release_history") or []
-                ),
-                "success": bool((outcome.get("execution") or {}).get("child_success"))
-                and bool(version),
-            }
-        )
-        return outcome
+        history = (getattr(self.ctx, "extra", None) or {}).get(
+            "deployment_release_history"
+        ) or []
+        return {
+            "agent": result.call.name,
+            "module": module,
+            "name": name,
+            "version": version,
+            "release_number": len(history),
+            # A run that registered nothing did not evolve anything, whatever it reported.
+            "success": result.ok and bool(version),
+        }
 
-    async def _prepare_round(self, run, decision):
-        """Give each product iteration a bounded landing window.
+    async def iteration_budget(self, step: int) -> str:
+        """Keep each product iteration from spending itself on observation.
 
-        This is deliberately not a Workflow: the Builder remains free to choose its
-        implementation. The guard only stops an iteration from spending dozens of
-        additional turns observing the same workspace without previewing or landing it.
+        Deliberately not a Workflow: the Builder stays free to choose its own
+        implementation. And deliberately advice rather than a veto — the previous version
+        discarded the proposed batch, which threw away a turn the model had already paid
+        for; saying what to do instead redirects it at no cost, past the cache breakpoint.
         """
-        calls = await super()._prepare_round(run, decision)
-        if calls is None or not calls:
-            return calls
-        extra = getattr(run.ctx, "extra", None) or {}
+        extra = getattr(self.ctx, "extra", None) or {}
         contract = extra.get("website_runtime_contract")
         if not isinstance(contract, dict):
-            return calls
+            return ""
         releases = len(extra.get("deployment_release_history") or [])
-        if getattr(run, "website_release_count", None) != releases:
-            run.website_release_count = releases
-            run.website_iteration_start = run.step
-            run.website_budget_exceeded = False
-            run.website_budget_repair_used = False
-        started = int(getattr(run, "website_iteration_start", 0))
-        budget = int(
-            contract.get(
-                "initial_step_budget" if releases == 0 else "iteration_step_budget",
-                self.initial_step_budget if releases == 0 else self.iteration_step_budget,
-            )
+        if self._release_count != releases:
+            self._release_count = releases
+            self._iteration_start = step
+        budget = int(contract.get(
+            "initial_step_budget" if releases == 0 else "iteration_step_budget",
+            self.initial_step_budget if releases == 0 else self.iteration_step_budget,
+        ))
+        if step - self._iteration_start < budget:
+            return ""
+        return (
+            f"<iteration-budget>\nIteration budget reached ({budget} model turns since "
+            f"release {releases}). Stop exploratory checks. Use deploy_tool preview on "
+            "the current workspace, make at most one bounded root-cause patch if that "
+            "evidence fails, then publish; or finish any capability evolution you "
+            "already chose to start and report an honest blocker.\n</iteration-budget>"
         )
-        if run.step - started < budget:
-            return calls
 
-        landing = {
-            "deploy_tool",
-            "generate_agent",
-            "optimize_agent",
-            "evaluate_agent",
-            "evolution_tool",
-            "done_tool",
-            "job__wait",
-            "job__output",
-        }
-        if any(call.name in landing for call in calls):
-            return calls
-        if (
-            getattr(run, "website_budget_exceeded", False)
-            and not getattr(run, "website_budget_repair_used", False)
-            and any(call.name == "apply_patch_tool" for call in calls)
-        ):
-            run.website_budget_repair_used = True
-            return calls
-
-        run.website_budget_exceeded = True
-        followup = (
-            f"Iteration budget reached ({budget} model turns since release {releases}). "
-            "Stop exploratory checks. Use deploy_tool preview on the current workspace, "
-            "make at most one bounded root-cause patch if that evidence fails, then publish; "
-            "or finish any capability evolution you already chose to start and report "
-            "an honest blocker."
-        )
-        await self._post_step(
-            run.task_id,
-            run.step,
-            run.ctx,
-            run.messages,
-            reasoning=decision["reasoning"],
-            assistant_text=decision.get("assistant_text", ""),
-            provider_state=decision.get("provider_state", {}),
-            protocol_followup=followup,
-            plan=[],
-            step_tokens=decision["step_tokens"],
-            step_usage=decision.get("step_usage"),
-            done=False,
-        )
-        run.action_errors = [*(run.action_errors or []), followup]
-        # The proposed calls were not executed, so MetaAgent's exact-repeat guard
-        # must not treat the corrected retry as a repeated real action.
-        run.previous_action_signature = None
-        run.step += 1
-        run.retry_now = True
-        return None
-
-    async def _completion_blocker(self, ctx: Any) -> Optional[str]:
+    async def completion_blocker(self, ctx: Any) -> Optional[str]:
         """Require every contracted release and subscriber turn before completion."""
-        base = await super()._completion_blocker(ctx)
+        base = await super().completion_blocker(ctx)
         if base:
             return base
         extra = getattr(ctx, "extra", None) or {}
@@ -507,23 +506,23 @@ class WebsiteBuilderAgent(MetaAgent):
                 f"{expected_fanout} subscribers"
             )
 
-        from agentevolver.runtime import runtime_manager
+        from agentevolver.runtime import kernel
 
         release_turn = len(history)
         pending = []
         failed = []
-        for job_id in contract.get("subscriber_job_ids") or []:
-            ref = runtime_manager.child(job_id)
+        for pid in contract.get("subscriber_job_ids") or []:
+            subscriber = kernel.get(str(pid))
             if (
-                ref is None
-                or not ref.alive
-                or ref.busy
-                or not ref._tasks.empty()
-                or ref.turns < release_turn
+                subscriber is None
+                or not subscriber.alive
+                or subscriber.busy
+                or len(subscriber.mailbox)
+                or subscriber.turns < release_turn
             ):
-                pending.append(str(job_id))
-            elif ref.last_turn_success is not True:
-                failed.append(str(job_id))
+                pending.append(str(pid))
+            elif subscriber.turn_success.get(release_turn) is not True:
+                failed.append(str(pid))
         if pending:
             return (
                 f"release {release_turn} still awaits subscriber turn completion: "
@@ -536,10 +535,10 @@ class WebsiteBuilderAgent(MetaAgent):
             )
         acceptance_id = str(contract.get("acceptance_job_id") or "")
         if acceptance_id:
-            acceptance_ref = runtime_manager.child(acceptance_id)
+            acceptance = kernel.get(acceptance_id)
             acceptance_result = (
-                acceptance_ref.turn_results.get(release_turn, "")
-                if acceptance_ref is not None
+                acceptance.turn_results.get(release_turn, "")
+                if acceptance is not None
                 else ""
             )
             first_line = next(
@@ -607,23 +606,34 @@ class WebsiteBuilderAgent(MetaAgent):
                 )
         return None
 
-    async def on_start(self, task, files, ctx, ref, **kwargs):
-        """Privately route user inputs, then expose only public work to the Builder."""
-        self._bind_runtime_environment(ctx)
-        bound = _bound_runtime_input_manifest(task, files)
+    async def prepare_task(self, task, files, ctx):
+        """Privately route user inputs, then expose only public work to the Builder.
+
+        The private half — the user personas, the acceptance brief — goes to subscribers
+        that the Builder cannot read. What it gets is the public manifest, so it cannot
+        write to a rubric it is being graded against.
+        """
+        bind_runtime_environment(ctx)
+        bound = bound_runtime_input_manifest(task, files)
         if bound is None:
-            return await super().on_start(task, files, ctx, ref, **kwargs)
+            return await super().prepare_task(task, files, ctx)
         before, explanation, manifest = bound
-        contract = await self._bootstrap_subscribers(manifest, ctx, ref)
-        task = self._public_manifest(before, explanation, manifest, contract)
+        contract = await bootstrap_subscribers(self, manifest, ctx, self.proc)
+        task = public_manifest(before, explanation, manifest, contract)
         public_files = [
             str(item["path"])
             for item in manifest["attachments"]
-            if item.get("role") not in _PRIVATE_ATTACHMENT_ROLES and item.get("path")
+            if item.get("role") not in PRIVATE_ATTACHMENT_ROLES and item.get("path")
         ]
         if getattr(ctx, "extra", None) is not None:
             ctx.extra["task_files"] = list(public_files)
-        return await super().on_start(task, public_files, ctx, ref, **kwargs)
+        return task, public_files
 
 
-__all__ = ["WebsiteBuilderAgent", "bind_runtime_input_manifest"]
+__all__ = [
+    "EVOLUTION_WORKERS",
+    "PRIVATE_ATTACHMENT_ROLES",
+    "WebsiteBuilderAgent",
+    "bind_runtime_input_manifest",
+    "bound_runtime_input_manifest",
+]

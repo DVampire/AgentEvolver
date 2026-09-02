@@ -1,24 +1,20 @@
-"""ReviewerAgent — outer-loop critic: reviews task completion and self-evolution outcomes."""
+"""ReviewerAgent — the outer-loop critic: did the task actually get done?"""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from pydantic import ConfigDict, Field
 
+from agentevolver.agent.types import Agent
 from agentevolver.registry import AGENT
-from agentevolver.agent.types import Agent, AgentContext
-from agentevolver.response.types import Response
 
 
 @AGENT.register_module(force=True)
 class ReviewerAgent(Agent):
-    """Independent critic that MetaAgent dispatches to review a run at the task/loop level.
+    """An independent critic dispatched to review a run.
 
-    It is NOT a per-entity quality grader (that is the tool/skill/… evaluate agents). It
-    operates at the outer loop: did the user task actually get done, what defects remain,
-    did any self-evolution help, and should the loop continue / evolve more / stop. Like the
-    actor agents it carries no bespoke loop — it uses the base think-and-act loop and only
-    supplies its own name/description/prompt. Its verdict is advisory: MetaAgent reads it and
-    decides.
+    Not a per-entity grader — that is the evaluate agent. This one asks whether the user's
+    task was accomplished, what defects remain, and whether the loop should continue. Its
+    verdict is advisory; the orchestrator reads it and decides.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -26,49 +22,14 @@ class ReviewerAgent(Agent):
     name: str = Field(default="reviewer_agent")
     description: str = Field(
         default="An independent critic that reviews, at the task/loop level, whether the user "
-                "task was actually accomplished, what defects remain, whether self-evolution "
-                "helped, and whether the loop should continue, evolve more, or stop — verifying "
-                "the real deliverable hands-on, not just reading claims."
+        "task was actually accomplished, what defects remain, whether self-evolution "
+        "helped, and whether the loop should continue, evolve more, or stop — verifying "
+        "the real deliverable hands-on, not just reading claims."
     )
     metadata: Dict[str, Any] = Field(default={})
+    prompt_name: str = Field(default="reviewer_agent")
+    max_step: int = Field(default=20)
     enable_evolving: bool = Field(default=False)
 
-    def __init__(
-        self,
-        base_dir: str,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        model_name: Optional[str] = None,
-        prompt_name: Optional[str] = None,
-        memory_name: Optional[str] = None,
-        max_actions: int = 10,
-        max_step: int = 20,
-        review_steps: int = 5,
-        enable_evolving: bool = False,
-        **kwargs,
-    ):
-        super().__init__(
-            base_dir=base_dir,
-            name=name,
-            description=description,
-            metadata=metadata,
-            model_name=model_name,
-            prompt_name=prompt_name or "reviewer_agent",
-            memory_name=memory_name,
-            max_actions=max_actions,
-            max_step=max_step,
-            review_steps=review_steps,
-            enable_evolving=enable_evolving,
-            **kwargs,
-        )
 
-    async def __call__(
-        self,
-        task: Optional[str] = None,
-        files: Optional[List[str]] = None,
-        ctx: Optional[AgentContext] = None,
-        **kwargs,
-    ) -> Response:
-        """Entry point — runs the base-class standard think-and-act loop unchanged."""
-        return await super().__call__(task=task, files=files, ctx=ctx, **kwargs)
+__all__ = ["ReviewerAgent"]

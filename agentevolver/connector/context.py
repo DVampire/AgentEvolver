@@ -73,7 +73,7 @@ class ConnectorContextManager(BaseModel):
         self._connector_configs: Dict[str, ConnectorConfig] = {}
         self._connector_history_versions: Dict[str, Dict[str, ConnectorConfig]] = {}
         self._instr_cache: Dict[Any, str] = {}
-        self._execution_pipeline = ToolExecutionPipeline()
+        self._execution_pipeline = ToolExecutionPipeline(capability_type="connector")
 
         logger.info(f"| 📁 Connector context manager base directory: {self.base_dir}")
 

@@ -9,7 +9,6 @@ from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.types import Tool
 
-
 _DESCRIPTION = (
     "Publish one typed event to every live Agent subscribed to a logical topic in this "
     "task tree; each delivery becomes a serialized subscriber turn."
@@ -68,7 +67,7 @@ class PublishEventTool(Tool):
         Returns:
             A tool response containing the event ID, scoped fan-out, and topic.
         """
-        from agentevolver.protocol import protocol_manager
+        from agentevolver.runtime import kernel
 
         ctx = kwargs.get("ctx")
         if ctx is None:
@@ -86,12 +85,12 @@ class PublishEventTool(Tool):
             )
         try:
             publisher = str(getattr(ctx, "name", "") or "")
-            sent, scoped, event = await protocol_manager.publish_event(
+            sent, scoped, event = await kernel.publish_scoped(
                 topic,
-                event_type=event_type_name,
-                payload=dict(payload or {}),
+                event_type_name,
+                dict(payload or {}),
                 ctx=ctx,
-                publisher=publisher,
+                sender=publisher,
             )
         except Exception as error:  # noqa: BLE001
             logger.error(f"| ❌ publish_event_tool failed: {error}")

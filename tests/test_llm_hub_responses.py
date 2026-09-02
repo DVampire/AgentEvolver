@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentevolver.agent.capabilities import _SchemaTool
+from agentevolver.agent.context.capabilities import _SchemaTool
 from agentevolver.message.types import (
     AssistantMessage,
     CompactionMessage,

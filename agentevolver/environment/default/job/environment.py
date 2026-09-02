@@ -100,15 +100,15 @@ class JobEnvironment(Environment):
         if job_id not in subscriber_ids:
             return 0
 
-        from agentevolver.runtime import runtime_manager
+        from agentevolver.runtime import kernel
 
-        ref = runtime_manager.child(job_id)
+        ref = kernel.get(job_id)
         if ref is None or not ref.alive or ref.turns < 1:
             return 0
         completed_turn = int(turn or ref.turns)
         if completed_turn < 1 or completed_turn > ref.turns:
             return 0
-        if turn is None and (ref.busy or not ref._tasks.empty()):
+        if turn is None and (ref.busy or len(ref.mailbox)):
             return 0
         collected = contract.setdefault("collected_turns", {})
         collected[job_id] = max(
@@ -174,9 +174,9 @@ class JobEnvironment(Environment):
         if failure:
             return failure
 
-        from agentevolver.runtime import runtime_manager
+        from agentevolver.runtime import kernel
 
-        ref = runtime_manager.child(job_id)
+        ref = kernel.get(job_id)
         if turn is not None:
             if tail is not None:
                 return _fail("turn and tail are mutually exclusive")
@@ -207,7 +207,7 @@ class JobEnvironment(Environment):
             header += f" (exit {job.exit_code})"
         header += f", {job.elapsed:.1f}s"
         idle_after_turn = bool(
-            ref and ref.alive and ref.continuable and not ref.busy and ref._tasks.empty()
+            ref and ref.alive and ref.resident and not ref.busy and not len(ref.mailbox)
         )
         if idle_after_turn:
             header += f" — IDLE AFTER TURN {ref.turns}, ready for a later event"
@@ -252,7 +252,7 @@ class JobEnvironment(Environment):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Block one tool call on job state; never generate periodic model turns."""
-        from agentevolver.runtime import runtime_manager
+        from agentevolver.runtime import kernel
 
         ids = list(dict.fromkeys(str(item) for item in job_ids if str(item).strip()))
         if not ids or len(ids) > STATE_JOB_LIMIT:
@@ -277,7 +277,7 @@ class JobEnvironment(Environment):
             all_ready = True
             terminal_failure = False
             for job in resolved:
-                ref = runtime_manager.child(job.id)
+                ref = kernel.get(job.id)
                 row: Dict[str, Any] = {
                     "job_id": job.id,
                     "status": job.status.value,
@@ -285,18 +285,18 @@ class JobEnvironment(Environment):
                     "turns": int(getattr(ref, "turns", 0) or 0),
                     "alive": bool(ref and ref.alive),
                     "busy": bool(ref and ref.busy),
-                    "queued": int(ref._tasks.qsize()) if ref is not None else 0,
+                    "queued": len(ref.mailbox) if ref is not None else 0,
                 }
                 if condition == "finished":
                     row["ready"] = job.status.is_final
-                elif ref is None or not ref.continuable:
-                    row["error"] = "idle_after_turn requires a live continuable sub-agent"
+                elif ref is None or not ref.resident:
+                    row["error"] = "idle_after_turn requires a live resident sub-agent"
                     terminal_failure = True
                 elif not ref.alive or job.status.is_final:
                     row["error"] = job.error or "sub-agent ended before reaching the requested turn"
                     terminal_failure = True
                 else:
-                    row["ready"] = ref.turns >= min_turns and not ref.busy and ref._tasks.empty()
+                    row["ready"] = ref.turns >= min_turns and not ref.busy and not len(ref.mailbox)
                 all_ready = all_ready and bool(row["ready"])
                 rows.append(row)
             return rows, all_ready, terminal_failure

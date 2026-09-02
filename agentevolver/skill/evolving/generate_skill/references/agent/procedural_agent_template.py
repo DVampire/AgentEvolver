@@ -3,7 +3,7 @@
 Copy to `{extension_root}/agent/{name}.py`, rename the class, and implement the steps.
 A procedural agent has NO HTML prompt — it does not reason step by step. Use it when
 the task is a fixed pipeline (e.g. read → process → report) that you can express in
-code and that calls tools directly. Implement ``run_procedure``; never override
+code and that calls tools directly. Override ``__call__``; never override
 ``__call__``, because direct and delegated calls share the mailbox runtime.
 
 If the task needs step-by-step reasoning / dynamic tool choice, use
@@ -14,14 +14,14 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict, Field
 
-from agentevolver.registry import AGENT
-from agentevolver.agent.types import AgentContext, ProceduralAgent
-from agentevolver.response.types import Response, ResponseType
+from agentevolver.agent.types import Agent, AgentContext
 from agentevolver.logger import logger
+from agentevolver.registry import AGENT
+from agentevolver.response.types import Response, ResponseType
 
 
 @AGENT.register_module(force=True)
-class MyProceduralAgent(ProceduralAgent):
+class MyProceduralAgent(Agent):
     """A deterministic, code-driven agent with a fixed pipeline."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -61,14 +61,16 @@ class MyProceduralAgent(ProceduralAgent):
             **kwargs,
         )
 
-    async def run_procedure(
+    async def __call__(
         self,
         task: str,
         files: Optional[List[str]] = None,
         ctx: AgentContext = None,
         **kwargs,
     ) -> Response:
-        """Deterministic pipeline executed by ProceduralAgent.on_start."""
+        """Deterministic pipeline. The kernel never looks inside, so there is no
+        separate procedural type: an agent whose main function is code just overrides
+        this, and is suspended, stopped and reaped like any other."""
         logger.info(f"| 🚀 Starting {self.name}: {task}")
         try:
             # Call tools directly via tool_manager, e.g.:

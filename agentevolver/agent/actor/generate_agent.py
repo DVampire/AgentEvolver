@@ -1,6 +1,6 @@
 """GenerateAgent — creates a new component of whichever type it is asked for."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from pydantic import ConfigDict, Field
 
@@ -32,12 +32,10 @@ class GenerateAgent(Agent):
                 "description. Pass `target_type` to say which kind."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    prompt_name: str = Field(default="generate_agent")
+    max_step: int = Field(default=30)
     enable_evolving: bool = Field(default=False)
 
-    def __init__(self, base_dir: str, prompt_name: Optional[str] = None,
-                 max_step: int = 30, **kwargs: Any):
-        super().__init__(base_dir=base_dir, prompt_name=prompt_name or "generate_agent",
-                         max_step=max_step, **kwargs)
 
-    async def _finalize_run(self, response, ctx):
-        return await register_generated(response, ctx, self.model_name, verb="Registration")
+    async def finalize(self, response):
+        return await register_generated(response, self.ctx, self.model_name, verb="Registration")

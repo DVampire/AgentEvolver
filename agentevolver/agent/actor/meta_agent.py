@@ -1,171 +1,74 @@
-"""MetaAgent — a normal Agent that happens to orchestrate.
+"""MetaAgent — an ordinary agent with sub-agents in its roster.
 
-MetaAgent runs the EXACT same event-driven loop as every other agent (on_start →
-_advance → _think → _dispatch_round → _run_one → _conclude). It is an orchestrator only
-because two things differ, both via base-class seams:
+There is no orchestration machinery here. An orchestrator is an agent that can call
+other agents, so ``include_agents`` is the whole of it: the router projects every
+registered agent as a callable, and dispatching one spawns a child process whose parent
+is this one.
 
-  _include_agents      → True: registered sub-agents are projected into its roster, so it
-                         can call them as capabilities (a sub-agent is just another tool).
-  _handle_extra_event  → when a blocked sub-agent escalates (its inbox receives an
-                         EscalationMessage), reply to it so it can continue.
+What it adds are guards, not machinery:
 
-Everything else — decomposition, concurrent round dispatch, finishing — is the ordinary
-loop. There is no bespoke plan/round tracking, no reviewer gate in code (review is soft,
-guided by the prompt), and no custom prompt: history comes from memory and the available
-sub-agents appear in the roster, exactly like a leaf agent.
+``NoProgress``        the guard every orchestrator wants and no leaf agent needs, since
+                      an orchestrator can spend a whole budget dispatching and reading.
+``RepeatedActions``   the other way a run stalls: the identical batch issued again. The
+                      two see different shapes and neither sees the other's.
+``CapabilityChanges`` evolution registers a component mid-run, and the model is told
+                      rather than left to discover the new function next turn.
 
-Escalation is the general runtime suspend/resume channel: a sub-agent's ``escalate_tool``
-suspends it on its task_id and posts an EscalationMessage here; ``reply_tool`` resumes it.
+Everything else — decomposition, running children in parallel, collecting them, finishing
+— is the ordinary loop. Children run in parallel because the executor already runs a
+batch that way; they are collected because the kernel posts each child's final report to
+its parent's mailbox; a blocked child is unblocked by calling ``reply_tool`` on the turn
+its question arrives.
+
+That last one used to be a side model call made from ``on_event``, off the loop and
+without tools, bought to save one step of latency. It cost a full-context turn per
+escalation and left no trace of the decision in the conversation — the parent could not
+later see what it had told a child. A blocked child's question now lands in the live
+layer like any other message and is answered in the ordinary turn.
 """
 
 from __future__ import annotations
 
-import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
-from agentevolver.agent.types import Agent, AgentContext
-from agentevolver.response.types import Response
-from agentevolver.logger import logger
+from agentevolver.agent.loop.guards import (
+    CapabilityChanges,
+    LandingWindow,
+    NoProgress,
+    RepeatedActions,
+)
+from agentevolver.agent.types import Agent
 from agentevolver.registry import AGENT
-from agentevolver.protocol import EscalationMessage
-
-
-# ---------------------------------------------------------------------------
-# MetaAgent
-# ---------------------------------------------------------------------------
 
 
 @AGENT.register_module(force=True)
 class MetaAgent(Agent):
-    """Orchestrator = a normal Agent with sub-agents in its roster (see module docstring)."""
+    """Orchestrator: a normal agent whose roster includes other agents."""
 
-    model_config = {"arbitrary_types_allowed": True, "extra": "allow"}
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = Field(default="meta_agent")
     description: str = Field(
         default="Orchestrator that decomposes tasks, dispatches sub-agents concurrently, "
-        "reacts to results, and triggers self-evolution when agents underperform."
+        "reacts to their reports, and triggers self-evolution when a capability is "
+        "missing or a sub-agent underperforms."
     )
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default={})
+    prompt_name: str = Field(default="meta_agent")
+    max_step: int = Field(default=50)
     enable_evolving: bool = Field(default=False)
+    #: The one line that makes this an orchestrator.
+    include_agents: bool = Field(default=True)
 
-    def __init__(self, base_dir: str, prompt_name: Optional[str] = None, max_step: int = 50, **kwargs):
-        super().__init__(base_dir=base_dir, prompt_name=prompt_name or "meta_agent", max_step=max_step, **kwargs)
-
-    # The one thing that makes this agent an orchestrator: sub-agents in its roster.
-    def _include_agents(self) -> bool:
-        """Project registered sub-agents into this agent's roster so they can be called
-        as capabilities. Returning True is what turns this plain Agent into an orchestrator."""
-        return True
-
-    async def _prepare_round(self, run, decision):
-        """Stop unchanged action loops while leaving ordinary replanning unconstrained.
-
-        One repeated batch is skipped and reported back to the model as an error, giving
-        it a chance to delegate, change strategy, or finish.  Repeating the same batch a
-        second time concludes with an explicit partial result instead of burning the
-        remaining step budget indefinitely.
-        """
-        calls = await super()._prepare_round(run, decision)
-        if calls is None or not calls:
-            return calls
-        signature = json.dumps(
-            [{"name": call.name, "input": call.input or {}} for call in calls],
-            ensure_ascii=False,
-            sort_keys=True,
-            default=str,
-        )
-        if signature != run.previous_action_signature:
-            run.previous_action_signature = signature
-            run.repeated_action_rounds = 0
-            return calls
-
-        run.repeated_action_rounds += 1
-        if run.repeated_action_rounds == 1:
-            run.round_step = run.step
-            followup = (
-                "No-progress guard: this exact action batch was already executed. "
-                "Do not retry it; delegate, choose a materially different action, or "
-                "call done_tool with the best verified partial result."
-            )
-            await self._post_step(
-                run.task_id,
-                run.step,
-                run.ctx,
-                run.messages,
-                reasoning=decision["reasoning"],
-                assistant_text=decision.get("assistant_text", ""),
-                provider_state=decision.get("provider_state", {}),
-                protocol_followup=followup,
-                plan=[],
-                step_tokens=decision["step_tokens"], step_usage=decision.get("step_usage"),
-                done=False,
-            )
-            # Appended: `super()._prepare_round` may already have raised a repetition
-            # reminder for this same round, and overwriting would drop it. The two see
-            # different things — that guard counts one call repeating, this one counts
-            # the whole batch — so both are worth the model reading.
-            run.action_errors = [
-                *(run.action_errors or []),
-                followup,
+    def __init__(self, base_dir: str = "", **kwargs: Any) -> None:
+        super().__init__(base_dir=base_dir, **kwargs)
+        if not self.middleware:
+            self.middleware = [
+                LandingWindow(), NoProgress(), RepeatedActions(),
+                CapabilityChanges(),
             ]
-            run.step += 1
-            run.retry_now = True
-            return None
 
-        # A guard stop is a terminal *failure*, not completion. TaskManager uses the
-        # Response success bit to decide whether the archived task is done or failed.
-        run.done = False
-        run.result = (
-            "Stopped by the no-progress guard after the same action batch was proposed "
-            "three times. The requested task is incomplete; inspect the trace for the "
-            "last successful evidence and failure."
-        )
-        run.reasoning = "Repeated actions made no progress after corrective feedback."
-        await self._conclude(run)
-        return None
 
-    async def _capability_workflow_slots(self, ctx: AgentContext) -> Dict[str, Any]:
-        """Expose only active workflow summaries; inspect supplies full HTML on demand."""
-        from agentevolver.workflow import workflow_manager
-
-        allowlist = (getattr(ctx, "extra", None) or {}).get("workflow_allowlist")
-        content = workflow_manager.get_instruction(allowlist=allowlist)
-        available = content or ""
-        # Empty rather than a notice: the shared capability module omits a block whose
-        # slot is blank, so "no workflows" costs no prompt instead of a line saying so.
-        return {"available_workflows": available}
-
-    async def _handle_extra_event(self, run, msg: Any) -> None:
-        """Queue a blocked child's escalation for the next protocol-safe turn.
-
-        Environment/tool actions execute concurrently and post their results back to this
-        same inbox.  Starting a second model request here while ``run.outstanding`` is
-        non-empty exposes an assistant tool-call before all of its results exist (or a
-        result after its assistant call has been compacted), which strict context
-        validation correctly rejects.  Put the escalation in the next ordinary turn;
-        the mounted ``reply_tool`` then resumes the child through the normal action path.
-        """
-        if not isinstance(msg, EscalationMessage):
-            return  # progress updates etc. — nothing to do
-
-        note = (
-            f"A sub-agent is BLOCKED and waiting for your reply (task_id={msg.task_id}, "
-            f"agent={msg.agent_name}):\n{msg.text}\n\n"
-            f"Call reply_tool now with this exact task_id and concrete, actionable guidance "
-            f"(or tell it to stop gracefully). Do not start new work in this turn."
-        )
-        if run.outstanding:
-            run.pending_external_notes.append(note)
-            logger.info(
-                f"| 📨 MetaAgent queued escalation [{msg.task_id}] until the current "
-                "tool turn is complete"
-            )
-            return
-
-        run.action_errors = [*(run.action_errors or []), note]
-        logger.info(f"| 📨 MetaAgent scheduled escalation reply [{msg.task_id}]")
-        if not run.paused and not run.done:
-            await self._advance(run)
+__all__ = ["MetaAgent"]

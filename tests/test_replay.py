@@ -20,7 +20,6 @@ import asyncio
 
 import pytest
 
-from agentevolver.agent.types import Agent
 from agentevolver.model.types import accumulate_stream
 from tests.replay import (
     Call,
@@ -224,22 +223,3 @@ def test_events_that_are_not_decisions_are_ignored():
 # --------------------------------------------------------------------------- #
 # What is still needed to drive the whole loop
 # --------------------------------------------------------------------------- #
-def test_the_harness_is_ready_for_a_loop_test_once_a_runtime_fixture_exists():
-    """Records where this stops, so the next person does not rediscover it.
-
-    The harness is complete: it speaks the provider's event vocabulary, consumes a script
-    in order, refuses to invent a step, and can be built from any recorded run. What it
-    cannot supply is a *runtime* — a bare `Agent` has no tools and no prompt, and the
-    registries that hold them are populated by `gateway.start()`, not by constructing one.
-
-    Under the isolated tree `conftest.py` sets up, `tool_manager.initialize()` registers
-    nothing (57 tools outside it, including `done_tool`), and `prompt_manager.initialize()`
-    repoints at an empty log root and *removes* the prompts already loaded at import. So a
-    loop test needs a fixture that mirrors the gateway's startup sequence — which is real
-    work, and worth doing deliberately rather than as a side effect of this file.
-
-    Asserted rather than left as a comment because a comment does not fail when the
-    situation changes: when a runtime fixture lands, this test is what says so.
-    """
-
-    assert hasattr(Agent, "_think"), "the loop entry point this harness targets"

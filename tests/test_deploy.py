@@ -475,14 +475,14 @@ def test_source_revision_changes_only_when_authored_source_changes(manager, tmp_
 
 @pytest.mark.asyncio
 async def test_release_publish_receipt_updates_the_parent_context_in_place(monkeypatch):
-    from agentevolver.protocol import protocol_manager
+    from agentevolver.runtime import kernel
 
-    async def publish_event(topic, **kwargs):
+    async def publish_scoped(topic, event_type, payload=None, **kwargs):
         assert topic == "deployment.ready"
-        assert kwargs["payload"]["url"] == "http://site.test"
+        assert payload["url"] == "http://site.test"
         return 4, "root::deployment.ready", SimpleNamespace(id="event-1")
 
-    monkeypatch.setattr(protocol_manager, "publish_event", publish_event)
+    monkeypatch.setattr(kernel, "publish_scoped", publish_scoped)
     parent = AgentContext(
         id="root",
         extra={
@@ -509,15 +509,16 @@ async def test_release_publish_receipt_updates_the_parent_context_in_place(monke
 
 @pytest.mark.asyncio
 async def test_generic_deploy_context_does_not_publish_a_website_event(monkeypatch):
-    from agentevolver.protocol import protocol_manager
+    from agentevolver.runtime import kernel
 
     called = False
 
-    async def publish_event(*_args, **_kwargs):
+    async def publish_scoped(*_args, **_kwargs):
         nonlocal called
         called = True
+        return 0, "root::deployment.ready", SimpleNamespace(id="event-1")
 
-    monkeypatch.setattr(protocol_manager, "publish_event", publish_event)
+    monkeypatch.setattr(kernel, "publish_scoped", publish_scoped)
     record = SiteRecord(
         site_id="site",
         runtime="static",

@@ -1,8 +1,8 @@
 """Escalate tool — a blocked sub-agent asks its parent MetaAgent for guidance.
 
 This is the *send* side of the escalation channel: the tool calls
-``protocol_manager.escalate``, which posts to the parent's inbox and suspends this
-sub-agent until the parent replies (via ``reply_tool`` → ``protocol_manager.reply``).
+the kernel: the child reports the blocker to its parent and waits at a safe point until
+the parent answers, with ``reply_tool`` or from its own ``on_event``.
 
 Only meaningful for a sub-agent dispatched by a parent (it needs one to ask). Run
 standalone, it reports that there is no parent to escalate to.
@@ -12,10 +12,10 @@ from typing import Any, Dict, List
 
 from pydantic import Field
 
-from agentevolver.tool.types import Tool
-from agentevolver.response.types import Response, ResponseType
 from agentevolver.logger import logger
 from agentevolver.registry import TOOL
+from agentevolver.response.types import Response, ResponseType
+from agentevolver.tool.types import Tool
 
 _DESCRIPTION = "Ask the parent MetaAgent for guidance when blocked, then continue with its reply."
 
@@ -56,11 +56,62 @@ class EscalateTool(Tool):
             suggestion: What you think should happen (e.g. "a deploy tool needs to be
                 generated").
         """
-        from agentevolver.protocol import protocol_manager
         ctx = kwargs.get("ctx")
         try:
-            guidance = await protocol_manager.escalate(ctx, reason=reason, situation=situation, suggestion=suggestion)
+            guidance = await _ask_parent(ctx, reason, situation, suggestion)
             return Response(type=ResponseType.TOOL, success=True, message=guidance)
         except Exception as e:
             logger.error(f"| ❌ escalate_tool failed: {e}")
             return Response(type=ResponseType.TOOL, success=False, message=f"Escalation failed: {e}")
+
+
+#: How long a blocked child waits for its parent. Long, because the parent may be
+#: mid-turn on something else; a child that gives up early has to guess instead.
+ESCALATION_TIMEOUT_S = 300.0
+
+
+async def _ask_parent(ctx, reason: str, situation: str, suggestion: str) -> str:
+    """Report the blocker to the parent process and wait at a safe point for its reply.
+
+    The whole mechanism, with nothing between the tool and the kernel: a blocked child
+    *is* a process waiting for a message, so there is no suspension registry to key and
+    nothing to resolve.
+    """
+    from agentevolver.runtime import kernel
+
+    extra = getattr(ctx, "extra", None) or {}
+    process = kernel.get(str(extra.get("process_pid") or ""))
+    if process is None or not process.parent_pid:
+        return ("No parent to escalate to (running standalone). Proceed on your own or "
+                "stop gracefully.")
+    text = "\n".join(part for part in (
+        f"Blocked: {reason}",
+        f"Situation: {situation}" if situation else "",
+        f"Suggestion: {suggestion}" if suggestion else "",
+    ) if part)
+    # Announced before the wait, not after it: the point of observing an escalation is
+    # to see that a child is parked, and a run that dies waiting would otherwise leave
+    # no record that it ever asked.
+    await _announce_escalation(process, reason)
+    answer = await process.ask_parent(text, timeout=ESCALATION_TIMEOUT_S)
+    return answer or ("Parent did not respond in time. Please stop the current subtask "
+                      "gracefully.")
+
+
+async def _announce_escalation(process, reason: str) -> None:
+    """Tell observers a child is blocked. Never raises: an observer must not block it."""
+    from agentevolver.agent.loop.events import events
+    from agentevolver.hook.types import HookEvent
+
+    await events.broadcast(
+        HookEvent.ON_ESCALATE,
+        {
+            "agent_name": process.name,
+            "task_id": process.pid,
+            "session_id": process.session_id,
+            "parent_session_id": process.parent_pid,
+            "reason": reason,
+            "timeout_s": ESCALATION_TIMEOUT_S,
+        },
+        ctx=process.ctx,
+    )

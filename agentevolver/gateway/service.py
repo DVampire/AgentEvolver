@@ -65,11 +65,12 @@ from agentevolver.plan import PlanMode, plan_manager
 from agentevolver.plugins import plugin_manager
 from agentevolver.process import process_manager
 from agentevolver.prompt import prompt_manager
-from agentevolver.protocol import protocol_manager
-from agentevolver.runtime import runtime_manager
+from agentevolver.runtime import kernel as agent_kernel
 from agentevolver.session import session_manager
 from agentevolver.session.context import (
     SESSION_MANIFEST as SESSION_MANIFEST_NAME,
+)
+from agentevolver.session.context import (
     bind_session_roots,
 )
 from agentevolver.session.types import Session, SessionUpload
@@ -818,70 +819,76 @@ class AgentGateway:
         job_id = str(params.get("job_id") or "")
         if not job_id:
             raise ValueError("job_id is required")
-        ref = runtime_manager.child(job_id)
-        if ref is None:
+        process = agent_kernel.get(job_id)
+        if process is None:
             raise ValueError(f"Unknown delegated agent: {job_id}")
-        if ref.project_id != session_id:
+        if process.session_id and process.session_id != session_id:
             raise ValueError(f"Delegated agent {job_id} belongs to another session")
-        return ref
+        return process
 
     async def _command_agent_live_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Human-facing thread view for every child delegated by this session."""
         session_id = self._require_session_id(params)
         agents = []
-        for ref in runtime_manager.project_children(session_id):
-            job = job_manager.get(ref.job_id)
+        for process in agent_kernel.list(session_id=session_id):
+            if not process.parent_pid:
+                continue          # the root run is the session, not a thread in it
+            job = job_manager.get(process.pid)
             agents.append({
-                "job_id": ref.job_id,
-                "ref_name": ref.name,
-                "agent_name": ref.agent_name,
-                "task": ref.task,
-                "status": ref.status.value,
-                "busy": ref.busy,
-                "paused": ref.paused,
-                "continuable": ref.continuable,
-                "turns": ref.turns,
-                "session_id": ref.session_id,
+                "job_id": process.pid,
+                "ref_name": process.name,
+                "agent_name": process.name,
+                "task": process.brief or "",
+                "status": process.state.value,
+                "busy": process.busy,
+                "paused": process.state.value == "suspended",
+                "continuable": process.resident,
+                "turns": process.turns,
+                "session_id": process.session_id,
                 "job_status": job.status.value if job is not None else None,
                 "elapsed": job.elapsed if job is not None else None,
-                "label": ref.label(),
+                "label": f"{process.name}:{process.pid[:8]}",
                 "output_tail": (job.output[-4_000:] if job is not None else ""),
             })
         return {"agents": agents}
 
     async def _command_agent_live_message(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Steer an idle/working continuable Agent from the human control surface."""
-        ref = self._owned_live_agent(params)
+        process = self._owned_live_agent(params)
         message = str(params.get("message") or "").strip()
         if not message:
             raise ValueError("message is required")
-        response = await runtime_manager.send_to_child(
-            ref.job_id,
-            message,
-            session_id=ref.root_session_id or ref.parent_session_id,
-        )
+        from agentevolver.runtime.envelopes import TaskEnvelope
+
+        if not process.resident:
+            raise ValueError(
+                f"Delegated agent {process.pid} answers once and is finished; it cannot "
+                "take more work"
+            )
+        delivered = await agent_kernel.send(process, TaskEnvelope(task=message))
         return {
-            "success": bool(response.success),
-            "message": response.message,
-            "data": response.data,
+            "success": bool(delivered),
+            "message": ("Delivered; it runs the message as its next turn."
+                        if delivered else "Not delivered: the agent is no longer live."),
+            "data": {"pid": process.pid, "queued": len(process.mailbox)},
         }
 
     async def _command_agent_live_control(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Pause, resume, cancel gracefully, or force-stop one visible Agent thread."""
-        ref = self._owned_live_agent(params)
+        process = self._owned_live_agent(params)
         action = str(params.get("action") or "")
         if action == "pause":
-            await protocol_manager.pause(ref)
+            await agent_kernel.suspend(process)
         elif action == "resume":
-            await protocol_manager.resume(ref)
+            await agent_kernel.resume(process)
         elif action == "cancel":
-            await protocol_manager.cancel(ref, reason=str(params.get("reason") or "human"))
+            await agent_kernel.stop(process, reason=str(params.get("reason") or "human"))
         elif action == "kill":
-            if not job_manager.kill(ref.job_id):
-                raise ValueError(f"Delegated agent {ref.job_id} is already stopped")
+            if not await agent_kernel.stop(process, force=True, reason="human"):
+                raise ValueError(f"Delegated agent {process.pid} is already stopped")
         else:
             raise ValueError("action must be pause, resume, cancel, or kill")
-        return {"job_id": ref.job_id, "action": action, "accepted": True}
+        return {"job_id": process.pid, "action": action, "accepted": True}
 
     async def _command_task_submit(self, params: Dict[str, Any]) -> Dict[str, Any]:
         session_id = self._require_session_id(params)

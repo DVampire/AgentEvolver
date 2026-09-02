@@ -31,21 +31,19 @@ class EvaluateAgent(Agent):
                 "and reports findings. Pass `target_type` to say which kind."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    prompt_name: str = Field(default="evaluate_agent")
+    max_step: int = Field(default=20)
     enable_evolving: bool = Field(default=False)
     permission_mode: str = Field(default="read_only")
 
-    def __init__(self, base_dir: str, prompt_name: Optional[str] = None,
-                 max_step: int = 20, **kwargs: Any):
-        super().__init__(base_dir=base_dir, prompt_name=prompt_name or "evaluate_agent",
-                         max_step=max_step, **kwargs)
 
-    def _allow_read_only_tool_call(self, name: str, input: Dict[str, Any]) -> bool:
+    def allow_read_only(self, name: str, args: Dict[str, Any]) -> bool:
         """The one mutating call a read-only evaluator needs: recording its own verdict.
 
         Permission is per action rather than per tool, so being allowed to call
         ``evolution_tool`` does not let this run reach ``rollback`` through it.
         """
-        return name == "evolution_tool" and input.get("action") == "record_workflow_evaluation"
+        return name == "evolution_tool" and args.get("action") == "record_workflow_evaluation"
 
     def _target_capability_allowlists(self, target_name: Optional[str],
                                       target_type: Optional[str] = None) -> Dict[str, Any]:

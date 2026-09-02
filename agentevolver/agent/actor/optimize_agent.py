@@ -1,6 +1,6 @@
 """OptimizeAgent — improves an existing component of whichever type it is given."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from pydantic import ConfigDict, Field
 
@@ -28,12 +28,10 @@ class OptimizeAgent(Agent):
                 "from execution evidence. Pass `target_type` to say which kind."
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    prompt_name: str = Field(default="optimize_agent")
+    max_step: int = Field(default=30)
     enable_evolving: bool = Field(default=False)
 
-    def __init__(self, base_dir: str, prompt_name: Optional[str] = None,
-                 max_step: int = 30, **kwargs: Any):
-        super().__init__(base_dir=base_dir, prompt_name=prompt_name or "optimize_agent",
-                         max_step=max_step, **kwargs)
 
-    async def _finalize_run(self, response, ctx):
-        return await register_generated(response, ctx, self.model_name, verb="Re-registration")
+    async def finalize(self, response):
+        return await register_generated(response, self.ctx, self.model_name, verb="Re-registration")

@@ -1,20 +1,20 @@
 """reply tool — an orchestrator answers a sub-agent that ESCALATED.
 
 The *reply* side of the escalation channel, the mirror of ``escalate_tool``: the sub-agent's
-``escalate_tool`` calls ``protocol_manager.escalate`` (which suspends it); the parent's
-``reply_tool`` calls ``protocol_manager.reply`` (which resumes it) with concrete guidance.
+``escalate_tool`` leaves the child waiting at a safe point; this delivers the parent's
+answer as an ordinary message, which is what lets the child continue.
 The pause/resume rendezvous is the runtime's suspend/resume channel, keyed by the
-sub-agent's task_id — see ``agentevolver/protocol/server.py``.
+the child's pid, which a dispatch returned and its reports are signed with.
 """
 
 from typing import Any, Dict, List
 
 from pydantic import Field
 
-from agentevolver.tool.types import Tool
-from agentevolver.response.types import Response, ResponseType
 from agentevolver.logger import logger
 from agentevolver.registry import TOOL
+from agentevolver.response.types import Response, ResponseType
+from agentevolver.tool.types import Tool
 
 _DESCRIPTION = "Reply to a sub-agent that ESCALATED (is blocked), unblocking it with concrete guidance."
 
@@ -53,9 +53,12 @@ class ReplyTool(Tool):
             reply: Concrete guidance for the blocked sub-agent (or an instruction to
                 stop gracefully).
         """
-        from agentevolver.protocol import protocol_manager
         try:
-            delivered = protocol_manager.reply(task_id, reply)
+            from agentevolver.runtime import kernel
+
+            child = kernel.get(str(task_id))
+            delivered = bool(child is not None and child.alive
+                             and await kernel.reply(child, reply))
             msg = (f"Guidance delivered to sub-agent [{task_id}]." if delivered
                    else f"No sub-agent was waiting for [{task_id}] (already replied or timed out).")
             return Response(type=ResponseType.TOOL, success=True, message=msg)

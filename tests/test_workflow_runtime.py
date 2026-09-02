@@ -916,17 +916,19 @@ def test_the_workflow_evaluator_can_read_and_record_but_not_change_what_it_grade
 
     evaluator = EvaluateAgent(base_dir=".")
     assert evaluator.permission_mode == "read_only"
-    assert evaluator._include_agents() is False
+    # An evaluator is not an orchestrator: it grades one component, it does not
+    # dispatch agents to do it.
+    assert evaluator.include_agents is False
     # Naming the workflow is also what opts the type in — workflows project only when a
     # run names one — so the evaluator can execute its target without gaining delegation.
     assert evaluator._target_capability_allowlists("parallel_review", "workflow") == {
         "workflow_allowlist": ["parallel_review"],
     }
-    assert evaluator._allow_read_only_tool_call(
+    assert evaluator.allow_read_only(
         "evolution_tool",
         {"action": "record_workflow_evaluation"},
     )
-    assert not evaluator._allow_read_only_tool_call(
+    assert not evaluator.allow_read_only(
         "evolution_tool",
         {"action": "rollback"},
     )

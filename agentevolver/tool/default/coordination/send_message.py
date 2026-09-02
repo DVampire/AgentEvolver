@@ -70,19 +70,41 @@ class SendMessageTool(Tool):
             message: What to tell it. Self-contained enough to act on, but it still
                 remembers the earlier turns.
         """
-        from agentevolver.runtime import runtime_manager
+        # `job_id` is the child's pid: what a dispatch returned and what its reports
+        # are signed with. It used to be looked up in the old job registry, which no
+        # kernel child appears in, so nothing could be reached.
+        from agentevolver.runtime import kernel
+        from agentevolver.runtime.envelopes import TaskEnvelope
 
-        ctx = kwargs.get("ctx")
-        extra = getattr(ctx, "extra", None) or {}
-        session_id = str(extra.get("root_session_id") or getattr(ctx, "id", "") or "")
+        child = kernel.get(str(job_id))
         try:
             # An undelivered message comes back as an unsuccessful Response, not as an
             # exception: the model must not be able to read "not delivered" as an
             # acknowledgement and go on waiting for a turn that will never start.
-            sent = await runtime_manager.send_to_child(job_id, message, session_id=session_id)
+            if child is None or not child.alive:
+                delivered = False
+            elif not child.resident:
+                return Response(
+                    type=ResponseType.TOOL, success=False,
+                    message=(f"{job_id} answers once and is finished, so it cannot take "
+                             "more work. Dispatch it again, or start it as a resident "
+                             "child if you mean to keep talking to it."),
+                )
+            else:
+                delivered = await kernel.send(child, TaskEnvelope(task=message))
         except Exception as error:                                  # noqa: BLE001
             logger.error(f"| ❌ send_message_tool failed: {error}")
             return Response(type=ResponseType.TOOL, success=False,
                             message=f"The message was NOT delivered to {job_id}: {error}")
-        return Response(type=ResponseType.TOOL, success=sent.success,
-                        message=sent.message, data=sent.data)
+        if not delivered:
+            return Response(
+                type=ResponseType.TOOL, success=False,
+                message=(f"No live sub-agent answers to {job_id}; it has finished or was "
+                         "never started. Nothing was delivered."),
+            )
+        return Response(
+            type=ResponseType.TOOL, success=True,
+            message=(f"Delivered to {job_id}. It runs the message as its next turn; read "
+                     "the result with job__output."),
+            data={"pid": str(job_id), "queued": len(child.mailbox)},
+        )

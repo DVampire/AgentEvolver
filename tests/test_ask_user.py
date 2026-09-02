@@ -28,7 +28,6 @@ from agentevolver.conversation.types import (
     UserQuestion,
 )
 from agentevolver.gateway.service import AgentGateway
-from agentevolver.runtime import runtime_manager
 from agentevolver.tool.default.lifecycle.ask_user import AskUserTool
 
 
@@ -41,6 +40,7 @@ def questions():
     """
     manager = QuestionManagerServer.__new__(QuestionManagerServer)
     manager._pending = {}
+    manager._waiters = {}
     return manager
 
 
@@ -361,7 +361,7 @@ def test_asking_a_person_is_declared_as_changing_nothing():
 async def test_the_runtime_has_no_waiter_left_after_a_question_resolves():
     """A leaked future under the rendezvous key blocks the next question on that id.
 
-    ``runtime_manager.suspend`` refuses a key that already has a live waiter, so an
+    ``question_manager._wait`` refuses an id that already has a live waiter, so an
     ask that failed to clean up turns the *following* ask into a hard error far from
     the cause.
     """
@@ -372,4 +372,4 @@ async def test_the_runtime_has_no_waiter_left_after_a_question_resolves():
     question_manager.answer(pending.id, [{"id": "q1", "selected": ["SQLite"]}])
     await asking
 
-    assert suspend_key(pending.id) not in runtime_manager._pending
+    assert pending.id not in question_manager._waiters

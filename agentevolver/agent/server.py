@@ -40,6 +40,7 @@ def validate_dispatch_input(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 
     for name, maximum in (
         ("files", MAX_DELEGATION_FILES),
+        ("subscription_topics", MAX_DELEGATION_CONTRACT_ITEMS),
         ("read_set", MAX_DELEGATION_CONTRACT_ITEMS),
         ("write_set", MAX_DELEGATION_CONTRACT_ITEMS),
         ("acceptance", MAX_DELEGATION_CONTRACT_ITEMS),

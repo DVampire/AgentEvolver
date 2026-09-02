@@ -36,7 +36,7 @@ class EnvironmentManagerServer(BaseModel):
         self._registered_configs: Dict[str, EnvironmentConfig] = {}  # env_name -> EnvironmentConfig
         # (session_id, env_name) -> last announced live-view URL, to dedupe announcements.
         self._announced_views: Dict[tuple, str] = {}
-        self._execution_pipeline = ToolExecutionPipeline()
+        self._execution_pipeline = ToolExecutionPipeline(capability_type="environment")
 
     def _ensure_context_manager(self) -> EnvironmentContextManager:
         """Lazily create the context manager so methods work before initialize().

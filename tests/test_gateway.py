@@ -29,8 +29,9 @@ from agentevolver.gateway.types import PROTOCOL_VERSION, GatewayCommand
 from agentevolver.job import job_manager
 from agentevolver.model import model_manager
 from agentevolver.model.types import ModelConfig
-from agentevolver.runtime import runtime_manager
-from agentevolver.runtime.types import AgentRef
+from agentevolver.runtime import kernel
+from agentevolver.runtime.process import Process
+from agentevolver.runtime.states import ProcessState
 
 
 # --------------------------------------------------------------------------- #
@@ -207,18 +208,20 @@ def test_live_agent_threads_are_visible_only_to_their_gateway_project() -> None:
         job = job_manager.register(
             type="agent", label="worker", session_id="conversation-a",
         )
-        ref = AgentRef(
-            name="worker-ref",
-            agent_name="worker",
-            job_id=job.id,
-            task="inspect the build",
-            parent_session_id="conversation-a",
-            root_session_id="conversation-a",
-            project_id=first_id,
-            session_id="worker-session",
-            continuable=True,
+        # A live child, registered in the process table the gateway reads. `pid` is the
+        # job id: one identity for the thread, whichever surface asks about it.
+        worker = Process(
+            job.id,
+            SimpleNamespace(name="worker"),
+            kernel=kernel,
+            name="worker",
+            parent_pid="parent-pid",
+            session_id=first_id,
+            resident=True,
+            brief="inspect the build",
         )
-        runtime_manager._delegated[job.id] = ref
+        worker.transition(ProcessState.IDLE)
+        kernel._procs[job.id] = worker
         try:
             visible = await gateway.handle(
                 GatewayCommand(
@@ -262,7 +265,7 @@ def test_live_agent_threads_are_visible_only_to_their_gateway_project() -> None:
             assert delivered.ok and delivered.result["success"]
             assert not refused.ok
         finally:
-            runtime_manager._delegated.pop(job.id, None)
+            kernel._procs.pop(job.id, None)
             job_manager.forget("conversation-a")
 
     asyncio.run(run())

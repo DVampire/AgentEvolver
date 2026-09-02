@@ -37,7 +37,7 @@ An agent has up to three files:
 ## Choosing the agent type
 
 - **Tool-calling agent** (default): reasons and acts step by step, choosing tools/skills dynamically each step. Use it for open-ended or multi-step tasks. It has a Python class + an HTML prompt, and it **inherits** the base loop. → `tool_calling_agent_template.py` + `html_prompt_template.html`.
-- **Procedural agent**: a fixed, deterministic pipeline (read → process → report) expressed in code with direct tool calls — no step-by-step LLM planning, no prompt. It subclasses `ProceduralAgent` and implements `run_procedure`; it never overrides `__call__`. → `procedural_agent_template.py`.
+- **Procedural agent**: a fixed, deterministic pipeline (read → process → report) expressed in code with direct tool calls — no step-by-step LLM planning, no prompt. It overrides `__call__` and calls no model; the kernel does not care what is inside. → `procedural_agent_template.py`.
 
 When unsure, prefer a tool-calling agent — it's the more general, more capable form.
 

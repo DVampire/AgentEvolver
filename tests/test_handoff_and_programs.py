@@ -1,0 +1,357 @@
+"""Three things a rebuild loses quietly, and the tests that stop that happening again.
+
+Each of these went missing once already, and none of them failed loudly when it did: a
+program simply had nothing to call, a child simply started ignorant of what its parent
+had established, and a newly generated capability simply sat unused. Silence is the
+whole reason they are pinned here.
+"""
+
+from types import SimpleNamespace
+from typing import Any, Dict, List
+
+import pytest
+
+from agentevolver.agent.loop import ActionCall, ActionResult, Agent, Decision, ToolRouter
+from agentevolver.agent.loop.agent import INHERITED_CONTEXT_MAX
+from agentevolver.agent.loop.executor import ActionExecutor
+from agentevolver.agent.loop.guards import CapabilityChanges
+from agentevolver.code import BATCH_CALL_TOOL
+from agentevolver.message.types import AssistantMessage, Function, ToolCall, ToolMessage
+
+
+class RecordingRouter(ToolRouter):
+    """Remembers what it was asked to run, and whether it was handed a bridge."""
+
+    def __init__(self, names=("read_file_tool", BATCH_CALL_TOOL)):
+        self.names = list(names)
+        self.seen: List[str] = []
+        self.bridges: Dict[str, Any] = {}
+
+    async def schemas(self, agent, ctx):
+        return [], {name: ("tool", name) for name in self.names}
+
+    def read_only(self, call, routing):
+        return None
+
+    async def invoke(self, call, *, agent, ctx, routing, execution=None, bridge=None):
+        self.seen.append(call.name)
+        self.bridges[call.name] = bridge
+        return ActionResult(call=call, output=f"{call.name} ran")
+
+
+# ---------------------------------------------------------------------------
+# Programs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_only_the_program_transport_is_handed_a_dispatcher():
+    """Every other call gets None: a dispatcher is a capability, not a convenience."""
+    router = RecordingRouter()
+    executor = ActionExecutor(router)
+    agent = Agent(name="probe")
+    calls = [
+        ActionCall(id="a", name="read_file_tool", args={"path": "x"}),
+        ActionCall(id="b", name=BATCH_CALL_TOOL, args={"program": "..."}),
+    ]
+    _, routing = await router.schemas(agent, None)
+    await executor.run(calls, agent=agent, ctx=None, routing=routing)
+
+    assert router.bridges["read_file_tool"] is None
+    assert router.bridges[BATCH_CALL_TOOL] is not None
+
+
+@pytest.mark.asyncio
+async def test_a_program_reaches_a_tool_only_through_the_executor():
+    """The safety argument for running a program: one dispatch path, one set of gates."""
+    router = RecordingRouter()
+    executor = ActionExecutor(router)
+    agent = Agent(name="probe")
+    call = ActionCall(id="prog", name=BATCH_CALL_TOOL, args={})
+    _, routing = await router.schemas(agent, None)
+
+    await executor.run([call], agent=agent, ctx=None, routing=routing)
+    bridge = router.bridges[BATCH_CALL_TOOL]
+
+    assert "read_file_tool" in bridge.names
+    assert BATCH_CALL_TOOL not in bridge.names, "a program may not start another program"
+
+    output = await bridge.call("read_file_tool", {"path": "x"})
+    assert output == "read_file_tool ran"
+    # The sub-call went through the executor, so it is in the router's log like any other.
+    assert router.seen == [BATCH_CALL_TOOL, "read_file_tool"]
+
+
+@pytest.mark.asyncio
+async def test_a_program_cannot_call_a_name_it_was_never_shown():
+    router = RecordingRouter()
+    executor = ActionExecutor(router)
+    agent = Agent(name="probe")
+    _, routing = await router.schemas(agent, None)
+    await executor.run(
+        [ActionCall(id="prog", name=BATCH_CALL_TOOL, args={})],
+        agent=agent, ctx=None, routing=routing,
+    )
+    bridge = router.bridges[BATCH_CALL_TOOL]
+
+    with pytest.raises(LookupError):
+        await bridge.call("rm_rf_tool", {})
+
+
+@pytest.mark.asyncio
+async def test_a_blocked_sub_call_raises_rather_than_returning_an_empty_success():
+    """Silence would tell the program the tool did its work and had nothing to say."""
+
+    class Refusing(RecordingRouter):
+        def denial(self, call, routing, agent):
+            return "read_only agent may not write" if call.name == "write_file_tool" else ""
+
+    router = Refusing(names=["write_file_tool", BATCH_CALL_TOOL])
+    executor = ActionExecutor(router)
+    agent = Agent(name="probe", permission_mode="read_only")
+    _, routing = await router.schemas(agent, None)
+    await executor.run(
+        [ActionCall(id="prog", name=BATCH_CALL_TOOL, args={})],
+        agent=agent, ctx=None, routing=routing,
+    )
+    bridge = router.bridges[BATCH_CALL_TOOL]
+
+    with pytest.raises(RuntimeError):
+        await bridge.call("write_file_tool", {"path": "x"})
+
+
+@pytest.mark.asyncio
+async def test_the_calling_convention_is_absent_unless_a_program_can_be_run():
+    """An agent that cannot run one has no use for the block, and would pay for it."""
+    without = Agent(name="plain", capability_allowlists={"tool": ["read_file_tool"]})
+    assert await without.code_mode_section() == ""
+
+
+# ---------------------------------------------------------------------------
+# Delegation
+# ---------------------------------------------------------------------------
+
+
+def _ctx(**extra):
+    return SimpleNamespace(id="child-session", extra=dict(extra), parent_session_id="p")
+
+
+def test_a_child_is_told_the_scope_it_will_be_judged_against():
+    agent = Agent(name="child")
+    inherited = agent.inherited_context(_ctx(task_contract={
+        "read_set": ["src/parser.py"],
+        "write_set": ["src/parser.py"],
+        "acceptance": ["pytest -k parser passes"],
+    }))
+
+    assert "Delegation contract" in inherited
+    assert "src/parser.py" in inherited
+    assert "pytest -k parser passes" in inherited
+
+
+def test_an_empty_contract_adds_nothing():
+    agent = Agent(name="child")
+    assert agent.inherited_context(_ctx()) == ""
+    assert agent.inherited_context(_ctx(task_contract={"read_set": []})) == ""
+
+
+def test_a_child_inherits_what_its_parent_had_already_established():
+    """Rendered from the live parent process, not replayed as the child's own history."""
+    parent_agent = Agent(name="parent")
+    parent_agent.conversation.add_turn(
+        AssistantMessage(content="ruled out the tokenizer", tool_calls=[ToolCall(
+            id="c1", function=Function(name="read_file", arguments="{}"),
+        )]),
+        [ToolMessage(content="parser.py line 40 drops the comma",
+                     tool_call_id="c1", name="read_file")],
+    )
+    parent_proc = SimpleNamespace(agent=parent_agent)
+
+    child = Agent(name="child")
+    child.proc = SimpleNamespace(parent_pid="parent-pid")
+
+    from agentevolver.runtime import kernel
+
+    original = kernel.get
+    kernel.get = lambda pid: parent_proc if pid == "parent-pid" else None
+    try:
+        inherited = child.inherited_context(_ctx())
+    finally:
+        kernel.get = original
+
+    assert "Parent execution context" in inherited
+    assert "not your own history" in inherited
+    assert "ruled out the tokenizer" in inherited
+    assert "line 40 drops the comma" in inherited
+
+
+def test_the_parents_history_is_bounded_by_whole_messages():
+    parent_agent = Agent(name="parent")
+    for index in range(400):
+        parent_agent.conversation.append(
+            AssistantMessage(content=f"turn {index}: " + "detail " * 40)
+        )
+    child = Agent(name="child")
+    child.proc = SimpleNamespace(parent_pid="parent-pid")
+
+    from agentevolver.runtime import kernel
+
+    original = kernel.get
+    kernel.get = lambda pid: SimpleNamespace(agent=parent_agent)
+    try:
+        body = child._parent_turns()
+    finally:
+        kernel.get = original
+
+    assert len(body) <= INHERITED_CONTEXT_MAX + 200  # the omission notice
+    assert "earlier message(s) omitted" in body
+    # The tail is what its decision rested on, so the last turn must survive.
+    assert "turn 399" in body
+
+
+def test_a_child_context_carries_lineage_and_scope_but_not_the_parents_run():
+    """Sharing the parent's context would give two agents one session, and one memory."""
+    from agentevolver.agent.loop.router import CapabilityRouter
+
+    parent_ctx = SimpleNamespace(
+        id="parent-session",
+        extra={
+            "plugin_allowlist": ["arxiv"],       # scoping the parent chose: travels
+            "loaded_capabilities": {"x": ["y"]},  # the parent's own run state: does not
+        },
+    )
+    brief = {
+        "task": "fix the parser",
+        "files": ["spec.md"],
+        "read_set": ["src/parser.py"],
+        "acceptance": ["tests pass"],
+    }
+    child_ctx = CapabilityRouter()._child_context(
+        brief, SimpleNamespace(name="meta_agent"), parent_ctx,
+    )
+
+    assert child_ctx.id != "parent-session"
+    assert child_ctx.parent_session_id == "parent-session"
+    assert child_ctx.extra["task_contract"] == {
+        "read_set": ["src/parser.py"], "acceptance": ["tests pass"],
+    }
+    assert child_ctx.extra["task_files"] == ["spec.md"]
+    assert child_ctx.extra["plugin_allowlist"] == ["arxiv"]
+    assert "loaded_capabilities" not in child_ctx.extra
+
+
+# ---------------------------------------------------------------------------
+# Evolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_capability_registered_mid_run_is_announced(monkeypatch):
+    """Otherwise the model works around a gap it no longer has."""
+    from agentevolver.extension import extension_manager
+
+    guard = CapabilityChanges()
+    agent = Agent(name="probe")
+
+    revision = {"value": 1}
+    monkeypatch.setattr(
+        type(extension_manager), "capability_revision",
+        property(lambda self: revision["value"]),
+    )
+
+    agent._routing = {"read_file_tool": ("tool", "read_file_tool")}
+    assert await guard(agent, 0) == ""            # first step only records
+
+    assert await guard(agent, 1) == ""            # unchanged revision says nothing
+
+    revision["value"] = 2
+    agent._routing = {
+        "read_file_tool": ("tool", "read_file_tool"),
+        "calculator_tool": ("tool", "calculator_tool"),
+    }
+    note = await guard(agent, 2)
+    assert "now available: calculator_tool" in note
+
+    revision["value"] = 3
+    agent._routing = {"calculator_tool": ("tool", "calculator_tool")}
+    note = await guard(agent, 3)
+    assert "no longer available, do not call: read_file_tool" in note
+
+
+@pytest.mark.asyncio
+async def test_the_announcement_rides_in_the_volatile_layer():
+    """Past the cache breakpoint: saying it must not cost the session's cached prefix."""
+    agent = Agent(name="probe")
+    agent.middleware = [CapabilityChanges()]
+    note = await agent.on_step(0)
+    # Whatever it says, it comes back as a live block rather than being written into the
+    # conversation or the fixed layer.
+    assert isinstance(note, str)
+    assert agent.conversation.items == []
+
+
+# ---------------------------------------------------------------------------
+# A blocked child is visible while it is blocked
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_escalating_is_announced_before_the_child_starts_waiting(monkeypatch):
+    """`ON_ESCALATE` was declared and never raised, so a parked child left no trace.
+
+    Announced before the wait on purpose: the fact worth observing is that a process is
+    blocked, and a run that dies waiting would otherwise never record that it asked.
+    """
+    from agentevolver.agent.loop import events as bus
+    from agentevolver.hook.events import HookEvent
+    from agentevolver.runtime import kernel
+    from agentevolver.tool.default.coordination import escalate as module
+
+    seen: List[Any] = []
+
+    async def broadcast(event, payload=None, *, ctx=None):
+        seen.append((event, payload or {}))
+
+    order: List[str] = []
+
+    async def ask_parent(text, timeout=None):
+        order.append("waited")
+        return "use the shell"
+
+    process = SimpleNamespace(
+        name="code_agent", pid="child-pid", session_id="s1",
+        parent_pid="parent-pid", ctx=None, ask_parent=ask_parent,
+    )
+    monkeypatch.setattr(bus.events, "broadcast", broadcast)
+    monkeypatch.setattr(kernel, "get", lambda pid: process)
+
+    answer = await module._ask_parent(
+        _ctx(process_pid="child-pid"), "no deploy capability", "tried three things", ""
+    )
+
+    assert answer == "use the shell"
+    assert [event for event, _ in seen] == [HookEvent.ON_ESCALATE]
+    body = seen[0][1]
+    assert body["task_id"] == "child-pid" and body["parent_session_id"] == "parent-pid"
+    assert body["reason"] == "no deploy capability"
+    assert order == ["waited"]
+
+
+@pytest.mark.asyncio
+async def test_a_standalone_run_announces_nothing_and_does_not_wait(monkeypatch):
+    """No parent is an answer, not an escalation. Announcing one would be a false fact."""
+    from agentevolver.agent.loop import events as bus
+    from agentevolver.runtime import kernel
+    from agentevolver.tool.default.coordination import escalate as module
+
+    seen: List[Any] = []
+
+    async def broadcast(event, payload=None, *, ctx=None):
+        seen.append(event)
+
+    monkeypatch.setattr(bus.events, "broadcast", broadcast)
+    monkeypatch.setattr(kernel, "get", lambda pid: None)
+
+    answer = await module._ask_parent(_ctx(process_pid="orphan"), "blocked", "", "")
+    assert "No parent to escalate to" in answer
+    assert seen == []

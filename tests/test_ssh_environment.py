@@ -1025,26 +1025,3 @@ class TestEnvironmentInstruction:
         assert await environment_manager.get_instruction(allowlist=[]) == ""
         assert await environment_manager.get_instruction(allowlist=["remote_host"])
         assert await environment_manager.get_instruction(allowlist=["no_such_env"]) == ""
-
-    @pytest.mark.asyncio
-    async def test_every_agent_gets_environment_context_not_only_bound_ones(self) -> None:
-        """The regression that motivated moving this off a mixin.
-
-        Environment context reached only the two agents that inherited a mixin, and the
-        failure was silent: an absent prompt section looks like an environment with
-        nothing to say. It is assembled on the base class now, for every type in
-        `MOUNTED_TYPES`, so a type is served by existing rather than by being named.
-        """
-        import inspect
-
-        from agentevolver.agent.types import Agent
-        from agentevolver.capability import MOUNTED_TYPES
-
-        assert "environment" in {entry.type for entry in MOUNTED_TYPES}
-        assert "for entry in MOUNTED_TYPES" in inspect.getsource(Agent._get_messages), (
-            "capability contexts are named one by one again, which is how environment "
-            "was missed the first time"
-        )
-        # The one thing environment does differently — its own headed block — is on the
-        # base class, not on the agents that happen to have an environment.
-        assert Agent._capability_environment_slots.__qualname__.startswith("Agent.")

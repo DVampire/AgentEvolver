@@ -129,22 +129,22 @@ class DeployTool(Tool):
         if not isinstance(contract, dict) or not isinstance(history, list) or not history:
             return ""
 
-        from agentevolver.runtime import runtime_manager
+        from agentevolver.runtime import kernel
 
         release_number = len(history)
         pending = []
         failed = []
         for job_id in contract.get("subscriber_job_ids") or []:
-            ref = runtime_manager.child(str(job_id))
+            ref = kernel.get(str(job_id))
             if (
                 ref is None
                 or not ref.alive
                 or ref.busy
-                or not ref._tasks.empty()
+                or len(ref.mailbox)
                 or ref.turns < release_number
             ):
                 pending.append(str(job_id))
-            elif ref.last_turn_success is not True:
+            elif ref.turn_success.get(release_number) is not True:
                 failed.append(str(job_id))
         if pending:
             return f"release {release_number} subscriber turns are not complete: " + ", ".join(
@@ -192,7 +192,7 @@ class DeployTool(Tool):
         """Broadcast a successful release to this task tree's live subscribers."""
         if ctx is None:
             return {}
-        from agentevolver.protocol import protocol_manager
+        from agentevolver.runtime import kernel
 
         extra = getattr(ctx, "extra", None)
         contract = (extra or {}).get("website_runtime_contract")
@@ -217,12 +217,12 @@ class DeployTool(Tool):
             "deployed_at": rec.updated_at,
         }
         try:
-            sent, scoped, event = await protocol_manager.publish_event(
+            sent, scoped, event = await kernel.publish_scoped(
                 "deployment.ready",
-                event_type="deployment.ready",
-                payload=payload,
+                "deployment.ready",
+                payload,
                 ctx=ctx,
-                publisher=str(getattr(ctx, "name", "") or "deploy_tool"),
+                sender=str(getattr(ctx, "name", "") or "deploy_tool"),
             )
             receipt = {
                 **payload,

@@ -83,6 +83,8 @@ class QuestionManagerServer(metaclass=Singleton):
 
     def __init__(self) -> None:
         self._pending: Dict[str, PendingQuestion] = {}
+        #: One-shot futures, keyed by question id.
+        self._waiters: Dict[str, asyncio.Future] = {}
 
     # ------------------------------------------------------------------
     # Asking
@@ -118,13 +120,11 @@ class QuestionManagerServer(metaclass=Singleton):
         )
         self._pending[record.id] = record
 
-        from agentevolver.runtime import runtime_manager
-
         await self._announce("question.asked", record, {})
         logger.info(f"| 🙋 Question [{record.id}] from {agent_name or 'agent'}: "
                     f"{questions[0].question[:80]}")
         try:
-            answers = await runtime_manager.suspend(suspend_key(record.id), timeout=timeout)
+            answers = await self._wait(record.id, timeout=timeout)
         except asyncio.TimeoutError as exc:
             # Re-raised as a plain TimeoutError carrying the request id. Only the
             # timeout is translated: a key collision or a cancelled run is a
@@ -178,9 +178,44 @@ class QuestionManagerServer(metaclass=Singleton):
         parsed.extend(UserAnswer(id=question.id) for question in record.questions
                       if question.id not in answered)
 
-        from agentevolver.runtime import runtime_manager
+        return self._settle(request_id, parsed)
 
-        return runtime_manager.resolve_suspension(suspend_key(request_id), parsed)
+    # ------------------------------------------------------------------
+    # The rendezvous
+    # ------------------------------------------------------------------
+    # Waiting for a *person*, not for another process. The kernel's mailbox is for
+    # inter-process delivery and a human is not a process, so this is its own one-shot
+    # future keyed by request id — fifteen lines, and the only alternative was keeping
+    # a whole legacy runtime alive to hold them.
+
+    async def _wait(self, request_id: str, *, timeout: Optional[float] = None) -> Any:
+        """Block until this question is answered, or the wait expires.
+
+        Raises:
+            ValueError: Something is already waiting on this id.
+            asyncio.TimeoutError: Nobody answered in time.
+        """
+        existing = self._waiters.get(request_id)
+        if existing is not None and not existing.done():
+            raise ValueError(f"question [{request_id}] already has a waiter")
+        waiter = asyncio.get_running_loop().create_future()
+        self._waiters[request_id] = waiter
+        try:
+            if timeout is None:
+                return await waiter
+            # Shielded, so the timeout cancels the wait and not the future itself: a
+            # late answer then settles nothing rather than raising into the answerer.
+            return await asyncio.wait_for(asyncio.shield(waiter), timeout=timeout)
+        finally:
+            self._waiters.pop(request_id, None)
+
+    def _settle(self, request_id: str, answers: Any) -> bool:
+        """Hand answers to whoever is waiting. False when nobody is."""
+        waiter = self._waiters.get(request_id)
+        if waiter is not None and not waiter.done():
+            waiter.set_result(answers)
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # Looking

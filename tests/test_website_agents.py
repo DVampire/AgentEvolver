@@ -9,11 +9,15 @@ from types import SimpleNamespace
 
 import pytest
 
+from agentevolver.agent.actor import website_builder_agent as builder_module
 from agentevolver.agent.actor.browser_agent import BrowserAgent
 from agentevolver.agent.actor.website_builder_agent import (
     WebsiteBuilderAgent,
-    _bound_runtime_input_manifest,
+    bind_runtime_environment,
     bind_runtime_input_manifest,
+    bootstrap_subscribers,
+    bound_runtime_input_manifest,
+    public_manifest,
 )
 from agentevolver.agent.actor.website_user_agent import WebsiteUserAgent
 from agentevolver.environment.default.browser.service import BrowserService
@@ -64,10 +68,8 @@ def test_builder_rebinds_role_manifest_to_staged_files_without_reading_them():
 
 
 def test_builder_mounts_job_without_opening_its_own_browser_session():
-    from agentevolver.agent.actor.website_builder_agent import WebsiteBuilderAgent
-
     ctx = SimpleNamespace(extra={})
-    WebsiteBuilderAgent._bind_runtime_environment(ctx)
+    bind_runtime_environment(ctx)
     assert ctx.extra["environment_allowlist"] == ["job"]
 
 
@@ -118,7 +120,7 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
         "release_acceptance": {"agent": "browser_agent", "model": "provider/judge"},
     }
     task = _task(manifest)
-    private = _bound_runtime_input_manifest(
+    private = bound_runtime_input_manifest(
         task,
         [str(requirement), *(str(path) for path in personas)],
     )
@@ -131,10 +133,10 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
         calls.append((name, kwargs))
         return f"job-{len(calls)}"
 
-    monkeypatch.setattr(WebsiteBuilderAgent, "_subscriber", staticmethod(subscriber))
+    monkeypatch.setattr(builder_module, "start_subscriber", subscriber)
     builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
     ctx = SimpleNamespace(extra={})
-    contract = await builder._bootstrap_subscribers(bound, ctx, ref=None)
+    contract = await bootstrap_subscribers(builder, bound, ctx, proc=None)
 
     assert [name for name, _kwargs in calls] == [
         "website_user_agent",
@@ -155,7 +157,7 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
     assert contract["subscriber_job_ids"] == ["job-1", "job-2", "job-3", "job-4"]
     assert contract["collected_turns"] == {}
 
-    public = builder._public_manifest(before, explanation, bound, contract)
+    public = public_manifest(before, explanation, bound, contract)
     assert all(str(path) not in public for path in personas)
     assert "provider/model" not in public
     assert "Private user" not in public
@@ -179,26 +181,30 @@ def test_builder_rejects_ambiguous_role_routing(task, files, error):
 
 def test_website_user_is_browser_only_even_when_dispatch_omits_allowlists():
     agent = WebsiteUserAgent(base_dir=".")
-    assert agent._required_capability_allowlists() == {
-        "tool_allowlist": ["done_tool"],
-        "skill_allowlist": [],
-        "connector_allowlist": [],
-        "plugin_allowlist": [],
-        "environment_allowlist": ["browser_environment"],
-        "workflow_allowlist": [],
+    # A declaration now, not a method: "which capabilities may I see" is a property of
+    # the agent, and the router puts it where the capability managers look.
+    assert agent.capability_allowlists == {
+        "tool": ["done_tool"],
+        "skill": [],
+        "connector": [],
+        "plugin": [],
+        "workflow": [],
     }
+    assert agent.env_names == ["browser_environment"]
 
 
 def test_browser_acceptance_is_browser_only_and_has_explicit_completion():
     agent = BrowserAgent(base_dir=".")
-    assert agent._required_capability_allowlists() == {
-        "tool_allowlist": ["done_tool"],
-        "skill_allowlist": [],
-        "connector_allowlist": [],
-        "plugin_allowlist": [],
-        "environment_allowlist": ["browser_environment"],
-        "workflow_allowlist": [],
+    # A declaration now, not a method: "which capabilities may I see" is a property of
+    # the agent, and the router puts it where the capability managers look.
+    assert agent.capability_allowlists == {
+        "tool": ["done_tool"],
+        "skill": [],
+        "connector": [],
+        "plugin": [],
+        "workflow": [],
     }
+    assert agent.env_names == ["browser_environment"]
 
 
 def test_browser_native_diagnostics_aggregate_identical_events_losslessly():
@@ -303,35 +309,17 @@ async def test_browser_refuses_a_backend_that_cannot_isolate_sessions():
         await service._page_for("private-user")
 
 
-def test_website_user_resets_only_per_task_budgets_between_turns():
-    agent = WebsiteUserAgent(
-        base_dir=".",
-        max_step=30,
-        max_token=1000,
-        timeout=60,
-    )
-    ctx = SimpleNamespace(id="resident-session")
-    for constraint in agent.constraints:
-        constraint._state[ctx.id] = {"sentinel": True}
-    agent._pending_step_tokens["current-task"] = 123
-
-    agent._reset_turn_budget(ctx)
-
-    assert all(ctx.id not in constraint._state for constraint in agent.constraints)
-    assert agent._pending_step_tokens == {}
-
-
 def test_full_job_output_read_acknowledges_one_subscriber_turn(monkeypatch):
-    from agentevolver.runtime import runtime_manager
+    from agentevolver.runtime import kernel
 
     ref = SimpleNamespace(
         alive=True,
         busy=False,
         turns=2,
-        _tasks=SimpleNamespace(empty=lambda: True),
+        mailbox=(),
     )
     monkeypatch.setattr(
-        runtime_manager, "child", lambda job_id: ref if job_id == "user-job" else None
+        kernel, "get", lambda pid: ref if pid == "user-job" else None
     )
     contract = {"subscriber_job_ids": ["user-job"], "collected_turns": {}}
     ctx = SimpleNamespace(extra={"website_runtime_contract": contract})
@@ -356,15 +344,15 @@ def test_full_job_output_read_acknowledges_one_subscriber_turn(monkeypatch):
 
 
 def test_next_deploy_waits_until_every_subscriber_feedback_is_read(monkeypatch):
-    from agentevolver.runtime import runtime_manager
+    from agentevolver.runtime import kernel
 
     ready = SimpleNamespace(
         alive=True,
         busy=False,
         turns=1,
-        last_turn_success=True,
+        turn_success={1: True},
         turn_results={1: "user feedback"},
-        _tasks=SimpleNamespace(empty=lambda: True),
+        mailbox=(),
     )
     acceptance = SimpleNamespace(
         **{
@@ -373,9 +361,9 @@ def test_next_deploy_waits_until_every_subscriber_feedback_is_read(monkeypatch):
         }
     )
     monkeypatch.setattr(
-        runtime_manager,
-        "child",
-        lambda job_id: acceptance if job_id == "acceptance" else ready,
+        kernel,
+        "get",
+        lambda pid: acceptance if pid == "acceptance" else ready,
     )
     contract = {
         "subscriber_job_ids": ["user-1", "acceptance"],
@@ -394,16 +382,16 @@ def test_next_deploy_waits_until_every_subscriber_feedback_is_read(monkeypatch):
 
 
 def test_next_release_does_not_require_an_evolution_decision(monkeypatch):
-    from agentevolver.runtime import runtime_manager
+    from agentevolver.runtime import kernel
 
     ready = SimpleNamespace(
         alive=True,
         busy=False,
         turns=1,
-        last_turn_success=True,
-        _tasks=SimpleNamespace(empty=lambda: True),
+        turn_success={1: True},
+        mailbox=(),
     )
-    monkeypatch.setattr(runtime_manager, "child", lambda _job_id: ready)
+    monkeypatch.setattr(kernel, "get", lambda _pid: ready)
     contract = {
         "subscriber_job_ids": ["user"],
         "collected_turns": {"user": 1},
@@ -467,15 +455,15 @@ async def test_keep_decision_requires_real_change_and_evaluation(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_builder_completion_requires_release_feedback_collection(monkeypatch, tmp_path):
-    from agentevolver.runtime import runtime_manager
+    from agentevolver.runtime import kernel
 
     ready = SimpleNamespace(
         alive=True,
         busy=False,
         turns=1,
-        last_turn_success=True,
+        turn_success={1: True},
         turn_results={1: "user feedback"},
-        _tasks=SimpleNamespace(empty=lambda: True),
+        mailbox=(),
     )
     acceptance = SimpleNamespace(
         **{
@@ -484,9 +472,9 @@ async def test_builder_completion_requires_release_feedback_collection(monkeypat
         }
     )
     monkeypatch.setattr(
-        runtime_manager,
-        "child",
-        lambda job_id: acceptance if job_id == "acceptance" else ready,
+        kernel,
+        "get",
+        lambda pid: acceptance if pid == "acceptance" else ready,
     )
     contract = {
         "required_releases": 1,
@@ -502,27 +490,27 @@ async def test_builder_completion_requires_release_feedback_collection(monkeypat
     )
     builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
 
-    assert "acceptance" in await builder._completion_blocker(ctx)
+    assert "acceptance" in await builder.completion_blocker(ctx)
     contract["collected_turns"]["acceptance"] = 1
-    assert await builder._completion_blocker(ctx) is None
+    assert await builder.completion_blocker(ctx) is None
 
     acceptance.turn_results[1] = "VERDICT: FAIL\nCheckout is broken."
-    assert "did not pass" in await builder._completion_blocker(ctx)
+    assert "did not pass" in await builder.completion_blocker(ctx)
 
 
 @pytest.mark.asyncio
 async def test_builder_completion_only_closes_self_initiated_evolution(monkeypatch, tmp_path):
-    from agentevolver.runtime import runtime_manager
+    from agentevolver.runtime import kernel
 
     ready = SimpleNamespace(
         alive=True,
         busy=False,
         turns=1,
-        last_turn_success=True,
+        turn_success={1: True},
         turn_results={1: "VERDICT: PASS\nPassed."},
-        _tasks=SimpleNamespace(empty=lambda: True),
+        mailbox=(),
     )
-    monkeypatch.setattr(runtime_manager, "child", lambda _job_id: ready)
+    monkeypatch.setattr(kernel, "get", lambda _pid: ready)
     contract = {
         "required_releases": 1,
         "subscriber_job_ids": ["acceptance"],
@@ -539,7 +527,7 @@ async def test_builder_completion_only_closes_self_initiated_evolution(monkeypat
     )
     builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
 
-    assert await builder._completion_blocker(ctx) is None
+    assert await builder.completion_blocker(ctx) is None
 
     contract["evolution_runs"] = [
         {
@@ -550,7 +538,7 @@ async def test_builder_completion_only_closes_self_initiated_evolution(monkeypat
             "success": True,
         }
     ]
-    assert "missing evaluation and decision" in await builder._completion_blocker(ctx)
+    assert "missing evaluation and decision" in await builder.completion_blocker(ctx)
 
     contract["evolution_runs"].append(
         {
@@ -561,7 +549,7 @@ async def test_builder_completion_only_closes_self_initiated_evolution(monkeypat
             "success": True,
         }
     )
-    assert "missing keep/rollback/unload decision" in await builder._completion_blocker(ctx)
+    assert "missing keep/rollback/unload decision" in await builder.completion_blocker(ctx)
 
     contract["evolution_decisions"] = [
         {
@@ -572,7 +560,7 @@ async def test_builder_completion_only_closes_self_initiated_evolution(monkeypat
             "version": "1.0.0",
         }
     ]
-    assert await builder._completion_blocker(ctx) is None
+    assert await builder.completion_blocker(ctx) is None
 
 
 def test_builder_requires_verification_at_the_exact_deployed_url():

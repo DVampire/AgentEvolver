@@ -16,8 +16,8 @@ from typing import Any, Dict, Optional
 
 from pydantic import ConfigDict, Field
 
-from agentevolver.registry import AGENT
 from agentevolver.agent.types import Agent
+from agentevolver.registry import AGENT
 
 
 @AGENT.register_module(force=True)

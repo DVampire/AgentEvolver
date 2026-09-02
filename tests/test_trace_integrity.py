@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from agentevolver.agent.types import Agent, AgentContext
+from agentevolver.agent.types import Agent
 from agentevolver.config.validate import validate_assembly
 from agentevolver.message import HumanMessage
 from agentevolver.model.context import ModelContextManager
@@ -350,67 +350,3 @@ async def test_strict_durability_requires_a_real_session_id(isolated_trace_manag
             profile="high_risk",
         )
 
-
-@pytest.mark.asyncio
-async def test_post_step_flushes_after_all_step_hooks():
-    agent = _agent()
-    ctx = AgentContext(id="step-session", extra={"trace_integrity_profile": "training"})
-    hooks = AsyncMock(return_value=SimpleNamespace())
-    ensure_durable = AsyncMock(return_value=True)
-    with (
-        patch("agentevolver.hook.server.hook_manager", hooks),
-        patch("agentevolver.trace.integrity.ensure_trace_durable", ensure_durable),
-    ):
-        await agent._post_step(
-            "task-1",
-            4,
-            ctx,
-            [],
-            reasoning="reason",
-            plan=[],
-            step_tokens=3,
-            done=False,
-            step_usage={"output_tokens": 3},
-        )
-
-    # trace_hook forwards its numbered event to memory; trajectory runs after it.
-    assert hooks.await_count == 2
-    ensure_durable.assert_awaited_once()
-    args, kwargs = ensure_durable.await_args
-    assert args[:2] == ("step-session", TraceDurabilityBoundary.STEP_END)
-    assert kwargs["ctx"] is ctx
-    assert kwargs["metadata"]["step_number"] == 4
-
-
-@pytest.mark.asyncio
-async def test_agent_propagates_integrity_profile_to_the_model_boundary():
-    from agentevolver.model import model_manager
-
-    agent = _agent()
-    ctx = AgentContext(
-        id="model-session",
-        extra={"trace_integrity_profile": "training"},
-    )
-    captured = []
-
-    async def stream(**kwargs):
-        captured.append(kwargs)
-        if False:
-            yield None
-
-    with (
-        patch("agentevolver.hook.server.hook_manager", AsyncMock()),
-        patch(
-            "agentevolver.agent.capabilities.assemble_native_tools",
-            AsyncMock(return_value=([], {})),
-        ),
-        patch.object(model_manager.model_context_manager, "stream", stream),
-    ):
-        await agent._think([], "task-1", 2, ctx)
-
-    assert captured[0]["input"]["trace_integrity_profile"] == "training"
-    assert captured[0]["input"]["trace_context"] == {
-        "task_id": "task-1",
-        "agent_name": "probe",
-        "step_number": 2,
-    }

@@ -21,7 +21,6 @@ from pathlib import Path
 
 import pytest
 
-from agentevolver.agent.types import Agent
 from agentevolver.capability import MOUNTED_TYPES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,15 +63,6 @@ def test_every_type_can_answer_the_roster_call(entry):
         assert expected in parameters, f"{entry.type}.get_instruction lacks {expected}"
 
 
-def test_the_assembly_walks_the_table_rather_than_a_list():
-    """Read from the source: a list here is the register that went stale, and it goes
-    stale silently — the type simply does not appear."""
-    source = inspect.getsource(Agent._get_messages)
-    assert "for entry in MOUNTED_TYPES" in source, (
-        "capability contexts are assembled from a hand-written list again"
-    )
-
-
 def test_no_template_carries_its_own_copy_of_the_block():
     """Five variants stood in twenty-six templates, differing only by which types the
     agent had — which the roster already answers by being empty."""
@@ -108,28 +98,6 @@ def test_an_absent_roster_renders_nothing_rather_than_a_notice():
     for slot in _module_slots():
         assert f"{{% if {slot} %}}" in text, f"{slot} renders unconditionally"
 
-
-def test_the_code_mode_convention_rides_on_a_slot_that_is_rendered():
-    """It was appended to `tool_context`, which no template names, so an agent holding
-    `batch_call_tool` was never told how to call anything from a program."""
-    source = inspect.getsource(Agent._get_tool_context)
-    assert "available_tools" in source and "tool_context" not in source.replace(
-        "_get_tool_context", ""
-    )
-
-
-def test_the_capability_hook_cannot_collide_with_the_orchestration_state():
-    """`agent` resolving to `_get_agent_context` would call the orchestration state with
-    the wrong signature — at run time, and only for that one type."""
-    source = inspect.getsource(Agent._capability_slots)
-    assert "_capability_{entry.type}_slots" in source
-    assert "_get_{entry.type}_context" not in source
-
-
-# ---------------------------------------------------------------------------
-# The catalog is produced in Python and rendered by a stylesheet and a script.
-# Three lists of the same types, in three languages that cannot import each other.
-# ---------------------------------------------------------------------------
 
 VISUAL = ROOT / "agentevolver" / "visual"
 

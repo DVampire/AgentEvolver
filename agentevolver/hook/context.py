@@ -330,8 +330,11 @@ class HookContextManager:
                 f"({len(result.additional_context)} chars)"
             )
 
-        # ON_STOP: let the hook release its own per-session resources
-        if event in (HookEvent.ON_STOP, HookEvent.SESSION_END):
+        # Any ending: let the hook release its own per-run resources. SUBAGENT_STOP is
+        # in the set because a child's ending is a real ending — before it was announced
+        # as SESSION_END, so splitting the two would otherwise have leaked a hook's
+        # per-run state once per dispatched child.
+        if event in (HookEvent.ON_STOP, HookEvent.SESSION_END, HookEvent.SUBAGENT_STOP):
             try:
                 await hook_instance.cleanup(hook_ctx.id)
             except Exception as e:

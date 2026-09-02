@@ -3,21 +3,7 @@ with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.meta_agent import meta_agent
     from .agents.code_agent import code_agent
-    from .agents.general_agent import general_agent
-    from .agents.reviewer_agent import reviewer_agent
-    from .agents.monitor_agent import monitor_agent
-    from .agents.generate_agent import generate_agent
-    from .agents.optimize_agent import optimize_agent
-    from .agents.evaluate_agent import evaluate_agent
     from .tools.bash import bash_tool
-    from .tools.ask_user import ask_user_question
-    from .tools.exit_plan_mode import exit_plan_mode
-    from .tools.read_file import read_file_tool
-    from .tools.write_file import write_file_tool
-    from .tools.edit_file import edit_file_tool
-    from .tools.list_dir import list_dir_tool
-    from .tools.evolution import evolution_tool
-    from .tools.escalate import escalate_tool
     from .memory.file_system_memory import file_system_memory
 
 tag = "meta_agent"
@@ -33,48 +19,36 @@ model_name = "llm_hub/claude-opus-5"
 memory_names = [
     "file_system_memory",
 ]
+# One worker. Every registered agent reaches the model as a tool schema, and a roster
+# of eight cost more prompt than the difference between them was worth on ordinary work:
+# `code_agent` and `general_agent` differ by a prompt, and the reviewer, monitor and the
+# three evolution roles are for runs that ask for them. Add one back per run that needs it.
 agent_names = [
     "meta_agent",
     "code_agent",
-    "general_agent",
-    "reviewer_agent",
-    "monitor_agent",
-    "generate_agent",
-    "optimize_agent",
-    "evaluate_agent",
 ]
-# The basics, and nothing else. Anything not here is still reachable — `inspect_tool`
-# reads any registered capability by name — so this is what rides on every step as a
-# schema, not what the run is capable of.
+# What rides on every step as a schema — not what the run is capable of. Anything not
+# here is still reachable: `inspect_tool` reads any registered capability by name.
+#
+# One consequence worth stating: `exit_plan_mode` is gone, and it is plan mode's only
+# legal move. Run with `--plan-mode plan` and add it back, or the gate refuses everything
+# and the run has nowhere to go.
 tool_names = [
-    # Read, write, look around, run something.
+    # A shell and a way to stop. Everything the file tools did, a shell does — read with
+    # `cat`, write with a heredoc, look around with `ls` — and each schema that rides on
+    # every step is paid for on every step. Measured on a three-line task: twenty-four
+    # schemas were 22k tokens of prompt against under 1k of task.
     "bash_tool",
-    "read_file_tool",
-    "write_file_tool",
-    "edit_file_tool",
-    "list_dir_tool",
-    # Talk to the person, and to whoever dispatched this run.
-    "ask_user_question",
-    "escalate_tool",
-    "reply_tool",
-    "report_tool",
     "done_tool",
-    # Plan mode's only exit. The gate refuses everything with effects until a person
-    # approves, so without this a run that enters plan mode has no legal move left.
-    "exit_plan_mode",
-    # MetaAgent's own reason to exist.
-    "evolution_tool",
+    # A blocked child is answered on the ordinary turn its question arrives, with
+    # `reply_tool`. Both halves of that channel are off by default and belong together:
+    # add `escalate_tool` for children and `reply_tool` here, or neither.
+    # "escalate_tool",
+    # "reply_tool",
 ]
-# Resident rosters are what reaches the model on every step, as a tool schema each. The
-# rest of the registry is not gone: `inspect_tool` reads any registered
-# capability by name, so a run that needs one can look it up. Keeping the resident set
-# small is what leaves room for the conversation — 21 connectors alone expanded to 213
-# action schemas and 48k tokens, against a 95k input capacity.
+# Nothing resident. A skill is a method the agent reads when it needs one, and a run
+# that needs `self_evolving_skill` names it.
 skill_names = [
-    # The orchestrator's half of evolution: when to evolve, the gate, the loop. How to
-    # write each of the eight component types is `generate_skill` / `optimize_skill` /
-    # `evaluate_skill`, which the three agents load themselves — MetaAgent only dispatches.
-    "self_evolving_skill",
     # # The everyday four.
     # "code_review_skill",
     # "verify_skill",
@@ -118,48 +92,6 @@ file_system_memory.update(
 
 #-----------------ACTOR AGENT CONFIGS-----------------
 code_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-general_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-reviewer_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-monitor_agent.update(
-    enable_evolving=False,
-)
-
-#-----------------EVOLUTION AGENT CONFIGS-----------------
-# One agent per role, each working on whichever of the eight component types it is
-# dispatched with. There were eighteen of these blocks, identical but for the name.
-generate_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-optimize_agent.update(
-    model_name=model_name,
-    memory_name=memory_names[0],
-    enable_evolving=False,
-    use_memory=True,
-)
-
-evaluate_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     enable_evolving=False,

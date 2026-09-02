@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from agentevolver.hook.events import HookEvent
+
 
 async def _git(cwd: Path, *args: str, stdin: Optional[bytes] = None) -> tuple[int, str, str]:
     process = await asyncio.create_subprocess_exec(
@@ -75,7 +77,7 @@ class IsolatedWorktree:
                 raise RuntimeError(f"could not identify isolated baseline: {error.strip()}")
             instance.baseline = revision.strip()
             await instance._emit_lifecycle(
-                "worktree_create",
+                HookEvent.WORKTREE_CREATE,
                 {"source": str(source_path), "worktree": str(target), "token": token},
             )
             return instance
@@ -147,14 +149,14 @@ class IsolatedWorktree:
         if not self.worktree_root.exists():
             return
         await self._emit_lifecycle(
-            "worktree_remove", {"worktree": str(self.worktree_root)},
+            HookEvent.WORKTREE_REMOVE, {"worktree": str(self.worktree_root)},
         )
         await _git(
             self.repository, "worktree", "remove", "--force", str(self.worktree_root),
         )
 
     @staticmethod
-    async def _emit_lifecycle(event: str, payload: dict) -> None:
+    async def _emit_lifecycle(event: HookEvent, payload: dict) -> None:
         try:
             from agentevolver.hook import hook_manager
 
