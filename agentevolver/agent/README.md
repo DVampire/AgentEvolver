@@ -33,26 +33,27 @@ is a declaration, a `think` override, a step middleware, or a lifecycle hook.
 Git worktree isolation is a sandbox concern and lives in `sandbox/worktree.py`; Agent
 requests it through that public boundary when a writing child must be isolated.
 
-There is one source of truth for each piece of model context. `ContextBuilder` owns the
+There is one source of truth for each piece of model context. `agent/context/` owns the
 four-layer request envelope and project-owned instructions, while `Agent` owns when that
 context is requested. Callable capability descriptions travel only in the provider-native
 tools parameter; the rendered HTML capability blocks are removed from model messages so
 two catalogs cannot drift.
 
-Agent owns single-agent behavior. Cross-agent scheduling belongs to Runtime, Protocol, and
-Workflow rather than to an Agent subtype.
+Agent owns single-agent behaviour. Cross-agent scheduling belongs to the runtime kernel
+and to Workflow, never to an Agent subtype.
 
 ## Subscription-triggered turns
 
-Subscription topics are supplied when a continuable background ref is delegated; they are
-not properties of the Agent template. The live `AgentRef` owns its scoped topic edges,
-standing brief, attachments, pause gate, and serialized turn queue. Runtime converts a
-published event into an ordinary `TaskMessage`, with structured trigger data in `kwargs`, so
-Agent uses the same `on_start → act → on_end` lifecycle as every directly assigned turn.
+Subscription is not an agent property. Naming topics on a dispatch makes the child
+`resident`, and the kernel's `Process` owns its topic edges, standing brief, mailbox and
+one-turn-at-a-time driver. A published event arrives as an ordinary envelope, so a
+subscriber runs the same `on_start → step → on_land → on_exit` phases as a directly
+dispatched turn.
 
-Pausing closes the Runtime scheduling gate: later publications may queue but cannot start a
-new turn until resume. If a turn is already active, the ordinary Agent control message also
-holds it at a complete round boundary.
+Suspending holds the process at its next safe point — `gate()` between steps, or inside
+`recv()` — so later publications queue in the mailbox and cannot start a turn until
+resume. Nothing is ever interrupted mid-turn, which is what keeps the conversation
+sendable.
 
 ## MetaAgent uses the same loop
 

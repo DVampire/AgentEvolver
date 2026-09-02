@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
+from agentevolver.permission import Operation, PermissionRequest
 from agentevolver.registry import TOOL
 from agentevolver.sandbox.project import check_session_path
 from agentevolver.tool.types import Tool
@@ -54,9 +55,9 @@ class GlobSearchTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     def permission_request(self, arguments, ctx=None):
-            return PermissionRequest(
-                op=Operation.READ, target=str(arguments.get("root") or "")
-            )
+        return PermissionRequest(
+            op=Operation.READ, target=str(arguments.get("root") or "")
+        )
 
     async def __call__(
         self,

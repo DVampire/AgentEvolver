@@ -6,6 +6,7 @@ from pydantic import Field
 
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
+from agentevolver.permission import Operation, PermissionRequest
 from agentevolver.registry import TOOL
 from agentevolver.config import config
 from agentevolver.sandbox.project import check_session_path
@@ -118,9 +119,9 @@ class ListDirTool(Tool):
                 file_count[0] += 1
 
     def permission_request(self, arguments, ctx=None):
-            return PermissionRequest(
-                op=Operation.READ, target=str(arguments.get("path") or "")
-            )
+        return PermissionRequest(
+            op=Operation.READ, target=str(arguments.get("path") or "")
+        )
 
     async def __call__(
         self,

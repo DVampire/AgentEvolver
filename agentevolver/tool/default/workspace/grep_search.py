@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
+from agentevolver.permission import Operation, PermissionRequest
 from agentevolver.permission.types import is_binary_file
 from agentevolver.registry import TOOL
 from agentevolver.sandbox.project import check_session_path
@@ -55,9 +56,9 @@ class GrepSearchTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     def permission_request(self, arguments, ctx=None):
-            return PermissionRequest(
-                op=Operation.READ, target=str(arguments.get("root") or "")
-            )
+        return PermissionRequest(
+            op=Operation.READ, target=str(arguments.get("root") or "")
+        )
 
     async def __call__(
         self,

@@ -110,7 +110,13 @@ class HookContextManager:
         self, hook_names: Optional[List[str]] = None
     ) -> Dict[str, HookConfig]:
         """Load hook classes from the HOOK registry and build HookConfig objects."""
-        import agentevolver.hook  # noqa: F401 - populate the default hook registry
+        # The built-in hooks register on import, so discovery has to name the module
+        # that defines them. Importing the *package* used to be enough and no longer is:
+        # `agentevolver.hook` hands its heavy names out lazily, so that import populates
+        # nothing and every hook silently fails to register — no trace, no trajectory, no
+        # budget, no plan mode. Depending on a package's import side effect is what made
+        # that invisible; naming the module is what makes it checkable.
+        import agentevolver.hook.default  # noqa: F401 - registers the built-in hooks
         from agentevolver.config import config
         from agentevolver.registry import HOOK
 

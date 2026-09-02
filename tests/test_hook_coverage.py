@@ -100,3 +100,48 @@ def test_no_firing_site_names_an_event_with_a_bare_string():
         "these raise an event by bare string; use HookEvent so a typo fails:\n  "
         + "\n  ".join(offenders)
     )
+
+
+@pytest.mark.asyncio
+async def test_initializing_the_manager_registers_the_built_in_hooks():
+    """Discovery must name the module that defines the hooks, not the package.
+
+    `_load_from_registry` populated the HOOK registry with `import agentevolver.hook`,
+    relying on the package's import side effect. Making that package hand its heavy
+    names out lazily — so any layer could name an event without closing an import cycle
+    — meant the import populated nothing, and every built-in hook silently failed to
+    register: no trace, no trajectory, no budget, no plan mode, no project memory.
+
+    Nothing failed. A run with no observers looks exactly like a run whose observers had
+    nothing to say, which is why this asserts on the names rather than on a count.
+    """
+    from agentevolver.hook import hook_manager
+
+    await hook_manager.initialize()
+    registered = set(hook_manager.list())
+    expected = {
+        "trace_hook", "trajectory_hook", "constraint_hook",
+        "plan_mode_hook", "project_memory_hook", "registration_hook", "compact",
+    }
+    assert expected <= registered, f"never registered: {sorted(expected - registered)}"
+
+
+def test_every_named_observer_is_a_hook_that_exists():
+    """`events.emit` calls two hooks by name; a typo there is a silent no-op.
+
+    Nothing verifies a name at the call site — `hook_manager(name=...)` on an unknown
+    name returns rather than raises, so the loop would keep running with no observers.
+    """
+    import inflection
+
+    import agentevolver.hook.default  # noqa: F401 - registers the built-ins
+    from agentevolver.agent.loop.events import OBSERVERS
+    from agentevolver.registry import HOOK
+
+    known = {
+        (getattr(cls.model_fields.get("name"), "default", None)
+         or inflection.underscore(cls.__name__))
+        for cls in HOOK.module_dict.values()
+    }
+    unknown = sorted(set(OBSERVERS) - known)
+    assert not unknown, f"OBSERVERS names hooks that do not exist: {unknown}"

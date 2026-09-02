@@ -47,12 +47,14 @@ When unsure, prefer a tool-calling agent — it's the more general, more capable
 
 ### The class is THIN — inherit, don't reinvent
 
-The base `Agent` already implements the standard think-and-act loop (`__call__`) and the context builder (`_get_agent_context`, `_get_messages`, `_think_and_act`). A well-formed tool-calling agent **inherits all of it** and only supplies:
-- its identity fields (`name`, `description`, `metadata`, `enable_evolving`),
-- an `__init__` that sets `prompt_name` (must match the HTML prompt's `<meta name="name">`),
-- a thin `__call__` that delegates to `super().__call__(...)`.
+The base `Agent` owns the loop (`__call__` → `think` → `act`), prompt assembly (`agent/context/`), the executor and the router. A well-formed tool-calling agent **inherits all of it** and supplies only field declarations:
+- identity (`name`, `description`, `metadata`, `enable_evolving`),
+- `prompt_name`, which must match the HTML prompt's `<meta name="name">`,
+- `max_step`, if the default of 20 is wrong for this work.
 
-**Do NOT override** `_get_agent_context`, `_get_messages`, or `_think_and_act` unless the agent genuinely needs bespoke behavior — reviewers treat unnecessary overrides as a defect. The only common reason to put real logic in `__call__` is an agent that must **register a produced artifact**: it calls `super().__call__(...)`, then fires a registration hook on the result (see the variant in `tool_calling_agent_template.py`).
+**Write no `__init__` and no `__call__`.** Every actor in `agentevolver/agent/actor/` is declarations and nothing else — that is the target shape. The base takes `base_dir` and forwards keyword arguments to pydantic, so a hand-written `__init__` that defaults fields to `None` and passes them through makes the agent fail to construct, which is what an earlier version of the template did.
+
+**Do NOT override** `think`, `act` or anything in `agent/context/` unless the agent genuinely needs bespoke behaviour — reviewers treat unnecessary overrides as a defect. The seams that exist for real needs are `prompt_modules`, `project_context`, `working_memory`, `completion_blocker`, `finalize`, and the runtime phases `on_start` / `on_land` / `on_exit` / `on_suspend` / `on_resume`. Advice for the model belongs in a step middleware (`agent/loop/guards.py`), not in an override.
 
 Steps:
 1. Read `tool_calling_agent_template.py`, copy it to `{extension_root}/agent/{name}.py`, rename the class, and fill `name` / `description` (state what it does AND when to use it) / `prompt_name`.
@@ -70,7 +72,7 @@ Copy `html_prompt_template.html` to `{extension_root}/prompt/{name}.html`, set `
   (task, inherited context, plan, constraints, step info, environment state, workspace,
   errors). The CSS, renderer, context builder, and prompt cache depend on this layout.
   - **The order is not cosmetic.** Stable catalogs precede live state so a changing step does
-    not invalidate the reusable prefix. The ContextBuilder then sends callable catalogs as
+    not invalidate the reusable prefix. The context assembler then sends callable catalogs as
     provider-native tool definitions, keeps task/inherited context as the first user anchor,
     carries old work in one memory checkpoint, and preserves recent assistant/tool turns.
 

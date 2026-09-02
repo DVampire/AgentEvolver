@@ -1,18 +1,37 @@
-"""TEMPLATE — a tool-calling agent (LLM think-and-act loop).
+"""TEMPLATE — a tool-calling agent (the LLM think-and-act loop).
 
-Copy to `{extension_root}/agent/{name}.py`, rename the class, fill name/description, and
-pair it with an HTML prompt at `{extension_root}/prompt/{name}.html` (see
-`html_prompt_template.html`). This is the common agent type: it reasons and acts
-step by step using tools/skills/connectors, driven by the base-class loop.
+Copy to `{extension_root}/agent/{name}.py`, rename the class, fill in name/description,
+and pair it with an HTML prompt at `{extension_root}/prompt/{name}.html` (see
+`html_prompt_template.html`). This is the common agent type: it reasons and acts step by
+step over tools, skills and connectors, driven entirely by the base-class loop.
 
-KEY RULE — the class is THIN. The base `Agent` already implements the full
-standard loop (`__call__`) and context builder (`_get_agent_context`,
-`_get_messages`, `_think_and_act`). Inherit all of it. Do NOT re-implement the
-loop or override the context methods unless the agent truly needs bespoke behavior
-(that is a red flag reviewers look for). Supply identity + prompt; inherit the rest.
+KEY RULE — the class is a DECLARATION, not an implementation.
+
+`Agent` already owns the loop (`__call__` → `think` → `act`), prompt assembly
+(`agent/context/`), the executor and the router. Every real actor in
+`agentevolver/agent/actor/` is field declarations and nothing else, and that is the
+target shape: a name, a prompt, a step budget. Overriding a loop method is either a
+genuine new behaviour or an accident, and reviewers treat it as the latter by default.
+
+Do NOT write an `__init__`. The base takes `base_dir` and forwards keyword arguments to
+pydantic, so declaring fields is the whole of configuration. An earlier version of this
+template hand-wrote one that defaulted every field to `None` and passed those through;
+pydantic rejects `None` for a `str`, so every agent generated from it failed to
+construct. If a field genuinely needs computing, override `__init__(self, base_dir: str
+= "", **kwargs)` and call `super().__init__(base_dir=base_dir, **kwargs)` first.
+
+The seams that exist for a reason, when a declaration truly is not enough:
+
+    prompt_modules()      extra prompt sections
+    project_context()     what the agent is told about the workspace
+    working_memory()      what it carries between steps
+    on_step()             advice for this step — prefer middleware in `loop/guards.py`
+    completion_blocker()  a reason this run may not finish yet
+    finalize()            shape the final Response
+    on_start/on_land/on_exit/on_suspend/on_resume    runtime phases
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from pydantic import ConfigDict, Field
 
@@ -27,39 +46,17 @@ class MyAgent(Agent):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = Field(default="my_agent")
+    #: How it gets chosen. The router projects this to the model as a tool schema, so it
+    #: has to say when to use the agent, not only what it is.
     description: str = Field(
-        default="What this agent does AND when to use it (the description is how it gets chosen)."
+        default="What this agent does AND when to use it."
     )
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    # enable_evolving=True marks the agent as evolvable (the optimize agent may edit it).
+    metadata: Dict[str, Any] = Field(default={})
+    #: Must match the HTML prompt's `<meta name="name">`.
+    prompt_name: str = Field(default="my_agent")
+    max_step: int = Field(default=20)
+    #: True lets the optimize agent edit this file.
     enable_evolving: bool = Field(default=True)
 
-    def __init__(
-        self,
-        base_dir: str,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        model_name: Optional[str] = None,
-        prompt_name: Optional[str] = None,
-        memory_name: Optional[str] = None,
-        max_actions: int = 10,
-        max_step: int = 20,
-        review_steps: int = 5,
-        enable_evolving: bool = True,
-        **kwargs,
-    ):
-        super().__init__(
-            base_dir=base_dir,
-            name=name,
-            description=description,
-            metadata=metadata,
-            model_name=model_name,
-            prompt_name=prompt_name or "my_agent",  # must match the HTML prompt's <meta name="name">
-            memory_name=memory_name,
-            max_actions=max_actions,
-            max_step=max_step,
-            review_steps=review_steps,
-            enable_evolving=enable_evolving,
-            **kwargs,
-        )
+
+__all__ = ["MyAgent"]
