@@ -29,7 +29,7 @@ from agentevolver.conversation.types import (
 )
 from agentevolver.gateway.service import AgentGateway
 from agentevolver.runtime import runtime_manager
-from agentevolver.tool.default.ask_user import AskUserTool
+from agentevolver.tool.default.lifecycle.ask_user import AskUserTool
 
 
 @pytest.fixture

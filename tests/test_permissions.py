@@ -21,7 +21,7 @@ import pytest
 from agentevolver.config import config
 from agentevolver.permission import PermissionMode
 from agentevolver.permission.types import check_file_write, validate_command
-from agentevolver.tool.default.bash import BashTool
+from agentevolver.tool.default.workspace.bash import BashTool
 
 
 # --------------------------------------------------------------------------- #

@@ -28,7 +28,7 @@ from agentevolver.task.types import (
     GoalRevisionError,
     GoalStateError,
 )
-from agentevolver.tool.default.goal import CreateGoalTool, GetGoalTool, UpdateGoalTool
+from agentevolver.tool.default.lifecycle.goal import CreateGoalTool, GetGoalTool, UpdateGoalTool
 from agentevolver.utils.singleton import Singleton
 
 HUMAN = GoalAuthority.HUMAN

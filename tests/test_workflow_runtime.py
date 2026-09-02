@@ -299,7 +299,7 @@ async def test_the_roster_names_workflows_and_the_html_is_fetched_only_when_aske
     back into that budget. `inspect_tool` is the second step for an agent that has
     chosen and now needs the program.
     """
-    from agentevolver.tool.default.inspect import InspectTool
+    from agentevolver.tool.default.observability.inspect import InspectTool
 
     definition = workflow_manager.register(HTML, override=True)
     try:

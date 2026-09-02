@@ -455,7 +455,7 @@ def test_trace_hook_hands_memory_the_same_numbered_event(monkeypatch):
 
 
 def test_bash_effect_prediction_distinguishes_reads_from_edits():
-    from agentevolver.tool.default.bash import BashTool
+    from agentevolver.tool.default.workspace.bash import BashTool
 
     tool = BashTool()
     assert tool.will_mutate({"command": "cat src/a.py | grep uid"}) is False

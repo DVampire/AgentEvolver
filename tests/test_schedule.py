@@ -20,7 +20,7 @@ from agentevolver.environment.default.job import JobEnvironment
 from agentevolver.job import job_manager
 from agentevolver.job.server import MAX_FINISHED_PER_SESSION
 from agentevolver.job.types import JobStatus, ScheduleError
-from agentevolver.tool.default.schedule import ScheduleCreateTool
+from agentevolver.tool.default.lifecycle.schedule import ScheduleCreateTool
 
 #: A fixed instant to schedule from: 2026-08-15T09:00:00Z. Any constant would do;
 #: a real-looking one keeps the absolute-time cases readable.

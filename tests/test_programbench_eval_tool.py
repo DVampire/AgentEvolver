@@ -13,8 +13,11 @@ import asyncio
 import importlib.util
 import json
 import os
+from types import SimpleNamespace
 
-from agentevolver.tool.default.programbench_eval import (
+import agentevolver.tool.default.evaluation.bridge as bridge_module
+import agentevolver.tool.default.evaluation.programbench as programbench_module
+from agentevolver.tool.default.evaluation.programbench import (
     _DEFAULT_BUDGET,
     ProgramBenchEvalTool,
     _format_result,
@@ -45,6 +48,34 @@ def test_it_is_a_no_op_without_a_bridge(monkeypatch):
     resp = _call(ProgramBenchEvalTool(), focus="anything")
     assert not resp.success
     assert "only available inside a ProgramBench launcher" in resp.message
+
+
+def test_eval_declares_its_checkpoint_and_host_request_as_effects():
+    tool = ProgramBenchEvalTool()
+    assert tool.mutates is True
+    assert tool.permission_mode == "workspace_write"
+
+
+def test_a_failed_checkpoint_never_sends_an_eval_request(tmp_path, monkeypatch):
+    bridge = tmp_path / "bridge"
+    workspace = tmp_path / "workspace"
+    bridge.mkdir()
+    workspace.mkdir()
+    # Git worktrees use a .git file rather than a directory; both must checkpoint.
+    (workspace / ".git").write_text("gitdir: /missing\n")
+    monkeypatch.setenv("AGENTEVOLVER_EVAL_BRIDGE", str(bridge))
+    monkeypatch.setattr(programbench_module, "_WORKSPACE", str(workspace))
+    monkeypatch.setattr(
+        bridge_module,
+        "_git",
+        lambda *_args: SimpleNamespace(returncode=1, stderr="bad index", stdout=""),
+    )
+
+    resp = _call(ProgramBenchEvalTool(), focus="should not score stale code")
+
+    assert not resp.success
+    assert "could not stage eval checkpoint" in resp.message
+    assert not list(bridge.glob("request-*.json"))
 
 
 def test_the_budget_is_enforced(tmp_path, monkeypatch):

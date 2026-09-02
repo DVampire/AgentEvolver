@@ -16,15 +16,15 @@ introspected into native function-calling schemas and routed through `tool_manag
 |---|---|
 | `types.py` | Tool and configuration contracts |
 | `execution.py` | Immutable call identity, monotonic policy, execution phases, and stable errors |
+| `checkpoint.py` | Reversible pre-effect snapshots for file mutations |
 | `context.py` | Registration, dynamic loading, versions, and instances |
 | `server.py` | Public schemas and the only supported execution entry point |
-| `default/` | Built-in framework tools, including `inspect_tool` |
-| `other/` | Optional integrations |
+| `default/` | Built-ins grouped by workspace, execution, lifecycle, coordination, observability, evaluation, web, and deployment |
 
 `inspect_tool` is one tool for all seven capability types rather than one per
 type: the six it replaced asked different managers and printed a few different lines, and
 everything structural about a type — which manager owns it, whether its members are
-separately callable — now comes from `CAPABILITY_TYPES` instead of a branch.
+separately callable — now comes from `COMPONENT_TYPES` instead of a branch.
 
 A tool's prompt card carries its guidance and examples, not its parameters: those are
 derived from the signature and its `Args:` docstring and travel in the request's own
@@ -33,13 +33,12 @@ derived from the signature and its `Args:` docstring and travel in the request's
 instruction when an agent wants it.
 
 Tools should remain small and atomic. Reusable guidance belongs to Skill; multi-step
-orchestration belongs to Workflow. The former `tool/workflow/` location has been retired
-(its `todo` tool now lives under `default/`); it was never a public Workflow registry, so
-define Workflows in the Workflow module rather than here.
+orchestration belongs to Workflow. Domain-specific release gates and benchmark loops do
+not become generic tools merely because they can be expressed as a callable.
 
 ## The built-in tools
 
-Forty-three registered tools, grouped by what they act on. `mutates` is the registry-owned
+Forty-five registered tools, grouped by what they act on. `mutates` is the registry-owned
 declaration the pipeline reads at step 5: **yes** takes a pre-effect durability checkpoint,
 **no** skips it, and *blank* means the tool has not declared one — which is treated as
 "yes", so an undeclared mutation is never missed and the cost of silence falls on the tool
@@ -52,6 +51,7 @@ rather than on the record.
 | `read_file_tool` | no | Read a file's contents. |
 | `write_file_tool` | yes | Write a file, creating parents, overwriting if it exists. |
 | `edit_file_tool` | yes | Replace one exact string with another. |
+| `apply_patch_tool` | yes | Apply one validated unified diff to one workspace file. |
 | `list_dir_tool` | no | List a directory as a tree. |
 | `glob_search_tool` | no | Find files by glob pattern. Names, not contents. |
 | `grep_search_tool` | no | Find lines by regex or literal. Contents, not names. |
@@ -162,14 +162,13 @@ event-driven subscribers and returns the number of queues that accepted the even
 | `create_goal_tool` | yes | Record the standing objective a human asked for — what the whole session is for. |
 | `get_goal_tool` | no | Read the goal, where it stands, and its current revision. |
 | `update_goal_tool` | yes | Report progress, or apply a change a human asked for. Names the exact revision it read. |
-| `todo_tool` | | Manage `todo.md`: decompose a task, track the steps. |
 | `schedule_create_tool` | yes | Set a reminder that comes due later in this run — after a delay, at a time, or on an interval. |
 | `exit_plan_mode` | no | Present a finished plan for approval and leave plan mode if it is approved. |
 | `done_tool` | | Declare the task complete. What an evolution run puts its artifact path in. |
 
-A goal is what a person asked for; a todo is your own plan of work. Goal is split across
-three tools because `update` names the revision it read — an optimistic-concurrency check
-that a single read-modify-write tool could not express.
+A goal is what a person asked for. It is split across three tools because `update` names
+the revision it read — an optimistic-concurrency check that a single read-modify-write
+tool could not express.
 
 ### Past runs
 
@@ -189,7 +188,6 @@ Search and read, at two grains: the run and the step.
 |---|---|---|
 | `git_tool` | | Git operations inside the project's `workspace_root`. |
 | `deploy_tool` | yes | Deploy and manage web services (static/SPA/API) in isolated sandboxes, each on its own URL. |
-| `reformulator_tool` | | Reformulate a clean final answer from a conversation transcript. Lives in `other/`, not `default/`. |
 
 ## One execution path
 

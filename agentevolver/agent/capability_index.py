@@ -8,7 +8,7 @@ from typing import Any, List, Sequence, Tuple
 
 SEARCH_NAME = "search_capabilities"
 CORE_NAMES = frozenset({
-    "done_tool", "bash_tool", "read_file_tool", "write_file_tool",
+    "done_tool", "bash_tool", "apply_patch_tool", "read_file_tool", "write_file_tool",
     "edit_file_tool", "grep_search_tool", "glob_search_tool", "list_dir_tool",
 })
 

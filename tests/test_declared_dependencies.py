@@ -45,7 +45,7 @@ EXCLUDED = (
     "/connector/default/",
     "/benchmark/default/",
     "/environment/default/",
-    "/tool/default/markdown/",
+    "/tool/default/web/markdown/",
     "/sandbox/default/",
 )
 

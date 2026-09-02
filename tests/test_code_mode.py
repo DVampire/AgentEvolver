@@ -31,15 +31,15 @@ from agentevolver.hook.context import HookContextManager
 from agentevolver.hook.server import hook_manager
 from agentevolver.plan.server import PlanManagerServer, action_is_allowed, declaration_of
 from agentevolver.response.types import Response, ResponseType
-from agentevolver.tool.default.code_mode import BatchCallTool
-from agentevolver.tool.default.code_mode.sdk import (
+from agentevolver.tool.default.execution import BatchCallTool
+from agentevolver.tool.default.execution.sdk import (
     UNCALLABLE,
     callable_names,
     code_mode_section,
     render_sdk,
     signature,
 )
-from agentevolver.tool.default.write_file import WriteFileTool
+from agentevolver.tool.default.workspace.write_file import WriteFileTool
 from agentevolver.tool.server import tool_manager
 from agentevolver.tool.types import Tool
 
@@ -528,7 +528,7 @@ def test_the_module_documents_the_route_a_call_takes():
     written down, so it is the thing that must not go stale.
     """
     readme = (
-        Path(__file__).parents[1] / "agentevolver" / "tool" / "default" / "code_mode" / "README.md"
+        Path(__file__).parents[1] / "agentevolver" / "tool" / "default" / "execution" / "README.md"
     ).read_text(encoding="utf-8")
 
     for step in ("plan_mode_hook", "permission_manager.check", "_run_one"):

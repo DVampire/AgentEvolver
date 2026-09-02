@@ -243,6 +243,26 @@ class RuntimeManager(metaclass=Singleton):
             return await asyncio.wait_for(asyncio.shield(msg.reply_future), timeout=timeout)
         return await msg.reply_future
 
+    def report_to_parent(self, ctx: Any, output: str) -> tuple[str, str]:
+        """Append a child's report to its runtime-owned job transcript.
+
+        The model-facing tool must not know how delegated AgentRefs are indexed or
+        where their output is stored. The status distinguishes a top-level run from a
+        child whose parent record has already gone away.
+        """
+        from agentevolver.job import job_manager
+
+        extra = getattr(ctx, "extra", None) or {}
+        job_id = str(extra.get("report_job_id") or "")
+        if not job_id:
+            return "top_level", ""
+        if job_manager.get(job_id) is None:
+            return "parent_gone", job_id
+        name = str(extra.get("report_agent_name") or "")
+        label = f" from {name}" if name else ""
+        job_manager.append_output(job_id, f"\n[report{label}]\n{output.strip()}\n")
+        return "delivered", job_id
+
     async def invoke(
         self,
         agent: "Agent",

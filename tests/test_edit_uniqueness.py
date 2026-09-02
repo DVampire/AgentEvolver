@@ -15,7 +15,7 @@ must its message — "add more context" is what makes the retry work instead of 
 
 import asyncio
 
-from agentevolver.tool.default.edit_file import EditFileTool
+from agentevolver.tool.default.workspace.edit_file import EditFileTool
 
 
 def _edit(path, old, new):

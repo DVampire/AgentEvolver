@@ -28,54 +28,63 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 
 | Tool | Permission | Mutates | Class | Module |
 | --- | --- | --- | --- | --- |
-| [`ask_user_question`](#ask_user_question) | `read_only` | no | `AskUserTool` | `agentevolver.tool.default.ask_user` |
-| [`bash_tool`](#bash_tool) | `workspace_write` | not declared | `BashTool` | `agentevolver.tool.default.bash` |
-| [`batch_call_tool`](#batch_call_tool) | `danger_full_access` | not declared | `BatchCallTool` | `agentevolver.tool.default.code_mode.batch_call` |
-| [`code_interpreter_tool`](#code_interpreter_tool) | `danger_full_access` | not declared | `CodeInterpreterTool` | `agentevolver.tool.default.code_interpreter` |
-| [`create_goal_tool`](#create_goal_tool) | `workspace_write` | yes | `CreateGoalTool` | `agentevolver.tool.default.goal` |
-| [`deploy_tool`](#deploy_tool) | `danger_full_access` | yes | `DeployTool` | `agentevolver.tool.default.deploy` |
-| [`done_tool`](#done_tool) | `workspace_write` | not declared | `DoneTool` | `agentevolver.tool.default.done` |
-| [`edit_file_tool`](#edit_file_tool) | `workspace_write` | yes | `EditFileTool` | `agentevolver.tool.default.edit_file` |
-| [`escalate_tool`](#escalate_tool) | `read_only` | not declared | `EscalateTool` | `agentevolver.tool.default.escalate` |
+| [`apply_patch_tool`](#apply_patch_tool) | `workspace_write` | yes | `ApplyPatchTool` | `agentevolver.tool.default.workspace.apply_patch` |
+| [`ask_user_question`](#ask_user_question) | `read_only` | no | `AskUserTool` | `agentevolver.tool.default.lifecycle.ask_user` |
+| [`bash_tool`](#bash_tool) | `workspace_write` | not declared | `BashTool` | `agentevolver.tool.default.workspace.bash` |
+| [`batch_call_tool`](#batch_call_tool) | `danger_full_access` | not declared | `BatchCallTool` | `agentevolver.tool.default.execution.batch_call` |
+| [`code_interpreter_tool`](#code_interpreter_tool) | `danger_full_access` | not declared | `CodeInterpreterTool` | `agentevolver.tool.default.workspace.code_interpreter` |
+| [`create_goal_tool`](#create_goal_tool) | `workspace_write` | yes | `CreateGoalTool` | `agentevolver.tool.default.lifecycle.goal` |
+| [`deploy_tool`](#deploy_tool) | `danger_full_access` | yes | `DeployTool` | `agentevolver.tool.default.deployment.deploy` |
+| [`done_tool`](#done_tool) | `workspace_write` | not declared | `DoneTool` | `agentevolver.tool.default.lifecycle.done` |
+| [`edit_file_tool`](#edit_file_tool) | `workspace_write` | yes | `EditFileTool` | `agentevolver.tool.default.workspace.edit_file` |
+| [`escalate_tool`](#escalate_tool) | `read_only` | not declared | `EscalateTool` | `agentevolver.tool.default.coordination.escalate` |
 | [`evolution_tool`](#evolution_tool) | `workspace_write` | not declared | `EvolutionTool` | `agentevolver.tool.default.evolution` |
-| [`exit_plan_mode`](#exit_plan_mode) | `read_only` | no | `ExitPlanModeTool` | `agentevolver.tool.default.exit_plan_mode` |
-| [`firecrawl_search_tool`](#firecrawl_search_tool) | `workspace_write` | not declared | `FirecrawlSearch` | `agentevolver.tool.default.search.firecrawl_search` |
-| [`get_goal_tool`](#get_goal_tool) | `read_only` | no | `GetGoalTool` | `agentevolver.tool.default.goal` |
-| [`git_tool`](#git_tool) | `workspace_write` | not declared | `GitTool` | `agentevolver.tool.default.git` |
-| [`glob_search_tool`](#glob_search_tool) | `read_only` | no | `GlobSearchTool` | `agentevolver.tool.default.glob_search` |
-| [`google_lens_search_tool`](#google_lens_search_tool) | `workspace_write` | not declared | `GoogleLensSearch` | `agentevolver.tool.default.search.google_lens_search` |
-| [`grep_search_tool`](#grep_search_tool) | `read_only` | no | `GrepSearchTool` | `agentevolver.tool.default.grep_search` |
-| [`http_request_tool`](#http_request_tool) | `read_only` | not declared | `HttpRequestTool` | `agentevolver.tool.default.data_sources` |
-| [`inspect_tool`](#inspect_tool) | `read_only` | no | `InspectTool` | `agentevolver.tool.default.inspect` |
-| [`jina_search_tool`](#jina_search_tool) | `workspace_write` | not declared | `JinaSearch` | `agentevolver.tool.default.search.jina_search` |
-| [`journal_tool`](#journal_tool) | `workspace_write` | yes | `JournalTool` | `agentevolver.tool.default.journal` |
-| [`list_dir_tool`](#list_dir_tool) | `read_only` | no | `ListDirTool` | `agentevolver.tool.default.list_dir` |
-| [`mdify_tool`](#mdify_tool) | `workspace_write` | not declared | `MdifyTool` | `agentevolver.tool.default.mdify` |
-| [`media_search_tool`](#media_search_tool) | `workspace_write` | yes | `MediaSearchTool` | `agentevolver.tool.default.media_search` |
-| [`programbench_eval_tool`](#programbench_eval_tool) | `read_only` | not declared | `ProgramBenchEvalTool` | `agentevolver.tool.default.programbench_eval` |
-| [`publish_event_tool`](#publish_event_tool) | `workspace_write` | yes | `PublishEventTool` | `agentevolver.tool.default.publish_event` |
-| [`read_file_tool`](#read_file_tool) | `read_only` | no | `ReadFileTool` | `agentevolver.tool.default.read_file` |
-| [`read_image_tool`](#read_image_tool) | `read_only` | no | `ReadImageTool` | `agentevolver.tool.default.read_image` |
-| [`reformulator_tool`](#reformulator_tool) | `workspace_write` | not declared | `ReformulatorTool` | `agentevolver.tool.other.reformulator` |
-| [`reply_tool`](#reply_tool) | `read_only` | not declared | `ReplyTool` | `agentevolver.tool.default.reply` |
-| [`report_tool`](#report_tool) | `read_only` | no | `ReportTool` | `agentevolver.tool.default.report` |
-| [`schedule_create_tool`](#schedule_create_tool) | `workspace_write` | yes | `ScheduleCreateTool` | `agentevolver.tool.default.schedule` |
-| [`send_message_tool`](#send_message_tool) | `workspace_write` | yes | `SendMessageTool` | `agentevolver.tool.default.send_message` |
-| [`serper_search_tool`](#serper_search_tool) | `workspace_write` | not declared | `SerperSearch` | `agentevolver.tool.default.search.serper_search` |
-| [`session_event_read_tool`](#session_event_read_tool) | `read_only` | no | `SessionEventReadTool` | `agentevolver.tool.default.session_query` |
-| [`session_event_search_tool`](#session_event_search_tool) | `read_only` | no | `SessionEventSearchTool` | `agentevolver.tool.default.session_query` |
-| [`session_read_tool`](#session_read_tool) | `read_only` | no | `SessionReadTool` | `agentevolver.tool.default.session_query` |
-| [`session_search_tool`](#session_search_tool) | `read_only` | no | `SessionSearchTool` | `agentevolver.tool.default.session_query` |
-| [`session_trace_tool`](#session_trace_tool) | `read_only` | no | `SessionTraceTool` | `agentevolver.tool.default.session_query` |
-| [`swebench_pro_eval_tool`](#swebench_pro_eval_tool) | `read_only` | not declared | `SWEBenchProEvalTool` | `agentevolver.tool.default.swebench_pro_eval` |
-| [`swebench_verified_eval_tool`](#swebench_verified_eval_tool) | `read_only` | not declared | `SWEBenchVerifiedEvalTool` | `agentevolver.tool.default.swebench_verified_eval` |
-| [`update_goal_tool`](#update_goal_tool) | `workspace_write` | yes | `UpdateGoalTool` | `agentevolver.tool.default.goal` |
-| [`web_fetcher_tool`](#web_fetcher_tool) | `workspace_write` | no | `WebFetcherTool` | `agentevolver.tool.default.web_fetcher` |
-| [`web_searcher_tool`](#web_searcher_tool) | `workspace_write` | no | `WebSearcherTool` | `agentevolver.tool.default.web_searcher` |
-| [`website_release_gate_tool`](#website_release_gate_tool) | `workspace_write` | yes | `WebsiteReleaseGateTool` | `agentevolver.tool.default.website_release_gate` |
-| [`write_file_tool`](#write_file_tool) | `workspace_write` | yes | `WriteFileTool` | `agentevolver.tool.default.write_file` |
+| [`exit_plan_mode`](#exit_plan_mode) | `read_only` | no | `ExitPlanModeTool` | `agentevolver.tool.default.lifecycle.exit_plan_mode` |
+| [`firecrawl_search_tool`](#firecrawl_search_tool) | `workspace_write` | not declared | `FirecrawlSearch` | `agentevolver.tool.default.web.search.firecrawl_search` |
+| [`get_goal_tool`](#get_goal_tool) | `read_only` | no | `GetGoalTool` | `agentevolver.tool.default.lifecycle.goal` |
+| [`git_tool`](#git_tool) | `workspace_write` | not declared | `GitTool` | `agentevolver.tool.default.workspace.git` |
+| [`glob_search_tool`](#glob_search_tool) | `read_only` | no | `GlobSearchTool` | `agentevolver.tool.default.workspace.glob_search` |
+| [`google_lens_search_tool`](#google_lens_search_tool) | `workspace_write` | not declared | `GoogleLensSearch` | `agentevolver.tool.default.web.search.google_lens_search` |
+| [`grep_search_tool`](#grep_search_tool) | `read_only` | no | `GrepSearchTool` | `agentevolver.tool.default.workspace.grep_search` |
+| [`http_request_tool`](#http_request_tool) | `read_only` | not declared | `HttpRequestTool` | `agentevolver.tool.default.web.data_sources` |
+| [`inspect_tool`](#inspect_tool) | `read_only` | no | `InspectTool` | `agentevolver.tool.default.observability.inspect` |
+| [`jina_search_tool`](#jina_search_tool) | `workspace_write` | not declared | `JinaSearch` | `agentevolver.tool.default.web.search.jina_search` |
+| [`journal_tool`](#journal_tool) | `workspace_write` | yes | `JournalTool` | `agentevolver.tool.default.observability.journal` |
+| [`list_dir_tool`](#list_dir_tool) | `read_only` | no | `ListDirTool` | `agentevolver.tool.default.workspace.list_dir` |
+| [`mdify_tool`](#mdify_tool) | `workspace_write` | not declared | `MdifyTool` | `agentevolver.tool.default.web.mdify` |
+| [`media_search_tool`](#media_search_tool) | `workspace_write` | yes | `MediaSearchTool` | `agentevolver.tool.default.web.media_search` |
+| [`programbench_eval_tool`](#programbench_eval_tool) | `workspace_write` | yes | `ProgramBenchEvalTool` | `agentevolver.tool.default.evaluation.programbench` |
+| [`publish_event_tool`](#publish_event_tool) | `workspace_write` | yes | `PublishEventTool` | `agentevolver.tool.default.coordination.publish_event` |
+| [`read_file_tool`](#read_file_tool) | `read_only` | no | `ReadFileTool` | `agentevolver.tool.default.workspace.read_file` |
+| [`read_image_tool`](#read_image_tool) | `read_only` | no | `ReadImageTool` | `agentevolver.tool.default.workspace.read_image` |
+| [`reply_tool`](#reply_tool) | `read_only` | not declared | `ReplyTool` | `agentevolver.tool.default.coordination.reply` |
+| [`report_tool`](#report_tool) | `read_only` | no | `ReportTool` | `agentevolver.tool.default.coordination.report` |
+| [`schedule_create_tool`](#schedule_create_tool) | `workspace_write` | yes | `ScheduleCreateTool` | `agentevolver.tool.default.lifecycle.schedule` |
+| [`send_message_tool`](#send_message_tool) | `workspace_write` | yes | `SendMessageTool` | `agentevolver.tool.default.coordination.send_message` |
+| [`serper_search_tool`](#serper_search_tool) | `workspace_write` | not declared | `SerperSearch` | `agentevolver.tool.default.web.search.serper_search` |
+| [`session_event_read_tool`](#session_event_read_tool) | `read_only` | no | `SessionEventReadTool` | `agentevolver.tool.default.observability.session_query` |
+| [`session_event_search_tool`](#session_event_search_tool) | `read_only` | no | `SessionEventSearchTool` | `agentevolver.tool.default.observability.session_query` |
+| [`session_read_tool`](#session_read_tool) | `read_only` | no | `SessionReadTool` | `agentevolver.tool.default.observability.session_query` |
+| [`session_search_tool`](#session_search_tool) | `read_only` | no | `SessionSearchTool` | `agentevolver.tool.default.observability.session_query` |
+| [`session_trace_tool`](#session_trace_tool) | `read_only` | no | `SessionTraceTool` | `agentevolver.tool.default.observability.session_query` |
+| [`swebench_pro_eval_tool`](#swebench_pro_eval_tool) | `workspace_write` | yes | `SWEBenchProEvalTool` | `agentevolver.tool.default.evaluation.swebench_pro` |
+| [`swebench_verified_eval_tool`](#swebench_verified_eval_tool) | `workspace_write` | yes | `SWEBenchVerifiedEvalTool` | `agentevolver.tool.default.evaluation.swebench_verified` |
+| [`update_goal_tool`](#update_goal_tool) | `workspace_write` | yes | `UpdateGoalTool` | `agentevolver.tool.default.lifecycle.goal` |
+| [`web_fetcher_tool`](#web_fetcher_tool) | `workspace_write` | no | `WebFetcherTool` | `agentevolver.tool.default.web.web_fetcher` |
+| [`web_searcher_tool`](#web_searcher_tool) | `workspace_write` | no | `WebSearcherTool` | `agentevolver.tool.default.web.web_searcher` |
+| [`write_file_tool`](#write_file_tool) | `workspace_write` | yes | `WriteFileTool` | `agentevolver.tool.default.workspace.write_file` |
 
-46 tools.
+45 tools.
+
+## `apply_patch_tool`
+
+Apply one standard unified diff to one text file in the active workspace.
+
+Permission mode: `workspace_write` · changes state · call budget 60s
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `patch` | `str` | yes | — |
 
 ## `ask_user_question`
 
@@ -375,7 +384,7 @@ Permission mode: `workspace_write` · changes state
 
 Score your current build against the real hidden test suite and get back the names of the tests that still fail (no expected outputs). A heavy, rate-limited operation.
 
-Permission mode: `read_only` · does not declare whether it changes state
+Permission mode: `workspace_write` · changes state
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -414,17 +423,6 @@ Permission mode: `read_only` · reports only · call budget 60s
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
 | `path` | `str` | yes | — |
-
-## `reformulator_tool`
-
-Reformulate a clean, formatted final answer from an agent conversation transcript.
-
-Permission mode: `workspace_write` · does not declare whether it changes state
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `task` | `str` | yes | — |
-| `data` | `List[str]` | yes | — |
 
 ## `reply_tool`
 
@@ -552,7 +550,7 @@ Permission mode: `read_only` · reports only
 
 Run the hidden test suite on your CURRENT patch and report progress as COUNTS ONLY (how many fail_to_pass now pass, how many pass_to_pass still pass, whether resolved) — no test names, bodies, or expected outputs. A heavy, rate-limited operation.
 
-Permission mode: `read_only` · does not declare whether it changes state
+Permission mode: `workspace_write` · changes state
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -562,7 +560,7 @@ Permission mode: `read_only` · does not declare whether it changes state
 
 Run the hidden test suite on your CURRENT patch and report progress as COUNTS ONLY (how many fail_to_pass now pass, how many pass_to_pass still pass, whether resolved) — no test names, bodies, or expected outputs. A heavy, rate-limited operation.
 
-Permission mode: `read_only` · does not declare whether it changes state
+Permission mode: `workspace_write` · changes state
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -606,19 +604,6 @@ Permission mode: `workspace_write` · reports only · call budget 120s
 | `lang` | `Optional[str]` | no | `'en'` |
 | `country` | `Optional[str]` | no | `'us'` |
 | `filter_year` | `Optional[int]` | no | `None` |
-
-## `website_release_gate_tool`
-
-Atomically advance one website release through the audited build, freeze, publish, collection, and synthesis gates. This enforces release integrity without prescribing what the website iteration must contain.
-
-Permission mode: `workspace_write` · changes state
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `release_id` | `str` | yes | — |
-| `expected_state` | `str` | yes | — |
-| `next_state` | `str` | yes | — |
-| `evidence` | `Dict[str, Any]` | yes | — |
 
 ## `write_file_tool`
 

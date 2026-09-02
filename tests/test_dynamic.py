@@ -604,7 +604,7 @@ def test_a_readable_component_still_returns_its_whole_module():
     imports does not run.
     """
     from agentevolver.dynamic import dynamic_manager
-    from agentevolver.tool.default.read_file import ReadFileTool
+    from agentevolver.tool.default.workspace.read_file import ReadFileTool
 
     source = dynamic_manager.get_full_module_source(ReadFileTool)
 

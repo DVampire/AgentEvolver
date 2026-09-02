@@ -4,9 +4,8 @@ website_builder_agent = dict(
     name="website_builder_agent",
     type="Agent",
     description=(
-        "An evolvable website product engineer that builds and deploys releases, "
-        "coordinates persistent user co-designers, turns preferences into personalized or "
-        "shared changes, and adopts or rolls back new capabilities."
+        "An evolvable website product engineer that designs, implements, tests, deploys, "
+        "and improves web products from task-defined requirements."
     ),
     model_name="llm_hub/claude-opus-5",
     prompt_name="website_builder_agent",

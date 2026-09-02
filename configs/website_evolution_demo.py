@@ -1,7 +1,7 @@
 """Configuration for the participatory website self-evolution demonstration.
 
 The Website Builder inherits MetaAgent's orchestration mechanics with a purpose-built prompt.
-One WebsiteUserAgent template is deep-copied into three independent runtime subscriptions,
+One WebsiteUserAgent template is deep-copied into three independent continuable participants,
 browser sessions, memories, and dispatcher-scoped scratch workspaces.
 """
 
@@ -15,20 +15,18 @@ with read_base():
     from .agents.website_user_agents import website_user_agent
     from .base import max_tokens, memory_config, window_size  # noqa: F401
     from .memory.file_system_memory import file_system_memory
+    from .tools.apply_patch import apply_patch_tool
     from .tools.bash import bash_tool
     from .tools.deploy import deploy_tool
-    from .tools.escalate import escalate_tool
     from .tools.evolution import evolution_tool
-    from .tools.publish_event import publish_event_tool
     from .tools.send_message import send_message_tool
-    from .tools.website_release_gate import website_release_gate_tool
 
 
 tag = "website_evolution_demo"
 log_path = "agent.log"
-# V0 is the blind baseline; these are five material optimization transitions
-# ending at V5.  The launcher repeats this value in the runtime manifest and
-# validation rejects drift between the config and task contract.
+# Build one blind initial product, then perform this many material optimization
+# transitions. The launcher repeats the count in the task manifest and validation
+# rejects drift between configuration and task contract.
 optimization_cycles = 5
 # Keep this demonstration's generated/optimized components isolated from the global
 # extension library.  Besides making rollback auditable, this avoids depending on a
@@ -56,17 +54,13 @@ agent_names = [
     "website_user_agent",
 ]
 
-# Bash owns local file, search, Git, build, and test operations. Keep only tools that add a
-# distinct runtime protocol; parallel read/write/search wrappers would duplicate the same
-# authority and inflate every model request. Browser co-designers further narrow this list.
+# Bash owns inspection, search, Git, build, and tests; apply_patch is the only authored
+# source mutation primitive. The remaining tools each add one indispensable runtime verb.
 tool_names = [
     "bash_tool",
+    "apply_patch_tool",
     "deploy_tool",
-    "escalate_tool",
-    "reply_tool",
     "done_tool",
-    "publish_event_tool",
-    "website_release_gate_tool",
     "send_message_tool",
     "evolution_tool",
 ]
@@ -107,11 +101,9 @@ browser_environment = dict(
 
 # ---------------- Tool configuration ----------------
 bash_tool.update(enable_evolving=False)
+apply_patch_tool.update(enable_evolving=False)
 deploy_tool.update(enable_evolving=False)
 evolution_tool.update(enable_evolving=False)
-escalate_tool.update(enable_evolving=False)
-publish_event_tool.update(enable_evolving=False)
-website_release_gate_tool.update(enable_evolving=False, max_release=optimization_cycles)
 send_message_tool.update(enable_evolving=False)
 
 
@@ -166,7 +158,8 @@ _USER = {
     **_AGENT_CORE,
     "prompt_name": "website_user_agent",
     "env_name": "browser_environment",
-    # Subscribers live across V0→V5. They need the same durable checkpoint + exact-tail
+    # Continuable participants live across the initial evaluation and later iterations.
+    # They need the same durable checkpoint + exact-tail
     # protocol as every other long-running Agent, especially after browser state resets.
     "use_memory": True,
     "max_step": 30,
@@ -174,7 +167,6 @@ _USER = {
     "max_token": 1000000,
     "max_actions": 3,
     "max_screenshots": 2,
-    "subscription_topics": ["website.releases"],
 }
 website_user_agent.update(**_USER)
 

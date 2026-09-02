@@ -25,7 +25,7 @@ import pytest
 from agentevolver.attachment import AttachmentError, attachment_manager
 from agentevolver.message.types import ContentPartImage
 from agentevolver.model.types import ModelConfig
-from agentevolver.tool.default.read_image import ReadImageTool
+from agentevolver.tool.default.workspace.read_image import ReadImageTool
 
 
 # --------------------------------------------------------------------------- #

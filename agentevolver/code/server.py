@@ -4,7 +4,7 @@ This is the substrate and nothing else: it is handed a program and a dict of asy
 functions, it runs the program in a child process, and every time the program calls one
 of those names it calls the function here and sends the answer back. It does not know
 what a tool is, what a permission is, or who is asking — which is what keeps the
-guarded-dispatch decision in one place (``agentevolver/tool/default/code_mode/``) instead
+guarded-dispatch decision in one place (``agentevolver/tool/default/execution/``) instead
 of half here.
 
 **The isolation this buys, precisely.** A fresh process per run, so no state carries

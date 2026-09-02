@@ -28,7 +28,7 @@ from agentevolver.plan.server import action_is_allowed
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.runtime import runtime_manager
 from agentevolver.runtime.types import TaskMessage
-from agentevolver.tool.default.report import ReportTool
+from agentevolver.tool.default.coordination.report import ReportTool
 
 SESSION = "parent-session"
 
@@ -555,7 +555,7 @@ def test_handing_a_child_new_work_is_gated_like_the_dispatch_it_is():
     plan approval do anything at all through a child it started earlier — through the
     one gate whose whole job is to stop that.
     """
-    from agentevolver.tool.default.send_message import SendMessageTool
+    from agentevolver.tool.default.coordination.send_message import SendMessageTool
 
     tool = SendMessageTool()
     declaration = {"mutates": tool.mutates, "permission_mode": tool.permission_mode}
@@ -564,7 +564,7 @@ def test_handing_a_child_new_work_is_gated_like_the_dispatch_it_is():
 
 def test_publishing_subscriber_work_is_gated_like_dispatch():
     """Fan-out starts Agent turns, so plan mode must treat publish as an effect."""
-    from agentevolver.tool.default.publish_event import PublishEventTool
+    from agentevolver.tool.default.coordination.publish_event import PublishEventTool
 
     tool = PublishEventTool()
     declaration = {"mutates": tool.mutates, "permission_mode": tool.permission_mode}
@@ -574,7 +574,7 @@ def test_publishing_subscriber_work_is_gated_like_dispatch():
 def test_a_child_may_still_say_what_it_found_while_a_plan_is_being_approved():
     """A report changes nothing a person or a later run could observe, and findings are
     exactly what a planning run wants out of a child it already started."""
-    from agentevolver.tool.default.report import ReportTool
+    from agentevolver.tool.default.coordination.report import ReportTool
 
     tool = ReportTool()
     declaration = {"mutates": tool.mutates, "permission_mode": tool.permission_mode}

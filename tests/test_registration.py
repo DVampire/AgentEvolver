@@ -38,7 +38,7 @@ def _registered_tools() -> dict:
     would empty this mapping and turn every check below green by accident.
     """
     found = {}
-    # rglob, not glob. Five tools live in `default/search/` and `tool/other/`, and a
+    # rglob, not glob. Provider tools live below `default/web/search/`, and a
     # top-level scan never saw them — so the export check that this file is named for
     # was silently not covering them at all.
     for path in sorted(TOOL_ROOT.rglob("*.py")):
@@ -71,7 +71,7 @@ def test_the_tools_were_actually_found():
 def test_every_registered_tool_is_exported(tool_name):
     """An unexported class is never imported, so the registry never sees it."""
     module, cls = REGISTERED[tool_name]
-    # From its own package, not from one fixed file. `default/search/` and `tool/other/`
+    # From its own package, not from one fixed file. Nested category packages
     # carry their own `__init__.py`, and demanding the top-level one would report five
     # correctly-exported tools as broken — the shape of an over-narrow check, which is
     # how the previous version came to skip those directories entirely instead.

@@ -1,4 +1,4 @@
-"""Dedicated product engineer for participatory website evolution."""
+"""Dedicated website product engineer with MetaAgent orchestration mechanics."""
 
 import json
 from typing import Any, Dict, List, Optional
@@ -12,20 +12,17 @@ _MANIFEST_MARKER = "## runtime-input-manifest"
 
 
 def bind_runtime_input_manifest(task: str, files: Optional[List[str]]) -> str:
-    """Replace launcher source paths with the session-staged attachment paths.
+    """Bind an optional, role-labelled attachment manifest to staged paths.
 
-    Attachment staging happens inside AgentManager, after the launcher built the task.
-    Binding here keeps the role-only manifest truthful without reading persona content.
+    Ordinary website tasks need no manifest. Launchers that require privacy-preserving
+    role routing may provide an ``attachments`` list of any length; attachment staging
+    happens after the launcher builds the task, so paths are rebound here without
+    reading their contents.
     """
     attachments = [str(path) for path in (files or [])]
-    if len(attachments) != 4:
-        raise ValueError(
-            "website evolution requires four staged attachments in role order: "
-            "site brief, persona_01, persona_02, persona_03"
-        )
     before, marker, after = str(task).partition(_MANIFEST_MARKER)
     if not marker:
-        raise ValueError("website evolution task is missing runtime-input-manifest")
+        return str(task)
     start = after.find("{")
     if start < 0:
         raise ValueError("runtime-input-manifest has no JSON object")
@@ -35,16 +32,27 @@ def bind_runtime_input_manifest(task: str, files: Optional[List[str]]) -> str:
         raise ValueError(f"runtime-input-manifest is invalid JSON: {error}") from error
     if not isinstance(manifest, dict):
         raise ValueError("runtime-input-manifest must be a JSON object")
-
-    manifest.update(
-        {
-            "site_brief": attachments[0],
-            "persona_01": attachments[1],
-            "persona_02": attachments[2],
-            "persona_03": attachments[3],
-            "paths_staged": True,
-        }
-    )
+    declared = manifest.get("attachments")
+    if not isinstance(declared, list):
+        raise ValueError("runtime-input-manifest must contain an attachments list")
+    if len(declared) != len(attachments):
+        raise ValueError(
+            "runtime-input-manifest attachment count does not match staged files: "
+            f"declared={len(declared)}, staged={len(attachments)}"
+        )
+    rebound = []
+    for index, (entry, staged_path) in enumerate(zip(declared, attachments)):
+        if not isinstance(entry, dict) or not entry.get("id") or not entry.get("role"):
+            raise ValueError(
+                f"runtime-input-manifest attachment {index} requires id and role"
+            )
+        bound = dict(entry)
+        bound.pop("source_path", None)
+        bound["path"] = staged_path
+        bound["staged"] = True
+        rebound.append(bound)
+    manifest["attachments"] = rebound
+    manifest["paths_staged"] = True
     explanation = after[:start].strip()
     return (
         f"{before.rstrip()}\n\n{_MANIFEST_MARKER}\n"
@@ -60,22 +68,21 @@ class WebsiteBuilderAgent(MetaAgent):
     This is a distinct registered Agent rather than a renamed MetaAgent configuration:
     it has its own runtime identity, version history, prompt default, permissions, memory,
     traces, and evolution target. Product engineering stays in this agent; delegation is
-    reserved for persistent user co-design and framework evolution.
+    reserved for bounded specialist work, user research, and framework evolution.
     """
 
     name: str = Field(default="website_builder_agent")
     description: str = Field(
         default=(
-            "An evolvable website product engineer that builds and deploys releases, "
-            "coordinates persistent user co-designers, delivers personal and shared "
-            "contributions, and evolves missing capabilities with rollback gates."
+            "An evolvable website product engineer that designs, implements, tests, "
+            "deploys, and improves web products from task-defined requirements."
         )
     )
     metadata: Dict[str, Any] = Field(
         default_factory=lambda: {
             "role": "website_builder",
             "orchestrator": True,
-            "participatory_design": True,
+            "product_engineering": True,
         }
     )
     enable_evolving: bool = Field(default=True)
@@ -105,7 +112,7 @@ class WebsiteBuilderAgent(MetaAgent):
             ctx.extra["environment_allowlist"] = ["job"]
 
     async def on_start(self, task, files, ctx, ref, **kwargs):
-        """Bind staged role paths, then use MetaAgent's ordinary event-driven loop."""
+        """Bind optional staged roles, then use MetaAgent's ordinary event loop."""
         self._bind_runtime_environment(ctx)
         task = bind_runtime_input_manifest(task, files)
         return await super().on_start(task, files, ctx, ref, **kwargs)

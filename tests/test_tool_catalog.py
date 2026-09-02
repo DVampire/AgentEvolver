@@ -8,7 +8,7 @@ run looks like a model that chose not to use the tool rather than one that could
 it. `tests/test_registration.py` catches the missing *export* by reading
 `tool/default/__init__.py`; this file catches the same defect from the other end, by
 importing the package and asking the registry what it actually got — which also reaches
-the tools in `tool/default/search/` and `tool/other/` that a top-level glob never sees.
+the tools in nested packages such as `tool/default/web/search/` that a top-level glob never sees.
 
 The parameter check reads the call schema the request carries: `__call__`'s signature is
 what binds an argument, its `Args:` docstring is what describes one, and the schema is
@@ -65,7 +65,7 @@ def test_the_registry_was_actually_populated():
 def test_the_source_scan_finds_tools_outside_the_top_level_package():
     """The subdirectories are the half a `tool/default/*.py` glob misses.
 
-    Four search tools live in `tool/default/search/` and one in `tool/other/`. A guard
+    Search providers live in `tool/default/web/search/`. A guard
     that only looked at the top level would report full coverage while never having
     examined them — which is the state `tests/test_registration.py` is in.
     """

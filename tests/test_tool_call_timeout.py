@@ -112,7 +112,7 @@ def test_bash_leaves_room_for_its_own_diagnostic():
     If the pipeline cut the call off first, the agent would get "tool timed out" and
     lose what bash_tool reports: the command, the elapsed limit, and partial output.
     """
-    from agentevolver.tool.default.bash import BashTool
+    from agentevolver.tool.default.workspace.bash import BashTool
 
     tool = BashTool()
     assert tool.call_timeout_seconds > tool.timeout

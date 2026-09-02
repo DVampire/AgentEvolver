@@ -27,9 +27,10 @@ from types import SimpleNamespace
 import pytest
 
 from agentevolver.config import config
+from agentevolver.permission import PermissionMode, permission_manager
 from agentevolver.tool.context import ToolContextManager
-from agentevolver.tool.default.bash import BashTool
-from agentevolver.tool.default.done import DoneTool
+from agentevolver.tool.default.workspace.bash import BashTool
+from agentevolver.tool.default.lifecycle.done import DoneTool
 from agentevolver.utils.terminal import render_terminal
 
 
@@ -75,6 +76,12 @@ async def test_a_tool_without_runtime_kwargs_is_rejected_when_registered(tmp_pat
 
 def _manager_for(tmp_path, instance):
     manager = ToolContextManager(base_dir=str(tmp_path))
+    # The fixture bypasses ToolContextManager.register/build, so reproduce the
+    # permission registration those production paths always perform. Relying on a
+    # prior test's global registration made isolated runs fail closed.
+    permission_manager.register(
+        instance.name, mode=PermissionMode(instance.permission_mode),
+    )
 
     async def _fake_get_info(name):
         return SimpleNamespace(version="1.0.0", instance=instance)
@@ -225,8 +232,8 @@ def test_a_command_that_cannot_run_at_all_is_a_tool_failure(tmp_path):
 
 def test_search_tools_report_no_matches_as_an_answer(tmp_path):
     """grep exiting 1 for "found nothing" is a result, not an error."""
-    from agentevolver.tool.default.glob_search import GlobSearchTool
-    from agentevolver.tool.default.grep_search import GrepSearchTool
+    from agentevolver.tool.default.workspace.glob_search import GlobSearchTool
+    from agentevolver.tool.default.workspace.grep_search import GrepSearchTool
 
     (tmp_path / "a.c").write_text("int rows = 0;\n")
     config.workspace_root = str(tmp_path)
@@ -253,8 +260,8 @@ def test_search_tools_report_no_matches_as_an_answer(tmp_path):
 def test_search_tools_find_what_is_there(tmp_path):
     """The control for the pair above: a search that reported "no matches" for everything
     would satisfy them and leave the agent unable to find a file it just wrote."""
-    from agentevolver.tool.default.glob_search import GlobSearchTool
-    from agentevolver.tool.default.grep_search import GrepSearchTool
+    from agentevolver.tool.default.workspace.glob_search import GlobSearchTool
+    from agentevolver.tool.default.workspace.grep_search import GrepSearchTool
 
     (tmp_path / "a.c").write_text("int rows = 0;\n")
     config.workspace_root = str(tmp_path)
@@ -278,7 +285,7 @@ def test_search_tools_find_what_is_there(tmp_path):
 def test_list_dir_prunes_noise_directories_by_default(tmp_path):
     """Listing a workspace with a git repo in it once returned 41 lines of .git
     plumbing wrapped around 9 lines of actual content."""
-    from agentevolver.tool.default.list_dir import ListDirTool
+    from agentevolver.tool.default.workspace.list_dir import ListDirTool
 
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "COMMIT_EDITMSG").write_text("x")
@@ -294,7 +301,7 @@ def test_list_dir_prunes_noise_directories_by_default(tmp_path):
 
 def test_list_dir_honours_an_explicit_ignore(tmp_path):
     """A caller's `ignore` argument must not be silently dropped."""
-    from agentevolver.tool.default.list_dir import ListDirTool
+    from agentevolver.tool.default.workspace.list_dir import ListDirTool
 
     (tmp_path / "target").mkdir()
     (tmp_path / "target" / "build.o").write_text("x")
@@ -315,7 +322,7 @@ def test_code_interpreter_defaults_to_the_kernel():
     """State across calls is the point of an interpreter — a loaded dataframe survives to
     the next question. One-shot is the exception a caller asks for, so the default has to
     stay the kernel or every multi-step analysis starts from nothing."""
-    from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
+    from agentevolver.tool.default.workspace.code_interpreter import CodeInterpreterTool
 
     assert CodeInterpreterTool().use_kernel is True
 
@@ -328,7 +335,7 @@ def test_one_shot_mode_drops_the_persistence_promise():
     was split from one blob into `guidance` + `examples`. A test still reading the blob
     passes vacuously — it did, against an empty string.
     """
-    from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
+    from agentevolver.tool.default.workspace.code_interpreter import CodeInterpreterTool
 
     kernel = CodeInterpreterTool()
     one_shot = CodeInterpreterTool(use_kernel=False)
@@ -340,7 +347,7 @@ def test_one_shot_mode_drops_the_persistence_promise():
 def test_one_shot_sees_the_filesystem_as_it_is_now(tmp_path):
     """The reason one-shot exists: a kernel held open from before a file appeared
     answered FileNotFoundError to the very script that would have used it."""
-    from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
+    from agentevolver.tool.default.workspace.code_interpreter import CodeInterpreterTool
 
     (tmp_path / "target.c").write_text("int main(){}\n")
     config.workspace_root = str(tmp_path)
@@ -357,7 +364,7 @@ def test_one_shot_sees_the_filesystem_as_it_is_now(tmp_path):
 def test_one_shot_nonzero_exit_is_an_observation(tmp_path):
     """A script that ran and failed has told the agent something; calling that a tool
     malfunction hides the output it needs."""
-    from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
+    from agentevolver.tool.default.workspace.code_interpreter import CodeInterpreterTool
 
     config.workspace_root = str(tmp_path)
     resp = asyncio.run(
@@ -375,7 +382,7 @@ def test_one_shot_rejects_a_language_it_cannot_run(tmp_path):
     """Refused by name rather than attempted and reported as a syntax error, which is
     what handing the code to the wrong interpreter would produce — an error about the
     code, for a problem that has nothing to do with the code."""
-    from agentevolver.tool.default.code_interpreter import CodeInterpreterTool
+    from agentevolver.tool.default.workspace.code_interpreter import CodeInterpreterTool
 
     config.workspace_root = str(tmp_path)
     resp = asyncio.run(
@@ -555,7 +562,7 @@ def test_grep_search_skips_binaries(tmp_path):
     mojibake. Searching a workspace holding a reference executable for "Usage" returned
     three matches, one of them a screenful of bytes — a plausible-looking answer the
     agent then has to spend a turn discarding."""
-    from agentevolver.tool.default.grep_search import GrepSearchTool
+    from agentevolver.tool.default.workspace.grep_search import GrepSearchTool
 
     (tmp_path / "notes.txt").write_text("Usage: prog [-a]\n")
     (tmp_path / "executable").write_bytes(b"\x7fELF\x00\x00Usage\x00\xff\xfe binary noise")

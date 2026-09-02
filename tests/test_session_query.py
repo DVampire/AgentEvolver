@@ -19,7 +19,7 @@ import pytest
 from agentevolver.paths import P, path_manager
 from agentevolver.sandbox.project import ProjectSandbox
 from agentevolver.session.query import MAX_HITS, session_query
-from agentevolver.tool.default.session_query import (
+from agentevolver.tool.default.observability.session_query import (
     INLINE_EVENT_CHARS,
     SessionEventReadTool,
     SessionEventSearchTool,

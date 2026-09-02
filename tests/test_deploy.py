@@ -33,7 +33,7 @@ from agentevolver.deploy.types import (
 )
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.tool.context import ToolContextManager
-from agentevolver.tool.default.deploy import DeployTool, deployment_manager
+from agentevolver.tool.default.deployment.deploy import DeployTool, deployment_manager
 from agentevolver.tool.types import ToolContext
 
 

@@ -31,7 +31,7 @@ from agentevolver.plan.server import (
     PlanManagerServer,
     action_is_allowed,
 )
-from agentevolver.tool.default.exit_plan_mode import (
+from agentevolver.tool.default.lifecycle.exit_plan_mode import (
     APPROVE_LABEL,
     DECLINE_LABEL,
     ExitPlanModeTool,

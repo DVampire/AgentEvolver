@@ -55,7 +55,7 @@ from agentevolver.utils import (
 # the target under test) stay allowed so evaluators still work. Op-level enforcement
 # (allow reads, deny writes per call) is future work.
 _READ_ONLY_DENIED_TOOLS = {
-    "write_file_tool", "edit_file_tool", "git_tool", "deploy_tool", "evolution_tool",
+    "write_file_tool", "edit_file_tool", "apply_patch_tool", "git_tool", "deploy_tool", "evolution_tool",
     "send_message_tool", "publish_event_tool",
 }
 
@@ -1156,7 +1156,7 @@ class Agent(BaseModel):
         use for a calling convention, and the block would just be prompt it pays for every
         step.
         """
-        from agentevolver.tool.default.code_mode.sdk import code_mode_section, sdk_for
+        from agentevolver.tool.default.execution.sdk import code_mode_section, sdk_for
 
         names = list(allowlist) if allowlist is not None else await tool_manager.list()
         if BATCH_CALL_TOOL not in names:
@@ -2217,7 +2217,7 @@ class Agent(BaseModel):
         shown buys nothing.
         """
         from agentevolver.model.types import ToolCall
-        from agentevolver.tool.default.code_mode.sdk import callable_names
+        from agentevolver.tool.default.execution.sdk import callable_names
 
         names = tuple(callable_names(
             [name for name, route in routing.items() if (route or ("tool",))[0] == "tool"]))

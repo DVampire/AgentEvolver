@@ -142,7 +142,7 @@ def test_elapsed_time_separates_working_from_hung():
 @pytest.mark.asyncio
 async def test_a_backgrounded_command_returns_at_once_and_is_collected_later(workspace):
     from agentevolver.environment.default.job import JobEnvironment
-    from agentevolver.tool.default.bash import BashTool
+    from agentevolver.tool.default.workspace.bash import BashTool
 
     started = await BashTool()(
         command="for i in 1 2 3; do echo line-$i; sleep 0.2; done",
@@ -171,7 +171,7 @@ async def test_a_running_job_says_so_rather_than_looking_finished(workspace):
     An agent reading it as finished stops collecting, and never sees the rest.
     """
     from agentevolver.environment.default.job import JobEnvironment
-    from agentevolver.tool.default.bash import BashTool
+    from agentevolver.tool.default.workspace.bash import BashTool
 
     started = await BashTool()(command="sleep 5", run_in_background=True, ctx=_Ctx())
     result = await JobEnvironment().output(job_id=started.data["job_id"], ctx=_Ctx())
@@ -183,7 +183,7 @@ async def test_a_running_job_says_so_rather_than_looking_finished(workspace):
 @pytest.mark.asyncio
 async def test_killing_keeps_what_the_job_already_said(workspace):
     from agentevolver.environment.default.job import JobEnvironment
-    from agentevolver.tool.default.bash import BashTool
+    from agentevolver.tool.default.workspace.bash import BashTool
 
     started = await BashTool()(
         command="echo before-kill; sleep 30", run_in_background=True, ctx=_Ctx()
@@ -211,7 +211,7 @@ async def test_killing_a_finished_job_is_not_an_error(workspace):
 @pytest.mark.asyncio
 async def test_a_terminal_cannot_be_backgrounded(workspace):
     """Nobody would be there to type at it; the program would draw and wait forever."""
-    from agentevolver.tool.default.bash import BashTool
+    from agentevolver.tool.default.workspace.bash import BashTool
 
     result = await BashTool()(command="top", tty=True, run_in_background=True, ctx=_Ctx())
     assert not result.success

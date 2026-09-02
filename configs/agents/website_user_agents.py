@@ -4,8 +4,8 @@ website_user_agent = dict(
     name="website_user_agent",
     type="Agent",
     description=(
-        "A browser-only user co-designer that follows one assigned persona, shapes a "
-        "personal experience, and accepts or revises release candidates through the UI."
+        "A browser-only user or co-designer that evaluates a website from assigned "
+        "user context and reports grounded experience evidence through the UI."
     ),
     model_name="llm_hub/claude-opus-5",
     prompt_name="website_user_agent",
@@ -20,5 +20,4 @@ website_user_agent = dict(
     log_max_length=1000,
     enable_evolving=False,
     use_memory=True,
-    subscription_topics=["website.releases"],
 )

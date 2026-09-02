@@ -12,7 +12,7 @@ import pytest
 from agentevolver.paths import P, path_manager
 from agentevolver.permission import Operation, PermissionRequest
 from agentevolver.tool.execution import ToolExecution
-from agentevolver.tool.workspace_checkpoint import (
+from agentevolver.tool.checkpoint import (
     capture_file_checkpoint,
     restore_file_checkpoint,
 )

@@ -1,9 +1,10 @@
 """Launch the participatory website self-evolution demonstration.
 
 This is intentionally a thin adapter over the generic orchestrator launcher: it validates one
-scenario brief and exactly three persona briefs, appends a role-only input manifest to the
-scenario task, then launches the dedicated ``website_builder_agent`` through the standard Agent
-runtime lifecycle. Generic evolution policy belongs to the Builder prompt, not a duplicate task.
+scenario brief and exactly three persona briefs, appends the demo's attachment routing and
+iteration policy to the task, then launches the general ``website_builder_agent`` through the
+standard Agent runtime lifecycle. Scenario-specific counts and evaluation cadence stay here rather
+than in the reusable Builder prompt.
 
 Examples
 --------
@@ -141,14 +142,40 @@ def build_task_text(
     from agentevolver.task.loader import load_task_document
 
     document = load_task_document(str(site_brief))
+    models = list(user_models or DEFAULT_USER_MODELS)
     manifest = {
-        "site_brief": str(site_brief),
-        "persona_01": str(personas[0]),
-        "persona_02": str(personas[1]),
-        "persona_03": str(personas[2]),
+        "attachments": [
+            {
+                "id": "site_brief",
+                "role": "requirements",
+                "source_path": str(site_brief),
+            },
+            *[
+                {
+                    "id": f"persona_{index:02d}",
+                    "role": "user_context",
+                    "source_path": str(path),
+                }
+                for index, path in enumerate(personas, start=1)
+            ],
+        ],
         "optimization_cycles": OPTIMIZATION_CYCLES,
-        "required_versions": [f"V{index}" for index in range(OPTIMIZATION_CYCLES + 1)],
-        "user_models": list(user_models or DEFAULT_USER_MODELS),
+        "participants": [
+            {
+                "id": f"participant_{index:02d}",
+                "user_context_attachment": f"persona_{index:02d}",
+                "model": model,
+            }
+            for index, model in enumerate(models, start=1)
+        ],
+        "run_policy": {
+            "blind_initial_build": True,
+            "evaluate_initial_build": True,
+            "evaluate_after_each_optimization": True,
+            "continue_participant_identity": True,
+            "fresh_browser_each_evaluation": True,
+            "evolve_only_proven_reusable_capability_gaps": True,
+        },
         "privacy_rule": (
             "The Website Builder routes each exact persona path but never reads its contents; "
             "each file is read only by its assigned Website User Agent."
@@ -241,7 +268,7 @@ def validate_local_artifacts(
     if int(config.get("optimization_cycles", 0)) != OPTIMIZATION_CYCLES:
         raise ValueError(
             "website evolution config must require exactly five optimization cycles "
-            f"after V0, got {config.get('optimization_cycles')!r}"
+            f"after the initial build, got {config.get('optimization_cycles')!r}"
         )
 
     # All long-running roles use the same bounded-history protocol proven by the
@@ -292,27 +319,21 @@ def validate_local_artifacts(
         )
     expected_tools = {
         "bash_tool",
+        "apply_patch_tool",
         "deploy_tool",
-        "escalate_tool",
-        "reply_tool",
         "done_tool",
-        "publish_event_tool",
-        "website_release_gate_tool",
         "send_message_tool",
         "evolution_tool",
     }
     actual_tools = set(config.tool_names)
     if actual_tools != expected_tools:
         raise ValueError(
-            "website evolution uses one shell plus distinct protocol tools: "
+            "website evolution uses the minimal workspace/deploy/continuation tool set: "
             f"expected={sorted(expected_tools)}, actual={sorted(actual_tools)}"
         )
     agent_class = registry_agents["website_user_agent"]
     key = inflection.underscore(agent_class.__name__)
     instance_config = dict(getattr(config, key))
-    topics = list(instance_config.get("subscription_topics") or [])
-    if topics != ["website.releases"]:
-        raise ValueError(f"{key} must subscribe to website.releases, got {topics}")
     instance = agent_class(**instance_config)
     if (
         instance.name != "website_user_agent"
@@ -325,7 +346,7 @@ def validate_local_artifacts(
             f"environment={instance.env_name!r}"
         )
     expected_user_allowlists = {
-        "tool_allowlist": ["done_tool", "escalate_tool"],
+        "tool_allowlist": ["done_tool"],
         "skill_allowlist": [],
         "connector_allowlist": [],
         "plugin_allowlist": [],

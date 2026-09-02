@@ -1057,7 +1057,7 @@ class ToolContextManager(BaseModel):
         request = tool_instance.permission_request(execution.arguments, ctx)
         if request is None or request.op.value != "write":
             return {}
-        from agentevolver.tool.workspace_checkpoint import capture_file_checkpoint
+        from agentevolver.tool.checkpoint import capture_file_checkpoint
         try:
             return await asyncio.to_thread(
                 capture_file_checkpoint, execution, request,
