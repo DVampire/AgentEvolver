@@ -133,6 +133,18 @@ class Ledger:
             logger.warning(f"| 🧹 Reaped {len(reaped)} stale sandbox container(s) from a previous run: {', '.join(reaped)}")
         return reaped
 
+    async def remove(self, sandbox_id: str) -> bool:
+        """Remove one recorded OpenSandbox container by exact id."""
+        if not sandbox_id:
+            return False
+        name = sandbox_id if sandbox_id.startswith("sandbox-") else f"sandbox-{sandbox_id}"
+        removed = await self._remove_container(name)
+        if removed:
+            raw_id = sandbox_id.removeprefix("sandbox-")
+            self.forget(raw_id)
+            self.forget(name)
+        return removed
+
 
 # One ledger per tree root (same assumption as the port/deploy registries).
 ledger = Ledger()

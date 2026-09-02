@@ -168,6 +168,19 @@ class Sandbox:
         """
         return None
 
+    @property
+    def resource_id(self) -> Optional[str]:
+        """Stable backend identity persisted by infrastructure owners."""
+        return None
+
+    @classmethod
+    async def destroy_resource(cls, resource_id: str) -> bool:
+        """Destroy a resource after its in-process handle was lost.
+
+        Backends return False when the identity cannot be verified safely.
+        """
+        return False
+
     # ------------------------------------------------------------- lifecycle
     async def start(self) -> None:
         """Create/connect the underlying container. Idempotent."""

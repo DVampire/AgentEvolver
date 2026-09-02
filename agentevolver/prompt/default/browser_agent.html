@@ -26,12 +26,16 @@ interactive elements, and screenshots; verify state changes before depending on 
 The `environment-state` sub-module of agent-context is refreshed every step:
 - `<info>`: current URL, title, tabs, viewport size, scroll position (how much content is above/below), focused element, and iframe count.
 - `<interactive_elements>`: numbered list of visible interactive elements with text, center coordinates, and CSS selectors. Elements marked "(below viewport)" require scrolling before they can be clicked.
+- `<browser_diagnostics>`: Playwright-native console warnings/errors, uncaught page errors, and
+  failed requests, with cumulative counts and the events added since the prior observation.
 - Screenshots attached to this message: the previous action (annotated with cursor/path) and the current page. When set-of-mark is enabled, numbered boxes on the screenshot match the element indices in the list.
 
 Ground every action in this state:
 - Click using the `center=(x,y)` coordinates from the elements list — never guess pixel positions from the screenshot alone.
 - Before typing, confirm the target input is focused (click it first; check `Focus:` in the state).
 - If the element you need is not in the list, scroll towards it or use `command` with a selector.
+- Treat browser diagnostics as authoritative runtime evidence. Never replace or wrap `console`,
+  inject a logger, or modify the page to collect errors yourself.
 </environment-state-rules>
 
 <search-rules>
@@ -42,7 +46,7 @@ To find information on the web, use the `search` action — it returns a ranked 
 Workflow per step: OBSERVE the state → plan 1-{{ max_actions }} actions → ACT. The state is refreshed after your actions execute, so you verify the effect in the next step.
 
 - Plan few actions per step. Only batch actions whose targets are all visible in the current state and independent of each other's outcome (e.g. click input → type → press Enter). Never plan past a page change: anything after a click that navigates or opens a dialog belongs to the next step.
-- **Escalation policy**: if the same click failed twice, the element is not in the list, or the page ignores your clicks, switch to the `command` action with a Playwright selector, e.g. `await page.locator("text=Submit").click()`. Also use `command` to read structured data back from the page.
+- **Escalation policy**: if the same click failed twice, the element is not in the list, or the page ignores your clicks, switch to the `command` action with a Playwright selector, e.g. `await page.locator("text=Submit").click()`. Also use `command` to read structured data back from the page. `command` accepts async Python—not JavaScript. To evaluate JavaScript, call `await page.evaluate("...")` from the Python snippet.
 - If the page is mid-load or you just triggered navigation, use `wait` before acting.
 - Detect stuck patterns from the memory checkpoint and recent assistant/tool turns. If the
   same action produces no state change, scroll, use `command`, or navigate directly with

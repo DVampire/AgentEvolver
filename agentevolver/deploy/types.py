@@ -139,6 +139,14 @@ class SiteRecord(BaseModel):
     image: Optional[str] = None
     backend: str = "opensandbox"  # which sandbox backend served it: opensandbox | host
     reuse_key: str = ""
+    resource_id: Optional[str] = Field(
+        default=None,
+        description="Exact backend resource identity used for cleanup after process restart.",
+    )
+    source_revision: str = Field(
+        default="",
+        description="Stable SHA-256 identity of the source material used for this release.",
+    )
     created_at: str = ""
     updated_at: str = ""
     error: Optional[str] = None

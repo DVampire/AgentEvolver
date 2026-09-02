@@ -216,13 +216,24 @@ class SandboxManagerServer(BaseModel):
         relay = self._relays.get(id(handle))
         return relay.audit() if relay is not None else None
 
-    async def release(self, type: str = "opensandbox", *, reuse_key: Optional[str] = None) -> None:
-        """Destroy a cached handle for a reuse_key."""
+    async def release(
+        self,
+        type: str = "opensandbox",
+        *,
+        reuse_key: Optional[str] = None,
+        resource_id: Optional[str] = None,
+    ) -> bool:
+        """Destroy a cached handle or recover by a persisted backend identity."""
         cache_key = f"{type}:{reuse_key}" if reuse_key else None
         if cache_key and cache_key in self._handles:
             handle = self._handles.pop(cache_key)
             await handle.destroy()
             await self._stop_relay(handle)
+            return True
+        if resource_id:
+            cls = await self.get(type)
+            return await cls.destroy_resource(resource_id)
+        return False
 
     async def cleanup(self) -> None:
         """Destroy all cached handles and stop the opensandbox-server daemon."""

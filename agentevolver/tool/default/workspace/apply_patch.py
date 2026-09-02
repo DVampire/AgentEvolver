@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -17,14 +18,18 @@ from agentevolver.sandbox.project import check_session_path
 from agentevolver.session import isolated_workspace_root, resolve_workspace_root
 from agentevolver.tool.types import Tool
 
-
-_DESCRIPTION = "Apply one standard unified diff to one text file in the active workspace."
+_DESCRIPTION = (
+    "Apply one single-file unified diff in the active workspace. Every hunk header must "
+    "include ranges such as `@@ -1,2 +1,3 @@`; a bare `@@` is invalid."
+)
 
 _GUIDANCE = """
 Use this for authored source/configuration changes. Use `bash_tool` to inspect first and to
 run syntax checks, formatters, builds, and tests afterwards.
 
-- Send a standard unified diff with `diff --git`, `---`, `+++`, and `@@` lines.
+- Send either a Git-style unified diff (`diff --git`, `---`, `+++`) or a classic
+  unified diff (`---`, `+++`). Every hunk needs a complete range header such as
+  `@@ -1,2 +1,3 @@`; never send a bare `@@`.
 - Change exactly one file per call. For a large new file, add a small skeleton first and
   extend it with later patches instead of emitting the whole application at once.
 - Context lines must match the current file. A stale or malformed patch is rejected without
@@ -70,6 +75,9 @@ def patch_target(patch: str) -> str:
 
     paths: List[str] = []
     diff_headers = 0
+    old_headers = 0
+    new_headers = 0
+    hunk_headers = 0
     for line in patch.splitlines():
         if line.startswith("diff --git "):
             diff_headers += 1
@@ -81,6 +89,10 @@ def patch_target(patch: str) -> str:
                 raise PatchError("expected `diff --git a/path b/path`")
             paths.extend(filter(None, (_header_path(fields[2]), _header_path(fields[3]))))
         elif line.startswith("--- ") or line.startswith("+++ "):
+            if line.startswith("--- "):
+                old_headers += 1
+            else:
+                new_headers += 1
             # A timestamp may follow a classic unified-diff path after a tab. Git-style
             # patches emitted by models normally have none, but accepting it costs no
             # ambiguity because the path ends at the first tab.
@@ -88,9 +100,22 @@ def patch_target(patch: str) -> str:
             paths.extend(filter(None, (_header_path(raw),)))
         elif line.startswith(("rename from ", "rename to ")):
             raise PatchError("renames are not supported; add and delete in separate calls")
+        elif line.startswith("@@"):
+            if not re.match(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@(?: .*)?$", line):
+                raise PatchError(
+                    "invalid hunk header; use a complete range such as "
+                    "`@@ -1,2 +1,3 @@`, not bare `@@`"
+                )
+            hunk_headers += 1
 
-    if diff_headers != 1:
-        raise PatchError("patch must contain exactly one `diff --git` file section")
+    if diff_headers not in (0, 1):
+        raise PatchError(
+            "patch must contain zero or exactly one `diff --git` file section"
+        )
+    if old_headers != 1 or new_headers != 1:
+        raise PatchError("patch must contain exactly one `---`/`+++` file header pair")
+    if hunk_headers == 0:
+        raise PatchError("patch must contain at least one complete `@@ -... +... @@` hunk")
     unique = list(dict.fromkeys(paths))
     if len(unique) != 1:
         raise PatchError(f"patch must affect exactly one file, found: {unique or 'none'}")
@@ -142,6 +167,8 @@ class ApplyPatchTool(Tool):
         ctx = kwargs.get("ctx")
         try:
             workspace, target = _workspace_target(patch, ctx)
+            existed_before = target.is_file()
+            content_before = target.read_bytes() if existed_before else None
             request = PermissionRequest(
                 op=Operation.WRITE, target=str(target), content=patch,
             )
@@ -190,6 +217,17 @@ class ApplyPatchTool(Tool):
                     type=ResponseType.TOOL,
                     success=False,
                     message=f"Patch failed after validation: {detail}",
+                )
+            exists_after = target.is_file()
+            content_after = target.read_bytes() if exists_after else None
+            if (existed_before, content_before) == (exists_after, content_after):
+                return Response(
+                    type=ResponseType.TOOL,
+                    success=False,
+                    message=(
+                        "Patch command reported success but left the target unchanged; "
+                        "workspace unchanged. Check the unified-diff hunk ranges."
+                    ),
                 )
         except (PatchError, OSError, subprocess.SubprocessError) as error:
             return Response(

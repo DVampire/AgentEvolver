@@ -5,7 +5,6 @@ from typing import Any, Dict, List
 from pydantic import Field
 
 from agentevolver.agent.actor.browser_agent import BrowserAgent
-from agentevolver.environment.server import environment_manager
 from agentevolver.registry import AGENT
 
 
@@ -16,8 +15,8 @@ class WebsiteUserAgent(BrowserAgent):
     name: str = Field(default="website_user_agent")
     description: str = Field(
         default=(
-            "A browser-only website user that follows assigned user context, attempts "
-            "realistic goals, and returns grounded experience evidence or co-design input."
+            "A browser-only website user that follows assigned user context, pursues "
+            "realistic goals, and returns grounded co-design input."
         )
     )
     metadata: Dict[str, Any] = Field(
@@ -35,26 +34,4 @@ class WebsiteUserAgent(BrowserAgent):
             "workflow_allowlist": [],
         }
 
-    def _reset_turn_budget(self, ctx: Any) -> None:
-        """Per-task budgets reset; participant identity and memory do not."""
-        context_id = str(getattr(ctx, "id", "") or "")
-        if context_id:
-            for constraint in self.constraints:
-                constraint._cleanup(context_id)
-        # One deep-copied WebsiteUserAgent serves one serialized participant, so no
-        # unrelated run can own an entry in this instance-local map.
-        self._pending_step_tokens.clear()
-
-    async def on_start(self, task, files, ctx, ref, **kwargs):
-        """Run each continuation in a fresh browser while preserving Agent memory."""
-        environment = await environment_manager.get(self.env_name)
-        if environment is not None:
-            await environment.close_session(str(getattr(ctx, "id", "") or "default"))
-        self._observed_state = None
-        try:
-            return await super().on_start(
-                task=task, files=files, ctx=ctx, ref=ref, **kwargs,
-            )
-        finally:
-            self._reset_turn_budget(ctx)
 __all__ = ["WebsiteUserAgent"]

@@ -3,7 +3,7 @@
 This is intentionally a thin adapter over the generic orchestrator launcher: it validates one
 scenario brief and exactly three persona briefs, appends the demo's attachment routing and
 iteration policy to the task, then launches the general ``website_builder_agent`` through the
-standard Agent runtime lifecycle. Scenario-specific counts and evaluation cadence stay here rather
+standard Agent runtime lifecycle. Scenario-specific counts and acceptance/co-design cadence stay here rather
 than in the reusable Builder prompt.
 
 Examples
@@ -47,6 +47,7 @@ DEFAULT_USER_MODELS = [
     "llm_hub/gpt-5.6-sol",
     "llm_hub/deepseek-v4-flash",
 ]
+DEFAULT_ACCEPTANCE_MODEL = "llm_hub/gpt-5.6-sol"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -101,6 +102,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar=("USER_1", "USER_2", "USER_3"),
         default=None,
         help="Override the three Website User Agent model routes in persona order.",
+    )
+    parser.add_argument(
+        "--acceptance-model",
+        default=None,
+        help="Override the independent Browser Agent used for deployed release acceptance.",
     )
     parser.add_argument(
         "--cfg-options",
@@ -159,6 +165,7 @@ def build_task_text(
     site_brief: Path,
     personas: list[Path],
     user_models: Sequence[str] | None = None,
+    acceptance_model: str = DEFAULT_ACCEPTANCE_MODEL,
 ) -> str:
     from agentevolver.task.context import load_task_document
 
@@ -169,15 +176,13 @@ def build_task_text(
             {
                 "id": "site_brief",
                 "role": "requirements",
-                "source_path": str(site_brief),
             },
             *[
                 {
                     "id": f"persona_{index:02d}",
                     "role": "user_context",
-                    "source_path": str(path),
                 }
-                for index, path in enumerate(personas, start=1)
+                for index, _path in enumerate(personas, start=1)
             ],
         ],
         "optimization_cycles": OPTIMIZATION_CYCLES,
@@ -189,17 +194,27 @@ def build_task_text(
             }
             for index, model in enumerate(models, start=1)
         ],
+        "release_acceptance": {
+            "agent": "browser_agent",
+            "model": acceptance_model,
+            "after_initial_build": True,
+            "after_each_optimization": True,
+            "exact_deployed_url_only": True,
+            "independent_from_user_codesign": True,
+        },
+        "codesign_policy": {
+            "participants_are_evaluators": False,
+            "continue_participant_identity": True,
+            "fresh_browser_each_conversation_turn": True,
+        },
         "run_policy": {
             "blind_initial_build": True,
-            "evaluate_initial_build": True,
-            "evaluate_after_each_optimization": True,
-            "continue_participant_identity": True,
-            "fresh_browser_each_evaluation": True,
             "evolve_only_proven_reusable_capability_gaps": True,
         },
         "privacy_rule": (
-            "The Website Builder routes each exact persona path but never reads its contents; "
-            "each file is read only by its assigned Website User Agent."
+            "Runtime privately routes each persona attachment to exactly one Website User "
+            "Agent. The Website Builder receives participant and job identifiers, never a "
+            "persona path or its contents."
         ),
     }
     return (
@@ -238,6 +253,7 @@ def validate_local_artifacts(
 
     expected_agents = {
         "website_builder_agent",
+        "browser_agent",
         "generate_agent",
         "optimize_agent",
         "evaluate_agent",
@@ -276,6 +292,7 @@ def validate_local_artifacts(
         path.stem: parse_prompt_file(str(path))
         for path in (
             prompt_dir / "website_builder_agent.html",
+            prompt_dir / "browser_agent.html",
             prompt_dir / "website_user_agent.html",
         )
     }
@@ -319,6 +336,14 @@ def validate_local_artifacts(
                 f"expected={expected_context_policy}, actual={actual_policy}, "
                 f"use_memory={role_config.get('use_memory')!r}"
             )
+
+    browser_config = dict(getattr(config, "browser_agent"))
+    if browser_config.get("use_memory") or browser_config.get("env_name") != "browser_environment":
+        raise ValueError(
+            "browser_agent acceptance must be stateless and browser-only: "
+            f"use_memory={browser_config.get('use_memory')!r}, "
+            f"environment={browser_config.get('env_name')!r}"
+        )
 
     task_text = build_task_text(site_brief, personas)
     if "runtime-input-manifest" not in task_text:
@@ -382,8 +407,15 @@ def validate_local_artifacts(
             f"expected={expected_user_allowlists}, actual={actual_user_allowlists}"
         )
 
+    acceptance_class = registry_agents["browser_agent"]
+    acceptance_key = inflection.underscore(acceptance_class.__name__)
+    acceptance = acceptance_class(**dict(getattr(config, acceptance_key)))
+    if acceptance._required_capability_allowlists() != expected_user_allowlists:
+        raise ValueError("browser_agent acceptance must expose only done_tool and browser_environment")
+
     expected_models = {
         "website_builder_agent": "llm_hub/claude-opus-5",
+        "browser_agent": DEFAULT_ACCEPTANCE_MODEL,
         "website_user_agent": "llm_hub/claude-opus-5",
     }
     actual_models = {
@@ -418,7 +450,12 @@ def launch(args: argparse.Namespace) -> None:
     user_models = list(args.user_model or DEFAULT_USER_MODELS)
     if args.model:
         user_models = [args.model] * 3
-    task_text = build_task_text(site_brief, personas, user_models)
+    acceptance_model = args.acceptance_model or DEFAULT_ACCEPTANCE_MODEL
+    if args.model:
+        acceptance_model = args.model
+    task_text = build_task_text(
+        site_brief, personas, user_models, acceptance_model=acceptance_model,
+    )
     forwarded = [
         "run_meta_agent.py",
         "--config",
@@ -438,6 +475,7 @@ def launch(args: argparse.Namespace) -> None:
         cfg_options[:0] = [
             f"model_name={args.model}",
             f"website_builder_agent.model_name={args.model}",
+            f"browser_agent.model_name={args.model}",
             f"generate_agent.model_name={args.model}",
             f"optimize_agent.model_name={args.model}",
             f"evaluate_agent.model_name={args.model}",
@@ -448,6 +486,8 @@ def launch(args: argparse.Namespace) -> None:
             cfg_options.insert(
                 0, f"website_builder_agent.model_name={args.builder_model}"
             )
+        if args.acceptance_model:
+            cfg_options.insert(0, f"browser_agent.model_name={args.acceptance_model}")
     if cfg_options:
         forwarded.extend(["--cfg-options", *cfg_options])
 
@@ -457,7 +497,7 @@ def launch(args: argparse.Namespace) -> None:
     previous_argv = sys.argv
     try:
         sys.argv = forwarded
-        asyncio.run(run_meta_agent.main())
+        asyncio.run(run_meta_agent.run_with_lifecycle())
     finally:
         sys.argv = previous_argv
 

@@ -77,6 +77,110 @@ class DeployTool(Tool):
         """
         return f"{rec.site_id}\t{rec.runtime}\t{rec.status.value}\t{rec.url or '-'}"
 
+    @staticmethod
+    def _previous_release_blocker(ctx: Any) -> str:
+        """Keep the release loop closed: observe feedback before publishing again."""
+        extra = getattr(ctx, "extra", None) or {}
+        contract = extra.get("website_runtime_contract")
+        history = extra.get("deployment_release_history")
+        if not isinstance(contract, dict) or not isinstance(history, list) or not history:
+            return ""
+
+        from agentevolver.runtime import runtime_manager
+
+        release_number = len(history)
+        pending = []
+        failed = []
+        for job_id in contract.get("subscriber_job_ids") or []:
+            ref = runtime_manager.child(str(job_id))
+            if (
+                ref is None
+                or not ref.alive
+                or ref.busy
+                or not ref._tasks.empty()
+                or ref.turns < release_number
+            ):
+                pending.append(str(job_id))
+            elif ref.last_turn_success is not True:
+                failed.append(str(job_id))
+        if pending:
+            return (
+                f"release {release_number} subscriber turns are not complete: "
+                + ", ".join(pending)
+            )
+        if failed:
+            return (
+                f"release {release_number} subscriber turns failed: "
+                + ", ".join(failed)
+            )
+
+        collected = dict(contract.get("collected_turns") or {})
+        unread = [
+            str(job_id) for job_id in contract.get("subscriber_job_ids") or []
+            if int(collected.get(str(job_id)) or 0) < release_number
+        ]
+        if unread:
+            return (
+                f"release {release_number} feedback must be read with "
+                f"job__output(turn={release_number}) "
+                f"before another deploy: {', '.join(unread)}"
+            )
+        return ""
+
+    @staticmethod
+    async def _publish_ready(rec, *, action: str, ctx: Any) -> Dict[str, Any]:
+        """Broadcast a successful release to this task tree's live subscribers."""
+        if ctx is None:
+            return {}
+        from agentevolver.protocol import protocol_manager
+
+        extra = getattr(ctx, "extra", None)
+        contract = (extra or {}).get("website_runtime_contract")
+        if not isinstance(contract, dict):
+            return {}
+        # ToolContext copies the ambient mapping but deliberately retains values by
+        # reference. Mutate this Runtime-owned list in place so the parent AgentContext
+        # observes the receipt used by its completion gate.
+        history = (extra or {}).get("deployment_release_history")
+        if not isinstance(history, list):
+            history = []
+            extra["deployment_release_history"] = history
+        release_number = len(history) + 1
+        payload = {
+            "release_number": release_number,
+            "action": action,
+            "site_id": rec.site_id,
+            "runtime": rec.runtime,
+            "url": rec.url,
+            "source_revision": rec.source_revision,
+            "deployed_at": rec.updated_at,
+        }
+        try:
+            sent, scoped, event = await protocol_manager.publish_event(
+                "deployment.ready",
+                event_type="deployment.ready",
+                payload=payload,
+                ctx=ctx,
+                publisher=str(getattr(ctx, "name", "") or "deploy_tool"),
+            )
+            receipt = {
+                **payload,
+                "event_id": event.id,
+                "topic": scoped.split("::", 1)[-1],
+                "fanout": sent,
+            }
+        except Exception as error:                                  # noqa: BLE001
+            logger.warning(f"| ⚠️ deployment.ready publication failed: {error}")
+            receipt = {
+                **payload,
+                "event_id": "",
+                "topic": "deployment.ready",
+                "fanout": 0,
+                "error": str(error),
+            }
+        history.append(receipt)
+        return receipt
+
     async def __call__(
         self,
         action: Literal["deploy", "list", "get", "stop", "redeploy"] = "list",
@@ -115,6 +219,13 @@ class DeployTool(Tool):
             if action == "deploy":
                 if not site_id:
                     raise KeyError("site_id")
+                blocker = self._previous_release_blocker(kwargs.get("ctx"))
+                if blocker:
+                    return Response(
+                        type=ResponseType.TOOL,
+                        success=False,
+                        message=f"Deployment blocked: {blocker}",
+                    )
                 req = DeployRequest(
                     site_id=site_id,
                     runtime=runtime,
@@ -130,9 +241,24 @@ class DeployTool(Tool):
                 )
                 rec = await deployment_manager.deploy(req)
                 ok = rec.status.value == "running"
+                release = {}
+                if ok:
+                    release = await self._publish_ready(
+                        rec, action="deploy", ctx=kwargs.get("ctx"),
+                    )
                 msg = (f"✅ '{rec.site_id}' deployed at {rec.url}" if ok
                        else f"❌ '{rec.site_id}' status={rec.status.value}: {rec.error}")
-                return Response(type=ResponseType.TOOL, success=ok, message=msg, data=rec.model_dump())
+                if release:
+                    msg += (
+                        f"; release {release['release_number']} queued to "
+                        f"{release['fanout']} subscriber(s)"
+                    )
+                return Response(
+                    type=ResponseType.TOOL,
+                    success=ok,
+                    message=msg,
+                    data={**rec.model_dump(), "subscription_event": release or None},
+                )
 
             if action == "list":
                 sites = await deployment_manager.list_sites()
@@ -159,11 +285,33 @@ class DeployTool(Tool):
             if action == "redeploy":
                 if not site_id:
                     raise KeyError("site_id")
+                blocker = self._previous_release_blocker(kwargs.get("ctx"))
+                if blocker:
+                    return Response(
+                        type=ResponseType.TOOL,
+                        success=False,
+                        message=f"Deployment blocked: {blocker}",
+                    )
                 rec = await deployment_manager.redeploy(site_id)
                 ok = rec.status.value == "running"
+                release = {}
+                if ok:
+                    release = await self._publish_ready(
+                        rec, action="redeploy", ctx=kwargs.get("ctx"),
+                    )
                 msg = (f"✅ '{rec.site_id}' redeployed at {rec.url}" if ok
                        else f"❌ redeploy '{rec.site_id}' status={rec.status.value}: {rec.error}")
-                return Response(type=ResponseType.TOOL, success=ok, message=msg, data=rec.model_dump())
+                if release:
+                    msg += (
+                        f"; release {release['release_number']} queued to "
+                        f"{release['fanout']} subscriber(s)"
+                    )
+                return Response(
+                    type=ResponseType.TOOL,
+                    success=ok,
+                    message=msg,
+                    data={**rec.model_dump(), "subscription_event": release or None},
+                )
 
             return Response(type=ResponseType.TOOL, success=False,
                             message=f"Unknown action {action!r}. Use deploy | list | get | stop | redeploy.")

@@ -24,6 +24,7 @@ process restart as ``DETACHED`` records that ``redeploy`` can bring back.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import shlex
@@ -38,6 +39,7 @@ from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.registry import DEPLOYER
 from agentevolver.sandbox import sandbox_manager
+from agentevolver.utils.file_utils import atomic_json_update
 from agentevolver.deploy.types import (
     Deployer,
     DeploymentSpec,
@@ -62,6 +64,9 @@ class DeploymentManagerServer(BaseModel):
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
         self._sites: Dict[str, SiteRecord] = {}
+        # Site ids created or redeployed by this process. Global teardown must not stop
+        # a persisted deployment merely because another run loaded its registry record.
+        self._owned_sites: set[str] = set()
         self._registry_path: Optional[str] = None
         self._initialized = False
 
@@ -190,6 +195,12 @@ class DeploymentManagerServer(BaseModel):
         except Exception:
             return False
 
+    @staticmethod
+    def _release_host_port(record: SiteRecord) -> None:
+        if record.backend == "host":
+            from agentevolver.port import port_manager
+            port_manager.unregister(f"deploy:{record.site_id}")
+
     # --------------------------------------------------------------- registry io
     def _load(self) -> None:
         if self._registry_path and os.path.exists(self._registry_path):
@@ -205,8 +216,12 @@ class DeploymentManagerServer(BaseModel):
         if not self._registry_path:
             return
         try:
-            with open(self._registry_path, "w") as f:
-                json.dump({sid: rec.model_dump() for sid, rec in self._sites.items()}, f, indent=2)
+            payload = {sid: rec.model_dump() for sid, rec in self._sites.items()}
+            atomic_json_update(
+                self._registry_path,
+                lambda _current: payload,
+                default={},
+            )
         except Exception as e:
             logger.warning(f"| ⚠️ Could not persist deploy registry: {e}")
 
@@ -259,6 +274,42 @@ class DeploymentManagerServer(BaseModel):
                 fh.write(text if isinstance(text, str) else str(text))
         return staging
 
+    @staticmethod
+    def _source_revision(request: DeployRequest) -> str:
+        """Hash authored source so repeated deploys cannot masquerade as iterations."""
+        digest = hashlib.sha256()
+        if request.content is not None or request.files:
+            payload = {
+                "filename": request.filename,
+                "content": request.content,
+                "files": request.files or {},
+            }
+            digest.update(json.dumps(
+                payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8"))
+            return digest.hexdigest()
+        if request.source_dir and os.path.isdir(request.source_dir):
+            root = os.path.abspath(request.source_dir)
+            for current, dirs, files in os.walk(root):
+                dirs[:] = sorted(name for name in dirs if name not in _SKIP_DIRS)
+                for name in sorted(files):
+                    path = os.path.join(current, name)
+                    relative = os.path.relpath(path, root).replace(os.sep, "/")
+                    digest.update(relative.encode("utf-8"))
+                    digest.update(b"\0")
+                    try:
+                        with open(path, "rb") as handle:
+                            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                                digest.update(chunk)
+                    except OSError:
+                        digest.update(b"<unreadable>")
+                    digest.update(b"\0")
+            return digest.hexdigest()
+        if request.git_url:
+            digest.update(request.git_url.encode("utf-8"))
+            return digest.hexdigest()
+        return ""
+
     # --------------------------------------------------------------- deploy
     async def deploy(self, request: DeployRequest) -> SiteRecord:
         """Build and start a site in a fresh container, bind it to a URL, and record it."""
@@ -274,6 +325,7 @@ class DeploymentManagerServer(BaseModel):
             request.source_dir = self._materialize_inline(request)
 
         spec = self._resolve_spec(request)  # raises on bad profile / missing custom.start
+        source_revision = self._source_revision(request)
 
         # The host backend has no container filesystem, so run in a real host directory
         # and write the server log beside it (containers keep a per-container /tmp log).
@@ -304,12 +356,14 @@ class DeploymentManagerServer(BaseModel):
             image=spec.image,
             backend=backend,
             reuse_key=request.site_id,
+            source_revision=source_revision,
             created_at=self._sites.get(request.site_id, SiteRecord(site_id=request.site_id, runtime=spec.runtime)).created_at or _now(),
             updated_at=_now(),
             log_path=log_path,
             request=request.model_dump(),
         )
         self._sites[request.site_id] = rec
+        self._owned_sites.add(request.site_id)
         self._save()
 
         try:
@@ -328,6 +382,9 @@ class DeploymentManagerServer(BaseModel):
                     timeout_minutes=spec.timeout_minutes,
                     network=True,
                 )
+            rec.resource_id = sandbox.resource_id
+            rec.updated_at = _now()
+            self._save()
 
             # --- upload source ---------------------------------------------------
             if request.git_url:
@@ -350,6 +407,10 @@ class DeploymentManagerServer(BaseModel):
             res = await sandbox.run_command(start_cmd, workspace_root=spec.workspace_root)
             if not res.success:
                 raise RuntimeError(f"failed to launch start command: {res.as_message()}")
+            # Host process identity exists only after the background server starts.
+            rec.resource_id = sandbox.resource_id
+            rec.updated_at = _now()
+            self._save()
 
             # --- bind URL + wait until ready -------------------------------------
             url = await sandbox.expose_port(spec.port)
@@ -366,6 +427,21 @@ class DeploymentManagerServer(BaseModel):
             logger.info(f"| 🌐 Site '{request.site_id}' ({spec.runtime}) deployed at {url}")
             return rec
         except Exception as e:
+            try:
+                released = await sandbox_manager.release(
+                    backend,
+                    reuse_key=request.site_id,
+                    resource_id=rec.resource_id,
+                )
+                if released:
+                    rec.resource_id = None
+                if released or rec.resource_id is None:
+                    self._owned_sites.discard(request.site_id)
+                    self._release_host_port(rec)
+            except Exception as cleanup_error:  # noqa: BLE001
+                logger.warning(
+                    f"| ⚠️ Deploy '{request.site_id}' failure cleanup: {cleanup_error}"
+                )
             rec.status = SiteStatus.FAILED
             rec.error = str(e)
             rec.updated_at = _now()
@@ -441,9 +517,21 @@ class DeploymentManagerServer(BaseModel):
         rec = self._sites.get(site_id)
         if rec is None:
             raise ValueError(f"No such site {site_id!r}")
-        await sandbox_manager.release(rec.backend or _SANDBOX_KIND, reuse_key=site_id)
+        stopped = await sandbox_manager.release(
+            rec.backend or _SANDBOX_KIND,
+            reuse_key=site_id,
+            resource_id=rec.resource_id,
+        )
+        if not stopped and (rec.resource_id or await self._url_reachable(rec.url)):
+            raise RuntimeError(
+                f"Site {site_id!r} still has a live or unverified backend identity; "
+                "refusing to report a false stop"
+            )
         rec.status = SiteStatus.STOPPED
         rec.url = None
+        rec.resource_id = None
+        self._owned_sites.discard(site_id)
+        self._release_host_port(rec)
         rec.updated_at = _now()
         self._save()
         logger.info(f"| 🛑 Site '{site_id}' stopped")
@@ -455,16 +543,41 @@ class DeploymentManagerServer(BaseModel):
         rec = self._sites.get(site_id)
         if rec is None or not rec.request:
             raise ValueError(f"No redeployable request stored for site {site_id!r}")
-        await sandbox_manager.release(rec.backend or _SANDBOX_KIND, reuse_key=site_id)
+        stopped = await sandbox_manager.release(
+            rec.backend or _SANDBOX_KIND,
+            reuse_key=site_id,
+            resource_id=rec.resource_id,
+        )
+        if not stopped and (rec.resource_id or await self._url_reachable(rec.url)):
+            raise RuntimeError(
+                f"Cannot redeploy {site_id!r}: the previous backend identity could not "
+                "be stopped or verified absent"
+            )
         return await self.deploy(DeployRequest(**rec.request))
 
     async def cleanup(self) -> None:
-        """Stop all live sites (called on global teardown)."""
-        for site_id, rec in list(self._sites.items()):
+        """Stop only sites acquired by this process (called on global teardown)."""
+        for site_id in list(self._owned_sites):
+            rec = self._sites.get(site_id)
+            if rec is None:
+                self._owned_sites.discard(site_id)
+                continue
             try:
-                await sandbox_manager.release(rec.backend or _SANDBOX_KIND, reuse_key=site_id)
+                released = await sandbox_manager.release(
+                    rec.backend or _SANDBOX_KIND,
+                    reuse_key=site_id,
+                    resource_id=rec.resource_id,
+                )
+                if released:
+                    rec.status = SiteStatus.STOPPED
+                    rec.url = None
+                    rec.resource_id = None
+                    rec.updated_at = _now()
+                    self._owned_sites.discard(site_id)
+                    self._release_host_port(rec)
             except Exception as e:
                 logger.warning(f"| ⚠️ Error releasing site '{site_id}': {e}")
+        self._save()
 
 
 # Global deployment manager instance.

@@ -50,6 +50,38 @@ new file mode 100644
     assert (tmp_path / "src" / "main.py").read_text(encoding="utf-8") == 'print("ok")\n'
 
 
+def test_apply_patch_accepts_classic_unified_diff(tmp_path):
+    patch = """--- /dev/null
++++ b/plan.md
+@@ -0,0 +1,2 @@
++# Plan
++Ship the smallest verified product.
+"""
+
+    response = _call(tmp_path, patch)
+
+    assert response.success, response.message
+    assert (tmp_path / "plan.md").read_text(encoding="utf-8") == (
+        "# Plan\nShip the smallest verified product.\n"
+    )
+
+
+def test_apply_patch_rejects_bare_hunk_header_without_false_success(tmp_path):
+    patch = """diff --git a/plan.md b/plan.md
+new file mode 100644
+--- /dev/null
++++ b/plan.md
+@@
++# Plan
+"""
+
+    response = _call(tmp_path, patch)
+
+    assert not response.success
+    assert "invalid hunk header" in response.message
+    assert not (tmp_path / "plan.md").exists()
+
+
 def test_apply_patch_rejects_stale_context_without_mutating(tmp_path):
     target = tmp_path / "app.js"
     target.write_text("current\n", encoding="utf-8")

@@ -11,7 +11,7 @@ import textwrap
 from datetime import timedelta
 from typing import Dict, Any, List, Optional
 
-from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
+from playwright.async_api import async_playwright, Browser, Page, Playwright
 
 from agentevolver.logger import logger
 from agentevolver.response.types import Response, ResponseType
@@ -115,8 +115,6 @@ class BrowserService:
         # Per-session isolation: each session_id gets its own BrowserContext + Page
         # (independent cookies/storage) inside the one shared browser process.
         self._sessions: Dict[str, Dict[str, Any]] = {}
-        # Fallback context for CDP browsers that disallow new_context()
-        self._base_context: Optional[BrowserContext] = None
         self._sandbox = None  # opensandbox Sandbox instance
 
     async def start(self):
@@ -154,11 +152,9 @@ class BrowserService:
         self._browser = None
         self._sandbox = None
         self._playwright = None
-        self._base_context = None
 
     async def _start_local(self):
         self._browser = await self._playwright.chromium.launch(headless=self.headless)
-        self._base_context = None  # create a fresh context per session
         logger.info("| 🖥️  Local Chromium launched")
 
     async def _start_sandbox(self):
@@ -182,9 +178,6 @@ class BrowserService:
         )
         ws_url = await self._sandbox.cdp_ws_url()
         self._browser = await self._playwright.chromium.connect_over_cdp(ws_url)
-        contexts = self._browser.contexts
-        # CDP-connected Chromium may not allow new_context(); keep the existing one as fallback
-        self._base_context = contexts[0] if contexts else None
 
     async def vnc_ws_url(self) -> Optional[str]:
         """The websockify WS URL for the live view, or None when VNC isn't active."""
@@ -223,7 +216,6 @@ class BrowserService:
         if self._sandbox:
             await _guard("sandbox.destroy", self._sandbox.destroy(), timeout=20.0)
         self._sessions.clear()
-        self._base_context = None
         self._browser = None
         self._playwright = None
         self._sandbox = None
@@ -237,22 +229,31 @@ class BrowserService:
             return None
         sess = self._sessions.get(session_id)
         if sess is None:
-            owns_context = True
             try:
                 context = await self._browser.new_context(viewport=self.viewport)
-            except Exception:
-                # Fall back to a shared base context (e.g. some CDP setups)
-                context = self._base_context
-                owns_context = False
-                if context is None:
-                    raise
+            except Exception as error:
+                # Sharing a CDP default context would mix cookies, localStorage and
+                # navigation across concurrent user Agents. Isolation is part of the
+                # BrowserEnvironment contract, so fail closed when a backend cannot
+                # provide it instead of silently turning three users into one browser.
+                raise RuntimeError(
+                    "browser backend cannot create an isolated BrowserContext for "
+                    f"session {session_id!r}"
+                ) from error
             page = await context.new_page()
+            sess = {
+                "context": context,
+                "page": page,
+                "owns_context": True,
+                "diagnostics": {},
+                "diagnostic_seq": 0,
+            }
+            self._sessions[session_id] = sess
+            self._attach_diagnostics(page, session_id)
             try:
                 await page.goto("about:blank")
             except Exception:
                 pass
-            sess = {"context": context, "page": page, "owns_context": owns_context}
-            self._sessions[session_id] = sess
             logger.info(f"| 🪟 Browser session created: {session_id}")
         return sess["page"]
 
@@ -280,6 +281,74 @@ class BrowserService:
         """Return URLs of all open pages in the page's context."""
         return [p.url for p in page.context.pages]
 
+    def _record_diagnostic(
+        self, session_id: str, type: str, message: str, url: str = "",
+    ) -> None:
+        """Record browser-native failures without modifying the inspected page."""
+        sess = self._sessions.get(session_id)
+        if sess is None:
+            return
+        text = str(message or "(no message)")
+        source = str(url or "")
+        key = (type, text, source)
+        sess["diagnostic_seq"] += 1
+        entry = sess["diagnostics"].setdefault(
+            key,
+            {
+                "type": type,
+                "message": text,
+                "url": source,
+                "count": 0,
+                "first_seq": sess["diagnostic_seq"],
+                "last_seq": sess["diagnostic_seq"],
+            },
+        )
+        entry["count"] += 1
+        entry["last_seq"] = sess["diagnostic_seq"]
+
+    def _attach_diagnostics(self, page: Page, session_id: str) -> None:
+        def on_console(message) -> None:
+            level = str(getattr(message, "type", "") or "").lower()
+            if level not in {"warning", "error"}:
+                return
+            location = getattr(message, "location", None) or {}
+            self._record_diagnostic(
+                session_id, f"console.{level}", getattr(message, "text", ""),
+                location.get("url", "") if isinstance(location, dict) else "",
+            )
+
+        def on_page_error(error) -> None:
+            self._record_diagnostic(session_id, "pageerror", str(error), page.url)
+
+        def on_request_failed(request) -> None:
+            failure = getattr(request, "failure", None)
+            detail = failure() if callable(failure) else failure
+            method = getattr(request, "method", "")
+            self._record_diagnostic(
+                session_id,
+                "requestfailed",
+                f"{method} {detail or 'request failed'}".strip(),
+                getattr(request, "url", ""),
+            )
+
+        page.on("console", on_console)
+        page.on("pageerror", on_page_error)
+        page.on("requestfailed", on_request_failed)
+
+    def diagnostics(self, session_id: str = "default") -> Dict[str, Any]:
+        sess = self._sessions.get(session_id) or {}
+        entries = [dict(item) for item in (sess.get("diagnostics") or {}).values()]
+        entries.sort(key=lambda item: item["first_seq"])
+        counts: Dict[str, int] = {}
+        for item in entries:
+            counts[item["type"]] = counts.get(item["type"], 0) + item["count"]
+        return {
+            "sequence": int(sess.get("diagnostic_seq") or 0),
+            "total": sum(counts.values()),
+            "counts": counts,
+            "events": entries,
+        }
+
     def _unavailable(self, action: str) -> Response:
         return Response(type=ResponseType.ENVIRONMENT, 
             success=False,
@@ -297,11 +366,10 @@ class BrowserService:
             if not url.startswith(("http://", "https://", "file://", "about:")):
                 url = "https://" + url
             await page.goto(url, wait_until=wait_until, timeout=30000)
-            screenshot = await self._screenshot_b64(page)
             return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Navigated to {page.url}",
-                data={"screenshot": screenshot, "url": page.url},
+                data={"url": page.url},
             )
         except Exception as e:
             logger.error(f"| ❌ goto failed: {e}")
@@ -364,11 +432,10 @@ class BrowserService:
             return self._unavailable("click")
         try:
             await page.mouse.click(x, y, button=button)
-            screenshot = await self._screenshot_b64(page)
             return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Clicked at ({x}, {y}) with {button} button",
-                data={"screenshot": screenshot, "x": x, "y": y, "button": button},
+                data={"x": x, "y": y, "button": button},
             )
         except Exception as e:
             logger.error(f"| ❌ click failed: {e}")
@@ -380,11 +447,10 @@ class BrowserService:
             return self._unavailable("double_click")
         try:
             await page.mouse.dblclick(x, y)
-            screenshot = await self._screenshot_b64(page)
             return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Double-clicked at ({x}, {y})",
-                data={"screenshot": screenshot, "x": x, "y": y},
+                data={"x": x, "y": y},
             )
         except Exception as e:
             logger.error(f"| ❌ double_click failed: {e}")
@@ -397,11 +463,10 @@ class BrowserService:
         try:
             await page.mouse.move(x, y)
             await page.mouse.wheel(scroll_x, scroll_y)
-            screenshot = await self._screenshot_b64(page)
             return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Scrolled at ({x}, {y}) by ({scroll_x}, {scroll_y})",
-                data={"screenshot": screenshot, "x": x, "y": y, "scroll_x": scroll_x, "scroll_y": scroll_y},
+                data={"x": x, "y": y, "scroll_x": scroll_x, "scroll_y": scroll_y},
             )
         except Exception as e:
             logger.error(f"| ❌ scroll failed: {e}")
@@ -413,11 +478,10 @@ class BrowserService:
             return self._unavailable("type")
         try:
             await page.keyboard.type(text)
-            screenshot = await self._screenshot_b64(page)
             return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Typed: {text}",
-                data={"screenshot": screenshot, "text": text},
+                data={"text": text},
             )
         except Exception as e:
             logger.error(f"| ❌ type failed: {e}")
@@ -429,11 +493,10 @@ class BrowserService:
             return self._unavailable("wait")
         try:
             await asyncio.sleep(ms / 1000.0)
-            screenshot = await self._screenshot_b64(page)
             return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Waited {ms}ms",
-                data={"screenshot": screenshot, "ms": ms},
+                data={"ms": ms},
             )
         except Exception as e:
             logger.error(f"| ❌ wait failed: {e}")
@@ -445,11 +508,10 @@ class BrowserService:
             return self._unavailable("move")
         try:
             await page.mouse.move(x, y)
-            screenshot = await self._screenshot_b64(page)
             return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Moved to ({x}, {y})",
-                data={"screenshot": screenshot, "x": x, "y": y},
+                data={"x": x, "y": y},
             )
         except Exception as e:
             logger.error(f"| ❌ move failed: {e}")
@@ -462,11 +524,10 @@ class BrowserService:
         try:
             combo = "+".join(keys)
             await page.keyboard.press(combo)
-            screenshot = await self._screenshot_b64(page)
             return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Pressed {keys}",
-                data={"screenshot": screenshot, "keys": keys},
+                data={"keys": keys},
             )
         except Exception as e:
             logger.error(f"| ❌ keypress failed: {e}")
@@ -485,11 +546,10 @@ class BrowserService:
             for point in path[1:]:
                 await page.mouse.move(point[0], point[1])
             await page.mouse.up()
-            screenshot = await self._screenshot_b64(page)
             return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Dragged along {len(path)} points",
-                data={"screenshot": screenshot, "path": path},
+                data={"path": path},
             )
         except Exception as e:
             logger.error(f"| ❌ drag failed: {e}")
@@ -510,11 +570,10 @@ class BrowserService:
             exec(src, ns)
             result = await asyncio.wait_for(ns["__cmd__"](page, page.context), timeout=timeout)
             result_repr = repr(result)
-            screenshot = await self._screenshot_b64(page)
             return Response(type=ResponseType.ENVIRONMENT, 
                 success=True,
                 message=f"Command executed. Return value: {result_repr}",
-                data={"screenshot": screenshot, "result": result_repr},
+                data={"result": result_repr},
             )
         except asyncio.TimeoutError:
             logger.error(f"| ❌ command timed out after {timeout}s")
@@ -552,7 +611,8 @@ class BrowserService:
     async def get_state(self, include_elements: bool = True, include_html: bool = False, session_id: str = "default") -> Dict[str, Any]:
         """Return current page state for a session including a base64 screenshot."""
         empty = {"url": None, "title": None, "tabs": [], "screenshot": None,
-                 "elements": [], "scroll": {}, "focus": "none", "iframes": 0, "html": ""}
+                 "elements": [], "scroll": {}, "focus": "none", "iframes": 0,
+                 "html": "", "diagnostics": self.diagnostics(session_id)}
         page = await self._page_for(session_id)
         if not page:
             return empty
@@ -571,7 +631,8 @@ class BrowserService:
                 tabs = self._tabs(page)
                 screenshot = await self._screenshot_b64(page)
                 state: Dict[str, Any] = {"url": url, "title": title, "tabs": tabs, "screenshot": screenshot,
-                                         "elements": [], "scroll": {}, "focus": "none", "iframes": 0, "html": ""}
+                                         "elements": [], "scroll": {}, "focus": "none", "iframes": 0,
+                                         "html": "", "diagnostics": self.diagnostics(session_id)}
                 if include_elements:
                     observed = await self.observe(page)
                     state.update({k: observed.get(k, state[k]) for k in ("elements", "scroll", "focus", "iframes")})

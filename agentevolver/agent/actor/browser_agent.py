@@ -82,6 +82,17 @@ class BrowserAgent(Agent):
     # Context builders
     # ------------------------------------------------------------------
 
+    def _required_capability_allowlists(self) -> Dict[str, List[str]]:
+        """Keep the generic browser worker on the same minimal contract as user agents."""
+        return {
+            "tool_allowlist": ["done_tool"],
+            "skill_allowlist": [],
+            "connector_allowlist": [],
+            "plugin_allowlist": [],
+            "environment_allowlist": [self.env_name],
+            "workflow_allowlist": [],
+        }
+
     async def _get_agent_context(
         self,
         task: str,
@@ -124,9 +135,7 @@ class BrowserAgent(Agent):
         return slots
 
     async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
-        """Return an empty tool context: this is a pure environment agent with no tools
-        (the task ends via the environment's ``finish`` action)."""
-        # Pure environment agent — no tools; the task ends via the `finish` action.
+        """Omit rendered tool prose; ``done_tool`` is supplied provider-natively."""
         return {"tool_context": ""}
 
     async def _capability_skill_slots(self, ctx: AgentContext) -> Dict[str, Any]:
@@ -184,6 +193,14 @@ class BrowserAgent(Agent):
     # Main entry point
     # ------------------------------------------------------------------
 
+    def _reset_turn_budget(self, ctx: Any) -> None:
+        """Reset per-task limits while a continuable browser identity stays alive."""
+        context_id = str(getattr(ctx, "id", "") or "")
+        if context_id:
+            for constraint in self.constraints:
+                constraint._cleanup(context_id)
+        self._pending_step_tokens.clear()
+
     async def on_start(self, task, files, ctx, ref, **kwargs) -> Response:
         """BrowserAgent keeps its own bespoke loop (browser-action turns), so it runs
         via ``__call__`` rather than the base event-driven round loop. Returning the
@@ -198,7 +215,18 @@ class BrowserAgent(Agent):
                 f"environment {self.env_name!r} is not registered; "
                 f"add it to this config's `env_names`"
             )
-        return await self.__call__(task=task, files=files, ctx=ctx, **kwargs)
+        environment = await environment_manager.get(self.env_name)
+        if environment is not None:
+            await environment.close_session(str(getattr(ctx, "id", "") or "default"))
+        self._observed_state = None
+        try:
+            return await self.__call__(task=task, files=files, ctx=ctx, **kwargs)
+        finally:
+            self._reset_turn_budget(ctx)
+            if environment is not None:
+                await environment.close_session(
+                    str(getattr(ctx, "id", "") or "default")
+                )
 
     async def __call__(
         self,
@@ -285,17 +313,19 @@ class BrowserAgent(Agent):
                 "reasoning": "Reached the maximum number of steps.",
             }
 
+        success = response["done"] and not response.get("stopped_by_constraint", False)
+
         # ON_STOP
         await hook_manager(
             name="trace_hook",
-            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
+            input={"event": HookEvent.ON_STOP, "agent_name": self.name, "task_id": task_id, "result": response.get("result"), "success": success, "memory_name": self.memory_name, "use_memory": self.use_memory, "parent_session_id": parent_session_id, "subtask_id": subtask_id},
             ctx=ctx,
         )
 
         logger.info(f"| ✅ BrowserAgent completed after {step_number}/{self.max_step} steps")
 
         return Response(type=ResponseType.AGENT,
-            success=response["done"] and not response.get("stopped_by_constraint", False),
+            success=success,
             message=response["result"],
             data=response,
         )

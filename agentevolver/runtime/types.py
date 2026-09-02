@@ -135,6 +135,11 @@ class AgentRef(BaseModel):
     session_id:        str  = ""
     continuable:       bool = False
     turns:             int  = 0
+    last_turn_success: Optional[bool] = None
+    #: Final handoff for each completed continuable turn. Job transcripts remain the
+    #: durable/debug view; this bounded structured view lets a parent collect one new
+    #: subscriber response without replaying every earlier response into its context.
+    turn_results:      Dict[int, str] = Field(default_factory=dict)
     #: Session-scoped topics this live ref consumes. Subscription is a relationship of
     #: a running ref, not a second kind of Agent, so lifecycle and addressability remain
     #: in the one runtime registry.

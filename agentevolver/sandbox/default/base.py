@@ -137,6 +137,15 @@ class OpenSandbox(Sandbox):
         # WORKDIR) at /workspace; bash_tool runs there, so the prompt must say /workspace.
         return "/workspace"
 
+    @property
+    def resource_id(self) -> Optional[str]:
+        return self._sandbox_id
+
+    @classmethod
+    async def destroy_resource(cls, resource_id: str) -> bool:
+        from agentevolver.sandbox.ledger import ledger
+        return await ledger.remove(resource_id)
+
     # ------------------------------------------------------------- lifecycle
     async def start(self) -> None:
         if self._started:
@@ -194,20 +203,36 @@ class OpenSandbox(Sandbox):
 
     async def destroy(self) -> None:
         if self._sb is not None:
+            removed = False
+            resource_id = self._sandbox_id
             try:
                 await self._sb.kill()
+                removed = True
             except Exception as e:
                 logger.warning(f"| ⚠️ Error killing sandbox '{self.name}': {e}")
-            finally:
                 if self._sandbox_id:
+                    try:
+                        from agentevolver.sandbox.ledger import ledger
+                        removed = await ledger.remove(self._sandbox_id)
+                    except Exception as fallback_error:  # noqa: BLE001
+                        logger.warning(
+                            f"| ⚠️ Exact fallback cleanup for sandbox "
+                            f"'{self._sandbox_id}' failed: {fallback_error}"
+                        )
+            finally:
+                if self._sandbox_id and removed:
                     try:
                         from agentevolver.sandbox.ledger import ledger
                         ledger.forget(self._sandbox_id)
                     except Exception:  # noqa: BLE001
                         pass
-                    self._sandbox_id = None
+                self._sandbox_id = None
                 self._sb = None
                 self._started = False
+            if not removed:
+                raise RuntimeError(
+                    f"could not verify removal of sandbox {resource_id or self.name!r}"
+                )
 
     def _require(self):
         if self._sb is None:

@@ -219,6 +219,33 @@ def test_shutdown_empties_the_registry_and_a_ref_still_says_who_it_is() -> None:
     run(check())
 
 
+def test_shutdown_cancels_a_delegated_driver_before_stopping_its_pump() -> None:
+    async def check() -> None:
+        manager = object.__new__(RuntimeManager)
+        RuntimeManager.__init__(manager)
+        ref = await manager.spawn(StubAgent(), name="background-child")
+        cancelled = asyncio.Event()
+
+        async def driver() -> None:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        ref._driver = asyncio.create_task(driver())
+        manager._delegated["job-child"] = ref
+        await asyncio.sleep(0)
+
+        await manager.shutdown()
+
+        assert cancelled.is_set()
+        assert ref.status is AgentStatus.STOPPED
+        assert manager.list() == []
+        assert manager._delegated == {}
+
+    run(check())
+
+
 # --------------------------------------------------------------------------- #
 # Publish/subscribe turns
 # --------------------------------------------------------------------------- #
@@ -349,8 +376,10 @@ def test_subscription_only_delegation_waits_without_spending_an_agent_turn() -> 
                 await asyncio.sleep(0.01)
             assert ref.turns == 1
             assert "handled:release.ready" in (job_manager.output(ref.job_id) or "")
+            assert ref.last_turn_success is True
+            assert ref.turn_results == {1: "handled:release.ready"}
         finally:
-            manager.forget(parent.id)
+            await manager.forget(parent.id)
             job_manager.forget(parent.id)
             await asyncio.sleep(0)
 
@@ -408,7 +437,7 @@ def test_paused_idle_subscriber_queues_events_without_starting_a_turn() -> None:
             assert ref.turns == 1
             assert not ref.paused
         finally:
-            manager.forget(parent.id)
+            await manager.forget(parent.id)
             job_manager.forget(parent.id)
             await asyncio.sleep(0)
 

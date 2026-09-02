@@ -4,8 +4,8 @@ website_user_agent = dict(
     name="website_user_agent",
     type="Agent",
     description=(
-        "A browser-only user or co-designer that evaluates a website from assigned "
-        "user context and reports grounded experience evidence through the UI."
+        "A browser-only user or co-designer that pursues personal goals, expresses "
+        "preferences, and collaborates through the visible website UI."
     ),
     model_name="llm_hub/claude-opus-5",
     prompt_name="website_user_agent",

@@ -19,6 +19,7 @@ sandbox and is not exercised.
 
 import inspect
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -35,6 +36,7 @@ from agentevolver.dynamic import dynamic_manager
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.default.deployment.deploy import DeployTool, deployment_manager
 from agentevolver.tool.types import ToolContext
+from agentevolver.agent.types import AgentContext
 
 
 def test_deploy_tool_native_schema_exposes_every_action_argument():
@@ -428,6 +430,73 @@ def test_inline_with_no_content_is_rejected(manager):
         manager._materialize_inline(DeployRequest(site_id="s", files={}))
 
 
+def test_source_revision_changes_only_when_authored_source_changes(manager, tmp_path):
+    source = tmp_path / "site"
+    source.mkdir()
+    (source / "index.html").write_text("first", encoding="utf-8")
+    request = DeployRequest(site_id="site", source_dir=str(source))
+
+    first = manager._source_revision(request)
+    (source / "dist").mkdir()
+    (source / "dist" / "generated.js").write_text("ignored", encoding="utf-8")
+    assert manager._source_revision(request) == first
+
+    (source / "index.html").write_text("second", encoding="utf-8")
+    assert manager._source_revision(request) != first
+
+
+@pytest.mark.asyncio
+async def test_release_publish_receipt_updates_the_parent_context_in_place(monkeypatch):
+    from agentevolver.protocol import protocol_manager
+
+    async def publish_event(topic, **kwargs):
+        assert topic == "deployment.ready"
+        assert kwargs["payload"]["url"] == "http://site.test"
+        return 4, "root::deployment.ready", SimpleNamespace(id="event-1")
+
+    monkeypatch.setattr(protocol_manager, "publish_event", publish_event)
+    parent = AgentContext(id="root", extra={
+        "website_runtime_contract": {"subscriber_job_ids": ["a", "b", "c", "d"]},
+        "deployment_release_history": [],
+    })
+    tool_ctx = ToolContext.from_context(parent)
+    record = SiteRecord(
+        site_id="site",
+        runtime="static",
+        status=SiteStatus.RUNNING,
+        url="http://site.test",
+        source_revision="revision-1",
+        updated_at="now",
+    )
+
+    receipt = await DeployTool._publish_ready(record, action="deploy", ctx=tool_ctx)
+
+    assert receipt["fanout"] == 4
+    assert receipt["release_number"] == 1
+    assert parent.extra["deployment_release_history"] == [receipt]
+
+
+@pytest.mark.asyncio
+async def test_generic_deploy_context_does_not_publish_a_website_event(monkeypatch):
+    from agentevolver.protocol import protocol_manager
+
+    called = False
+
+    async def publish_event(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(protocol_manager, "publish_event", publish_event)
+    record = SiteRecord(
+        site_id="site", runtime="static", status=SiteStatus.RUNNING,
+    )
+
+    assert await DeployTool._publish_ready(
+        record, action="deploy", ctx=ToolContext(id="ordinary"),
+    ) == {}
+    assert called is False
+
+
 # --------------------------------------------------------------------------- #
 # The registry as the only thing that outlives the process
 # --------------------------------------------------------------------------- #
@@ -438,7 +507,10 @@ def test_the_registry_survives_a_restart(manager, tmp_path):
     those are what ``redeploy`` and ``stop_site`` work from. Without them a running site
     is unreachable through the framework that started it.
     """
-    manager._sites["a"] = SiteRecord(site_id="a", runtime="static", url="http://x", port=8000)
+    manager._sites["a"] = SiteRecord(
+        site_id="a", runtime="static", url="http://x", port=8000,
+        resource_id="123:456:123",
+    )
     manager._save()
 
     reloaded = DeploymentManagerServer()
@@ -446,6 +518,7 @@ def test_the_registry_survives_a_restart(manager, tmp_path):
     reloaded._load()
     assert reloaded._sites["a"].url == "http://x"
     assert reloaded._sites["a"].runtime == "static"
+    assert reloaded._sites["a"].resource_id == "123:456:123"
 
 
 def test_a_corrupt_registry_degrades_to_empty_rather_than_crashing(manager, tmp_path):
@@ -519,6 +592,100 @@ async def test_a_site_without_a_url_is_never_considered_reachable(manager):
     string must not reach the HTTP client and come back as something other than False."""
     assert await DeploymentManagerServer._url_reachable(None) is False
     assert await DeploymentManagerServer._url_reachable("") is False
+
+
+@pytest.mark.asyncio
+async def test_stop_uses_the_persisted_resource_identity_after_handle_loss(
+    manager, monkeypatch,
+):
+    manager._sites["a"] = SiteRecord(
+        site_id="a",
+        runtime="static",
+        backend="host",
+        status=SiteStatus.RUNNING,
+        url="http://example.test",
+        resource_id="123:456:123",
+    )
+    captured = {}
+
+    async def release(type, *, reuse_key=None, resource_id=None):
+        captured.update(type=type, reuse_key=reuse_key, resource_id=resource_id)
+        return True
+
+    monkeypatch.setattr("agentevolver.deploy.server.sandbox_manager.release", release)
+
+    record = await manager.stop_site("a")
+
+    assert captured == {
+        "type": "host", "reuse_key": "a", "resource_id": "123:456:123",
+    }
+    assert record.status is SiteStatus.STOPPED
+    assert record.url is None
+    assert record.resource_id is None
+
+
+@pytest.mark.asyncio
+async def test_stop_refuses_to_claim_success_when_a_live_resource_cannot_be_verified(
+    manager, monkeypatch,
+):
+    manager._sites["a"] = SiteRecord(
+        site_id="a", runtime="static", status=SiteStatus.RUNNING,
+        url="http://example.test", resource_id="stale",
+    )
+
+    async def not_released(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr("agentevolver.deploy.server.sandbox_manager.release", not_released)
+    monkeypatch.setattr(manager, "_url_reachable", lambda _url: _true())
+
+    with pytest.raises(RuntimeError, match="refusing to report a false stop"):
+        await manager.stop_site("a")
+    assert manager._sites["a"].status is SiteStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_stop_keeps_an_unverified_resource_even_when_its_url_is_down(
+    manager, monkeypatch,
+):
+    """An unavailable URL does not prove that its process/container is gone."""
+    manager._sites["a"] = SiteRecord(
+        site_id="a", runtime="static", status=SiteStatus.DETACHED,
+        url="http://example.test", resource_id="persisted-resource",
+    )
+
+    async def not_released(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr("agentevolver.deploy.server.sandbox_manager.release", not_released)
+    monkeypatch.setattr(manager, "_url_reachable", lambda _url: _false())
+
+    with pytest.raises(RuntimeError, match="unverified backend identity"):
+        await manager.stop_site("a")
+    assert manager._sites["a"].resource_id == "persisted-resource"
+    assert manager._sites["a"].status is SiteStatus.DETACHED
+
+
+@pytest.mark.asyncio
+async def test_global_cleanup_does_not_stop_a_site_loaded_from_another_run(
+    manager, monkeypatch,
+):
+    manager._sites["old"] = SiteRecord(
+        site_id="old", runtime="static", status=SiteStatus.RUNNING,
+        resource_id="persisted-resource",
+    )
+    calls = []
+
+    async def release(*args, **kwargs):
+        calls.append((args, kwargs))
+        return True
+
+    monkeypatch.setattr("agentevolver.deploy.server.sandbox_manager.release", release)
+
+    await manager.cleanup()
+
+    assert calls == []
+    assert manager._sites["old"].status is SiteStatus.RUNNING
 
 
 async def _true():

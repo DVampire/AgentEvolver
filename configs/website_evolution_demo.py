@@ -9,6 +9,7 @@ from mmengine.config import read_base
 
 with read_base():
     from .agents.evaluate_agent import evaluate_agent
+    from .agents.browser_agent import browser_agent
     from .agents.generate_agent import generate_agent
     from .agents.optimize_agent import optimize_agent
     from .agents.website_builder_agent import website_builder_agent
@@ -53,6 +54,7 @@ memory_names = ["file_system_memory"]
 
 agent_names = [
     "website_builder_agent",
+    "browser_agent",
     "generate_agent",
     "optimize_agent",
     "evaluate_agent",
@@ -164,7 +166,7 @@ _USER = {
     **_AGENT_CORE,
     "prompt_name": "website_user_agent",
     "env_name": "browser_environment",
-    # Continuable participants live across the initial evaluation and later iterations.
+    # Continuable participants live across the initial co-design turn and later iterations.
     # They need the same durable checkpoint + exact-tail
     # protocol as every other long-running Agent, especially after browser state resets.
     "use_memory": True,
@@ -175,6 +177,21 @@ _USER = {
     "max_screenshots": 2,
 }
 website_user_agent.update(**_USER)
+
+# Independent release acceptance is stateless and bounded. It validates the exact deployed
+# artifact; it does not inherit a participant persona or participate in co-design.
+browser_agent.update(**{
+    **_AGENT_CORE,
+    "model_name": "llm_hub/gpt-5.6-sol",
+    "prompt_name": "browser_agent",
+    "env_name": "browser_environment",
+    "use_memory": False,
+    "max_step": 20,
+    "timeout": 1200,
+    "max_token": 500000,
+    "max_actions": 3,
+    "max_screenshots": 2,
+})
 
 website_builder_agent.update(**{
     **_AGENT_CORE,

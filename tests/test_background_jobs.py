@@ -57,6 +57,9 @@ def test_job_wait_schema_enumerates_supported_conditions():
     condition = schema["function"]["parameters"]["properties"]["condition"]
     assert condition["enum"] == ["idle_after_turn", "finished"]
 
+    output_parameters = dynamic_manager.get_parameters(JobEnvironment.output)
+    assert "turn" in output_parameters["properties"]
+
 
 # --------------------------------------------------------------------------- #
 # The registry

@@ -220,9 +220,32 @@ class RuntimeManager(metaclass=Singleton):
             logger.info(f"| ⚫ Runtime stopped: {ref}")
 
     async def shutdown(self) -> None:
-        """Stop every running ref."""
+        """Cancel delegated turn drivers, then stop every running ref.
+
+        A pump is only the mailbox side of a continuable child. Its driver may be
+        awaiting a model response independently, so stopping pumps alone can leave paid
+        work alive after the owning run has ended.
+        """
+        current = asyncio.current_task()
+        drivers = {
+            ref._driver
+            for ref in self._delegated.values()
+            if ref._driver is not None
+            and ref._driver is not current
+            and not ref._driver.done()
+        }
+        for driver in drivers:
+            driver.cancel()
+        if drivers:
+            await asyncio.gather(*drivers, return_exceptions=True)
         for ref in list(self._refs.values()):
             await self.stop(ref, drain=False, reason="shutdown")
+        self._delegated.clear()
+        for future in self._pending.values():
+            if not future.done():
+                future.cancel()
+        self._pending.clear()
+        self._topics.clear()
 
     # ------------------------------------------------------------------
     # Messaging
@@ -575,7 +598,7 @@ class RuntimeManager(metaclass=Singleton):
         """Delegated Agents visible to one Gateway project, across conversations."""
         return [r for r in self._delegated.values() if r.project_id == project_id]
 
-    def forget(self, session_id: str) -> None:
+    async def forget(self, session_id: str) -> None:
         """Stop and drop every background child a finished session delegated.
 
         Called from the run's own teardown alongside jobs and terminals.
@@ -583,15 +606,21 @@ class RuntimeManager(metaclass=Singleton):
         outlive the run: nothing else would ever stop it, and in a long-lived host it
         would keep calling a model on a task whose answer nobody can collect.
         """
-        for ref in self.children(session_id):
+        children = self.children(session_id)
+        drivers = []
+        for ref in children:
             driver = ref._driver
             if driver is not None and not driver.done():
-                driver.cancel()          # its own teardown does the rest
+                driver.cancel()
+                drivers.append(driver)
             elif ref.alive:
                 # No driver to cancel — it never got one, or it already returned.
                 self._unsubscribe_all(ref)
                 ref.status = AgentStatus.STOPPED
                 self._refs.pop(ref.name, None)
+        if drivers:
+            await asyncio.gather(*drivers, return_exceptions=True)
+        for ref in children:
             self._delegated.pop(ref.job_id, None)
 
     async def _drive(self, ref: AgentRef, running: "asyncio.Event") -> None:
@@ -627,6 +656,15 @@ class RuntimeManager(metaclass=Singleton):
                     return
                 ref.turns += 1
                 succeeded = bool(getattr(response, "success", False))
+                ref.last_turn_success = succeeded
+                ref.turn_results[ref.turns] = str(
+                    getattr(response, "message", "") or ""
+                )
+                # A continuable Agent is intentionally bounded by its own memory; its
+                # Runtime handoff index should be bounded too. Website evolution needs
+                # only a handful of turns, while long-lived subscribers keep the latest.
+                while len(ref.turn_results) > 32:
+                    ref.turn_results.pop(min(ref.turn_results))
                 verdict = "finished" if succeeded else "ended without finishing"
                 job_manager.append_output(
                     ref.job_id,

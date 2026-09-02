@@ -19,6 +19,7 @@ python examples/run_meta_agent.py --config configs/website_evolution_demo.py \
 import asyncio
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -129,9 +130,27 @@ async def answer_from_the_terminal(session_id: str, stop: asyncio.Event) -> None
                 for index, option in enumerate(question.options, 1):
                     suffix = f" — {option.description}" if option.description else ""
                     print(f"  {index}. {option.label}{suffix}")
-                # Read in a thread: `input()` would block the loop the agent runs on,
-                # so the answer would arrive only after everything else had finished.
-                raw = (await asyncio.to_thread(input, "\nAnswer (number, or free text): ")).strip()
+                # Register stdin with the event loop instead of parking `input()` in an
+                # executor thread. A blocked executor read cannot be cancelled on SIGTERM
+                # and used to keep an otherwise-clean launcher alive indefinitely.
+                print("\nAnswer (number, or free text): ", end="", flush=True)
+                loop = asyncio.get_running_loop()
+                ready = loop.create_future()
+                fd = sys.stdin.fileno()
+
+                def read_line() -> None:
+                    if not ready.done():
+                        ready.set_result(sys.stdin.readline())
+
+                loop.add_reader(fd, read_line)
+                try:
+                    line = await ready
+                finally:
+                    loop.remove_reader(fd)
+                if line == "":
+                    stop.set()
+                    return
+                raw = line.strip()
                 if raw.isdigit() and 1 <= int(raw) <= len(labels):
                     answer = UserAnswer(id=question.id, selected=[labels[int(raw) - 1]])
                 else:
@@ -151,6 +170,76 @@ async def run_agent(record: TaskRecord, ctx: SessionContext, agent_name: str):
         ctx=ctx,
     )
     return response
+
+
+async def teardown() -> None:
+    """Release one launcher run in dependency order; safe after partial startup."""
+    from agentevolver.deploy import deployment_manager
+    from agentevolver.runtime import runtime_manager
+
+    cleanups = (
+        ("task", task_manager.stop),
+        ("runtime", runtime_manager.shutdown),
+        ("environment", environment_manager.cleanup),
+        ("deployment", deployment_manager.cleanup),
+        ("workflow", workflow_manager.cleanup),
+        ("plugin", plugin_manager.cleanup),
+    )
+    for label, cleanup in cleanups:
+        try:
+            await cleanup()
+        except Exception as error:  # noqa: BLE001 -- teardown must continue
+            logger.warning(f"| ⚠️ {label} cleanup: {error}")
+    try:
+        from agentevolver.sandbox import sandbox_manager
+        await sandbox_manager.cleanup()
+    except Exception as error:  # noqa: BLE001
+        logger.warning(f"| ⚠️ sandbox cleanup: {error}")
+    try:
+        await trace_manager.stop()
+    except Exception as error:  # noqa: BLE001
+        logger.warning(f"| ⚠️ trace cleanup: {error}")
+
+
+async def run_with_lifecycle() -> None:
+    """Run the configured launcher and turn SIGINT/SIGTERM into graceful teardown."""
+    loop = asyncio.get_running_loop()
+    stop_requested = asyncio.Event()
+    received: list[signal.Signals] = []
+
+    def request_stop(sig: signal.Signals) -> None:
+        received.append(sig)
+        stop_requested.set()
+
+    installed = []
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, request_stop, sig)
+            installed.append(sig)
+        except (NotImplementedError, RuntimeError):
+            pass
+
+    run_task = asyncio.create_task(main(), name="agent-launcher")
+    signal_task = asyncio.create_task(stop_requested.wait(), name="launcher-stop-signal")
+    try:
+        done, _ = await asyncio.wait(
+            {run_task, signal_task}, return_when=asyncio.FIRST_COMPLETED,
+        )
+        if signal_task in done and not run_task.done():
+            logger.warning(f"| 🛑 Received {received[-1].name}; stopping the complete run")
+            run_task.cancel()
+            await asyncio.gather(run_task, return_exceptions=True)
+        else:
+            await run_task
+    finally:
+        signal_task.cancel()
+        await asyncio.gather(signal_task, return_exceptions=True)
+        if not run_task.done():
+            run_task.cancel()
+            await asyncio.gather(run_task, return_exceptions=True)
+        await teardown()
+        for sig in installed:
+            loop.remove_signal_handler(sig)
 
 
 async def main():
@@ -287,16 +376,18 @@ async def main():
         answer_from_the_terminal(session_id, answering_stop), name="terminal-answers")
 
     # --- Wait for completion ---
-    while True:
-        record = await task_manager.get(task_id)
-        if record and record.task.status in (
-            TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED
-        ):
-            break
-        await asyncio.sleep(1)
-
-    answering_stop.set()
-    answering.cancel()
+    try:
+        while True:
+            record = await task_manager.get(task_id)
+            if record and record.task.status in (
+                TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED
+            ):
+                break
+            await asyncio.sleep(1)
+    finally:
+        answering_stop.set()
+        answering.cancel()
+        await asyncio.gather(answering, return_exceptions=True)
 
     record = await task_manager.get(task_id)
     if record.task.status == TaskStatus.DONE:
@@ -318,31 +409,5 @@ async def main():
         if memory_path:
             logger.info(f"| 📄 Memory HTML: {memory_path}")
 
-    # --- Teardown ---
-    # Clean up environments (browser peer containers) and the sandbox subsystem while
-    # the event loop and the opensandbox SDK executor are still alive. Relying on the
-    # asyncio-atexit cleanups instead fails at process exit ("Executor shutdown has
-    # been called"), leaking peer containers.
-    await task_manager.stop()
-    try:
-        await environment_manager.cleanup()
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"| ⚠️ environment cleanup: {e}")
-    try:
-        await workflow_manager.cleanup()
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"| ⚠️ workflow cleanup: {e}")
-    try:
-        await plugin_manager.cleanup()
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"| ⚠️ plugin cleanup: {e}")
-    try:
-        from agentevolver.sandbox import sandbox_manager
-        await sandbox_manager.cleanup()
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"| ⚠️ sandbox cleanup: {e}")
-    await trace_manager.stop()
-
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(run_with_lifecycle())

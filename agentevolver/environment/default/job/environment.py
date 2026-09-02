@@ -72,11 +72,43 @@ class JobEnvironment(Environment):
         one it mistyped, or one from a session that has since been forgotten.
         """
         job = job_manager.get(job_id)
-        if job is not None:
+        owner = self._session(ctx)
+        if job is not None and (not owner or job.session_id == owner):
             return job, None
-        known = [j.id for j in job_manager.list(self._session(ctx))]
+        known = [j.id for j in job_manager.list(owner)]
         return None, _fail(f"No job {job_id!r}. This session has: "
                            f"{', '.join(known) if known else '(none)'}")
+
+    @staticmethod
+    def _record_subscriber_collection(
+        job_id: str, ctx, *, full: bool, turn: Optional[int] = None,
+    ) -> int:
+        """A full read acknowledges the latest finished subscription turn."""
+        if not full:
+            return 0
+        extra = getattr(ctx, "extra", None) or {}
+        contract = extra.get("website_runtime_contract")
+        if not isinstance(contract, dict):
+            return 0
+        subscriber_ids = {str(item) for item in contract.get("subscriber_job_ids") or []}
+        if job_id not in subscriber_ids:
+            return 0
+
+        from agentevolver.runtime import runtime_manager
+
+        ref = runtime_manager.child(job_id)
+        if ref is None or not ref.alive or ref.turns < 1:
+            return 0
+        completed_turn = int(turn or ref.turns)
+        if completed_turn < 1 or completed_turn > ref.turns:
+            return 0
+        if turn is None and (ref.busy or not ref._tasks.empty()):
+            return 0
+        collected = contract.setdefault("collected_turns", {})
+        collected[job_id] = max(
+            int(collected.get(job_id) or 0), completed_turn,
+        )
+        return int(collected[job_id])
 
     # ------------------------------------------------------------------ actions
     @environment_manager.action(
@@ -122,17 +154,46 @@ class JobEnvironment(Environment):
         ),
     )
     async def output(self, job_id: str, tail: Optional[int] = None,
+                     turn: Optional[int] = None,
                      ctx=None, **kwargs: Any) -> Dict[str, Any]:
         job, failure = self._resolve(job_id, ctx)
         if failure:
             return failure
 
-        text = job_manager.output(job_id, tail=tail) or ""
+        from agentevolver.runtime import runtime_manager
+
+        ref = runtime_manager.child(job_id)
+        if turn is not None:
+            if tail is not None:
+                return _fail("turn and tail are mutually exclusive")
+            if turn < 1:
+                return _fail("turn must be a positive integer")
+            if ref is None or turn not in ref.turn_results:
+                available = sorted((getattr(ref, "turn_results", None) or {}).keys())
+                return _fail(
+                    f"No completed turn {turn} for {job_id}; available: "
+                    f"{available or '(none)'}"
+                )
+            text = ref.turn_results[turn]
+        else:
+            text = job_manager.output(job_id, tail=tail) or ""
+        collected_turn = self._record_subscriber_collection(
+            job_id, ctx, full=tail is None, turn=turn,
+        )
         header = f"{job.id} — {job.status.value}"
         if job.status.is_final and job.exit_code is not None:
             header += f" (exit {job.exit_code})"
         header += f", {job.elapsed:.1f}s"
-        if not job.status.is_final:
+        idle_after_turn = bool(
+            ref
+            and ref.alive
+            and ref.continuable
+            and not ref.busy
+            and ref._tasks.empty()
+        )
+        if idle_after_turn:
+            header += f" — IDLE AFTER TURN {ref.turns}, ready for a later event"
+        elif not job.status.is_final:
             # Say it explicitly. Output that simply stops looks the same as a job that
             # finished quietly, and an agent that reads it as finished stops collecting.
             header += " — STILL RUNNING, call again for more"
@@ -142,6 +203,9 @@ class JobEnvironment(Environment):
             header += f"\nerror: {job.error}"
         return _ok(f"{header}\n\n{text}" if text else f"{header}\n\n(no output yet)",
                    job_id=job_id, status=job.status.value, exit_code=job.exit_code,
+                   collected_turn=collected_turn or None,
+                   requested_turn=turn,
+                   idle_after_turn=idle_after_turn,
                    # Stated as data as well as prose: a caller deciding whether to come
                    # back should not have to parse a header for it.
                    running=not job.status.is_final)

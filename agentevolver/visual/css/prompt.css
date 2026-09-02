@@ -301,12 +301,19 @@ div.system > required-artifacts,
 div.system > website-contract,
 div.system > persona-isolation,
 div.system > co-design-protocol,
-div.system > browser-rules { border-left-color: var(--blue); }
+div.system > browser-rules,
+div.system > engineering-principles,
+div.system > user-context-boundaries { border-left-color: var(--blue); }
 div.system > execution-discipline,
 div.system > stage-gates,
-div.system > completion-contract { border-left-color: var(--amber); }
+div.system > completion-contract,
+div.system > delivery-loop,
+div.system > interaction-loop,
+div.system > release-acceptance { border-left-color: var(--amber); }
 div.system > tool-and-skill-policy,
-div.system > website-user-response-rules { border-left-color: var(--purple); }
+div.system > website-user-response-rules,
+div.system > user-codesign,
+div.system > capability-evolution { border-left-color: var(--purple); }
 
 div.system > input-boundaries::before { content: counter(section, decimal-leading-zero) "  ·  input-boundaries"; color: var(--blue); }
 div.system > execution-discipline::before { content: counter(section, decimal-leading-zero) "  ·  execution-discipline"; color: var(--amber); }
@@ -319,6 +326,13 @@ div.system > persona-isolation::before { content: counter(section, decimal-leadi
 div.system > co-design-protocol::before { content: counter(section, decimal-leading-zero) "  ·  co-design-protocol"; color: var(--blue); }
 div.system > browser-rules::before { content: counter(section, decimal-leading-zero) "  ·  browser-rules"; color: var(--blue); }
 div.system > website-user-response-rules::before { content: counter(section, decimal-leading-zero) "  ·  website-user-response-rules"; color: var(--purple); }
+div.system > engineering-principles::before { content: counter(section, decimal-leading-zero) "  ·  engineering-principles"; color: var(--blue); }
+div.system > user-context-boundaries::before { content: counter(section, decimal-leading-zero) "  ·  user-context-boundaries"; color: var(--blue); }
+div.system > delivery-loop::before { content: counter(section, decimal-leading-zero) "  ·  delivery-loop"; color: var(--amber); }
+div.system > interaction-loop::before { content: counter(section, decimal-leading-zero) "  ·  interaction-loop"; color: var(--amber); }
+div.system > release-acceptance::before { content: counter(section, decimal-leading-zero) "  ·  release-acceptance"; color: var(--amber); }
+div.system > user-codesign::before { content: counter(section, decimal-leading-zero) "  ·  user-codesign"; color: var(--purple); }
+div.system > capability-evolution::before { content: counter(section, decimal-leading-zero) "  ·  capability-evolution"; color: var(--purple); }
 
 /* ── CODE BLOCKS — schema / template sections ── */
 div.system > output-schema,

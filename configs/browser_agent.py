@@ -21,8 +21,8 @@ memory_names = [
 agent_names = [
     "browser_agent",
 ]
-# Pure environment agent — no tools; the task ends via the built-in `finish` action.
-tool_names = []
+# Browser actions do the work; the sole tool is the explicit completion signal.
+tool_names = ["done_tool"]
 skill_names = []
 connector_names = []
 env_names = [

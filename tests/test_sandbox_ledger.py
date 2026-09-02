@@ -99,3 +99,20 @@ def test_a_reap_that_cannot_reach_docker_keeps_the_debt_for_the_next_boot(
     assert asyncio.run(ledger.reap_stale()) == []
     # Entries stay recorded so a later boot (with docker available) can reap.
     assert ledger.stale_ids() == ["dead-3"]
+
+
+def test_exact_remove_clears_only_the_confirmed_resource(monkeypatch, tmp_path) -> None:
+    _use_home(monkeypatch, tmp_path)
+    ledger.record("target")
+    ledger.record("other")
+    removed = []
+
+    async def fake_remove(name: str) -> bool:
+        removed.append(name)
+        return True
+
+    monkeypatch.setattr(ledger, "_remove_container", fake_remove)
+
+    assert asyncio.run(ledger.remove("target")) is True
+    assert removed == ["sandbox-target"]
+    assert ledger.stale_ids() == ["other"]

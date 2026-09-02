@@ -110,7 +110,13 @@ class BrowserEnvironment(Environment):
         sid = self._session_id(ctx)
         rec = self._sessions.get(sid)
         if rec is None:
-            rec = {"step": 0, "action_seq": 0, "screenshot": None, "previous": None}
+            rec = {
+                "step": 0,
+                "action_seq": 0,
+                "screenshot": None,
+                "previous": None,
+                "diagnostic_counts": {},
+            }
             self._sessions[sid] = rec
         return sid, rec
 
@@ -424,14 +430,40 @@ class BrowserEnvironment(Environment):
             if self.state_detail == "html" and state_data.get("html"):
                 sections.append(f"<page_html>\n{state_data['html']}\n</page_html>")
 
+            diagnostics = state_data.get("diagnostics") or {}
+            previous_counts = rec["diagnostic_counts"]
+            changed = []
+            for event in diagnostics.get("events") or []:
+                key = (event.get("type"), event.get("message"), event.get("url"))
+                prior = int(previous_counts.get(key, 0))
+                current = int(event.get("count") or 0)
+                if current > prior:
+                    changed.append((event, current - prior))
+                previous_counts[key] = current
+            counts = diagnostics.get("counts") or {}
+            count_text = ", ".join(f"{type}={count}" for type, count in sorted(counts.items()))
+            diagnostic_lines = [
+                f"<browser_diagnostics total={int(diagnostics.get('total') or 0)}>",
+                f"Cumulative: {count_text or 'none'}",
+            ]
+            if changed:
+                diagnostic_lines.append("New since the previous observation:")
+                for event, increment in changed:
+                    source = f" @ {event['url']}" if event.get("url") else ""
+                    diagnostic_lines.append(
+                        f"- {event.get('type')} x{increment}: {event.get('message')}{source}"
+                    )
+            else:
+                diagnostic_lines.append("New since the previous observation: none")
+            diagnostic_lines.append("</browser_diagnostics>")
+            sections.append("\n".join(diagnostic_lines))
+
             state_text = "\n\n".join(sections)
 
             screenshots = []
             if state_data.get("screenshot"):
                 step = rec["step"]
                 img = _b64_to_image(state_data["screenshot"])
-                # Keep the raw screenshot on disk for replay/debugging
-                raw_path = await self._ss.store_screenshot(img, step, f"{sid}/step_{step:04d}_state_raw.png")
                 description = "Browser state screenshot"
                 if self.use_som and elements:
                     img = await self._ss.draw_som(img, elements)

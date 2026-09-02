@@ -78,7 +78,7 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 
 ## `apply_patch_tool`
 
-Apply one standard unified diff to one text file in the active workspace.
+Apply one single-file unified diff in the active workspace. Every hunk header must include ranges such as `@@ -1,2 +1,3 @@`; a bare `@@` is invalid.
 
 Permission mode: `workspace_write` · changes state · call budget 60s
 

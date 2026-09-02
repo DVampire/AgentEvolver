@@ -20,6 +20,7 @@ import io
 from types import SimpleNamespace
 
 import pytest
+import pytest_asyncio
 
 from agentevolver.agent.types import _delegation_summary
 from agentevolver.job import job_manager
@@ -78,8 +79,8 @@ class _Parent:
             self.extra["project_id"] = project_id
 
 
-@pytest.fixture(autouse=True)
-def _reap():
+@pytest_asyncio.fixture(autouse=True)
+async def _reap():
     """Every test leaves the registries empty, whatever it did to them.
 
     A leaked background child is a live task that keeps answering into the next test's
@@ -87,7 +88,7 @@ def _reap():
     """
     yield
     for session in (SESSION, "other-session"):
-        runtime_manager.forget(session)
+        await runtime_manager.forget(session)
         job_manager.forget(session)
 
 
@@ -265,6 +266,14 @@ async def test_job_wait_collects_a_continuable_turn_without_model_polling():
         "queued": 0,
     }
 
+    output = await JobEnvironment().output(
+        job_id=sub.job_id, turn=1, ctx=_Parent(),
+    )
+    assert output["success"] is True
+    assert "answer 1" in output["message"]
+    assert "--- turn" not in output["message"]
+    assert output["requested_turn"] == 1
+
 
 @pytest.mark.asyncio
 async def test_job_wait_returns_early_when_a_subscriber_dies():
@@ -320,7 +329,7 @@ async def test_descendants_share_the_root_tree_messaging_authority():
 
     assert delivered.success
     drivers = [ref._driver for ref in (first, grandchild) if ref._driver is not None]
-    runtime_manager.forget(SESSION)
+    await runtime_manager.forget(SESSION)
     await asyncio.gather(*drivers, return_exceptions=True)
     job_manager.forget(first.session_id)
 
@@ -520,7 +529,7 @@ async def test_a_background_child_does_not_outlive_the_run_that_started_it():
     sub = await _start(child, "a long job", continuable=True, parent_ctx=_Parent())
     ref_name = sub.name
 
-    runtime_manager.forget(SESSION)
+    await runtime_manager.forget(SESSION)
 
     assert await _until(lambda: runtime_manager.get(ref_name) is None)
     assert runtime_manager.children(SESSION) == []
@@ -538,7 +547,7 @@ async def test_reaping_one_session_leaves_another_session_s_children_alone():
         _Child(delay=5.0), "theirs", continuable=True, parent_ctx=_Parent(id="other-session")
     )
 
-    runtime_manager.forget(SESSION)
+    await runtime_manager.forget(SESSION)
 
     assert await _until(lambda: not mine.alive)
     assert theirs.alive

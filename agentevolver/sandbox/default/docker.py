@@ -93,6 +93,15 @@ class DockerSandbox(Sandbox):
         return self._name
 
     @property
+    def resource_id(self) -> Optional[str]:
+        return self._name
+
+    @classmethod
+    async def destroy_resource(cls, resource_id: str) -> bool:
+        code, _out, err = await _run(_DOCKER, "rm", "-f", resource_id, timeout=120)
+        return code == 0 or "No such container" in err
+
+    @property
     def container_workspace(self) -> Optional[str]:
         return self.config.workdir
 
@@ -262,7 +271,9 @@ class DockerSandbox(Sandbox):
     async def destroy(self) -> None:
         # By exact name. Never `--filter ancestor=<image>`: that matches every container
         # built from the image, including long-lived ones belonging to someone else.
-        await _run(_DOCKER, "rm", "-f", self._name, timeout=120)
+        code, _out, err = await _run(_DOCKER, "rm", "-f", self._name, timeout=120)
+        if code != 0 and "No such container" not in err:
+            raise RuntimeError(f"could not remove Docker sandbox {self._name}: {err.strip()}")
         self._started = False
 
     async def is_alive(self) -> bool:

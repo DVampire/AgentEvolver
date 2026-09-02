@@ -13,6 +13,7 @@ Use only for dev/demo or trusted single-tenant hosts. For real isolation use the
 
 from __future__ import annotations
 
+import asyncio
 import os
 import signal
 import subprocess
@@ -36,6 +37,74 @@ class HostSandbox(Sandbox):
         self._procs: List[subprocess.Popen] = []   # tracked background processes
         self._root: str = ""
 
+    @staticmethod
+    def _process_start_ticks(pid: int) -> Optional[int]:
+        try:
+            # Split after the final ')' because a process name may contain spaces.
+            fields = open(f"/proc/{pid}/stat", encoding="utf-8").read().rsplit(") ", 1)[1].split()
+            return int(fields[19])  # proc stat field 22; fields starts at field 3
+        except (OSError, ValueError, IndexError):
+            return None
+
+    @property
+    def resource_id(self) -> Optional[str]:
+        for process in reversed(self._procs):
+            if process.poll() is not None:
+                continue
+            start = self._process_start_ticks(process.pid)
+            if start is not None:
+                return f"{process.pid}:{start}:{os.getpgid(process.pid)}"
+        return None
+
+    @classmethod
+    async def destroy_resource(cls, resource_id: str) -> bool:
+        """Stop a persisted host group only while its leader identity still matches."""
+        try:
+            pid_text, start_text, group_text = resource_id.split(":", 2)
+            pid, start, group = int(pid_text), int(start_text), int(group_text)
+        except (AttributeError, TypeError, ValueError):
+            return False
+        if pid <= 1 or group <= 1 or cls._process_start_ticks(pid) != start:
+            return False
+        try:
+            if os.getpgid(pid) != group:
+                return False
+            os.killpg(group, signal.SIGTERM)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+        deadline = asyncio.get_running_loop().time() + 3.0
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                waited, _status = os.waitpid(pid, os.WNOHANG)
+                if waited == pid:
+                    return True
+            except ChildProcessError:
+                pass
+            try:
+                os.killpg(group, 0)
+            except ProcessLookupError:
+                return True
+            await asyncio.sleep(0.05)
+        try:
+            os.killpg(group, signal.SIGKILL)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+        deadline = asyncio.get_running_loop().time() + 1.0
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                waited, _status = os.waitpid(pid, os.WNOHANG)
+                if waited == pid:
+                    return True
+            except ChildProcessError:
+                if not os.path.exists(f"/proc/{pid}"):
+                    return True
+            await asyncio.sleep(0.05)
+        return not os.path.exists(f"/proc/{pid}")
+
     # ------------------------------------------------------------- lifecycle
     async def start(self) -> None:
         if self._started:
@@ -47,16 +116,44 @@ class HostSandbox(Sandbox):
         logger.info(f"| 🖥️  HostSandbox started (root={self._root}, NO isolation)")
 
     async def destroy(self) -> None:
-        for p in self._procs:
+        processes = list(self._procs)
+        for process in processes:
             try:
-                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+                group = os.getpgid(process.pid)
+                os.killpg(group, signal.SIGTERM)
             except Exception:
                 try:
-                    p.terminate()
+                    process.terminate()
                 except Exception:
                     pass
+        deadline = asyncio.get_running_loop().time() + 3.0
+        while any(process.poll() is None for process in processes):
+            if asyncio.get_running_loop().time() >= deadline:
+                break
+            await asyncio.sleep(0.05)
+        for process in processes:
+            if process.poll() is not None:
+                continue
+            try:
+                group = os.getpgid(process.pid)
+                os.killpg(group, signal.SIGKILL)
+            except Exception:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+        for process in processes:
+            try:
+                await asyncio.to_thread(process.wait, timeout=1.0)
+            except Exception:
+                pass
+        survivors = [process.pid for process in processes if process.poll() is None]
         self._procs.clear()
         self._started = False
+        if survivors:
+            raise RuntimeError(
+                f"could not verify shutdown of host process groups: {survivors}"
+            )
 
     # ------------------------------------------------------------- execution
     async def run_command(

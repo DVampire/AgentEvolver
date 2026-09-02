@@ -435,7 +435,6 @@ class AgentConfig(BaseModel):
     def __repr__(self) -> str:
         return self.__str__()
 
-
 # ---------------------------------------------------------------------------
 # Event-driven run: one unified loop for every agent (leaf actors AND orchestrators)
 # ---------------------------------------------------------------------------
@@ -713,6 +712,17 @@ class Agent(BaseModel):
 
     def __repr__(self) -> str:
         return self.__str__()
+
+    def clone_for_run(self, *, model_name: Optional[str] = None) -> "Agent":
+        """Create one state-isolated invocation from a registered Agent template."""
+        clone = self.model_copy(deep=True)
+        clone._runs = {}
+        clone._pending_step_tokens = {}
+        for constraint in clone.constraints:
+            constraint._state.clear()
+        if model_name:
+            clone.model_name = model_name
+        return clone
 
     async def _get_agent_context(self,
                                  task: str,
@@ -2243,17 +2253,13 @@ class Agent(BaseModel):
             # constraints and model/budget overrides so two parallel delegations cannot
             # race through the same `_runs` or `_pending_step_tokens` dictionaries.
             if isinstance(registered_child, Agent):
-                child = registered_child.model_copy(deep=True)
-                child._runs = {}
-                child._pending_step_tokens = {}
-                for constraint in child.constraints:
-                    constraint._state.clear()
+                child = registered_child.clone_for_run(model_name=model)
             else:
                 # Third-party manager adapters used before Agent became the mandatory
                 # registration type may still return an opaque callable. Preserve that
                 # compatibility when no per-invocation Agent fields can be applied.
                 child = registered_child
-            if model is not None:
+            if model is not None and not isinstance(registered_child, Agent):
                 if not isinstance(child, Agent):
                     raise TypeError("model override requires a registered Agent instance")
                 child.model_name = model
@@ -2432,6 +2438,11 @@ class Agent(BaseModel):
             logger.info(f"| ✅ [{self.name}] {label} completed")
             return response.message, False, None, None, None, None
         if capability_type == "tool":
+            if route[1] == "done_tool":
+                blocker = await self._completion_blocker(ctx)
+                if blocker:
+                    message = f"Completion blocked: {blocker}"
+                    return message, False, None, None, message, None
             passthrough = {"sub_dispatch": bridge} if bridge is not None else {}
             tool_response = await tool_manager(
                 name=route[1], input=call.input, ctx=ctx,
@@ -2684,7 +2695,7 @@ class Agent(BaseModel):
             logger.warning(f"| ⚠️ [{self.name}] could not collect due reminders: {error}")
 
 
-    def _release_session_resources(self, run: "_AgentRun") -> None:
+    async def _release_session_resources(self, run: "_AgentRun") -> None:
         """Reap what the run left running: sub-agents, jobs, terminals, language servers.
 
         Each registry had a `forget` and nothing called it. A backgrounded command, a
@@ -2706,8 +2717,12 @@ class Agent(BaseModel):
         # how to stop one — cancel its driver, which stops its pump — and only then does
         # the job registry drop the record. The other order would forget the record while
         # the child was still calling a model, with nothing left that could name it.
-        for label, forget in (("delegated children", self._forget_delegated),
-                              ("jobs", self._forget_jobs),
+        try:
+            await self._forget_delegated(session_id)
+        except Exception as error:                                  # noqa: BLE001
+            logger.warning(f"| ⚠️ [{self.name}] could not release delegated children for "
+                           f"{session_id}: {error}")
+        for label, forget in (("jobs", self._forget_jobs),
                               ("terminals", self._forget_terminals),
                               ("attachments", self._forget_attachments)):
             try:
@@ -2731,9 +2746,9 @@ class Agent(BaseModel):
         attachment_manager.release(session_id)
 
     @staticmethod
-    def _forget_delegated(session_id: str) -> None:
+    async def _forget_delegated(session_id: str) -> None:
         from agentevolver.runtime import runtime_manager
-        runtime_manager.forget(session_id)
+        await runtime_manager.forget(session_id)
 
     @staticmethod
     def _forget_jobs(session_id: str) -> None:
@@ -3041,7 +3056,7 @@ class Agent(BaseModel):
                 {"result": run.result, "success": success, **self._lifecycle_input(run)},
                 ctx=run.ctx,
             )
-        self._release_session_resources(run)
+        await self._release_session_resources(run)
 
         # "✅ completed" for a force-stop reads as success in the logs and hides the
         # very runs worth looking at — a no-progress termination and a finished task
@@ -3083,6 +3098,10 @@ class Agent(BaseModel):
     def _include_workflows(self) -> bool:
         """Whether this Agent may invoke registered Workflows directly."""
         return False
+
+    async def _completion_blocker(self, ctx: AgentContext) -> Optional[str]:
+        """Return why `done_tool` must wait; ordinary Agents have no extra gate."""
+        return None
 
     def _allow_read_only_tool_call(self, name: str, input: Dict[str, Any]) -> bool:
         """Narrow opt-in for non-mutating actions exposed by a mixed-action Tool."""
