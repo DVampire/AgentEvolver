@@ -389,28 +389,37 @@ def validate_local_artifacts(
             f"name={instance.name!r}, prompt={instance.prompt_name!r}, "
             f"environment={instance.env_name!r}"
         )
+    # Browser-only isolation, as the agent actually declares it. Two fields carry it:
+    # `capability_allowlists` bounds what the router will project, and `env_names` is the
+    # only environment it may mount. Checked here rather than trusted, because a visitor
+    # that could reach the workspace would be co-designing with the builder's own files
+    # instead of with the deployed site.
     expected_user_allowlists = {
-        "tool_allowlist": ["done_tool"],
-        "skill_allowlist": [],
-        "connector_allowlist": [],
-        "plugin_allowlist": [],
-        "environment_allowlist": ["browser_environment"],
-        "workflow_allowlist": [],
+        "tool": ["done_tool"],
+        "skill": [],
+        "connector": [],
+        "plugin": [],
+        "workflow": [],
     }
-    actual_user_allowlists = instance._required_capability_allowlists()
-    if actual_user_allowlists != expected_user_allowlists:
-        raise ValueError(
-            "website_user_agent must remain browser-only: "
-            f"expected={expected_user_allowlists}, actual={actual_user_allowlists}"
-        )
+    expected_user_envs = ["browser_environment"]
+
+    def check_browser_only(agent, label: str) -> None:
+        if dict(agent.capability_allowlists) != expected_user_allowlists:
+            raise ValueError(
+                f"{label} must remain browser-only: expected={expected_user_allowlists}, "
+                f"actual={dict(agent.capability_allowlists)}"
+            )
+        if list(agent.env_names) != expected_user_envs:
+            raise ValueError(
+                f"{label} must mount only {expected_user_envs}, not {list(agent.env_names)}"
+            )
+
+    check_browser_only(instance, "website_user_agent")
 
     acceptance_class = registry_agents["browser_agent"]
     acceptance_key = inflection.underscore(acceptance_class.__name__)
     acceptance = acceptance_class(**dict(getattr(config, acceptance_key)))
-    if acceptance._required_capability_allowlists() != expected_user_allowlists:
-        raise ValueError(
-            "browser_agent acceptance must expose only done_tool and browser_environment"
-        )
+    check_browser_only(acceptance, "browser_agent acceptance")
 
     expected_models = {
         "website_builder_agent": "llm_hub/claude-opus-5",
