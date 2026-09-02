@@ -14,9 +14,9 @@ registered Agent instances.
 
 | File | Responsibility |
 |---|---|
-| `types.py` | Agent references, statuses, and runtime messages |
+| `types.py` | Agent references, statuses, control/query messages, and subscription turns |
 | `pump.py` | Mailbox event pump |
-| `server.py` | Spawn, send, stop, lookup, and delegation |
+| `server.py` | Spawn, pause/resume, send, subscribe/publish, stop, lookup, and delegation |
 
 Runtime moves events and owns process-local execution state. Protocol defines conversation
 semantics; Workflow interprets persisted orchestration programs above it.
@@ -68,3 +68,9 @@ driver that serializes `send_message_tool` turns therefore serializes published 
 The live ref owns `subscriptions`; stopping it removes every topic edge. Runtime reports the
 fan-out count when an event is accepted into subscriber queues. Protocol owns event meaning
 and session scoping, while Runtime owns delivery and lifecycle.
+
+Pause is also a property of the live ref, not of an Agent template. Runtime closes the
+ref's scheduling gate so queued follow-up and subscription turns cannot begin. An active
+Agent turn additionally receives a control message and holds at a complete round boundary;
+resume opens both layers again. This makes pausing an idle subscriber effective rather than
+merely changing its displayed label.

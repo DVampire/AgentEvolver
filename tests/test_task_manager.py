@@ -25,8 +25,8 @@ import pytest
 
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.task import TaskCategory, TaskPriority, TaskStatus
-from agentevolver.task.server import TaskDeferred, TaskManager, TaskRecord
-from agentevolver.task.types import Task
+from agentevolver.task.server import TaskManagerServer
+from agentevolver.task.types import Task, TaskDeferred, TaskRecord
 
 
 def _manager(tmp_path, handler):
@@ -36,7 +36,7 @@ def _manager(tmp_path, handler):
     reassigned rather than constructed fresh so one test's records cannot reach the next.
     No workers are started — `_execute` is called directly.
     """
-    manager = TaskManager()
+    manager = TaskManagerServer()
     manager._records = {}
     manager._record_paths = {}
     manager._running_evolver = {}
@@ -222,8 +222,8 @@ async def test_disjoint_declared_writes_can_run(tmp_path):
 
 def test_parent_child_paths_overlap_but_prefix_siblings_do_not():
     """Resource paths use component boundaries, so `api` does not capture `api2`."""
-    assert TaskManager._resource_overlap("src/api", "src/api/handler.py")
-    assert not TaskManager._resource_overlap("src/api", "src/api2")
+    assert TaskManagerServer._resource_overlap("src/api", "src/api/handler.py")
+    assert not TaskManagerServer._resource_overlap("src/api", "src/api2")
 
 
 # --------------------------------------------------------------------------- #

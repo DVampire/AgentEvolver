@@ -2,8 +2,9 @@
 
 Parallels AgentContextManager from agentevolver/agent/context.py.
 
-Each hook is stateless by design: any per-session state lives inside the
-hook instance itself (via PrivateAttr), not in a shared session store.
+The manager owns registration and dispatch only. A hook may keep bounded observational
+state in PrivateAttr and releases it at lifecycle cleanup; session business state remains
+in the owning subsystem.
 """
 
 from __future__ import annotations
@@ -74,8 +75,8 @@ class HookContextManager:
     Hook dispatch is by registered name (exact match), mirroring how
     AgentContextManager dispatches by agent name.
 
-    Hooks are stateless by design. Any per-session state a hook needs lives
-    inside the hook instance itself (e.g. via pydantic PrivateAttr), not here.
+    Hook registration state lives here. Any bounded per-session adapter state lives on
+    its hook instance and is released through the hook cleanup boundary.
     """
 
     def __init__(self) -> None:
@@ -285,7 +286,7 @@ class HookContextManager:
         routes by agent name.
 
         Args:
-            name:  Registered hook name to invoke (e.g. ``"memory_hook"``).
+            name:  Registered hook name to invoke (e.g. ``"trace_hook"``).
             input: Event payload dict. ``"event"`` key is required.
             ctx:   Any context with an ``.id`` attribute (AgentContext, etc.).
 

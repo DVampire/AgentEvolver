@@ -1,56 +1,41 @@
-from .types import (
-    TRACE_FORMAT_VERSION,
-    UnsupportedTraceEvent,
-    TraceEvent,
-    TraceEventType,
-    agent_start_event,
-    agent_call_event,
-    agent_end_event,
-    tool_start_event,
-    tool_call_event,
-    skill_start_event,
-    skill_call_event,
-    model_request_event,
-    parse_trace_event,
+from .derive import derive_messages
+from .integrity import (
+    INTEGRITY_POLICY_VERSION,
+    TRACE_INTEGRITY_PROFILE_KEY,
+    TraceDurabilityBoundary,
+    TraceIntegrityError,
+    TraceIntegrityProfile,
+    ensure_trace_durable,
+    report_trace_integrity_failure,
+    resolve_integrity_profile,
 )
-from .request import REQUEST_SNAPSHOT_VERSION, RequestSnapshot
+from .persistence import (
+    SQLiteTracePersistence,
+    TracePersistence,
+    create_trace_persistence,
+)
 from .projection import (
     PROJECTION_WATERMARK_VERSION,
-    ProjectionVersionMismatch,
-    ProjectionWatermark,
-    ProjectionWatermarkError,
-    ProjectionWatermarkStore,
     ProjectionRegistration,
     ProjectionRegistrationError,
     ProjectionRegistry,
     ProjectionRunner,
+    ProjectionVersionMismatch,
+    ProjectionWatermark,
+    ProjectionWatermarkError,
+    ProjectionWatermarkStore,
     get_default_projection_registry,
 )
-from .stats import STATS_SCHEMA_VERSION, TraceStats, TraceStatsProjector
-from .checkpoint import (
-    INTEGRITY_POLICY_VERSION,
-    TRACE_INTEGRITY_PROFILE_KEY,
-    TraceCheckpointBoundary,
-    TraceIntegrityError,
-    TraceIntegrityProfile,
-    checkpoint_trace,
-    report_trace_integrity_failure,
-    resolve_integrity_profile,
-)
-from .execution_checkpoint import (
+from .recovery import (
     EXECUTION_CHECKPOINT_VERSION,
     EffectReceipt,
     ExecutionCheckpoint,
     UnsettledCall,
     derive_execution_checkpoint,
 )
-from .persistence import (
-    TracePersistence,
-    SQLiteTracePersistence,
-    create_trace_persistence,
-)
+from .request import REQUEST_SNAPSHOT_VERSION, RequestSnapshot
 from .server import trace_manager
-from .derive import derive_messages
+from .stats import STATS_SCHEMA_VERSION, TraceStats, TraceStatsProjector
 from .surface import (
     SurfaceError,
     fold_surface,
@@ -58,6 +43,21 @@ from .surface import (
     shadowed_by,
     surface_events,
     transcript_events,
+)
+from .types import (
+    TRACE_FORMAT_VERSION,
+    TraceEvent,
+    TraceEventType,
+    UnsupportedTraceEvent,
+    agent_call_event,
+    agent_end_event,
+    agent_start_event,
+    model_request_event,
+    parse_trace_event,
+    skill_call_event,
+    skill_start_event,
+    tool_call_event,
+    tool_start_event,
 )
 
 __all__ = [
@@ -82,10 +82,10 @@ __all__ = [
     "TraceStatsProjector",
     "INTEGRITY_POLICY_VERSION",
     "TRACE_INTEGRITY_PROFILE_KEY",
-    "TraceCheckpointBoundary",
+    "TraceDurabilityBoundary",
     "TraceIntegrityError",
     "TraceIntegrityProfile",
-    "checkpoint_trace",
+    "ensure_trace_durable",
     "report_trace_integrity_failure",
     "resolve_integrity_profile",
     "EXECUTION_CHECKPOINT_VERSION",

@@ -7,6 +7,7 @@ the model a shorter conversation than the one that happened.
 
 import asyncio
 
+from agentevolver.agent.context import context_builder
 from agentevolver.message.types import HumanMessage, SystemMessage
 from agentevolver.trace.server import TraceManager
 from agentevolver.trace.types import (
@@ -101,8 +102,6 @@ class _Agent:
     from agentevolver.agent.types import Agent as _Base
 
     _derived_messages = _Base._derived_messages
-    # staticmethod on Agent; re-wrap or the class body rebinds it as a method
-    _split_rendered_turn = staticmethod(_Base._split_rendered_turn)
     _freeze_capabilities = staticmethod(_Base._freeze_capabilities)
     name = "probe_agent"
 
@@ -186,7 +185,7 @@ def test_a_turn_with_no_recognisable_blocks_is_kept():
     """
     from agentevolver.agent.types import Agent
 
-    _, volatile = Agent._split_rendered_turn(
+    _, volatile = context_builder.split_rendered_turn(
         [SystemMessage(content="s"), HumanMessage(content="something unstructured")]
     )
     assert volatile and "something unstructured" in volatile[0].text
@@ -248,45 +247,41 @@ def test_the_per_step_blocks_survive_the_projection():
     """
     from agentevolver.agent.types import Agent
 
-    _, volatile = Agent._split_rendered_turn(_rendered_with_scaffolding())
+    _, volatile = context_builder.split_rendered_turn(_rendered_with_scaffolding())
 
     for block in ("constraints", "step-info", "todo", "workspace", "errors"):
         assert f"<{block}>" in volatile[0].text, f"{block} was dropped"
     assert "this exact call was issued 3 times" in volatile[0].text, "repeat reminder lost"
 
 
-def test_the_capability_catalogs_are_stable_not_volatile():
-    """They are identical every step, and putting them after the history is what cut
-    prefix reuse to 20% — 61,000 unchanging characters beyond the last reusable byte."""
-    from agentevolver.agent.types import Agent
+def test_native_capability_catalogs_are_not_duplicated_in_messages():
+    """Callable schemas travel through the provider-native tools parameter only."""
+    stable, volatile = context_builder.split_rendered_turn(_rendered_with_scaffolding())
+    everything = "".join(message.text for message in stable + volatile)
 
-    stable, volatile = Agent._split_rendered_turn(_rendered_with_scaffolding())
-
-    assert "<tool-context>" in stable[0].text and "<skill-context>" in stable[0].text
-    assert "tool-context" not in volatile[0].text, "catalogs must not trail the history"
+    assert "tool-context" not in everything
+    assert "skill-context" not in everything
 
 
 def test_history_blocks_are_not_stated_twice():
     """The projection opens with the task and *is* the history."""
-    from agentevolver.agent.types import Agent
-
-    stable, volatile = Agent._split_rendered_turn(_rendered_with_scaffolding())
+    stable, volatile = context_builder.split_rendered_turn(_rendered_with_scaffolding())
     everything = (stable[0].text if stable else "") + (volatile[0].text if volatile else "")
 
-    assert "<task>" not in everything
+    assert everything.count("<task>") == 1
     assert "<memory>" not in everything
     assert "[history prose]" not in everything
 
 
-def test_a_turn_carrying_only_history_adds_nothing():
-    """A step with no scaffolding should append no turn, not an empty one."""
-    from agentevolver.agent.types import Agent
-
+def test_a_turn_carrying_only_task_and_history_keeps_only_the_task_anchor():
+    """History comes from Trace, while the immutable task remains the fixed anchor."""
     only_history = [
         SystemMessage(content="s"),
         HumanMessage(content="<agent-context><task>T</task><memory>H</memory></agent-context>"),
     ]
-    assert Agent._split_rendered_turn(only_history) == ([], [])
+    stable, volatile = context_builder.split_rendered_turn(only_history)
+    assert [message.text for message in stable] == ["<task>T</task>"]
+    assert volatile == []
 
 
 def test_the_scaffolding_lands_after_the_history(monkeypatch):
@@ -456,16 +451,8 @@ def test_the_prefix_survives_an_evolution_step():
 # --------------------------------------------------------------------------- #
 # The container: one catalog, one cache breakpoint
 # --------------------------------------------------------------------------- #
-def test_the_container_is_treated_as_stable():
-    """`<capability-context>` is the catalog now, and the split must follow the template.
-
-    The predecessor listed the four leaf tags by hand. That list and the templates were
-    two records of the same fact, and only one of them was edited when the blocks were
-    merged — the split then found nothing stable and sent the whole 58,000-character
-    catalog after the history, where no cache can reach it.
-    """
-    from agentevolver.agent.types import Agent
-
+def test_the_capability_container_is_removed_from_message_context():
+    """The native tools parameter is the single callable capability catalog."""
     turn = [
         HumanMessage(
             content=(
@@ -475,26 +462,25 @@ def test_the_container_is_treated_as_stable():
             )
         )
     ]
-    stable, volatile = Agent._split_rendered_turn(turn)
+    stable, volatile = context_builder.split_rendered_turn(turn)
 
-    assert "<capability-context>" in stable[0].text
-    assert "bash" in stable[0].text and "alpha" in stable[0].text
+    assert stable == []
     assert "capability-context" not in volatile[0].text
+    assert "bash" not in volatile[0].text and "alpha" not in volatile[0].text
     assert "step 3" in volatile[0].text
 
 
-def test_bare_blocks_still_split_without_the_container():
-    """A prompt written before the container existed must not lose its catalog."""
-    from agentevolver.agent.types import Agent
-
+def test_bare_legacy_capability_blocks_are_also_removed():
+    """Legacy prompt blocks cannot create a second, drifting tool catalog."""
     turn = [
         HumanMessage(
             content="<tool-context>- bash</tool-context>\n"
             "<agent-context><step-info>step 3</step-info></agent-context>"
         )
     ]
-    stable, volatile = Agent._split_rendered_turn(turn)
-    assert "bash" in stable[0].text
+    stable, volatile = context_builder.split_rendered_turn(turn)
+    assert stable == []
+    assert "bash" not in volatile[0].text
     assert "step 3" in volatile[0].text
 
 

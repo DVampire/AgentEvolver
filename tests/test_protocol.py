@@ -79,9 +79,15 @@ def runtime(monkeypatch):
                 raise self.suspend_error
             return self.suspend_result
 
-        def resume(self, task_id, guidance):
+        def resolve_suspension(self, task_id, guidance):
             self.sent.append(("resume", task_id, guidance))
             return self.resume_result
+
+        async def pause_agent(self, ref):
+            self.sent.append((ref, ControlMessage(action="pause")))
+
+        async def resume_agent(self, ref):
+            self.sent.append((ref, ControlMessage(action="resume")))
 
         async def ask(self, ref, msg, timeout=None):
             return self.ask_result

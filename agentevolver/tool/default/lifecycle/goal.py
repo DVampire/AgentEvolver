@@ -18,13 +18,16 @@ from pydantic import Field
 from agentevolver.logger import logger
 from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
-from agentevolver.task.goal import authority_of, goal_manager, owner_of, session_of
-from agentevolver.task.types import (
+from agentevolver.task import (
     Goal,
     GoalAction,
     GoalError,
     GoalPhase,
     TaskPriority,
+    authority_of,
+    owner_of,
+    session_of,
+    task_manager,
 )
 from agentevolver.tool.types import Tool
 
@@ -124,7 +127,7 @@ class GetGoalTool(Tool):
 
     async def __call__(self, **kwargs) -> Response:
         ctx = kwargs.get("ctx")
-        goal = goal_manager.current(session_of(ctx), owner=owner_of(ctx))
+        goal = task_manager.goals.current(session_of(ctx), owner=owner_of(ctx))
         if goal is None:
             # Said plainly rather than returned as emptiness: "no goal" is a real
             # answer, and an empty result reads as a tool that failed.
@@ -164,7 +167,7 @@ class CreateGoalTool(Tool):
         """
         ctx = kwargs.get("ctx")
         try:
-            goal = goal_manager.create(
+            goal = task_manager.goals.create(
                 session_id=session_of(ctx),
                 owner=owner_of(ctx),
                 objective=objective,
@@ -222,7 +225,7 @@ class UpdateGoalTool(Tool):
             )
 
         try:
-            goal = goal_manager.update(
+            goal = task_manager.goals.update(
                 session_id=session_of(ctx),
                 owner=owner_of(ctx),
                 goal_id=str(goal_id).strip(),

@@ -7,7 +7,8 @@ Every agent gets one inbox (AgentRef._inbox).  Messages to any running agent
 are routed by ref name.  The protocol layer looks up a parent's ref by
 parent_session_id (= ref.name) — no separate session registry is needed.
 This module also provides the general transport verbs protocols build on:
-send / ask / suspend-resume (rendezvous) / publish-subscribe (fan-out).
+send / ask / suspend-resolve (rendezvous) / publish-subscribe (fan-out), plus
+AgentRef pause/resume scheduling gates.
 """
 
 from __future__ import annotations
@@ -22,7 +23,9 @@ from agentevolver.runtime.types import (
     AgentRef,
     AgentStatus,
     BaseMessage,
+    ControlMessage,
     StopMessage,
+    SubscriptionEventMessage,
     TaskMessage,
 )
 from agentevolver.utils import Singleton, make_id
@@ -69,7 +72,7 @@ class RuntimeManager(metaclass=Singleton):
         finally:
             self._pending.pop(key, None)
 
-    def resume(self, key: str, value: Any) -> bool:
+    def resolve_suspension(self, key: str, value: Any) -> bool:
         """Resume whoever is suspended on ``key`` with ``value``. Returns whether someone
         was actually waiting (False = already resumed / timed out / never suspended)."""
         fut = self._pending.get(key)
@@ -77,6 +80,14 @@ class RuntimeManager(metaclass=Singleton):
             fut.set_result(value)
             return True
         return False
+
+    def resume(self, key: str, value: Any) -> bool:
+        """Compatibility alias for :meth:`resolve_suspension`.
+
+        Agent lifecycle resume is :meth:`resume_agent`; keeping the old rendezvous name
+        temporarily avoids breaking external escalation clients.
+        """
+        return self.resolve_suspension(key, value)
 
     # ------------------------------------------------------------------
     # Pub-sub — fan-out a message to every running subscriber of a topic
@@ -114,8 +125,6 @@ class RuntimeManager(metaclass=Singleton):
         turn is active can overwrite that run. Legacy non-event messages retain the raw
         inbox fan-out behavior for transport-level callers.
         """
-        from agentevolver.protocol.types import SubscriptionEventMessage
-
         sent = 0
         for name in list(self._topics.get(topic, set())):
             ref = self._refs.get(name)
@@ -164,6 +173,7 @@ class RuntimeManager(metaclass=Singleton):
             raise ValueError(f"AgentRef name collision: {ref_name!r} is already RUNNING")
 
         ref = AgentRef(name=ref_name, agent_name=agent_name, status=AgentStatus.RUNNING)
+        ref._resume_gate.set()
         ref._pump_task = asyncio.create_task(_pump(agent, ref), name=f"pump-{ref_name}")
 
         self._refs[ref_name] = ref
@@ -223,6 +233,28 @@ class RuntimeManager(metaclass=Singleton):
         if ref.status != AgentStatus.RUNNING:
             raise AgentDeadError(f"Cannot send to {ref}: not RUNNING")
         await ref._inbox.put(msg)
+
+    async def pause_agent(self, ref: AgentRef) -> None:
+        """Pause one ref at the Runtime scheduling boundary.
+
+        Queued continuable/subscription turns remain queued. If a turn is already active,
+        the Agent receives a control message and stops advancing after its current round.
+        """
+        if ref.status != AgentStatus.RUNNING:
+            raise AgentDeadError(f"Cannot pause {ref}: not RUNNING")
+        ref.paused = True
+        ref._resume_gate.clear()
+        self._relabel(ref)
+        await self.send(ref, ControlMessage(action="pause"))
+
+    async def resume_agent(self, ref: AgentRef) -> None:
+        """Open one ref's scheduling gate and resume any active Agent round."""
+        if ref.status != AgentStatus.RUNNING:
+            raise AgentDeadError(f"Cannot resume {ref}: not RUNNING")
+        ref.paused = False
+        ref._resume_gate.set()
+        self._relabel(ref)
+        await self.send(ref, ControlMessage(action="resume"))
 
     async def ask(
         self,
@@ -382,9 +414,7 @@ class RuntimeManager(metaclass=Singleton):
 
         text, ctx = self._brief(child, task, brief)
         requested_topics = list(
-            brief.get("subscription_topics")
-            or getattr(child, "subscription_topics", None)
-            or []
+            brief.get("subscription_topics") or []
         )
         if requested_topics and not continuable:
             raise ValueError(
@@ -580,6 +610,7 @@ class RuntimeManager(metaclass=Singleton):
             running.set()
             while True:
                 message = await ref._tasks.get()
+                await ref._resume_gate.wait()
                 ref.busy = True
                 self._relabel(ref)
                 job_manager.append_output(

@@ -139,7 +139,7 @@ def build_task_text(
     personas: list[Path],
     user_models: Sequence[str] | None = None,
 ) -> str:
-    from agentevolver.task.loader import load_task_document
+    from agentevolver.task.context import load_task_document
 
     document = load_task_document(str(site_brief))
     models = list(user_models or DEFAULT_USER_MODELS)
@@ -204,7 +204,7 @@ def validate_local_artifacts(
     from agentevolver.config import config, validate_assembly
     from agentevolver.prompt.types import parse_prompt_file
     from agentevolver.registry import AGENT
-    from agentevolver.task.loader import load_task_document
+    from agentevolver.task.context import load_task_document
 
     config.initialize(
         config_path=str(config_path),
@@ -320,6 +320,7 @@ def validate_local_artifacts(
     expected_tools = {
         "bash_tool",
         "apply_patch_tool",
+        "inspect_tool",
         "deploy_tool",
         "done_tool",
         "send_message_tool",

@@ -1,8 +1,8 @@
-"""SessionQueryServer — read a past run's trace log back.
+"""Session Manager — create Session state and read persisted runs.
 
-Read-only, and deliberately so. Trace owns writing; this owns the questions asked of
-what was written. Nothing here opens a log for append, rewrites an event, or deletes a
-file, so a query can never damage the record it is querying.
+Lifecycle writes are limited to Session identity manifests through ``context.py``.
+Trace owns run records; historical methods never append, rewrite, or delete Trace data,
+so querying a past run cannot damage the record being queried.
 
 Two facts shape the whole module:
 
@@ -26,15 +26,16 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
-from agentevolver.session.query.types import (
+from agentevolver.session.context import create_session, touch_session
+from agentevolver.session.types import (
     EventHit,
     EventWindow,
     SearchPage,
+    Session,
     SessionHit,
     SessionOutline,
     SessionRecord,
 )
-from agentevolver.trace.surface import SurfaceError, fold_surface
 from agentevolver.utils import Singleton
 
 #: Runs read while answering one question. Reached, the answer says so — a capped
@@ -114,8 +115,37 @@ def _clip(text: Any, limit: int = LINE_CHARS) -> str:
     return flat if len(flat) <= limit else flat[:limit] + "…"
 
 
-class SessionQueryServer(metaclass=Singleton):
-    """Find, read, and search the trace logs of runs that have already finished."""
+class SessionManagerServer(metaclass=Singleton):
+    """Find, read, and search persisted Sessions through their Trace records."""
+
+    def create(
+        self,
+        *,
+        session_id: str,
+        owner: str,
+        name: str,
+        source_workspace: Optional[str],
+        created_at: str,
+        shared_extension_root: str | Path,
+        capabilities: Optional[Dict[str, List[str]]] = None,
+        updated_at: str = "",
+    ) -> Session:
+        """Create live Session state without materializing an idle workspace."""
+        return create_session(
+            session_id=session_id,
+            owner=owner,
+            name=name,
+            source_workspace=source_workspace,
+            created_at=created_at,
+            shared_extension_root=shared_extension_root,
+            capabilities=capabilities,
+            updated_at=updated_at,
+        )
+
+    @staticmethod
+    def touch(session: Session) -> None:
+        """Persist a Session once real work makes it restorable."""
+        touch_session(session)
 
     # ------------------------------------------------------------------
     # Discovery
@@ -220,6 +250,8 @@ class SessionQueryServer(metaclass=Singleton):
         record = self.find(session_id, owner=owner)
         if record is None:
             return None
+        from agentevolver.trace.surface import SurfaceError, fold_surface
+
         rows = self._rows(Path(record.path))
         limit = max(1, min(int(limit), MAX_OUTLINE))
 
@@ -254,6 +286,8 @@ class SessionQueryServer(metaclass=Singleton):
         record = self.find(session_id, owner=owner)
         if record is None:
             return None
+        from agentevolver.trace.surface import SurfaceError, fold_surface
+
         rows = self._rows(Path(record.path))
         index = next((i for i, row in enumerate(rows) if row.get("seq_no") == seq_no), None)
         if index is None:
@@ -514,7 +548,7 @@ class SessionQueryServer(metaclass=Singleton):
         return None
 
 
-session_query = SessionQueryServer()
+session_manager = SessionManagerServer()
 
 __all__ = [
     "DEFAULT_HITS",
@@ -523,6 +557,6 @@ __all__ = [
     "MAX_OUTLINE",
     "MAX_RUNS_SCANNED",
     "MAX_WINDOW",
-    "SessionQueryServer",
-    "session_query",
+    "SessionManagerServer",
+    "session_manager",
 ]

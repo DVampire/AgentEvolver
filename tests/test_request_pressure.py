@@ -137,7 +137,7 @@ def test_openai_native_tokenizer_is_used_without_claiming_wire_exactness():
 
 
 def test_pressure_records_validated_four_layer_token_accounting():
-    from agentevolver.agent.context_builder import ContextEnvelope
+    from agentevolver.agent.context import ContextEnvelope
     from agentevolver.message import AssistantMessage, HumanMessage, SystemMessage
 
     messages = ContextEnvelope(

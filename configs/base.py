@@ -19,7 +19,6 @@ model_roles = dict(
     main=model_name,
     judge=model_name,
     summarize=model_name,
-    smoke=model_name,   # cheap model for the extension replay smoke gate
 )
 
 #---------------TRACE INTEGRITY-------------

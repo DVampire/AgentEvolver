@@ -9,7 +9,7 @@ import asyncio
 
 import pytest
 
-from agentevolver.agent.context_builder import (
+from agentevolver.agent.context import (
     ContextBuilder,
     ContextEnvelope,
     ContextProtocolError,

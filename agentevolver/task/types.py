@@ -1,14 +1,11 @@
-"""Task types for the AgentWorld task system.
-
-Defines the core `Task` unit of work that gets submitted to the `AgentBus`,
-along with supporting enums for status and priority.
-"""
+"""Task, scheduling, document, and standing-goal contracts."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -26,21 +23,6 @@ class TaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class SubTaskCategory(str, Enum):
-    """Category of a subtask within MetaAgent's plan.
-
-    ACTOR subtasks directly serve the user's goal — MetaAgent waits for all
-    of them before returning a final answer.
-    EVALUATOR, OPTIMIZER, and GENERATOR subtasks are system self-improvement
-    work and do not block the user result.
-    """
-
-    ACTOR     = "actor"
-    EVALUATOR = "evaluator"
-    OPTIMIZER = "optimizer"
-    GENERATOR = "generator"
-
-
 class TaskPriority(int, Enum):
     """Priority levels for task scheduling.
 
@@ -54,12 +36,10 @@ class TaskPriority(int, Enum):
 
 
 class Task(BaseModel):
-    """Central unit of work submitted to the AgentBus.
+    """Top-level unit of work submitted to ``TaskManagerServer``.
 
-    A Task is the top-level envelope for user intent.  The bus wraps it
-    in a `BusMessage` and routes it through the planner ↔ sub-agent loop.
-    The `session_id` field binds the task to a specific session so that
-    concurrent tasks remain fully isolated from one another.
+    ``session_id`` binds work to its Session so memory, budgets, and workspace
+    state do not bleed between concurrent tasks.
     """
 
     id: str = Field(
@@ -120,6 +100,63 @@ class Task(BaseModel):
     def mark_cancelled(self) -> None:
         self.status = TaskStatus.CANCELLED
         self.updated_at = datetime.now(timezone.utc)
+
+
+class TaskCategory(str, Enum):
+    """Logical category controlling scheduler weight."""
+
+    USER = "user"
+    EVOLVER = "evolver"
+
+
+class TaskRecord(BaseModel):
+    """Persisted scheduling envelope around one Task."""
+
+    task: Task
+    category: TaskCategory = TaskCategory.USER
+    entity_key: Optional[str] = None
+    depends_on: List[str] = Field(default_factory=list)
+    read_set: List[str] = Field(default_factory=list)
+    write_set: List[str] = Field(default_factory=list)
+    owner: Optional[str] = None
+    model: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    token_budget: Optional[int] = None
+    acceptance: List[str] = Field(default_factory=list)
+    recovered_from_running: bool = False
+    result: Optional[Any] = None
+    error: Optional[str] = None
+    max_retries: int = 0
+    retry_count: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+    def effective_priority(self) -> int:
+        """Return the PriorityQueue value; lower values run first."""
+        base = -self.task.priority.value
+        category_penalty = 0 if self.category is TaskCategory.USER else 1000
+        return base + category_penalty
+
+
+class TaskDeferred(RuntimeError):
+    """A handler cannot continue until an external decision is recorded."""
+
+    def __init__(self, reason: str, details: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.details = dict(details or {})
+
+
+@dataclass
+class TaskDocument:
+    """One authored task rendered for both the Agent and visual layer."""
+
+    content: str
+    html_body: str
+    type: Literal["html", "md"]
+    source_path: str
+    title: str
 
 
 # ---------------------------------------------------------------------------

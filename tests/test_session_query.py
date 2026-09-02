@@ -18,7 +18,7 @@ import pytest
 
 from agentevolver.paths import P, path_manager
 from agentevolver.sandbox.project import ProjectSandbox
-from agentevolver.session.query import MAX_HITS, session_query
+from agentevolver.session.server import MAX_HITS, session_manager
 from agentevolver.tool.default.observability.session_query import (
     INLINE_EVENT_CHARS,
     SessionEventReadTool,
@@ -146,9 +146,9 @@ def test_a_sub_agent_run_is_found_as_its_own_session(tree):
     _simple_run("parent", "delegate the fibonacci work", "done")
     _simple_run("code_agent-99", "write fibonacci.py", "wrote it")
 
-    found = {record.session_id for record in session_query.sessions()}
+    found = {record.session_id for record in session_manager.sessions()}
     assert found == {"parent", "code_agent-99"}
-    assert {r.project for r in session_query.sessions()} == {"proj1"}
+    assert {r.project for r in session_manager.sessions()} == {"proj1"}
 
 
 def test_runs_come_back_newest_first(tree):
@@ -156,7 +156,7 @@ def test_runs_come_back_newest_first(tree):
     _simple_run("older", "old work", "ok", mtime=1_000_000)
     _simple_run("newer", "new work", "ok", mtime=2_000_000)
 
-    assert [r.session_id for r in session_query.sessions()] == ["newer", "older"]
+    assert [r.session_id for r in session_manager.sessions()] == ["newer", "older"]
 
 
 def test_related_runs_are_the_ones_filed_together(tree):
@@ -170,7 +170,7 @@ def test_related_runs_are_the_ones_filed_together(tree):
     _simple_run("child", "do the work", "did it", project="proj1")
     _simple_run("elsewhere", "unrelated", "ok", project="proj2")
 
-    assert [r.session_id for r in session_query.related("parent")] == ["child"]
+    assert [r.session_id for r in session_manager.related("parent")] == ["child"]
 
 
 # --------------------------------------------------------------------------- #
@@ -192,7 +192,7 @@ def test_a_session_matches_terms_spread_across_its_events(tree):
         ],
     )
 
-    page = session_query.search_sessions("penguins matplotlib")
+    page = session_manager.search_sessions("penguins matplotlib")
     assert [hit.record.session_id for hit in page.sessions] == ["spread"]
     assert page.sessions[0].best is not None, "a hit must say where to start reading"
 
@@ -212,8 +212,8 @@ def test_an_event_hit_carries_every_term_itself(tree):
         ],
     )
 
-    assert session_query.search_events("penguins matplotlib").events == []
-    hits = session_query.search_events("matplotlib figure").events
+    assert session_manager.search_events("penguins matplotlib").events == []
+    hits = session_manager.search_events("matplotlib figure").events
     assert [hit.seq_no for hit in hits] == [1]
 
 
@@ -226,7 +226,7 @@ def test_a_capped_search_says_it_was_capped(tree):
     for index in range(5):
         _simple_run(f"run{index}", "shared subject matter", "ok", project=f"p{index}")
 
-    page = session_query.search_sessions("shared subject", limit=2)
+    page = session_manager.search_sessions("shared subject", limit=2)
     assert len(page.sessions) == 2
     assert page.truncated
 
@@ -237,7 +237,7 @@ def test_the_model_cannot_raise_the_result_cap(tree):
     for index in range(3):
         _simple_run(f"run{index}", "shared subject matter", "ok", project=f"p{index}")
 
-    page = session_query.search_sessions("shared subject", limit=10_000)
+    page = session_manager.search_sessions("shared subject", limit=10_000)
     assert len(page.sessions) <= MAX_HITS
 
 
@@ -247,8 +247,8 @@ def test_an_empty_query_matches_nothing_rather_than_everything(tree):
     specific question."""
     _simple_run("run", "some work", "ok")
 
-    assert session_query.search_sessions("").sessions == []
-    assert session_query.search_events("   ").events == []
+    assert session_manager.search_sessions("").sessions == []
+    assert session_manager.search_events("   ").events == []
 
 
 # --------------------------------------------------------------------------- #
@@ -278,9 +278,9 @@ def test_the_outline_shows_a_summary_in_place_of_what_it_shadowed(tree):
         ],
     )
 
-    folded = session_query.outline("compacted")
+    folded = session_manager.outline("compacted")
     assert [entry.seq_no for entry in folded.entries] == [3]
-    raw = session_query.outline("compacted", surface_only=False)
+    raw = session_manager.outline("compacted", surface_only=False)
     assert [entry.seq_no for entry in raw.entries] == [0, 1, 2, 3]
 
 
@@ -305,7 +305,7 @@ def test_a_log_whose_surface_will_not_fold_is_still_readable(tree):
         ],
     )
 
-    outline = session_query.outline("broken")
+    outline = session_manager.outline("broken")
     assert [entry.seq_no for entry in outline.entries] == [0, 1]
     assert outline.surface_error, "the reader must be told which reading it got"
     assert outline.surface_only is False
@@ -333,10 +333,10 @@ def test_an_event_read_gives_the_way_back_from_a_summary(tree):
         ],
     )
 
-    summary = session_query.event_window("compacted", 2)
+    summary = session_manager.event_window("compacted", 2)
     assert summary.shadowed == [0, 1]
     assert summary.derived_from == [0, 1]
-    original = session_query.event_window("compacted", 0)
+    original = session_manager.event_window("compacted", 0)
     assert original.shadowed_by == 2
 
 
@@ -382,7 +382,7 @@ def test_a_result_is_linked_to_the_call_it_answers(tree):
         ],
     )
 
-    assert session_query.event_window("paired", 2).paired_with == 1
+    assert session_manager.event_window("paired", 2).paired_with == 1
 
 
 def test_a_log_still_being_written_reads_rather_than_failing(tree):
@@ -396,7 +396,7 @@ def test_a_log_still_being_written_reads_rather_than_failing(tree):
     with path.open("a", encoding="utf-8") as handle:
         handle.write('{"id": "e3", "event_type": "tool_ca')
 
-    record = session_query.find("live")
+    record = session_manager.find("live")
     assert record.event_count == 3
     assert record.unreadable_lines == 1, "a dropped line must be counted, not hidden"
 
@@ -410,7 +410,7 @@ def test_a_run_with_no_end_event_is_not_reported_as_failed(tree):
     """
     _write("killed", [_event(0, "agent_start", input={"task": "interrupted"})])
 
-    assert session_query.find("killed").success is None
+    assert session_manager.find("killed").success is None
 
 
 # --------------------------------------------------------------------------- #

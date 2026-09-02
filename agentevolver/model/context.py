@@ -233,7 +233,7 @@ async def _record_request_snapshot(
     """
     profile = request_input.get("trace_integrity_profile")
     if not session_id:
-        from agentevolver.trace.checkpoint import (
+        from agentevolver.trace.integrity import (
             TraceIntegrityError,
             resolve_integrity_profile,
         )
@@ -241,7 +241,7 @@ async def _record_request_snapshot(
         selected = resolve_integrity_profile(profile)
         if selected.required:
             raise TraceIntegrityError(
-                "Trace integrity checkpoint 'before_model_request' requires a real "
+                "Trace durability boundary 'before_model_request' requires a real "
                 f"session id under profile {selected.value!r}"
             )
         return None
@@ -287,25 +287,25 @@ async def _record_request_snapshot(
             except Exception as render_error:  # noqa: BLE001 - never affect dispatch
                 logger.debug(f"| model request HTML was not scheduled: {render_error}")
     except Exception as trace_error:  # noqa: BLE001 - integrity policy settles failure
-        from agentevolver.trace.checkpoint import (
-            TraceCheckpointBoundary,
+        from agentevolver.trace.integrity import (
+            TraceDurabilityBoundary,
             report_trace_integrity_failure,
         )
 
         await report_trace_integrity_failure(
             session_id,
-            TraceCheckpointBoundary.MODEL_REQUEST,
+            TraceDurabilityBoundary.MODEL_REQUEST,
             trace_error,
             profile=profile,
             metadata={"requested_model": requested_model, "routed_model": routed_model},
         )
         logger.debug(f"| model request snapshot not recorded: {trace_error}")
         return None
-    from agentevolver.trace.checkpoint import TraceCheckpointBoundary, checkpoint_trace
+    from agentevolver.trace.integrity import TraceDurabilityBoundary, ensure_trace_durable
 
-    await checkpoint_trace(
+    await ensure_trace_durable(
         session_id,
-        TraceCheckpointBoundary.MODEL_REQUEST,
+        TraceDurabilityBoundary.MODEL_REQUEST,
         profile=profile,
         metadata={
             "requested_model": requested_model,
@@ -355,14 +355,14 @@ async def _record_background_result(
                 "request_snapshot_id": request_snapshot_id,
             },
         ))
-        from agentevolver.trace.checkpoint import (
-            TraceCheckpointBoundary,
-            checkpoint_trace,
+        from agentevolver.trace.integrity import (
+            TraceDurabilityBoundary,
+            ensure_trace_durable,
         )
 
-        await checkpoint_trace(
+        await ensure_trace_durable(
             session_id,
-            TraceCheckpointBoundary.EXTERNAL_EFFECT,
+            TraceDurabilityBoundary.EXTERNAL_EFFECT,
             profile=profile,
             metadata={
                 "operation": operation,
@@ -371,8 +371,8 @@ async def _record_background_result(
             },
         )
     except Exception as error:
-        from agentevolver.trace.checkpoint import (
-            TraceCheckpointBoundary,
+        from agentevolver.trace.integrity import (
+            TraceDurabilityBoundary,
             TraceIntegrityError,
             report_trace_integrity_failure,
         )
@@ -381,7 +381,7 @@ async def _record_background_result(
             raise
         await report_trace_integrity_failure(
             session_id,
-            TraceCheckpointBoundary.EXTERNAL_EFFECT,
+            TraceDurabilityBoundary.EXTERNAL_EFFECT,
             error,
             profile=profile,
             metadata={
@@ -1729,7 +1729,7 @@ class ModelContextManager:
                 )
                 break
             except Exception as e:
-                from agentevolver.trace.checkpoint import TraceIntegrityError
+                from agentevolver.trace.integrity import TraceIntegrityError
                 if isinstance(e, TraceIntegrityError):
                     # Retrying or falling back cannot repair a missing source fact, and
                     # must never turn a fail-closed profile into another provider route.
@@ -1904,7 +1904,7 @@ class ModelContextManager:
                     logger.info(f"| Fallback model {fallback} succeeded")
                     return result
                 except Exception as error:
-                    from agentevolver.trace.checkpoint import TraceIntegrityError
+                    from agentevolver.trace.integrity import TraceIntegrityError
                     if isinstance(error, TraceIntegrityError):
                         raise
                     if fb_client is not None and snapshot_kwargs:
@@ -2093,7 +2093,7 @@ class ModelContextManager:
                     last_exc = overflow
                     break
                 except Exception as e:
-                    from agentevolver.trace.checkpoint import TraceIntegrityError
+                    from agentevolver.trace.integrity import TraceIntegrityError
                     if isinstance(e, TraceIntegrityError):
                         raise
                     if client is not None and snapshot_kwargs:

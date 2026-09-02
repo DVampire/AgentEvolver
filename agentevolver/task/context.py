@@ -1,4 +1,4 @@
-"""Task-document loader.
+"""Normalize authored documents and CLI input into Task submission context.
 
 A task can be authored as a standalone document — an HTML file (rich layout,
 the default) or a Markdown file — under ``examples/tasks/``. The document is the
@@ -19,19 +19,13 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
 from html import unescape
 from html.parser import HTMLParser
-from typing import Literal
+from typing import Any, Dict, List, Optional, Tuple
 
-
-@dataclass
-class TaskDocument:
-    content: str                       # clean text for the agent's task.content
-    html_body: str                     # renderable HTML (inner body) for visualization
-    type: Literal["html", "md"]
-    source_path: str
-    title: str
+from agentevolver.paths import P, path_manager
+from agentevolver.task.types import TaskDocument
+from agentevolver.visual import render_task_page
 
 
 class _TextExtractor(HTMLParser):
@@ -174,3 +168,51 @@ def load_task_document(path: str) -> TaskDocument:
             title=_md_title(raw, fallback_title),
         )
     raise ValueError(f"Unsupported task document type {ext!r} (use .html or .md): {path}")
+
+
+def add_task_args(parser: Any, default_task_file: Optional[str] = None) -> None:
+    """Add the shared task-input arguments to an example launcher."""
+    parser.add_argument(
+        "--task", default=None,
+        help="Inline task string (overrides --task-file).",
+    )
+    parser.add_argument(
+        "--task-file", default=default_task_file,
+        help="Path to a task document (.html or .md) under examples/tasks/.",
+    )
+    parser.add_argument(
+        "--attach", nargs="*", default=None,
+        help=(
+            "Extra input files for the task. They are staged into the session "
+            "workspace and handed to the agent with the task document."
+        ),
+    )
+
+
+def resolve_task(
+    args: Any,
+    task_log_root: str,
+    default_text: Optional[str] = None,
+) -> Tuple[Optional[str], Optional[List[str]], Optional[Dict[str, Any]]]:
+    """Resolve launcher input into ``content``, ``files``, and task metadata."""
+    attachments = [str(path) for path in (getattr(args, "attach", None) or [])]
+    if getattr(args, "task", None):
+        return args.task, (attachments or None), None
+
+    task_file = getattr(args, "task_file", None)
+    if task_file:
+        document = load_task_document(task_file)
+        view_path = str(path_manager.under(
+            task_log_root,
+            P.LOG_TASK_VIEW,
+            filename="task_view.html",
+        ))
+        render_task_page(document.html_body, view_path, title=document.title)
+        metadata = {
+            "task_doc": document.source_path,
+            "task_view": view_path,
+            "task_kind": document.type,
+        }
+        return document.content, [document.source_path, *attachments], metadata
+
+    return default_text, (attachments or None), None

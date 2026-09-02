@@ -83,7 +83,7 @@ async def main():
     await trace_manager.initialize(log_root=trace_log_root)
     await trace_manager.start()
 
-    # --- Hooks --- (registers all default hooks: trace_hook + memory_hook)
+    # --- Hooks --- (TraceHook forwards its numbered events to session memory.)
     await hook_manager.initialize()
 
     logger.info("| 🧠 Initializing model manager...")

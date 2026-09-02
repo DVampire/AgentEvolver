@@ -48,7 +48,7 @@ def _js() -> str:
 
 
 def _splitter() -> str:
-    return (ROOT / "agentevolver" / "agent" / "types.py").read_text(encoding="utf-8")
+    return (ROOT / "agentevolver" / "agent" / "context.py").read_text(encoding="utf-8")
 
 
 CONTAINER = "capability-context"
@@ -252,18 +252,19 @@ def test_the_renderer_cards_every_leaf_the_templates_use(leaf):
     assert leaf in match.group(1), f"prompt.js does not render {leaf} as capability cards"
 
 
-def test_the_splitter_treats_the_container_as_stable():
-    """It kept a hand-written list of the four leaf names.
+def test_the_splitter_removes_the_native_capability_container():
+    """The provider-native tools parameter is the only model-facing callable catalog."""
+    from agentevolver.agent.context import context_builder
+    from agentevolver.message import HumanMessage
 
-    That list and the templates were two records of one fact. When the blocks were merged
-    the list was the copy nobody updated, and the split found nothing stable — sending
-    the whole catalog past the point a cache can reach.
-    """
-    match = re.search(r"for block in \((.*?)\):", _splitter(), re.S)
-    assert match, "the stable-block list moved; this check needs updating with it"
-    assert f'"{CONTAINER}"' in match.group(1), (
-        f"_split_rendered_turn does not treat <{CONTAINER}> as stable content"
-    )
+    anchor, live = context_builder.split_rendered_turn([
+        HumanMessage(content=(
+            f"<{CONTAINER}><tool-context>bash</tool-context></{CONTAINER}>"
+            "<agent-context><step-info>step 1</step-info></agent-context>"
+        ))
+    ])
+    assert not anchor
+    assert live and CONTAINER not in live[0].text
 
 
 @pytest.mark.parametrize("path", TEMPLATES, ids=lambda p: p.name)

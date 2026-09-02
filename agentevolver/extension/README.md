@@ -1,6 +1,6 @@
 ---
 name: extension
-description: "Manages generated extension manifests and their promotion into the active framework. Promotion is journaled and guarded by replay-based smoke checks."
+description: "Manages generated extension manifests and their validated promotion into the active framework."
 version: 1.0.0
 type: module
 category: extension
@@ -10,14 +10,15 @@ metadata: {}
 # Extension
 
 Manages generated extension manifests and their promotion into the active framework.
-Promotion is journaled and guarded by replay-based smoke checks.
+Admission validates registry and model-facing schema contracts without calling an LLM;
+functional quality is measured by evaluation and rollout.
 
 | File | Responsibility |
 |---|---|
 | `types.py` | Manifest and component contracts |
-| `server.py` | Extension registration and promotion facade |
+| `server.py` | Transactional registration, deterministic admission, and promotion facade |
 | `journal.py` | Recoverable change journal |
-| `smoke_gate.py` | Pre-promotion validation gate |
+| `rollout.py` | Measured shadow/canary activation and rollback |
 
 Extension coordinates installation; the owning Tool, Skill, Agent, or Workflow Manager
 remains the source of truth after registration.

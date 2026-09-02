@@ -83,6 +83,7 @@ def _activate_and_compile(path: str) -> str:
     what is wrong with the HTML.
     """
     from lxml import html
+
     from agentevolver.workflow import workflow_compiler
 
     source_path = Path(path)

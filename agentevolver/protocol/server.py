@@ -110,7 +110,7 @@ class ProtocolManager(metaclass=Singleton):
 
     def reply(self, task_id: str, guidance: str) -> bool:
         """Reply end: resume the sub-agent suspended on ``task_id``. Returns whether one waited."""
-        delivered = runtime_manager.resume(task_id, guidance)
+        delivered = runtime_manager.resolve_suspension(task_id, guidance)
         logger.info(f"| 💬 Reply → [{task_id}]" + ("" if delivered else " (no waiter)"))
         return delivered
 
@@ -240,15 +240,11 @@ class ProtocolManager(metaclass=Singleton):
 
     async def pause(self, ref: Any) -> None:
         """Ask a running agent to stop advancing after its current round (until resumed)."""
-        await runtime_manager.send(ref, ControlMessage(action="pause"))
-        if hasattr(ref, "paused"):
-            ref.paused = True
+        await runtime_manager.pause_agent(ref)
 
     async def resume(self, ref: Any) -> None:
         """Let a paused agent continue."""
-        await runtime_manager.send(ref, ControlMessage(action="resume"))
-        if hasattr(ref, "paused"):
-            ref.paused = False
+        await runtime_manager.resume_agent(ref)
 
     # ------------------------------------------------------------------
     # query — ask: request a running agent's status snapshot (runtime.ask)

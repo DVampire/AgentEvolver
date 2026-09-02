@@ -449,10 +449,9 @@ class AgentConfig(BaseModel):
 # escalates to its parent via the escalation channel → the parent's inbox → on_event — which
 # works precisely because every agent (parent included) runs this same event-driven loop.
 
-from agentevolver.protocol.types import ControlMessage as _ControlMessage  # noqa: E402
-from agentevolver.protocol.types import QueryMessage as _QueryMessage  # noqa: E402
-from agentevolver.protocol.types import SubscriptionEventMessage as _SubscriptionEventMessage  # noqa: E402
 from agentevolver.runtime.types import BaseMessage as _BaseMessage  # noqa: E402
+from agentevolver.runtime.types import ControlMessage as _ControlMessage  # noqa: E402
+from agentevolver.runtime.types import QueryMessage as _QueryMessage  # noqa: E402
 
 
 class _ActionDone(_BaseMessage):
@@ -585,14 +584,6 @@ class Agent(BaseModel):
     enable_evolving: bool = Field(default=False, description="Whether the agent may be evolved (self-optimized)")
     permission_mode: str = Field(default="workspace_write", description="Permission mode: read_only / workspace_write / danger_full_access")
     agent_type: AgentType = Field(default=AgentType.TOOL_CALLING, description="Agent execution contract")
-    subscription_topics: List[str] = Field(
-        default_factory=list,
-        description=(
-            "Default logical topics consumed when this Agent is started as a continuable "
-            "background subscriber. Runtime scopes them to the root session."
-        ),
-    )
-
     def __init__(
         self,
         base_dir: str,
@@ -618,7 +609,6 @@ class Agent(BaseModel):
         prefer_native_multi_agent: bool = False,
         native_max_concurrent_subagents: int = 3,
         defer_capabilities_after: int = 40,
-        subscription_topics: Optional[List[str]] = None,
         constraints: Optional[List[Constraint]] = None,
         **kwargs: Any,
     ):
@@ -656,9 +646,6 @@ class Agent(BaseModel):
             1, int(native_max_concurrent_subagents or 3)
         )
         self.defer_capabilities_after = max(0, int(defer_capabilities_after or 0))
-        self.subscription_topics = list(
-            self.subscription_topics if subscription_topics is None else subscription_topics
-        )
         self.model_name = model_name
 
         # Setup steps
@@ -1064,7 +1051,7 @@ class Agent(BaseModel):
         turns are the ones its decision rested on.
         """
         extra = getattr(ctx, "extra", None) or {}
-        from agentevolver.agent.project_context import load_project_context
+        from agentevolver.agent.context import load_project_context
         from agentevolver.paths import path_manager
 
         roots = path_manager.session_roots()
@@ -1374,7 +1361,7 @@ class Agent(BaseModel):
         """
         import re as _re
 
-        from agentevolver.agent.context_builder import strip_rendered_comments
+        from agentevolver.agent.context import strip_rendered_comments
 
         rendered = strip_rendered_comments(rendered)
 
@@ -1422,7 +1409,7 @@ class Agent(BaseModel):
         projection. A short history is worse than a described one: the model would act on
         a conversation that silently lost its earlier turns.
         """
-        from agentevolver.agent.context_builder import context_builder
+        from agentevolver.agent.context import context_builder
         from agentevolver.trace import trace_manager
         from agentevolver.trace.surface import SurfaceError
 
@@ -1564,59 +1551,6 @@ class Agent(BaseModel):
 
         # The frozen snapshot goes out unchanged; only this addition is new.
         return [HumanMessage(content=snapshot)], [HumanMessage(content=addition)]
-
-    @staticmethod
-    def _split_rendered_turn(rendered: List[Message]) -> Tuple[List[Message], List[Message]]:
-        """Partition the rendered turn by what changes between steps, not by origin.
-
-        The rendered turn is one message carrying several things at once, and they do
-        not belong in the same place once history is a real conversation:
-
-        - The capability catalogs (tools, skills, connectors, workflows) are **identical
-          every step**. They are stable content and belong ahead of the history, where a
-          cache can keep them.
-        - `task` and `memory` are already the projection — the opening turn and the
-          conversation itself — so repeating them would state each twice.
-        - What is left (`agent-context`: budget, step guidance, plan, workspace, errors)
-          genuinely changes every step, and belongs after the last stable byte.
-
-        Getting this split wrong is expensive and quiet. Sending the catalogs *after* the
-        history put 61,000 unchanging characters beyond the last reusable byte and cut
-        prefix reuse to 20% — no better than not projecting at all. "It came from the
-        per-step render" is not the same question as "does it change per step".
-
-        Returns:
-            ``(stable, volatile)`` — each a list of zero or one message.
-        """
-        import re as _re
-
-        turn = next((m for m in reversed(rendered) if getattr(m, "role", "") != "system"), None)
-        if turn is None:
-            return [], []
-        text = getattr(turn, "text", "") or ""
-
-        # One container, so the split follows the template rather than a list of tag
-        # names kept in sync with it by hand. The bare blocks are still matched, for
-        # prompts written before the container existed.
-        stable_parts = []
-        for block in ("capability-context", "tool-context", "skill-context",
-                      "connector-context", "workflow-context"):
-            for match in _re.finditer(rf"<{block}>.*?</{block}>", text, _re.S):
-                stable_parts.append(match.group(0))
-            text = _re.sub(rf"<{block}>.*?</{block}>", "", text, flags=_re.S)
-
-        # Already carried by the projection.
-        for block in ("task", "memory"):
-            text = _re.sub(rf"<{block}>.*?</{block}>", "", text, flags=_re.S)
-
-        def _turn(body: str) -> List[Message]:
-            # Tags alone are not content: a wrapper left holding nothing adds a turn
-            # that says nothing. Unrecognised prose *is* content and is kept — a prompt
-            # template this code has not seen must not lose what it says.
-            return [HumanMessage(content=body.strip())] if _re.sub(r"<[^>]+>", "", body).strip() else []
-
-        return _turn("\n".join(stable_parts)), _turn(text)
-
 
     # ------------------------------------------------------------------
     # Shared execution loop — all tool-calling agents use this
@@ -1780,13 +1714,13 @@ class Agent(BaseModel):
                    "plan": plan, "step_tokens": step_tokens, "step_usage": step_usage},
             ctx=ctx,
         )
-        from agentevolver.trace.checkpoint import (
-            TraceCheckpointBoundary,
-            checkpoint_trace,
+        from agentevolver.trace.integrity import (
+            TraceDurabilityBoundary,
+            ensure_trace_durable,
         )
-        await checkpoint_trace(
+        await ensure_trace_durable(
             str(ctx.id),
-            TraceCheckpointBoundary.STEP_END,
+            TraceDurabilityBoundary.STEP_END,
             ctx=ctx,
             metadata={
                 "task_id": task_id,
@@ -1825,7 +1759,7 @@ class Agent(BaseModel):
         into the roster; ``extra_tools`` appends any extra schema-only tools. Returns
         ``{tool_calls, routing, reasoning, step_tokens, error}``.
         """
-        from agentevolver.agent.native_tools import assemble_native_tools
+        from agentevolver.agent.capabilities import assemble_native_tools
         from agentevolver.hook.server import hook_manager
         from agentevolver.hook.types import HookEvent
         from agentevolver.model import model_manager
@@ -1921,7 +1855,7 @@ class Agent(BaseModel):
                 tool_calls = []
         except Exception as e:
             from agentevolver.model.pressure import ContextOverflowError
-            from agentevolver.trace.checkpoint import TraceIntegrityError
+            from agentevolver.trace.integrity import TraceIntegrityError
             if isinstance(e, TraceIntegrityError):
                 raise
             think_error = str(e)
@@ -2167,7 +2101,7 @@ class Agent(BaseModel):
             if capability_error:
                 error = capability_error
         except Exception as e:
-            from agentevolver.trace.checkpoint import TraceIntegrityError
+            from agentevolver.trace.integrity import TraceIntegrityError
             if isinstance(e, TraceIntegrityError):
                 # Tool Manager performs this after every guard and any approval, directly
                 # before the body. Strict integrity failures are run-level failures, not
@@ -2275,7 +2209,7 @@ class Agent(BaseModel):
         """
         capability_type = route[0]
         if capability_type == "capability_search":
-            from agentevolver.agent.capability_index import catalog, search
+            from agentevolver.agent.capabilities import catalog, search
 
             output = search(
                 catalog(ctx, self.name),
@@ -2387,7 +2321,7 @@ class Agent(BaseModel):
                 extra["isolated_workspace"] = True
                 delegated_ctx = ctx.model_copy(update={"extra": extra})
             if isolate_worktree:
-                from agentevolver.agent.worktree import IsolatedWorktree
+                from agentevolver.sandbox.worktree import IsolatedWorktree
 
                 source = resolve_workspace_root(ctx)
                 extra = dict(getattr(delegated_ctx, "extra", None) or {})
@@ -2583,7 +2517,7 @@ class Agent(BaseModel):
         run = _AgentRun(task, files, ctx, ref, task_id, kwargs)
         checkpoint_payload = (ctx.extra or {}).get("execution_checkpoint")
         if checkpoint_payload:
-            from agentevolver.trace.execution_checkpoint import ExecutionCheckpoint
+            from agentevolver.trace.recovery import ExecutionCheckpoint
 
             checkpoint = ExecutionCheckpoint.model_validate(checkpoint_payload)
             if checkpoint.session_id != str(ctx.id) or checkpoint.task_id != task_id:
@@ -2782,7 +2716,7 @@ class Agent(BaseModel):
                 logger.warning(f"| ⚠️ [{self.name}] could not release {label} for "
                                f"{session_id}: {error}")
         try:
-            from agentevolver.agent.capability_index import forget
+            from agentevolver.agent.capabilities import forget
             forget(run.ctx, self.name)
         except Exception as error:                                  # noqa: BLE001
             logger.warning(
@@ -3379,33 +3313,6 @@ class Agent(BaseModel):
             "pressure_ratio": pressure_ratio,
         }
 
-    async def _last_pressure_ratio(self, run) -> float:
-        """How full the previous request was, read from the log rather than remembered.
-
-        ``0`` when there is no request yet, or when the log cannot be read — a step that
-        cannot measure pressure must not fold on a guess.
-        """
-        from agentevolver.trace import trace_manager
-        from agentevolver.trace.types import TraceEventType
-
-        try:
-            events = trace_manager.events(str(getattr(run.ctx, "id", "") or "")) or []
-        except Exception as error:                                  # noqa: BLE001
-            logger.debug(f"| [{self.name}] cannot read pressure from the log: {error}")
-            return 0.0
-        for event in reversed(events):
-            if (
-                event.event_type is TraceEventType.MODEL_REQUEST
-                and ((event.input or {}).get("parameters") or {}).get("operation")
-                != "compact"
-            ):
-                pressure = (event.input or {}).get("pressure") or {}
-                try:
-                    return float(pressure.get("pressure_ratio_after") or 0.0)
-                except (TypeError, ValueError):
-                    return 0.0
-        return 0.0
-
     async def _make_room(self, run) -> bool:
         """Fold the oldest history so the next rebuild fits. Returns whether it worked.
 
@@ -3675,20 +3582,6 @@ class Agent(BaseModel):
         Default behaviour: no-op.  Override to emit extra teardown / trace / reset state.
         """
 
-    async def on_subscription_event(
-        self,
-        msg: "_SubscriptionEventMessage",
-        ref: Any,
-    ) -> None:
-        """Handle one published event through the ordinary task-turn lifecycle.
-
-        Runtime has already serialized the event on the subscriber's continuable task
-        queue and prepended its standing brief. Subclasses may override this hook for
-        event-boundary setup (for example, resetting a browser context), then call
-        ``super()``. They must not bypass :meth:`_handle_task_message`.
-        """
-        await self._handle_task_message(msg, ref)
-
     async def _handle_task_message(self, msg: Any, ref: Any) -> None:
         """Run one TaskMessage, shared by direct and subscription-triggered turns."""
         ctx = msg.kwargs.get("ctx")
@@ -3734,9 +3627,7 @@ class Agent(BaseModel):
         overriding ``handle``.
         """
         from agentevolver.runtime.types import TaskMessage
-        if isinstance(msg, _SubscriptionEventMessage):
-            await self.on_subscription_event(msg, ref)
-        elif isinstance(msg, TaskMessage):
+        if isinstance(msg, TaskMessage):
             await self._handle_task_message(msg, ref)
         else:
             await self.on_event(msg, ref)

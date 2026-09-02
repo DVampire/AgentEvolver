@@ -390,7 +390,7 @@ their threat model.
 - `constraint/` tracks step, token, and wall-time budgets and renders the remaining budget into agent context;
 - `trace/` persists structured events and streams them through the Gateway;
 - `trajectory/` projects runs into reward-annotated step records and exports OpenAI Chat SFT or RL formats such as VERL;
-- `session/query/` reads those trace logs back after a run ends, so an agent can search what an earlier run tried and read the steps around a hit;
+- `session_manager` reads those trace logs back after a run ends, so an agent can search what an earlier run tried and read the steps around a hit;
 - `memory/` maintains recent history, compacted working memory, todos, call paths, and final results;
 - `spill/` writes an oversized tool result to a file whole and puts the locator in the excerpt, so the part that did not fit can still be read;
 - `benchmark/` provides entry points for AIME, GPQA, GSM8K, HLE, LeetCode, DeepWeb, ProgramBench, and related evaluations.

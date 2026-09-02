@@ -39,11 +39,9 @@ NEVER_EXECUTED: Dict[str, str] = {
     # Runs only under `python -m agentevolver.gateway`. Importing it *is* running it, so
     # a test that covered this line would start a gateway as a side effect of collection.
     "agentevolver/gateway/__main__.py": "module entry point — import executes it",
-    # The four entries that stood here — gateway/transport.py, extension/journal.py,
-    # extension/smoke_gate.py, hook/promotion.py — were reachable in production and
-    # reached by no test. They are covered now (tests/test_gateway_transport.py,
-    # test_evolution_journal.py, test_smoke_gate.py, test_promotion.py) and the gate
-    # would fail this file if their entries were left behind.
+    # The three entries that stood here — gateway/transport.py, extension/journal.py,
+    # and hook/promotion.py — were reachable in production and reached by no test. They
+    # are covered now, and the gate would fail this file if their entries were left behind.
 }
 
 

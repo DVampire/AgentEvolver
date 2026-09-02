@@ -21,11 +21,11 @@ from typing import Any
 
 import pytest
 
+from agentevolver.agent.types import AgentContext
+from agentevolver.protocol.types import SubscriptionEventMessage
+from agentevolver.response import Response, ResponseType
 from agentevolver.runtime import AgentDeadError, AgentStatus, TaskMessage, runtime_manager
 from agentevolver.runtime.server import RuntimeManager
-from agentevolver.protocol.types import SubscriptionEventMessage
-from agentevolver.agent.types import AgentContext
-from agentevolver.response import Response, ResponseType
 
 
 class StubAgent:
@@ -349,6 +349,64 @@ def test_subscription_only_delegation_waits_without_spending_an_agent_turn() -> 
                 await asyncio.sleep(0.01)
             assert ref.turns == 1
             assert "handled:release.ready" in (job_manager.output(ref.job_id) or "")
+        finally:
+            manager.forget(parent.id)
+            job_manager.forget(parent.id)
+            await asyncio.sleep(0)
+
+    run(check())
+
+
+def test_paused_idle_subscriber_queues_events_without_starting_a_turn() -> None:
+    """Pause is a Runtime scheduling gate, including when no Agent run exists yet."""
+
+    class Subscriber:
+        name = "paused-subscriber"
+
+        async def handle(self, msg, ref) -> None:
+            if msg.reply_future is None:  # Runtime control message
+                return
+            msg.reply_future.set_result(
+                Response(type=ResponseType.AGENT, success=True, message="handled")
+            )
+
+    async def check() -> None:
+        from agentevolver.job import job_manager
+
+        manager = object.__new__(RuntimeManager)
+        RuntimeManager.__init__(manager)
+        parent = AgentContext(id="paused-subscription-root")
+        started = await manager.delegate_background(
+            Subscriber(),
+            "Standing subscriber brief",
+            continuable=True,
+            subscription_topics=["demo.releases"],
+            parent_ctx=parent,
+            parent_ref=None,
+            files=[],
+        )
+        ref = manager.child(started.data["job_id"])
+        assert ref is not None
+        try:
+            await manager.pause_agent(ref)
+            scoped = "paused-subscription-root::demo.releases"
+            event = SubscriptionEventMessage.create(
+                topic=scoped,
+                event_type="release.ready",
+                payload={"version": "V0"},
+            )
+            assert await manager.publish(scoped, event) == 1
+            await asyncio.sleep(0.05)
+            assert ref.turns == 0
+            assert ref.paused
+
+            await manager.resume_agent(ref)
+            for _ in range(100):
+                if ref.turns == 1 and not ref.busy:
+                    break
+                await asyncio.sleep(0.01)
+            assert ref.turns == 1
+            assert not ref.paused
         finally:
             manager.forget(parent.id)
             job_manager.forget(parent.id)

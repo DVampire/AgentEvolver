@@ -32,7 +32,6 @@ from agentevolver.task.types import (
     GoalStateError,
     TaskPriority,
 )
-from agentevolver.utils import Singleton
 from agentevolver.utils.file_utils import atomic_json_update
 
 #: Context key carrying the host's attestation that this run serves a request a
@@ -91,7 +90,7 @@ def authority_of(ctx: Any) -> GoalAuthority:
             else GoalAuthority.AGENT)
 
 
-class GoalStore(metaclass=Singleton):
+class GoalStore:
     """Reads and writes one session's goals, and refuses changes it must refuse."""
 
     #: Read for every timestamp, so a test can pin time instead of waiting for it.
@@ -315,11 +314,8 @@ class GoalStore(metaclass=Singleton):
         return result[0]
 
 
-goal_manager = GoalStore()
-
 __all__ = [
     "GoalStore",
-    "goal_manager",
     "authority_of",
     "owner_of",
     "session_of",

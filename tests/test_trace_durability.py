@@ -14,7 +14,7 @@ most frequent call in the system.
 
 The three-valued `mutates` flag is the subtle part. `None` means "depends on the arguments",
 which is exactly what a shell tool declares, and a shell command is the most likely way an
-agent destroys something. Anything but an explicit `False` checkpoints.
+agent destroys something. Anything but an explicit `False` crosses the durability boundary.
 """
 
 from __future__ import annotations
@@ -105,14 +105,14 @@ def test_a_flush_that_does_not_drain_gives_up_rather_than_hanging(borrowed_trace
 
 
 # --------------------------------------------------------------------------- #
-# When the checkpoint is taken
+# When durability is required
 # --------------------------------------------------------------------------- #
-def _checkpointed(mutates, kind: str = "tool", route=("tool", "some_tool")) -> bool:
+def _made_durable(mutates, kind: str = "tool", route=("tool", "some_tool")) -> bool:
     """Whether this registered Tool flushes after guards and before its body."""
 
     class StubTool(Tool):
         name: str = "some_tool"
-        description: str = "Test checkpoint placement."
+        description: str = "Test durability-boundary placement."
 
         async def __call__(self, **kwargs):
             return Response(type=ResponseType.TOOL, success=True, message="ran")
@@ -136,19 +136,19 @@ def _checkpointed(mutates, kind: str = "tool", route=("tool", "some_tool")) -> b
     return flush.await_count == 1
 
 
-def test_a_mutating_tool_checkpoints_first():
+def test_a_mutating_tool_makes_trace_durable_first():
     """The case this exists for."""
-    assert _checkpointed(True)
+    assert _made_durable(True)
 
 
-def test_a_tool_whose_effect_depends_on_its_arguments_also_checkpoints():
+def test_argument_dependent_effect_also_makes_trace_durable():
     """`None` is what a shell tool declares, and `bash` is how an agent deletes things.
 
     Reading `None` as "probably safe" is the tempting mistake: it inverts the default for
     the single most dangerous tool in the system, and the failure is silent — the flush
     simply stops happening for the calls that most needed it.
     """
-    assert _checkpointed(None)
+    assert _made_durable(None)
 
 
 def test_a_read_only_tool_does_not_pay_for_the_flush():
@@ -157,10 +157,10 @@ def test_a_read_only_tool_does_not_pay_for_the_flush():
     Flushing on every one would move the writer onto the hot path to protect an event whose
     loss costs a gap in a transcript, not an unanswerable question.
     """
-    assert not _checkpointed(False)
+    assert not _made_durable(False)
 
 
-def test_an_unresolved_tool_does_not_checkpoint_or_enter_a_body():
+def test_an_unresolved_tool_does_not_flush_or_enter_a_body():
     manager = ToolContextManager()
     manager.get_info = AsyncMock(return_value=None)
     flush = AsyncMock(return_value=True)
@@ -176,7 +176,7 @@ def test_an_unresolved_tool_does_not_checkpoint_or_enter_a_body():
     assert response.extra["execution"]["error_code"] == "not_found"
 
 
-def test_a_preflight_denial_does_not_pay_for_a_checkpoint():
+def test_a_preflight_denial_does_not_pay_for_a_durability_flush():
     class StubTool(Tool):
         name: str = "some_tool"
         description: str = "Must not run."

@@ -19,20 +19,23 @@ from datetime import datetime, timezone
 import pytest
 
 from agentevolver.paths import P, path_manager
-from agentevolver.task.goal import GoalStore, authority_of, goal_manager, session_of
-from agentevolver.task.types import (
+from agentevolver.task import (
     GoalAction,
     GoalAuthority,
     GoalAuthorityError,
     GoalPhase,
     GoalRevisionError,
     GoalStateError,
+    GoalStore,
+    authority_of,
+    session_of,
+    task_manager,
 )
 from agentevolver.tool.default.lifecycle.goal import CreateGoalTool, GetGoalTool, UpdateGoalTool
-from agentevolver.utils.singleton import Singleton
 
 HUMAN = GoalAuthority.HUMAN
 AGENT = GoalAuthority.AGENT
+goal_store = task_manager.goals
 
 
 class _Ctx:
@@ -48,7 +51,7 @@ class _Ctx:
 
 
 def _goal(session_id: str, objective: str = "Ship the migration"):
-    return goal_manager.create(session_id=session_id, objective=objective, authority=HUMAN)
+    return goal_store.create(session_id=session_id, objective=objective, authority=HUMAN)
 
 
 # --------------------------------------------------------------------------- #
@@ -57,8 +60,8 @@ def _goal(session_id: str, objective: str = "Ship the migration"):
 def test_an_agent_cannot_set_its_own_goal():
     """The first refusal. Everything else is a variation on it."""
     with pytest.raises(GoalAuthorityError):
-        goal_manager.create(session_id="g_create", objective="Whatever I decide", authority=AGENT)
-    assert goal_manager.current("g_create") is None
+        goal_store.create(session_id="g_create", objective="Whatever I decide", authority=AGENT)
+    assert goal_store.current("g_create") is None
 
 
 def test_an_agent_cannot_rewrite_the_objective_it_is_measured_against():
@@ -70,7 +73,7 @@ def test_an_agent_cannot_rewrite_the_objective_it_is_measured_against():
     """
     goal = _goal("g_edit")
     with pytest.raises(GoalAuthorityError):
-        goal_manager.update(
+        goal_store.update(
             session_id="g_edit",
             goal_id=goal.id,
             revision=goal.revision,
@@ -78,21 +81,21 @@ def test_an_agent_cannot_rewrite_the_objective_it_is_measured_against():
             authority=AGENT,
             objective="Ship something smaller",
         )
-    assert goal_manager.current("g_edit").objective == "Ship the migration"
+    assert goal_store.current("g_edit").objective == "Ship the migration"
 
 
 def test_an_agent_cannot_pause_a_goal_to_get_out_from_under_it():
     """Pausing is not reporting; it is deciding the objective stops applying."""
     goal = _goal("g_pause")
     with pytest.raises(GoalAuthorityError):
-        goal_manager.update(
+        goal_store.update(
             session_id="g_pause",
             goal_id=goal.id,
             revision=goal.revision,
             action=GoalAction.PAUSE,
             authority=AGENT,
         )
-    assert goal_manager.current("g_pause").phase is GoalPhase.ACTIVE
+    assert goal_store.current("g_pause").phase is GoalPhase.ACTIVE
 
 
 def test_the_agent_is_the_one_who_reports_completion():
@@ -103,7 +106,7 @@ def test_the_agent_is_the_one_who_reports_completion():
     which is the failure mode a blanket rule produces.
     """
     goal = _goal("g_complete")
-    done = goal_manager.update(
+    done = goal_store.update(
         session_id="g_complete",
         goal_id=goal.id,
         revision=goal.revision,
@@ -121,7 +124,7 @@ def test_the_agent_may_report_blocked_but_must_name_the_condition():
     """
     goal = _goal("g_blocked")
     with pytest.raises(GoalStateError):
-        goal_manager.update(
+        goal_store.update(
             session_id="g_blocked",
             goal_id=goal.id,
             revision=goal.revision,
@@ -130,7 +133,7 @@ def test_the_agent_may_report_blocked_but_must_name_the_condition():
             blocked_reason="   ",
         )
 
-    blocked = goal_manager.update(
+    blocked = goal_store.update(
         session_id="g_blocked",
         goal_id=goal.id,
         revision=goal.revision,
@@ -145,7 +148,7 @@ def test_the_agent_may_report_blocked_but_must_name_the_condition():
 def test_a_human_can_still_move_what_the_agent_reported():
     """A blocked goal is a claim, not a verdict; the human decides what happens to it."""
     goal = _goal("g_override")
-    blocked = goal_manager.update(
+    blocked = goal_store.update(
         session_id="g_override",
         goal_id=goal.id,
         revision=goal.revision,
@@ -153,7 +156,7 @@ def test_a_human_can_still_move_what_the_agent_reported():
         authority=AGENT,
         blocked_reason="No credentials for the deploy target.",
     )
-    resumed = goal_manager.update(
+    resumed = goal_store.update(
         session_id="g_override",
         goal_id=goal.id,
         revision=blocked.revision,
@@ -211,7 +214,7 @@ def test_a_change_written_against_a_stale_revision_is_refused():
     objective — so overwriting it is worse than failing.
     """
     goal = _goal("g_cas")
-    goal_manager.update(
+    goal_store.update(
         session_id="g_cas",
         goal_id=goal.id,
         revision=goal.revision,
@@ -219,7 +222,7 @@ def test_a_change_written_against_a_stale_revision_is_refused():
         authority=HUMAN,
     )
     with pytest.raises(GoalRevisionError):
-        goal_manager.update(
+        goal_store.update(
             session_id="g_cas",
             goal_id=goal.id,
             revision=goal.revision,
@@ -231,14 +234,14 @@ def test_a_change_written_against_a_stale_revision_is_refused():
 def test_every_accepted_change_advances_the_revision():
     """Without this the compare-and-set token is decoration and stale writes land."""
     goal = _goal("g_rev")
-    paused = goal_manager.update(
+    paused = goal_store.update(
         session_id="g_rev",
         goal_id=goal.id,
         revision=goal.revision,
         action=GoalAction.PAUSE,
         authority=HUMAN,
     )
-    resumed = goal_manager.update(
+    resumed = goal_store.update(
         session_id="g_rev",
         goal_id=goal.id,
         revision=paused.revision,
@@ -251,7 +254,7 @@ def test_every_accepted_change_advances_the_revision():
 def test_a_completed_goal_is_history_rather_than_something_to_reopen():
     """Reopening would make "complete" reversible, and a reversible claim is not one."""
     goal = _goal("g_closed")
-    goal_manager.update(
+    goal_store.update(
         session_id="g_closed",
         goal_id=goal.id,
         revision=goal.revision,
@@ -259,7 +262,7 @@ def test_a_completed_goal_is_history_rather_than_something_to_reopen():
         authority=AGENT,
     )
     with pytest.raises(GoalStateError):
-        goal_manager.update(
+        goal_store.update(
             session_id="g_closed",
             goal_id=goal.id,
             revision=2,
@@ -275,7 +278,7 @@ def test_a_second_open_goal_is_refused_and_names_the_one_in_the_way():
     """
     first = _goal("g_two", "Finish the migration")
     with pytest.raises(GoalStateError) as refusal:
-        goal_manager.create(session_id="g_two", objective="Do something else", authority=HUMAN)
+        goal_store.create(session_id="g_two", objective="Do something else", authority=HUMAN)
     assert first.id in str(refusal.value), (
         "a refusal that does not say what is in the way cannot be acted on"
     )
@@ -284,35 +287,30 @@ def test_a_second_open_goal_is_refused_and_names_the_one_in_the_way():
 def test_a_goal_outlives_the_process_that_set_it():
     """The point of persisting it. A goal that died with the run would be a variable.
 
-    The store is a singleton, so the restart is simulated by dropping the instance and
-    building another; state that only lived in memory would come back empty.
+    A new store simulates a fresh process; state that lived only in memory would vanish.
     """
     goal = _goal("g_restart", "Keep the nightly ETL green")
     path = path_manager.get(P.SESSION_GOALS, owner="local", session_id="g_restart")
     assert path.is_file(), f"the goal was never written to {path}"
 
-    Singleton._instances.pop(GoalStore, None)
-    try:
-        revived = GoalStore()
-        assert revived.current("g_restart").id == goal.id
-        assert revived.current("g_restart").objective == "Keep the nightly ETL green"
-    finally:
-        Singleton._instances[GoalStore] = goal_manager
+    revived = GoalStore()
+    assert revived.current("g_restart").id == goal.id
+    assert revived.current("g_restart").objective == "Keep the nightly ETL green"
 
 
 def test_goals_are_scoped_to_their_session():
     """One project's objective must not appear in another's, or be closed from it."""
     a = _goal("g_scope_a", "Objective A")
     b = _goal("g_scope_b", "Objective B")
-    assert goal_manager.current("g_scope_a").id == a.id
-    assert goal_manager.current("g_scope_b").id == b.id
-    assert goal_manager.current("g_scope_a").objective == "Objective A"
+    assert goal_store.current("g_scope_a").id == a.id
+    assert goal_store.current("g_scope_b").id == b.id
+    assert goal_store.current("g_scope_a").objective == "Objective A"
 
 
 def test_timestamps_come_from_the_injected_clock(monkeypatch):
     """Pinned rather than waited for: a test that sleeps to prove a timestamp flakes."""
     pinned = datetime(2026, 8, 15, 9, 0, tzinfo=timezone.utc)
-    monkeypatch.setattr(goal_manager, "clock", lambda: pinned)
+    monkeypatch.setattr(goal_store, "clock", lambda: pinned)
     goal = _goal("g_clock")
     assert goal.created_at == pinned
     assert goal.updated_at == pinned
@@ -371,7 +369,7 @@ async def test_authority_written_into_the_arguments_buys_nothing():
         authority="human",
     )
     assert not result.success
-    assert goal_manager.current("t_claim2").objective == "Ship the migration"
+    assert goal_store.current("t_claim2").objective == "Ship the migration"
 
 
 @pytest.mark.asyncio

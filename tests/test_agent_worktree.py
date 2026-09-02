@@ -14,7 +14,7 @@ import pytest
 
 from agentevolver.agent.actor.general_agent import GeneralAgent
 from agentevolver.agent.types import Agent, AgentContext, _child_result_envelope
-from agentevolver.agent.worktree import IsolatedWorktree
+from agentevolver.sandbox.worktree import IsolatedWorktree
 from agentevolver.constraint import TokenConstraint
 from agentevolver.response import Response, ResponseType
 

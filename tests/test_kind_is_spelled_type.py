@@ -48,7 +48,10 @@ ALLOWED = {
     "frontend/src/App.tsx": "capability family beside `CapabilityDetail.type`",
     "tests/test_gateway.py": "capability family",
     "tests/test_plan_mode.py": "capability family",
-    "tests/test_trace_checkpoint.py": "capability family",
+    "tests/test_trace_durability.py": "capability family",
+    # Python's inspect.Parameter API names its callable-shape discriminator `kind`.
+    "agentevolver/model/context.py": "uses inspect.Parameter.kind",
+    "tests/test_tool_robustness.py": "asserts inspect.Parameter.kind",
     # Data written to disk before the rename. A field can be renamed; a file already on
     # someone's disk cannot, so these readers accept both spellings and write the new one.
     "agentevolver/canvas/types.py": "loads flows saved with the old spelling",

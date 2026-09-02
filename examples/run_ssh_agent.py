@@ -42,7 +42,7 @@ from agentevolver.hook import hook_manager
 from agentevolver.task import task_manager, TaskCategory, TaskPriority, TaskRecord, TaskStatus, add_task_args, resolve_task
 from agentevolver.trace import trace_manager
 from agentevolver.trajectory import trajectory_manager
-from agentevolver.session.project import bind_session_roots, ensure_session_sandbox
+from agentevolver.session.context import bind_session_roots, ensure_session_sandbox
 from agentevolver.session.types import SessionContext
 from agentevolver.utils import make_id
 

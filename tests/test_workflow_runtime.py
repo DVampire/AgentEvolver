@@ -994,7 +994,7 @@ async def test_installing_a_workflow_keeps_the_live_file_and_archives_its_versio
     try:
         active = Path(extension_manager.stage_path("workflow", "saved_workflow.html"))
         active.write_text(complete_html(source), encoding="utf-8")
-        name = await extension_manager.add_component("workflow", str(active), run_smoke=False)
+        name = await extension_manager.add_component("workflow", str(active))
         definition = workflow_manager.get(name)
         archive = tmp_path / "extensions/.versions/workflow/saved_workflow/1.2.0.html"
         assert definition.status == WorkflowStatus.ACTIVE

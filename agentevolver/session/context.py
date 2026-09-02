@@ -1,4 +1,4 @@
-"""Helpers for attaching every execution context to a project sandbox."""
+"""Prepare session context, sandbox paths, inputs, and persistent identity."""
 
 from __future__ import annotations
 
@@ -12,11 +12,70 @@ from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
 from agentevolver.sandbox.project import ProjectSandbox
+from agentevolver.session.types import Session, SessionContext
 from agentevolver.utils.file_utils import atomic_write_text
 
 #: Compatibility name for callers that display the filename. The path itself is
 #: resolved from ``P.PROJECT_MANIFEST`` below.
 SESSION_MANIFEST = path_manager.under(".", P.PROJECT_MANIFEST).name
+
+
+def create_session(
+    *,
+    session_id: str,
+    owner: str,
+    name: str,
+    source_workspace: Optional[str],
+    created_at: str,
+    shared_extension_root: str | Path,
+    capabilities: Optional[Dict[str, List[str]]] = None,
+    updated_at: str = "",
+) -> Session:
+    """Build one live Session over the canonical output layout.
+
+    The sandbox is described but not materialized. A Session that never performs work
+    therefore leaves no directory; the first runtime bind materializes and records it.
+    """
+    project_root = path_manager.get(P.SESSION, owner=owner, session_id=session_id)
+    sandbox = ProjectSandbox.create(
+        project_root,
+        shared_extension_root=shared_extension_root,
+        materialize=False,
+    )
+    context = SessionContext(
+        id=session_id,
+        name=name,
+        workspace_root=str(sandbox.workspace_root),
+        extra={
+            "workspace": str(sandbox.workspace_root),
+            "gateway_session": True,
+            "sandbox_mounts": sandbox.mounts(),
+            "source_workspace": source_workspace,
+            "project_id": session_id,
+        },
+    )
+    return Session(
+        context=context,
+        created_at=created_at,
+        sandbox=sandbox,
+        owner=owner,
+        capabilities=dict(capabilities or {}),
+        updated_at=updated_at or created_at,
+    )
+
+
+def touch_session(session: Session) -> None:
+    """Mark a Session as used and persist the identity needed for restoration."""
+    session.updated_at = datetime.now(timezone.utc).isoformat()
+    session.has_work = True
+    write_session_manifest(
+        session.sandbox,
+        session_id=session.context.id,
+        owner=session.owner,
+        name=session.context.name or "interactive",
+        created_at=session.created_at,
+        source_workspace=session.context.extra.get("source_workspace"),
+    )
 
 
 def configured_session_owner(config_obj: Any = None) -> str:

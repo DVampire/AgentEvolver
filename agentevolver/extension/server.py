@@ -248,19 +248,18 @@ class ExtensionManagerServer(BaseModel):
     # ------------------------------------------------------------------
     # Authoring: hot-add / evolve a single component
     # ------------------------------------------------------------------
-    async def add_component(self, module: str, abspath: str, config: Optional[dict] = None,
-                            run_smoke: Optional[bool] = None) -> str:
+    async def add_component(
+        self, module: str, abspath: str, config: Optional[dict] = None,
+    ) -> str:
         """Register an already-written flat active file, archive its version, update the manifest.
 
         Returns the registered component name. The version is assigned by the owning
         manager (via version_manager), so re-adding an existing component evolves it.
 
-        ``run_smoke`` controls the replay gate for the newly registered component
-        smoke run (see ``agentevolver/extension/smoke_gate.py``). On failure the component is
-        rolled back to its previous version (or unloaded if brand-new) and
-        ``EvolutionRejected`` is raised. Default (``None``) reads ``config.extension``
-        ``smoke_gate`` and otherwise defaults on. Callers must explicitly pass
-        ``run_smoke=False`` only for an already-validated administrative restore.
+        Admission is deterministic and cannot be disabled: the live registry entry and
+        every model-facing schema must be valid before the manifest commits. Functional
+        quality belongs to evaluation and measured rollout, not to an LLM call inside
+        this storage transaction.
         """
         # add_component is the evolution-write entry point, so it enforces the
         # enable_evolving gate: overwriting an already-registered *frozen* entity is
@@ -268,11 +267,17 @@ class ExtensionManagerServer(BaseModel):
         name, version = await self._load_component(
             module, abspath, None, version=None, config=config, return_version=True, enforce_evolvable=True
         )
-        # The manifest still holds the PREVIOUS active version here (it is rewritten
-        # below), so this is the rollback target if the smoke gate fails
-        # (None => brand-new component, which is unloaded instead of rolled back).
+        # The manifest still holds the previous accepted version. Loading necessarily
+        # makes the candidate live in its owning registry, so any rejection below must
+        # restore this version (or unload a brand-new component).
         _prev = self.read_manifest().find(module, name)
         prev_version = _prev.version if _prev else None
+
+        try:
+            await self._validate_candidate(module, name)
+        except Exception as error:
+            await self._reject_candidate(module, name, prev_version, error)
+
         # Serialize the manifest read-modify-write so parallel add_component calls
         # (e.g. concurrent component evolution) don't lose each other's updates.
         try:
@@ -283,19 +288,12 @@ class ExtensionManagerServer(BaseModel):
                 self._ensure_archived(module, name, abspath, comp.version)
                 self._write_manifest(manifest)
         except Exception as e:
-            # Transactional safety: we registered it live but cannot guarantee it is
-            # recoverable (no archived version = nothing to roll back to). Unload the
-            # half-committed component and fail, rather than leave an unrecoverable change live.
-            logger.error(f"| ❌ ExtensionManager: add {module}:{name} not committed ({e}); unloading.")
-            try:
-                await self._unload_component(module, name)
-            except Exception:
-                pass
-            raise
+            logger.error(
+                f"| ❌ ExtensionManager: add {module}:{name} not committed ({e}); "
+                "restoring the previous accepted state."
+            )
+            await self._reject_candidate(module, name, prev_version, e)
         logger.info(f"| ➕ ExtensionManager: added {module}:{name} v{comp.version}")
-
-        if self._smoke_enabled(run_smoke):
-            await self._smoke_gate_or_revert(module, name, prev_version)
 
         if prev_version is not None:
             await self._begin_rollout(module, name, prev_version, comp.version)
@@ -307,6 +305,86 @@ class ExtensionManagerServer(BaseModel):
             version=comp.version,
         )
         return name
+
+    async def _validate_candidate(self, module: str, name: str) -> None:
+        """Validate one loaded candidate without a model or external service.
+
+        The owning manager already performs type-specific parsing and construction while
+        loading. Admission adds the shared invariants: the candidate must remain reachable
+        through that manager, and every callable schema must satisfy the canonical
+        capability contract and serialize as strict JSON.
+        """
+        from agentevolver.capability import CapabilitySchema, SchemaSource
+        from agentevolver.capability.types import stored_type
+
+        entry = stored_type(module)
+        if entry is None:
+            raise ValueError(f"unknown stored component type: {module}")
+        manager = entry.manager()
+        getter = getattr(manager, "get_info", None) or getattr(manager, "get", None)
+        if getter is None:
+            raise TypeError(f"{module} manager exposes no component lookup")
+        info = getter(name)
+        if isawaitable(info):
+            info = await info
+        if info is None:
+            raise LookupError(
+                f"candidate is not registered after load: {module}:{name}"
+            )
+
+        project = getattr(manager, "function_callings", None)
+        if not callable(project):
+            return
+        projected = project([name])
+        if isawaitable(projected):
+            projected = await projected
+
+        schemas = []
+        for item in projected or []:
+            if not isinstance(item, (list, tuple)) or not item:
+                raise TypeError(f"invalid callable projection for {module}:{name}")
+            raw = item[0]
+            if not isinstance(raw, dict) or raw.get("type") != "function":
+                raise TypeError(f"invalid function schema for {module}:{name}")
+            function = raw.get("function")
+            if not isinstance(function, dict) or not function.get("name"):
+                raise TypeError(f"function schema has no name for {module}:{name}")
+            parameters = function.get("parameters")
+            if not isinstance(parameters, dict):
+                raise TypeError(
+                    f"function schema has no parameter object for {module}:{name}"
+                )
+            schema = CapabilitySchema(
+                name=str(function["name"]),
+                description=str(function.get("description") or function["name"]),
+                parameters=parameters,
+                strict=parameters.get("additionalProperties") is False,
+                source=SchemaSource.INFERRED,
+            )
+            schemas.append(schema.as_function_calling())
+        json.dumps(schemas, ensure_ascii=False)
+
+    async def _reject_candidate(
+        self,
+        module: str,
+        name: str,
+        previous_version: Optional[str],
+        cause: Exception,
+    ) -> None:
+        """Restore the accepted registry state and raise the admission failure."""
+        try:
+            if previous_version is not None:
+                await self.rollback(module, name, previous_version)
+            elif not await self._unload_component(module, name):
+                raise RuntimeError("candidate could not be unregistered")
+        except Exception as restore_error:
+            raise RuntimeError(
+                f"{module}:{name} admission failed ({cause}); CRITICAL: restoring the "
+                f"previous state also failed ({restore_error})"
+            ) from restore_error
+        raise ValueError(
+            f"{module}:{name} rejected during deterministic admission: {cause}"
+        ) from cause
 
     @staticmethod
     def _rollout_key(module: str, name: str) -> str:
@@ -332,13 +410,13 @@ class ExtensionManagerServer(BaseModel):
         if module != "tool":
             logger.info(
                 f"| ✅ ExtensionManager: {module}:{name} v{candidate_version} stays "
-                "active after smoke validation (measured rollout is currently tool-only)"
+                "active after admission (measured rollout is currently tool-only)"
             )
             return
         key = self._rollout_key(module, name)
 
-        # Smoke validation runs against the newly loaded candidate. Shadow/canary must
-        # then begin with the baseline actually serving normal traffic; leaving the
+        # Admission validates the newly loaded candidate. Shadow/canary must then begin
+        # with the baseline actually serving normal traffic; leaving the
         # candidate globally registered while reporting phase=shadow would invert the
         # safety contract. The candidate remains archived and can be promoted atomically.
         await self.rollback(module, name, baseline_version)
@@ -510,72 +588,6 @@ class ExtensionManagerServer(BaseModel):
         )
         await self._persist_rollouts()
         return rollout.status()
-
-    def _smoke_enabled(self, run_smoke: Optional[bool]) -> bool:
-        """Resolve the smoke gate; new/evolved code is verified by default."""
-        if run_smoke is not None:
-            return bool(run_smoke)
-        try:
-            from agentevolver.config import config
-            ext_cfg = getattr(config, "extension", {}) or {}
-            return bool(ext_cfg.get("smoke_gate", True)) if isinstance(ext_cfg, dict) else True
-        except Exception:
-            return True
-
-    async def _smoke_gate_or_revert(self, module: str, name: str, prev_version: Optional[str]) -> None:
-        """Run the replay smoke gate; on failure revert (rollback or unload) and raise."""
-        from agentevolver.extension.journal import journal
-        from agentevolver.extension.smoke_gate import EvolutionRejected, replay_smoke
-
-        report = await replay_smoke(module, name)
-        if report.ok:
-            self._record_smoke_result(
-                journal, module, name, "accepted", report.exit_reason or "done", True,
-            )
-            return
-        # Revert: roll back to the prior version, or unload a brand-new component.
-        revert_error = None
-        try:
-            if prev_version is not None:
-                await self.rollback(module, name, prev_version)
-                logger.warning(f"| ⏪ ExtensionManager: {module}:{name} reverted to v{prev_version} (smoke gate).")
-            else:
-                await self.unload(module, name)
-                logger.warning(f"| 🧹 ExtensionManager: {module}:{name} unloaded (smoke gate, no prior version).")
-        except Exception as e:
-            revert_error = e
-            logger.error(f"| ❌ ExtensionManager: revert after failed smoke gate errored: {e}")
-        self._record_smoke_result(
-            journal,
-            module,
-            name,
-            "reverted" if revert_error is None else "revert_failed",
-            report.exit_reason or "error",
-            False,
-        )
-        message = f"{module}:{name} rejected by replay smoke gate: {report.reason}"
-        if revert_error is not None:
-            message += f"; CRITICAL: rollback also failed: {revert_error}"
-        raise EvolutionRejected(message) from revert_error
-
-    @staticmethod
-    def _record_smoke_result(journal, module: str, name: str, result: str,
-                             reason: str, accepted: bool) -> None:
-        """Record smoke attribution without making telemetry part of the commit.
-
-        The manifest plus live registry are the authoritative evolution transaction.
-        A journal I/O failure after a successful gate must not turn that transaction
-        into a reported failure while leaving the accepted component active.
-        """
-        try:
-            journal.fill_gating(
-                module, name, result, attribution={f"smoke:{reason}": accepted},
-            )
-        except Exception as exc:  # noqa: BLE001 - observational sink, logged explicitly
-            logger.error(
-                f"| ⚠️ Evolution journal could not record {module}:{name} "
-                f"smoke result {result}: {exc}"
-            )
 
     async def unload(self, module: str, name: str) -> bool:
         """Unregister an active component and drop it from the manifest (archive kept)."""

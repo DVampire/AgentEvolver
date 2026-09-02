@@ -1,16 +1,18 @@
-"""Runtime types: AgentRef, status enum, and message classes.
+"""Runtime types: AgentRef, status enum, control messages, and queued task turns.
 
 The runtime is a thin mailbox/pump layer on top of existing Agent instances.
 - AgentRef is the only externally-visible handle to a running agent.
-- Messages (TaskMessage / StopMessage) flow into ref._inbox; the pump loop
-  in agentevolver.runtime.pump dispatches them to the underlying Agent._run method.
+- Control/Task messages flow through the ref's mailbox and serialized task queue; the
+  pump dispatches them to the underlying Agent lifecycle.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Literal, Optional, Set
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
@@ -42,6 +44,59 @@ class TaskMessage(BaseMessage):
 
     task: Optional[str] = None
     kwargs: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ControlMessage(BaseMessage):
+    """Pause, resume, or cancel one running AgentRef."""
+
+    action: Literal["cancel", "pause", "resume"]
+    reason: str = ""
+
+
+class QueryMessage(BaseMessage):
+    """Request a live status snapshot from one running AgentRef."""
+
+    fields: Optional[List[str]] = None
+
+
+class SubscriptionEventMessage(TaskMessage):
+    """A typed event queued as an ordinary serialized Runtime task turn."""
+
+    topic: str
+    event_type: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    publisher: str = ""
+    published_at: str = ""
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        topic: str,
+        event_type: str,
+        payload: Optional[Dict[str, Any]] = None,
+        publisher: str = "",
+    ) -> "SubscriptionEventMessage":
+        body = dict(payload or {})
+        published_at = datetime.now(timezone.utc).isoformat()
+        task = "\n".join([
+            "A subscribed event was published to this agent.",
+            f"Topic: {topic}",
+            f"Event type: {event_type}",
+            f"Publisher: {publisher or '(unspecified)'}",
+            f"Published at: {published_at}",
+            "Payload:",
+            json.dumps(body, ensure_ascii=False, indent=2, default=str),
+            "Handle this event according to your standing subscriber brief.",
+        ])
+        return cls(
+            task=task,
+            topic=topic,
+            event_type=event_type,
+            payload=body,
+            publisher=publisher,
+            published_at=published_at,
+        )
 
 
 class StopMessage(BaseMessage):
@@ -113,6 +168,9 @@ class AgentRef(BaseModel):
     #: The one coroutine allowed to run a turn on this ref.
     _driver: Optional[asyncio.Task] = PrivateAttr(default=None)
     _ctx:    Optional[Any]          = PrivateAttr(default=None)
+    #: Runtime-owned scheduling gate. Published events and follow-up tasks may queue
+    #: while paused, but the continuable driver cannot start another turn.
+    _resume_gate: asyncio.Event = PrivateAttr(default_factory=asyncio.Event)
 
     @property
     def alive(self) -> bool:

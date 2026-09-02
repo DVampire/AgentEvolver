@@ -109,7 +109,7 @@ class HookManagerServer:
         """Dispatch to the hook registered under ``name``.
 
         Args:
-            name:  Registered hook name (e.g. ``"memory_hook"``).
+            name:  Registered hook name (e.g. ``"trace_hook"``).
             input: Event payload dict. ``"event"`` key is required.
             ctx:   Any context with an ``.id`` attribute.
 

@@ -1039,14 +1039,14 @@ class ToolContextManager(BaseModel):
         """Commit policy/approval evidence after guards and before a possible effect."""
         if getattr(tool_instance, "mutates", None) is False:
             return {}
-        from agentevolver.trace.checkpoint import (
-            TraceCheckpointBoundary,
-            checkpoint_trace,
+        from agentevolver.trace.integrity import (
+            TraceDurabilityBoundary,
+            ensure_trace_durable,
         )
 
-        await checkpoint_trace(
+        await ensure_trace_durable(
             execution.session_id,
-            TraceCheckpointBoundary.EXTERNAL_EFFECT,
+            TraceDurabilityBoundary.EXTERNAL_EFFECT,
             ctx=ctx,
             metadata={
                 "tool_name": execution.tool_name,
@@ -1066,7 +1066,7 @@ class ToolContextManager(BaseModel):
             # A standalone interactive manager may have a workspace but no bound Session
             # log tree. It cannot offer rollback metadata, while strict training/high-risk
             # runs must never proceed without it.
-            from agentevolver.trace.checkpoint import resolve_integrity_profile
+            from agentevolver.trace.integrity import resolve_integrity_profile
             if resolve_integrity_profile(ctx=ctx).required:
                 raise
             logger.warning(

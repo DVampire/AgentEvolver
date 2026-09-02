@@ -52,7 +52,7 @@ from agentevolver.task import task_manager, TaskCategory, TaskPriority, TaskReco
 from agentevolver.trace import trace_manager
 from agentevolver.trajectory import trajectory_manager
 from agentevolver.session.types import SessionContext
-from agentevolver.session.project import ensure_session_sandbox, bind_session_roots
+from agentevolver.session.context import bind_session_roots, ensure_session_sandbox
 from agentevolver.utils import make_id
 
 

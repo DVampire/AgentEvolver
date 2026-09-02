@@ -178,7 +178,7 @@ class TraceManager(metaclass=Singleton):
         act closes that window.
 
         On timeout it gives up and returns ``False`` rather than waiting indefinitely.
-        ``flush`` only reports persistence state; the semantic checkpoint policy decides
+        ``flush`` only reports persistence state; the integrity policy decides
         what that state means. Interactive runs record degradation and continue, while
         training and high-risk runs fail closed before the downstream request or effect.
 
@@ -229,7 +229,7 @@ class TraceManager(metaclass=Singleton):
         """Emit a trace event and report whether it entered the persistence queue.
 
         Never blocks and never raises. Most observational callers may ignore the return
-        value; integrity checkpoints consult the manager's permanent Session gap state.
+        value; durability boundaries consult the manager's permanent Session gap state.
 
         Stamps the event's position in its session's log before anyone sees it. The
         number is what lets one event cite another — a summary naming the range it
@@ -484,7 +484,7 @@ class TraceManager(metaclass=Singleton):
         self, session_id: str, *, workspace_fingerprint: Optional[str] = None,
     ):
         """Return the conservative resume decision derived from durable history."""
-        from agentevolver.trace.execution_checkpoint import derive_execution_checkpoint
+        from agentevolver.trace.recovery import derive_execution_checkpoint
 
         return derive_execution_checkpoint(
             session_id,

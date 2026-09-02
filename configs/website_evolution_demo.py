@@ -37,6 +37,11 @@ extension_root = "output/website_evolution_demo/extension"
 # preserves role-specific agent models so independent co-designers do not simulate three users
 # with the same model family.
 model_name = "llm_hub/claude-opus-5"
+model_roles = dict(
+    main=model_name,
+    judge=model_name,
+    summarize=model_name,
+)
 agent_model_policy = "per_agent"
 website_user_models = [
     "llm_hub/claude-opus-5",
@@ -54,11 +59,12 @@ agent_names = [
     "website_user_agent",
 ]
 
-# Bash owns inspection, search, Git, build, and tests; apply_patch is the only authored
-# source mutation primitive. The remaining tools each add one indispensable runtime verb.
+# Bash owns workspace inspection, search, Git, build, and tests; inspect resolves one
+# registered capability contract on demand. Apply_patch is the only source mutation primitive.
 tool_names = [
     "bash_tool",
     "apply_patch_tool",
+    "inspect_tool",
     "deploy_tool",
     "done_tool",
     "send_message_tool",

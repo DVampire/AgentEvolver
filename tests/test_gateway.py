@@ -111,10 +111,10 @@ def test_reconciliation_command_records_the_fact_before_resuming_the_task() -> N
     queue transition happened first, a fast worker could repeat the uncertain action
     before the receipt survived another crash.
     """
-    from agentevolver.task.server import TaskRecord, task_manager
-    from agentevolver.task.types import Task, TaskStatus
+    from agentevolver.task.server import task_manager
+    from agentevolver.task.types import Task, TaskRecord, TaskStatus
     from agentevolver.trace import trace_manager
-    from agentevolver.trace.execution_checkpoint import (
+    from agentevolver.trace.recovery import (
         ExecutionCheckpoint,
         UnsettledCall,
     )

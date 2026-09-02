@@ -5,7 +5,7 @@ symlinks or paths outside the workspace must never import host content. Memory a
 instructions remain compatible inputs alongside AGENTS files.
 """
 
-from agentevolver.agent.project_context import load_project_context
+from agentevolver.agent.context import load_project_context
 from agentevolver.memory.project import ProjectMemoryStore
 
 

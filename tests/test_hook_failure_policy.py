@@ -72,3 +72,15 @@ async def test_lifecycle_broadcast_calls_only_explicit_subscribers():
 
     assert result.decision is HookDecision.ALLOW
     assert seen == ["subscriber"]
+
+
+@pytest.mark.asyncio
+async def test_default_hooks_have_one_trace_to_memory_path():
+    """Memory consumes TraceHook's numbered event; no second event-building hook exists."""
+    manager = HookContextManager()
+    await manager.initialize()
+
+    names = set(manager.list())
+    assert "trace_hook" in names
+    assert "project_memory_hook" in names
+    assert "memory_hook" not in names

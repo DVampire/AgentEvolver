@@ -7,7 +7,6 @@ from typing import Any, Dict, Optional
 
 from agentevolver.logger import logger
 
-
 INTEGRITY_POLICY_VERSION = 1
 TRACE_INTEGRITY_PROFILE_KEY = "trace_integrity_profile"
 
@@ -24,7 +23,9 @@ class TraceIntegrityProfile(str, Enum):
         return self in (self.TRAINING, self.HIGH_RISK)
 
 
-class TraceCheckpointBoundary(str, Enum):
+class TraceDurabilityBoundary(str, Enum):
+    """Semantic points where all preceding Trace facts must be durable."""
+
     MODEL_REQUEST = "before_model_request"
     EXTERNAL_EFFECT = "before_external_effect"
     STEP_END = "step_end"
@@ -66,7 +67,7 @@ def resolve_integrity_profile(
 async def _integrity_failure(
     *,
     session_id: str,
-    boundary: TraceCheckpointBoundary,
+    boundary: TraceDurabilityBoundary,
     profile: TraceIntegrityProfile,
     issue: str,
     metadata: Optional[Dict[str, Any]] = None,
@@ -98,7 +99,7 @@ async def _integrity_failure(
         except Exception as emit_error:  # noqa: BLE001 - preserve the original failure
             logger.error(f"| ❌ Could not emit integrity degradation fact: {emit_error}")
     message = (
-        f"Trace integrity checkpoint {boundary.value!r} failed for session "
+        f"Trace durability boundary {boundary.value!r} failed for session "
         f"{session_id!r} under profile {profile.value!r}: {issue}"
     )
     if profile.required:
@@ -107,9 +108,9 @@ async def _integrity_failure(
     return False
 
 
-async def checkpoint_trace(
+async def ensure_trace_durable(
     session_id: str,
-    boundary: TraceCheckpointBoundary,
+    boundary: TraceDurabilityBoundary,
     *,
     profile: Any = None,
     ctx: Any = None,
@@ -129,7 +130,7 @@ async def checkpoint_trace(
     session_id = str(session_id or "")
     if selected.required and not session_id:
         raise TraceIntegrityError(
-            f"Trace integrity checkpoint {boundary.value!r} requires a real session id "
+            f"Trace durability boundary {boundary.value!r} requires a real session id "
             f"under profile {selected.value!r}"
         )
     if not trace_manager.running:
@@ -179,7 +180,7 @@ async def checkpoint_trace(
 
 async def report_trace_integrity_failure(
     session_id: str,
-    boundary: TraceCheckpointBoundary,
+    boundary: TraceDurabilityBoundary,
     error: BaseException,
     *,
     profile: Any = None,
@@ -202,9 +203,9 @@ __all__ = [
     "INTEGRITY_POLICY_VERSION",
     "TRACE_INTEGRITY_PROFILE_KEY",
     "TraceIntegrityProfile",
-    "TraceCheckpointBoundary",
+    "TraceDurabilityBoundary",
     "TraceIntegrityError",
     "resolve_integrity_profile",
-    "checkpoint_trace",
+    "ensure_trace_durable",
     "report_trace_integrity_failure",
 ]

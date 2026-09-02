@@ -15,11 +15,11 @@ from agentevolver.model.types import ModelConfig, ModelContext
 from agentevolver.response import Response, ResponseType
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.types import Tool, ToolContext
-from agentevolver.trace.checkpoint import (
-    TraceCheckpointBoundary,
+from agentevolver.trace.integrity import (
+    TraceDurabilityBoundary,
     TraceIntegrityError,
     TraceIntegrityProfile,
-    checkpoint_trace,
+    ensure_trace_durable,
     resolve_integrity_profile,
 )
 from agentevolver.trace.persistence import SQLiteTracePersistence
@@ -104,9 +104,9 @@ async def test_training_profile_requires_a_running_trace_writer(isolated_trace_m
     isolated_trace_manager.emit = emitted
     try:
         with pytest.raises(TraceIntegrityError, match="not running"):
-            await checkpoint_trace(
+            await ensure_trace_durable(
                 "training-session",
-                TraceCheckpointBoundary.MODEL_REQUEST,
+                TraceDurabilityBoundary.MODEL_REQUEST,
                 profile="training",
             )
     finally:
@@ -130,15 +130,15 @@ async def test_interactive_timeout_records_one_degradation_and_continues(
         patch.object(isolated_trace_manager, "flush", flush),
         patch.object(isolated_trace_manager, "emit", emit),
     ):
-        first = await checkpoint_trace(
+        first = await ensure_trace_durable(
             "interactive-session",
-            TraceCheckpointBoundary.EXTERNAL_EFFECT,
+            TraceDurabilityBoundary.EXTERNAL_EFFECT,
             profile="interactive",
             metadata={"tool_name": "write_file_tool"},
         )
-        second = await checkpoint_trace(
+        second = await ensure_trace_durable(
             "interactive-session",
-            TraceCheckpointBoundary.EXTERNAL_EFFECT,
+            TraceDurabilityBoundary.EXTERNAL_EFFECT,
             profile="interactive",
             metadata={"tool_name": "write_file_tool"},
         )
@@ -185,9 +185,9 @@ async def test_queue_overflow_permanently_marks_the_session_incomplete(
 
     with patch.object(isolated_trace_manager, "flush", AsyncMock(return_value=True)):
         with pytest.raises(TraceIntegrityError, match="dropped 1 event"):
-            await checkpoint_trace(
+            await ensure_trace_durable(
                 "s1",
-                TraceCheckpointBoundary.STEP_END,
+                TraceDurabilityBoundary.STEP_END,
                 profile="training",
             )
 
@@ -340,13 +340,13 @@ def test_approval_timeout_config_must_be_positive():
 
 
 @pytest.mark.asyncio
-async def test_strict_checkpoint_requires_a_real_session_id(isolated_trace_manager):
+async def test_strict_durability_requires_a_real_session_id(isolated_trace_manager):
     isolated_trace_manager._running = True
     isolated_trace_manager._queue = AsyncQueue(maxsize=1)
     with pytest.raises(TraceIntegrityError, match="requires a real session id"):
-        await checkpoint_trace(
+        await ensure_trace_durable(
             "",
-            TraceCheckpointBoundary.EXTERNAL_EFFECT,
+            TraceDurabilityBoundary.EXTERNAL_EFFECT,
             profile="high_risk",
         )
 
@@ -356,10 +356,10 @@ async def test_post_step_flushes_after_all_step_hooks():
     agent = _agent()
     ctx = AgentContext(id="step-session", extra={"trace_integrity_profile": "training"})
     hooks = AsyncMock(return_value=SimpleNamespace())
-    checkpoint = AsyncMock(return_value=True)
+    ensure_durable = AsyncMock(return_value=True)
     with (
         patch("agentevolver.hook.server.hook_manager", hooks),
-        patch("agentevolver.trace.checkpoint.checkpoint_trace", checkpoint),
+        patch("agentevolver.trace.integrity.ensure_trace_durable", ensure_durable),
     ):
         await agent._post_step(
             "task-1",
@@ -375,9 +375,9 @@ async def test_post_step_flushes_after_all_step_hooks():
 
     # trace_hook forwards its numbered event to memory; trajectory runs after it.
     assert hooks.await_count == 2
-    checkpoint.assert_awaited_once()
-    args, kwargs = checkpoint.await_args
-    assert args[:2] == ("step-session", TraceCheckpointBoundary.STEP_END)
+    ensure_durable.assert_awaited_once()
+    args, kwargs = ensure_durable.await_args
+    assert args[:2] == ("step-session", TraceDurabilityBoundary.STEP_END)
     assert kwargs["ctx"] is ctx
     assert kwargs["metadata"]["step_number"] == 4
 
@@ -401,7 +401,7 @@ async def test_agent_propagates_integrity_profile_to_the_model_boundary():
     with (
         patch("agentevolver.hook.server.hook_manager", AsyncMock()),
         patch(
-            "agentevolver.agent.native_tools.assemble_native_tools",
+            "agentevolver.agent.capabilities.assemble_native_tools",
             AsyncMock(return_value=([], {})),
         ),
         patch.object(model_manager.model_context_manager, "stream", stream),

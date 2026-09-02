@@ -16,8 +16,8 @@ from typing import Any, Optional, Protocol, runtime_checkable
 
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
-from agentevolver.utils import AsyncQueue
 from agentevolver.trace.types import TraceEvent
+from agentevolver.utils import AsyncQueue
 
 
 @runtime_checkable
@@ -46,7 +46,7 @@ class SQLiteTracePersistence:
         self._task: Optional[asyncio.Task] = None
         self._connection: Optional[sqlite3.Connection] = None
         # A failed event cannot be recreated by a later successful write. Keep the first
-        # failure for the lifetime of this provider so a strict checkpoint cannot mistake
+        # failure for the lifetime of this provider so strict integrity cannot mistake
         # "the queue drained" for "the complete session is durable".
         self._durability_errors: dict[str, str] = {}
 

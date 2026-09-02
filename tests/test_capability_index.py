@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentevolver.agent.capability_index import (
+from agentevolver.agent.capabilities import (
     SEARCH_NAME,
     catalog,
     forget,
@@ -113,7 +113,7 @@ def test_zero_match_search_does_not_load_arbitrary_capabilities():
 
 @pytest.mark.asyncio
 async def test_native_catalog_discovery_is_reused_for_the_whole_run(monkeypatch):
-    import agentevolver.agent.native_tools as native_tools
+    import agentevolver.agent.capabilities as native_tools
 
     calls = []
 
@@ -143,7 +143,7 @@ async def test_native_catalog_discovery_is_reused_for_the_whole_run(monkeypatch)
 @pytest.mark.asyncio
 async def test_hot_extension_refreshes_native_catalog_once_on_the_next_turn(monkeypatch):
     """A generated capability is useful only if its parent can actually call it."""
-    import agentevolver.agent.native_tools as native_tools
+    import agentevolver.agent.capabilities as native_tools
     from agentevolver.extension import extension_manager
 
     class Manager:
@@ -184,7 +184,7 @@ async def test_hot_extension_refreshes_native_catalog_once_on_the_next_turn(monk
 
 @pytest.mark.asyncio
 async def test_one_broken_catalog_source_does_not_hide_healthy_types(monkeypatch):
-    import agentevolver.agent.native_tools as native_tools
+    import agentevolver.agent.capabilities as native_tools
 
     class Broken:
         async def function_callings(self, *_args, **_kwargs):

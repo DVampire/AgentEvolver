@@ -145,6 +145,7 @@ def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
     assert cfg.tool_names == [
         "bash_tool",
         "apply_patch_tool",
+        "inspect_tool",
         "deploy_tool",
         "done_tool",
         "send_message_tool",

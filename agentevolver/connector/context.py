@@ -777,13 +777,13 @@ class ConnectorContextManager(BaseModel):
         async def checkpoint_effect() -> None:
             if effect.read_only is True:
                 return
-            from agentevolver.trace.checkpoint import (
-                TraceCheckpointBoundary,
-                checkpoint_trace,
+            from agentevolver.trace.integrity import (
+                TraceDurabilityBoundary,
+                ensure_trace_durable,
             )
-            await checkpoint_trace(
+            await ensure_trace_durable(
                 execution.session_id,
-                TraceCheckpointBoundary.EXTERNAL_EFFECT,
+                TraceDurabilityBoundary.EXTERNAL_EFFECT,
                 ctx=ctx,
                 metadata={"connector": name, "action": action},
             )

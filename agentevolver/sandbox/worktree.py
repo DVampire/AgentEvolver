@@ -1,4 +1,4 @@
-"""Disposable Git worktrees for concurrently writing delegated agents."""
+"""Disposable Git worktrees used to isolate concurrently writing agents."""
 
 from __future__ import annotations
 

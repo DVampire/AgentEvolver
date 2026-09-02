@@ -327,7 +327,7 @@ class ToolExecutionPipeline:
             except asyncio.CancelledError:
                 raise
             except Exception as error:  # checkpoint/persistence failure is fail-closed
-                from agentevolver.trace.checkpoint import TraceIntegrityError
+                from agentevolver.trace.integrity import TraceIntegrityError
                 if isinstance(error, TraceIntegrityError):
                     raise
                 message = (

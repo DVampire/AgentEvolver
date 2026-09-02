@@ -180,7 +180,7 @@ class QuestionManagerServer(metaclass=Singleton):
 
         from agentevolver.runtime import runtime_manager
 
-        return runtime_manager.resume(suspend_key(request_id), parsed)
+        return runtime_manager.resolve_suspension(suspend_key(request_id), parsed)
 
     # ------------------------------------------------------------------
     # Looking

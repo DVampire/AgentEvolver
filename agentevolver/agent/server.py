@@ -3,19 +3,17 @@
 Server implementation for the Agent Context Protocol with lazy loading support.
 """
 
-import os
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentevolver.paths import P, path_manager
+from agentevolver.agent.context import AgentContextManager
+from agentevolver.agent.types import Agent, AgentConfig, AgentContext
+from agentevolver.capability import CapabilitySchema, SchemaSource, roster, roster_card
 from agentevolver.config import config
 from agentevolver.logger import logger
-from agentevolver.agent.types import AgentConfig, Agent, AgentContext
-from agentevolver.agent.context import AgentContextManager
+from agentevolver.paths import P, path_manager
 from agentevolver.utils import assemble_workspace_path
-from agentevolver.capability import CapabilitySchema, SchemaSource, roster, roster_card
-
 
 # Delegation is a control message, not a document transport.  Large requirements belong
 # in an attached artifact so they are inspectable, reusable, and do not turn one tool call
@@ -74,7 +72,6 @@ class AgentManagerServer(BaseModel):
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the Agent Server."""
         super().__init__(**kwargs)
-        self._registered_configs: Dict[str, AgentConfig] = {}  # agent_name -> AgentConfig
         # Context manager is created lazily (config may not be loaded at import time).
         # initialize() reconfigures it with proper base_dir .
         self.agent_context_manager: Optional[AgentContextManager] = None
@@ -103,13 +100,6 @@ class AgentManagerServer(BaseModel):
         )
         await self._ensure_context_manager().initialize(agent_names=agent_names)
         
-        # Sync registered_configs from context manager after initialization
-        agent_list = await self._ensure_context_manager().list()
-        for agent_name in agent_list:
-            agent_config = await self._ensure_context_manager().get_info(agent_name)
-            if agent_config and agent_name not in self._registered_configs:
-                self._registered_configs[agent_name] = agent_config
-        
         logger.info("| ✅ Agents initialization completed")
 
     async def register(self, 
@@ -134,7 +124,6 @@ class AgentManagerServer(BaseModel):
             override=override,
             version=version
         )
-        self._registered_configs[agent_config.name] = agent_config
         return agent_config
     
     async def get_info(self, agent_name: str) -> Optional[AgentConfig]:
@@ -317,7 +306,6 @@ class AgentManagerServer(BaseModel):
     async def cleanup(self):
         """Cleanup all agents"""
         await self._ensure_context_manager().cleanup()
-        self._registered_configs.clear()
     
     async def update(self, 
                      agent_cls: Type[Agent],
@@ -338,7 +326,6 @@ class AgentManagerServer(BaseModel):
         agent_config = await self._ensure_context_manager().update(
             agent_cls, agent_config_dict=agent_config_dict, new_version=new_version, description=description
         )
-        self._registered_configs[agent_config.name] = agent_config
         return agent_config
     
     async def copy(self, 
@@ -360,7 +347,6 @@ class AgentManagerServer(BaseModel):
         agent_config = await self._ensure_context_manager().copy(
             agent_name, new_name, new_version, new_config
         )
-        self._registered_configs[agent_config.name] = agent_config
         return agent_config
     
     async def unregister(self, agent_name: str) -> bool:
@@ -372,10 +358,7 @@ class AgentManagerServer(BaseModel):
         Returns:
             True if unregistered successfully, False otherwise
         """
-        success = await self._ensure_context_manager().unregister(agent_name)
-        if success and agent_name in self._registered_configs:
-            del self._registered_configs[agent_name]
-        return success
+        return await self._ensure_context_manager().unregister(agent_name)
     
     async def restore(self, agent_name: str, version: str, auto_initialize: bool = True) -> Optional[AgentConfig]:
         """Restore a specific version of an agent from history
@@ -388,10 +371,7 @@ class AgentManagerServer(BaseModel):
         Returns:
             AgentConfig of the restored version, or None if not found
         """
-        agent_config = await self._ensure_context_manager().restore(agent_name, version, auto_initialize)
-        if agent_config:
-            self._registered_configs[agent_config.name] = agent_config
-        return agent_config
+        return await self._ensure_context_manager().restore(agent_name, version, auto_initialize)
     
     async def __call__(self, 
                        name: str, 
@@ -414,7 +394,7 @@ class AgentManagerServer(BaseModel):
         ctx = AgentContext.from_context(ctx) if ctx else AgentContext(name=name, input=input)
         # Direct Python entry points historically supplied only an id. Attach those
         # contexts to a session sandbox just as Gateway and CLI invocations are.
-        from agentevolver.session.project import ensure_session_sandbox, stage_input_files
+        from agentevolver.session.context import ensure_session_sandbox, stage_input_files
         # No explicit root: the layout puts this exactly where the gateway puts
         # a session, so a locally-started task and a browser-started one share
         # output/<owner>/sessions/<id> rather than diverging.

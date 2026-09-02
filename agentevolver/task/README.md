@@ -14,11 +14,10 @@ and resolves CLI task input into normalized records.
 
 | File | Responsibility |
 |---|---|
-| `types.py` | Task and Goal contracts, enums, and goal refusals |
-| `server.py` | Task records, categories, and manager operations |
-| `goal.py` | `goal_manager` — the session's standing objective, and who may move it |
-| `loader.py` | HTML/Markdown task document loading |
-| `run_input.py` | CLI arguments and task resolution |
+| `types.py` | Task/Goal contracts, scheduling records, enums, and refusals |
+| `context.py` | Task-document parsing and launcher-input normalization |
+| `server.py` | `TaskManagerServer` scheduling, persistence, recovery, and workers |
+| `goal.py` | `GoalStore`, owned by `task_manager.goals`, and goal authority rules |
 
 Task records describe work; Agent and Workflow own execution behavior.
 

@@ -13,7 +13,6 @@ import shutil
 import sys
 from argparse import Namespace
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, Optional
@@ -68,10 +67,12 @@ from agentevolver.process import process_manager
 from agentevolver.prompt import prompt_manager
 from agentevolver.protocol import protocol_manager
 from agentevolver.runtime import runtime_manager
-from agentevolver.sandbox.project import ProjectSandbox
-from agentevolver.session import project as session_project
-from agentevolver.session.project import bind_session_roots
-from agentevolver.session.types import SessionContext
+from agentevolver.session import session_manager
+from agentevolver.session.context import (
+    SESSION_MANIFEST as SESSION_MANIFEST_NAME,
+    bind_session_roots,
+)
+from agentevolver.session.types import Session, SessionUpload
 from agentevolver.skill import skill_manager
 from agentevolver.task import (
     HUMAN_TURN_KEY,
@@ -91,50 +92,6 @@ from agentevolver.version import version_manager
 from agentevolver.workflow import workflow_manager
 
 
-@dataclass
-class GatewaySession:
-    context: SessionContext
-    created_at: str
-    sandbox: ProjectSandbox
-    # The connection's owner (user) — the top level of the output tree:
-    # output/<owner>/sessions/<id>/ (runtime) + output/<owner>/state/ (durable
-    # flows/files/settings). Defaults to "local" for the single-user case.
-    owner: str = "local"
-    #: When work last happened here. Orders the project list — created_at would
-    #: bury a project someone has lived in all week under one opened once.
-    updated_at: str = ""
-    #: Whether anything has actually happened here. A page refresh mints a new
-    #: session before the user has typed a word, so listing every session in
-    #: memory filled the project list with identical empty rows. The manifest is
-    #: the same marker on disk: written on the first submission, which is also
-    #: what makes a project restorable.
-    has_work: bool = False
-    task_ids: list[str] = field(default_factory=list)
-    capabilities: Dict[str, list[str]] = field(default_factory=dict)
-    uploads: Dict[str, "GatewayUpload"] = field(default_factory=dict)
-
-
-@dataclass
-class GatewayUpload:
-    id: str
-    name: str
-    path: str
-    size: int
-    mime_type: str = "application/octet-stream"
-    received: int = 0
-    completed: bool = False
-
-    def public(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "name": self.name,
-            "path": self.path,
-            "size": self.size,
-            "mime_type": self.mime_type,
-            "completed": self.completed,
-        }
-
-
 class AgentGateway:
     """Owns interactive sessions and maps protocol commands to backend operations."""
 
@@ -144,7 +101,7 @@ class AgentGateway:
         event_history_size: int = 10_000,
         workspace_source: Optional[str | Path] = None,
     ) -> None:
-        self._sessions: Dict[str, GatewaySession] = {}
+        self._sessions: Dict[str, Session] = {}
         self._subscribers: set[asyncio.Queue[GatewayEvent]] = set()
         # Playground chats stream in background tasks (the WS command loop is
         # sequential, so a long stream must never run inside a handler).
@@ -376,11 +333,12 @@ class AgentGateway:
         # Clients open a session as soon as they connect; most never run anything.
         # The sandbox is only described here — it is created, and the manifest
         # written, on first real use, so idle sessions leave nothing behind.
-        session = self._build_session(
+        session = session_manager.create(
             session_id=session_id, owner=owner,
             name=params.get("name") or "interactive",
             source_workspace=source_workspace,
             created_at=datetime.now(timezone.utc).isoformat(),
+            shared_extension_root=Path(config.extension_root),
             capabilities=await self._available_capabilities(),
         )
         sandbox, context = session.sandbox, session.context
@@ -392,20 +350,11 @@ class AgentGateway:
 
     #: Session identity is written by the shared session layer, so a session
     #: created here and one created by a local run are equally discoverable.
-    SESSION_MANIFEST = session_project.SESSION_MANIFEST
+    SESSION_MANIFEST = SESSION_MANIFEST_NAME
 
-    def _write_session_manifest(self, session: "GatewaySession") -> None:
+    def _write_session_manifest(self, session: Session) -> None:
         """Record identity + roots so this session can be reopened after a restart."""
-        session.updated_at = datetime.now(timezone.utc).isoformat()
-        session.has_work = True
-        session_project.write_session_manifest(
-            session.sandbox,
-            session_id=session.context.id,
-            owner=session.owner,
-            name=session.context.name,
-            created_at=session.created_at,
-            source_workspace=session.context.extra.get("source_workspace"),
-        )
+        session_manager.touch(session)
 
     def _seed_sequence(self, conversation_id: str, owner: str, session_id: str) -> None:
         """Continue a conversation's numbering after a restart.
@@ -487,12 +436,13 @@ class AgentGateway:
                 session_id = str(data["session_id"])
                 if session_id in self._sessions:
                     continue
-                self._sessions[session_id] = self._build_session(
+                self._sessions[session_id] = session_manager.create(
                     session_id=session_id,
                     owner=str(data.get("owner") or "local"),
                     name=str(data.get("name") or "interactive"),
                     source_workspace=data.get("source_workspace"),
                     created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
+                    shared_extension_root=Path(config.extension_root),
                     # Manifests written before this field existed fall back to
                     # created_at, which orders them plausibly rather than first.
                     updated_at=str(data.get("updated_at") or data.get("created_at") or ""),
@@ -510,46 +460,6 @@ class AgentGateway:
                 logger.warning(f"| ⚠️ Skipping unreadable session manifest {manifest}: {exc}")
         if restored:
             logger.info(f"| ♻️ Restored {restored} session(s) from disk")
-
-    def _build_session(
-        self, *, session_id: str, owner: str, name: str,
-        source_workspace: Optional[str], created_at: str, capabilities: Dict[str, list],
-        updated_at: str = "",
-    ) -> "GatewaySession":
-        """Construct a session over ``output/<owner>/sessions/<id>``.
-
-        Shared by session.create and restore so both produce the same object; the
-        sandbox is described but not materialized, which keeps an untouched
-        session free of directories and lets a restored one reuse what is there.
-        """
-        project_root = path_manager.get(P.SESSION, owner=owner, session_id=session_id)
-        sandbox = ProjectSandbox.create(
-            project_root, shared_extension_root=Path(config.extension_root), materialize=False,
-        )
-        context = SessionContext(
-            id=session_id,
-            name=name,
-            workspace_root=str(sandbox.workspace_root),
-            extra={
-                # Deliberately no roots here. They come from the layout table, through
-                # the session the path manager is bound to — carried in this dict, one
-                # name meant the session's staging tree in some modules and the shared
-                # library in others, and any holder could rewrite them.
-                "workspace": str(sandbox.workspace_root),
-                "gateway_session": True,
-                "sandbox_mounts": sandbox.mounts(),
-                "source_workspace": source_workspace,
-                # The project this context belongs to. ctx.id follows the
-                # conversation (memory, budgets, todos), so anything that costs
-                # a container has to be keyed off this instead — otherwise a
-                # second line of dialogue silently starts a second container.
-                "project_id": session_id,
-            },
-        )
-        return GatewaySession(
-            context=context, created_at=created_at, sandbox=sandbox,
-            owner=owner, capabilities=capabilities, updated_at=updated_at or created_at,
-        )
 
     async def _command_session_list(self, _: Dict[str, Any]) -> Dict[str, Any]:
         # Most recently worked in first: the list is how someone gets back to
@@ -606,7 +516,6 @@ class AgentGateway:
                 config_data = {"enable_evolving": True} if module != "prompt" else None
                 name = await extension_manager.add_component(
                     module, component["destination"], config=config_data,
-                    run_smoke=params.get("run_smoke"),
                 )
                 registered.append({"module": module, "name": name, "path": component["destination"]})
         except Exception:
@@ -811,10 +720,13 @@ class AgentGateway:
         created and a goal with no text are different states, and a UI that renders the
         second as a blank bar claims an objective exists.
         """
-        from agentevolver.task.goal import goal_manager, owner_of
+        from agentevolver.task import owner_of
 
         session = self._sessions[self._require_session_id(params)]
-        goal = goal_manager.current(session.context.id, owner=owner_of(session.context))
+        goal = task_manager.goals.current(
+            session.context.id,
+            owner=owner_of(session.context),
+        )
         if goal is None:
             return {"goal": None}
         return {"goal": {
@@ -1012,7 +924,7 @@ class AgentGateway:
                             session_id=session_id, conversation_id=conversation.id, task_id=task_id)
         return {"task_id": task_id, "conversation_id": conversation.id}
 
-    def _resolve_conversation(self, session: "GatewaySession", params: Dict[str, Any]):
+    def _resolve_conversation(self, session: Session, params: Dict[str, Any]):
         """The conversation this request belongs to, opening one if needed.
 
         Clients name it; a client that does not gets a fresh one rather than an
@@ -1034,7 +946,7 @@ class AgentGateway:
         session = self._sessions[self._require_session_id(params)]
         return {"files": [upload.public() for upload in session.uploads.values() if upload.completed]}
 
-    def _workspace_path(self, session: GatewaySession, value: Any) -> tuple[Path, str]:
+    def _workspace_path(self, session: Session, value: Any) -> tuple[Path, str]:
         """Resolve a client relative path without permitting cross-session access."""
         raw = str(value or "").replace("\\", "/")
         if raw.startswith("/"):
@@ -1160,12 +1072,12 @@ class AgentGateway:
         upload_id = make_id()
         # Uploads are DURABLE per-owner assets: output/<owner>/state/files. They
         # outlive the session and are staged into a run's workspace on demand
-        # (session.project.stage_input_files), not written into the sandbox here.
+        # (session.context.stage_input_files), not written into the sandbox here.
         upload_dir = path_manager.get(P.OWNER_FILES, owner=session.owner)
         upload_dir.mkdir(parents=True, exist_ok=True)
         path = upload_dir / f"{upload_id}_{name}"
         path.touch(exist_ok=False)
-        upload = GatewayUpload(id=upload_id, name=name, path=str(path), size=size, mime_type=mime_type)
+        upload = SessionUpload(id=upload_id, name=name, path=str(path), size=size, mime_type=mime_type)
         session.uploads[upload_id] = upload
         return {"file": upload.public()}
 
@@ -1215,7 +1127,7 @@ class AgentGateway:
         return name[:180]
 
     @staticmethod
-    def _require_upload(session: GatewaySession, params: Dict[str, Any]) -> GatewayUpload:
+    def _require_upload(session: Session, params: Dict[str, Any]) -> SessionUpload:
         upload_id = str(params.get("file_id") or "")
         upload = session.uploads.get(upload_id)
         if upload is None:
@@ -1265,7 +1177,7 @@ class AgentGateway:
         checkpoint = trace_manager.execution_checkpoint(trace_id)
         if checkpoint.task_id != task_id:
             raise ValueError("durable checkpoint does not belong to task_id")
-        from agentevolver.trace.execution_checkpoint import reconciliation_event
+        from agentevolver.trace.recovery import reconciliation_event
 
         event = reconciliation_event(
             checkpoint,
@@ -2423,7 +2335,7 @@ class AgentGateway:
             task_id=execution.task_id,
         )
 
-    def _bind_runtime_to_session(self, session: GatewaySession) -> None:
+    def _bind_runtime_to_session(self, session: Session) -> None:
         """Point the shared runtime at ``session``'s own project roots.
 
         Direct entry points (``examples/run_*``, the CLI) bind their session before
@@ -2970,7 +2882,7 @@ class AgentGateway:
         return "\n".join(lines)
 
     @staticmethod
-    def _sync_session_capabilities(session: GatewaySession) -> None:
+    def _sync_session_capabilities(session: Session) -> None:
         session.context.extra["capabilities"] = session.capabilities
         for kind, context_key in {
             "tools": "tool_allowlist",

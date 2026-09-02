@@ -16,26 +16,34 @@ to callers and multi-agent orchestrators.
 | Path | Responsibility |
 |---|---|
 | `types.py` | Agent contracts, contexts, execution loop, and dispatch behavior |
-| `context.py` | Registration, construction, versions, and instance lifecycle |
-| `server.py` | Stable manager API, execution, and capability schemas |
-| `native_tools.py` | Compose callable capabilities and their dispatch routes |
+| `context.py` | Registration/lifecycle plus fixed → checkpoint → recent → live model context |
+| `server.py` | Thin public manager API and sub-agent capability schemas |
+| `capabilities.py` | Capability discovery, deferred schema loading, and dispatch routes |
 | `actor/`, `generator/`, `evaluator/`, `optimizer/` | Built-in agent roles |
+
+Git worktree isolation is a sandbox concern and lives in `sandbox/worktree.py`; Agent
+requests it through that public boundary when a writing child must be isolated.
+
+There is one source of truth for each piece of model context. `ContextBuilder` owns the
+four-layer request envelope and project-owned instructions, while `Agent` owns when that
+context is requested. Callable capability descriptions travel only in the provider-native
+tools parameter; the rendered HTML capability blocks are removed from model messages so
+two catalogs cannot drift.
 
 Agent owns single-agent behavior. Cross-agent scheduling belongs to Runtime, Protocol, and
 Workflow rather than to an Agent subtype.
 
 ## Subscription-triggered turns
 
-`Agent.subscription_topics` declares default logical topics for instances that are started
-as continuable background subscribers. A publish does not bypass the Agent lifecycle:
-`SubscriptionEventMessage` reaches `Agent.on_subscription_event()`, whose default behavior
-uses the same task handler and `on_start → act → on_end` path as a directly assigned turn.
-Subclasses override the event hook only for boundary setup, then call `super()`.
+Subscription topics are supplied when a continuable background ref is delegated; they are
+not properties of the Agent template. The live `AgentRef` owns its scoped topic edges,
+standing brief, attachments, pause gate, and serialized turn queue. Runtime converts a
+published event into an ordinary `TaskMessage`, with structured trigger data in `kwargs`, so
+Agent uses the same `on_start → act → on_end` lifecycle as every directly assigned turn.
 
-Subscription state is not stored on the Agent template. The live `AgentRef` owns the scoped
-topic edges, standing brief, and attachments; Runtime queues events one at a time. This keeps
-parallel invocations of one registered Agent isolated and prevents a published task from
-overwriting an active run.
+Pausing closes the Runtime scheduling gate: later publications may queue but cannot start a
+new turn until resume. If a turn is already active, the ordinary Agent control message also
+holds it at a complete round boundary.
 
 ## MetaAgent uses the same loop
 

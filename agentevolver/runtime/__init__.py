@@ -9,7 +9,10 @@ from agentevolver.runtime.types import (
     AgentRef,
     AgentStatus,
     BaseMessage,
+    ControlMessage,
+    QueryMessage,
     StopMessage,
+    SubscriptionEventMessage,
     TaskMessage,
 )
 
@@ -33,6 +36,9 @@ __all__ = [
     "AgentStatus",
     "AgentDeadError",
     "BaseMessage",
+    "ControlMessage",
+    "QueryMessage",
     "TaskMessage",
     "StopMessage",
+    "SubscriptionEventMessage",
 ]

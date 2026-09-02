@@ -528,7 +528,7 @@ async def run_inner(args) -> int:
     from agentevolver.memory import memory_manager
     from agentevolver.model import model_manager
     from agentevolver.prompt import prompt_manager
-    from agentevolver.session.project import (
+    from agentevolver.session.context import (
         bind_session_roots,
         configured_session_owner,
         ensure_session_sandbox,

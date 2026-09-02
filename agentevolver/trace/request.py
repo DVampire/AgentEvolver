@@ -20,7 +20,6 @@ from typing import Any, Dict, Iterable, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 REQUEST_SNAPSHOT_VERSION = 2
 
 # Only parameters that can change model behaviour or request handling belong in the

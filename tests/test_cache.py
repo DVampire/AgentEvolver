@@ -201,7 +201,7 @@ def test_native_anthropic_live_layer_never_infers_an_extra_breakpoint():
 
 def test_claude_relay_request_stays_within_four_cache_breakpoints():
     """Pin the exact layout that produced `found 5` during the SWE Pro smoke run."""
-    from agentevolver.agent.native_tools import _SchemaTool
+    from agentevolver.agent.capabilities import _SchemaTool
     from agentevolver.model.llm_hub.chat import ChatLLMHub
 
     tool = _SchemaTool(

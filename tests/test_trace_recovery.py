@@ -1,11 +1,11 @@
-"""Execution checkpoints distinguish resumable work from effects needing confirmation.
+"""Trace recovery distinguishes resumable work from effects needing confirmation.
 
 After a crash, replaying an open mutation can duplicate an external side effect, while
 discarding settled receipts loses recoverable progress. These tests derive the safe
 decision solely from trace evidence, including compaction and provider state.
 """
 
-from agentevolver.trace.execution_checkpoint import (
+from agentevolver.trace.recovery import (
     derive_execution_checkpoint,
     reconciliation_event,
 )

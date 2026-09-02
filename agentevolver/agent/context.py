@@ -1,27 +1,35 @@
 """Agent Context Manager for managing agent lifecycle and resources with lazy loading."""
 import asyncio
 import os
-from asyncio_atexit import register as async_atexit_register
-from typing import Any, Dict, List, Type, Optional, Union, Tuple, TYPE_CHECKING
-from datetime import datetime
+import re
+import stat
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Type
+
 import inflection
-import json
+from asyncio_atexit import register as async_atexit_register
 from pydantic import BaseModel, ConfigDict, Field
 
-
-from agentevolver.paths import P, path_manager
-from agentevolver.logger import logger
-from agentevolver.config import config
-from agentevolver.utils import (
-    assemble_workspace_path,
-    gather_with_concurrency,
-    file_lock
-)
 from agentevolver.agent.types import Agent, AgentConfig, AgentContext
-from agentevolver.version import version_manager
+from agentevolver.config import config
 from agentevolver.dynamic import dynamic_manager
+from agentevolver.logger import logger
+from agentevolver.message.types import (
+    AssistantMessage,
+    CompactionMessage,
+    HumanMessage,
+    Message,
+    ToolMessage,
+)
+from agentevolver.paths import P, path_manager
+from agentevolver.permission import PermissionMode, permission_manager
 from agentevolver.registry import AGENT
-from agentevolver.permission import permission_manager, PermissionMode
+from agentevolver.trace.derive import _marker, derive_messages
+from agentevolver.trace.surface import fold_surface
+from agentevolver.trace.types import TraceEventType
+from agentevolver.utils import assemble_workspace_path, gather_with_concurrency
+from agentevolver.version import version_manager
 
 
 class AgentContextManager(BaseModel):
@@ -50,7 +58,7 @@ class AgentContextManager(BaseModel):
         else:
             self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="agent"))
         logger.info(f"| 📁 Agent context manager base directory: {self.base_dir}.")
-        logger.info(f"| 📁 Agent context manager.")
+        logger.info("| 📁 Agent context manager.")
 
         # Current active configs (latest version)
         self._agent_configs: Dict[str, AgentConfig] = {}
@@ -758,3 +766,427 @@ class AgentContextManager(BaseModel):
 
         from agentevolver.runtime.server import runtime_manager
         return await runtime_manager.invoke(agent_instance, **input, **agent_args)
+
+
+# ---------------------------------------------------------------------------
+# Model-facing four-layer context
+# ---------------------------------------------------------------------------
+
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+_DATA_BLOCKS = ("task", "inherited-context", "memory", "working-memory", "recent-steps")
+_LAYERS = ("fixed", "checkpoint", "recent", "live")
+
+
+class ContextProtocolError(ValueError):
+    """The model-facing context would violate the four-layer protocol."""
+
+
+class ContextMessages(list[Message]):
+    """A message list retaining validated per-layer token accounting."""
+
+    def __init__(self, messages: Iterable[Message], layer_tokens: Dict[str, int]):
+        super().__init__(messages)
+        self.layer_tokens = dict(layer_tokens)
+
+
+@dataclass(frozen=True)
+class ContextEnvelope:
+    """Validated fixed → checkpoint → recent → live provider-neutral context."""
+
+    fixed: Tuple[Message, ...] = field(default_factory=tuple)
+    checkpoint: Tuple[CompactionMessage, ...] = field(default_factory=tuple)
+    recent: Tuple[Message, ...] = field(default_factory=tuple)
+    live: Tuple[Message, ...] = field(default_factory=tuple)
+
+    def validate(self) -> "ContextEnvelope":
+        if len(self.checkpoint) > 1:
+            raise ContextProtocolError("context may contain only one canonical checkpoint")
+        if any(not isinstance(message, CompactionMessage) for message in self.checkpoint):
+            raise ContextProtocolError("checkpoint layer accepts only CompactionMessage")
+        other = (*self.fixed, *self.recent, *self.live)
+        if any(isinstance(message, CompactionMessage) for message in other):
+            raise ContextProtocolError("CompactionMessage must live only in checkpoint")
+        if any(message.role not in {"system", "user"} for message in self.fixed):
+            raise ContextProtocolError("fixed layer accepts only system/task messages")
+        if any(message.role != "user" for message in self.live):
+            raise ContextProtocolError("live layer accepts only current user context")
+        if any(message.role == "system" for message in self.recent):
+            raise ContextProtocolError("system messages must remain in the fixed layer")
+
+        seen_user = False
+        for message in self.fixed:
+            if message.role == "user":
+                seen_user = True
+            elif seen_user:
+                raise ContextProtocolError("fixed system messages must precede the task anchor")
+        all_messages = (*self.fixed, *self.checkpoint, *self.recent, *self.live)
+        if len({id(message) for message in all_messages}) != len(all_messages):
+            raise ContextProtocolError("one message cannot belong to multiple context layers")
+        self._validate_tool_turns()
+        return self
+
+    def _validate_tool_turns(self) -> None:
+        pending: set[str] = set()
+        seen: set[str] = set()
+        previous_assistant = False
+        for message in self.recent:
+            if isinstance(message, AssistantMessage):
+                if pending:
+                    raise ContextProtocolError(
+                        f"assistant turn started before tool results arrived: {sorted(pending)}"
+                    )
+                if previous_assistant:
+                    raise ContextProtocolError(
+                        "adjacent assistant turns cannot preserve provider-owned reasoning state"
+                    )
+                ids = [str(call.id) for call in message.tool_calls]
+                if len(ids) != len(set(ids)) or any(call_id in seen for call_id in ids):
+                    raise ContextProtocolError("tool-call ids must be unique in the exact tail")
+                pending.update(ids)
+                seen.update(ids)
+                previous_assistant = True
+            elif isinstance(message, ToolMessage):
+                call_id = str(message.tool_call_id)
+                if call_id not in pending:
+                    raise ContextProtocolError(f"orphan tool result: {call_id}")
+                pending.remove(call_id)
+                previous_assistant = False
+            elif pending:
+                raise ContextProtocolError(
+                    f"tool results must immediately follow their assistant turn: {sorted(pending)}"
+                )
+            else:
+                previous_assistant = False
+        if pending:
+            raise ContextProtocolError(f"tool turn is incomplete: {sorted(pending)}")
+
+    def token_counts(self) -> Dict[str, int]:
+        from agentevolver.model.pressure import estimate_tokens
+
+        return {
+            layer: estimate_tokens(list(getattr(self, layer))) if getattr(self, layer) else 0
+            for layer in _LAYERS
+        }
+
+    def flatten(self) -> ContextMessages:
+        self.validate()
+        messages: List[Message] = []
+        for layer in _LAYERS:
+            messages.extend(
+                message.model_copy(update={"context_layer": layer})
+                for message in getattr(self, layer)
+            )
+        return ContextMessages(messages, self.token_counts())
+
+
+def _strip_template_comments(message: Message) -> Message:
+    """Remove template comments without touching task or memory payloads."""
+    content = getattr(message, "content", None)
+    if not isinstance(content, str) or "<!--" not in content:
+        return message
+    if getattr(message, "role", "") == "system":
+        return message.model_copy(update={"content": _HTML_COMMENT.sub("", content)})
+
+    protected: List[str] = []
+
+    def hold(match: re.Match) -> str:
+        protected.append(match.group(0))
+        return f"\x00AGENTEVOLVER_DATA_{len(protected) - 1}\x00"
+
+    names = "|".join(re.escape(name) for name in _DATA_BLOCKS)
+    cleaned = re.sub(rf"<({names})>.*?</\1>", hold, content, flags=re.S)
+    cleaned = _HTML_COMMENT.sub("", cleaned)
+    for index, value in enumerate(protected):
+        cleaned = cleaned.replace(f"\x00AGENTEVOLVER_DATA_{index}\x00", value)
+    return message.model_copy(update={"content": cleaned})
+
+
+def strip_rendered_comments(rendered: List[Message]) -> List[Message]:
+    """Strip author-only template documentation from rendered messages."""
+    cleaned = [_strip_template_comments(message) for message in rendered]
+    return rendered if all(a is b for a, b in zip(cleaned, rendered)) else cleaned
+
+
+class ContextBuilder:
+    """Build a cache-friendly task/checkpoint/conversation/live-state request."""
+
+    def build(self, rendered: List[Message], events: List[Any], ctx: Any) -> List[Message]:
+        return self.build_envelope(rendered, events, ctx).flatten()
+
+    def build_envelope(
+        self, rendered: List[Message], events: List[Any], ctx: Any,
+    ) -> ContextEnvelope:
+        system = [
+            _strip_template_comments(message)
+            for message in rendered if getattr(message, "role", "") == "system"
+        ]
+        anchor, live = self.split_rendered_turn(rendered)
+        derived = derive_messages(events)
+        if not derived:
+            if anchor:
+                anchor[-1].cache = True
+            return ContextEnvelope(fixed=tuple(system + anchor), live=tuple(live)).validate()
+
+        task = self._task(events)
+        checkpoints = self._checkpoints(events)
+        recent = self._recent_messages(
+            derived, task, [str(event.message or "") for event in checkpoints],
+        )
+        if not anchor:
+            anchor = [HumanMessage(content=f"<task>\n{task}\n</task>")]
+        elif task:
+            text = anchor[-1].text
+            task_block = f"<task>\n{task}\n</task>"
+            if re.search(r"<task>.*?</task>", text, re.S):
+                text = re.sub(r"<task>.*?</task>", task_block, text, count=1, flags=re.S)
+            else:
+                text = f"{task_block}\n{text}"
+            anchor[-1] = anchor[-1].model_copy(update={"content": text})
+        anchor[-1].cache = True
+
+        checkpoint: List[CompactionMessage] = []
+        if checkpoints:
+            event = checkpoints[-1]
+            checkpoint_message = CompactionMessage(
+                content=f"<memory-checkpoint>\n{event.message or ''}\n</memory-checkpoint>",
+                provider_state=getattr(event, "provider_state", None) or {},
+            )
+            anthropic = (checkpoint_message.provider_state or {}).get("anthropic") or {}
+            if anthropic.get("compaction_blocks"):
+                anchor[-1].cache = False
+                checkpoint_message.cache = True
+            checkpoint.append(checkpoint_message)
+
+        frozen: List[Message] = [*checkpoint, *recent]
+        if frozen:
+            boundary = next(
+                (message for message in reversed(frozen)
+                 if isinstance(message, AssistantMessage)),
+                frozen[-1],
+            )
+            boundary.cache = True
+        return ContextEnvelope(
+            fixed=tuple(system + anchor), checkpoint=tuple(checkpoint),
+            recent=tuple(recent), live=tuple(live),
+        ).validate()
+
+    @staticmethod
+    def _task(events: List[Any]) -> str:
+        for event in events:
+            if event.event_type == TraceEventType.AGENT_START:
+                return str((event.input or {}).get("task") or "")
+        return ""
+
+    @staticmethod
+    def _checkpoints(events: List[Any]) -> List[Any]:
+        surface = set(fold_surface(events)["nodes"])
+        return [
+            event for event in events
+            if event.seq_no in surface
+            and event.event_type == TraceEventType.CUSTOM
+            and _marker(event) == "compaction"
+            and event.message
+        ]
+
+    @staticmethod
+    def _recent_messages(
+        messages: List[Message], task: str, checkpoints: List[str],
+    ) -> List[Message]:
+        checkpoint_set = set(checkpoints)
+        recent: List[Message] = []
+        task_removed = False
+        for message in messages:
+            if isinstance(message, CompactionMessage):
+                continue
+            if getattr(message, "role", "") == "user":
+                text = getattr(message, "text", "") or ""
+                if not task_removed and text == task:
+                    task_removed = True
+                    continue
+                if text in checkpoint_set:
+                    continue
+            if isinstance(message, AssistantMessage) and recent and isinstance(
+                recent[-1], AssistantMessage,
+            ):
+                previous = recent[-1]
+                previous_empty = not previous.text and not previous.tool_calls
+                current_empty = not message.text and not message.tool_calls
+                if previous_empty:
+                    recent.pop()
+                elif current_empty:
+                    continue
+                else:
+                    recent.append(HumanMessage(content=(
+                        "<runtime-followup>Continue with the next tool action, or finish "
+                        "explicitly if the task is complete.</runtime-followup>"
+                    )))
+            recent.append(message)
+        return recent
+
+    @staticmethod
+    def split_rendered_turn(rendered: List[Message]) -> Tuple[List[Message], List[Message]]:
+        """Extract immutable task/inherited context and the volatile live tail."""
+        turn_message = next(
+            (message for message in reversed(rendered)
+             if getattr(message, "role", "") != "system"),
+            None,
+        )
+        if turn_message is None:
+            return [], []
+        text = getattr(turn_message, "text", "") or ""
+        anchor_parts: List[str] = []
+        for block in ("task", "inherited-context"):
+            match = re.search(rf"<{block}>.*?</{block}>", text, re.S)
+            if match:
+                anchor_parts.append(match.group(0))
+            text = re.sub(rf"<{block}>.*?</{block}>", "", text, flags=re.S)
+        text = re.sub(r"<capability-context>.*?</capability-context>", "", text, flags=re.S)
+        for block in (
+            "tool-context", "skill-context", "connector-context", "workflow-context",
+            "plugin-context", "subagent-context", "memory", "working-memory", "recent-steps",
+        ):
+            text = re.sub(rf"<{block}>.*?</{block}>", "", text, flags=re.S)
+        text = _HTML_COMMENT.sub("", text)
+
+        def turn(body: str) -> List[Message]:
+            body = body.strip()
+            return [HumanMessage(content=body)] if re.sub(r"<[^>]+>", "", body).strip() else []
+
+        return turn("\n".join(anchor_parts)), turn(text)
+
+
+context_builder = ContextBuilder()
+
+
+# ---------------------------------------------------------------------------
+# Project-owned fixed context
+# ---------------------------------------------------------------------------
+
+PROJECT_CONTEXT_FILES = ("AGENTS.override.md", "AGENTS.md", "CLAUDE.md", "MEMORY.md")
+MAX_PROJECT_CONTEXT_CHARS = 32_000
+
+
+@dataclass(frozen=True)
+class _ContextBlock:
+    directory: Path
+    filename: str
+    text: str
+    order: int
+
+
+def _read_direct_file(root: Path, filename: str, limit: int) -> Optional[str]:
+    """Read one regular direct child without following a swapped-in symlink."""
+    path = path_manager.entry_under(root, filename)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
+        with os.fdopen(
+            descriptor, "r", encoding="utf-8", errors="replace", closefd=False,
+        ) as handle:
+            return handle.read().strip()
+    except OSError:
+        return None
+    finally:
+        os.close(descriptor)
+
+
+def _scoped_directories(root: Path, active_paths: Optional[Iterable[str]]) -> List[Path]:
+    """Return root-to-leaf instruction scopes for files involved in this task."""
+    scopes = {root}
+    for value in active_paths or ():
+        try:
+            candidate = Path(value)
+            if not candidate.is_absolute():
+                candidate = root / candidate
+            resolved = candidate.resolve()
+            relative = resolved.relative_to(root)
+        except (OSError, ValueError):
+            continue
+        directory = resolved if resolved.is_dir() else resolved.parent
+        current = root
+        for part in relative.parts[:len(directory.relative_to(root).parts)]:
+            current = current / part
+            scopes.add(current)
+    return sorted(scopes, key=lambda path: (len(path.relative_to(root).parts), str(path)))
+
+
+def load_project_context(
+    workspace_root: str,
+    active_paths: Optional[Iterable[str]] = None,
+    *,
+    source_workspace: Optional[str] = None,
+) -> str:
+    """Load durable memory and root-to-leaf project instructions into fixed context."""
+    if not workspace_root:
+        return ""
+    root = Path(workspace_root).resolve()
+    if not root.is_dir():
+        return ""
+    blocks: List[_ContextBlock] = []
+
+    def append(directory: Path, filename: str, prefetched: Optional[str] = None) -> None:
+        text = prefetched if prefetched is not None else _read_direct_file(
+            directory, filename, MAX_PROJECT_CONTEXT_CHARS,
+        )
+        if text:
+            blocks.append(_ContextBlock(directory, filename, text, len(blocks)))
+
+    append(root, "CLAUDE.md")
+    append(root, "MEMORY.md")
+    try:
+        from agentevolver.memory.project import ProjectMemoryStore
+
+        automatic = ProjectMemoryStore(
+            str(root), source_workspace=source_workspace,
+        ).render()
+        if automatic:
+            append(root, "AUTO_MEMORY.md", automatic)
+    except Exception:
+        pass
+    for directory in _scoped_directories(root, active_paths):
+        override = _read_direct_file(
+            directory, "AGENTS.override.md", MAX_PROJECT_CONTEXT_CHARS,
+        )
+        if override is not None:
+            append(directory, "AGENTS.override.md", override)
+        else:
+            append(directory, "AGENTS.md")
+
+    def render(block: _ContextBlock, text: Optional[str] = None) -> str:
+        scope = "." if block.directory == root else block.directory.relative_to(root).as_posix()
+        return f"### {block.filename} (scope: {scope})\n{block.text if text is None else text}"
+
+    selected: List[Tuple[int, str]] = []
+    remaining = MAX_PROJECT_CONTEXT_CHARS
+    separator = "\n\n"
+    for block in reversed(blocks):
+        separator_cost = len(separator) if selected else 0
+        available = remaining - separator_cost
+        if available <= 0:
+            break
+        rendered = render(block)
+        if len(rendered) <= available:
+            selected.append((block.order, rendered))
+            remaining -= separator_cost + len(rendered)
+            continue
+        reference = render(
+            block,
+            "[Source omitted as one complete unit because it exceeds the fixed-context "
+            f"budget; read the exact file at {block.directory / block.filename}]",
+        )
+        if len(reference) <= available:
+            selected.append((block.order, reference))
+            remaining -= separator_cost + len(reference)
+    return separator.join(text for _, text in sorted(selected))
+
+
+__all__ = [
+    "AgentContextManager", "ContextBuilder", "ContextEnvelope", "ContextMessages",
+    "ContextProtocolError", "context_builder", "load_project_context",
+    "strip_rendered_comments",
+]

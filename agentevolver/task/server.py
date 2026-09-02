@@ -1,4 +1,4 @@
-"""TaskManager — priority queue scheduler for user tasks and self-evolution tasks.
+"""TaskManagerServer — durable scheduler for user and self-evolution tasks.
 
 Design:
   - Two logical queues share one asyncio.PriorityQueue:
@@ -17,75 +17,22 @@ import asyncio
 import json
 import os
 from datetime import datetime, timezone
-from enum import Enum
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
-
-from pydantic import BaseModel, Field
 
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
 from agentevolver.response.types import Response
-from agentevolver.task.types import Task, TaskPriority, TaskStatus
+from agentevolver.task.goal import GoalStore
+from agentevolver.task.types import (
+    Task,
+    TaskCategory,
+    TaskDeferred,
+    TaskPriority,
+    TaskRecord,
+    TaskStatus,
+)
 from agentevolver.utils import Singleton, make_id
 from agentevolver.utils.file_utils import atomic_json_update
-
-# ---------------------------------------------------------------------------
-# Extended task metadata
-# ---------------------------------------------------------------------------
-
-class TaskCategory(str, Enum):
-    """Logical category controlling scheduling weight."""
-    USER    = "user"     # Submitted by external caller / meta-agent for user goal
-    EVOLVER = "evolver"  # Self-evolution / optimisation / evaluation tasks
-
-
-class TaskRecord(BaseModel):
-    """Persisted envelope around a Task with category and dependency metadata."""
-
-    task: Task
-    category: TaskCategory = TaskCategory.USER
-
-    # entity_key is set for EVOLVER tasks to enable per-entity throttle.
-    # Format: "<entity_type>/<entity_name>", e.g. "tool/bash_tool"
-    entity_key: Optional[str] = Field(default=None)
-
-    # Task IDs that must reach DONE before this task is eligible to run.
-    depends_on: List[str] = Field(default_factory=list)
-
-    # Lightweight task-graph execution contract.  Resource declarations are explicit:
-    # an empty set preserves legacy scheduling, while declared paths prevent two workers
-    # from concurrently reading/writing overlapping state.
-    read_set: List[str] = Field(default_factory=list)
-    write_set: List[str] = Field(default_factory=list)
-    owner: Optional[str] = None
-    model: Optional[str] = None
-    reasoning_effort: Optional[str] = None
-    token_budget: Optional[int] = None
-    acceptance: List[str] = Field(default_factory=list)
-
-    # Set only while loading a task that was RUNNING when the process stopped. The
-    # handler must consult Trace/ExecutionCheckpoint before it may execute it again.
-    recovered_from_running: bool = False
-
-    # Result / error surfaced after completion.
-    result: Optional[Any] = Field(default=None)
-    error: Optional[str] = Field(default=None)
-
-    # Retry bookkeeping
-    max_retries: int = Field(default=0)
-    retry_count: int = Field(default=0)
-
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-
-    def effective_priority(self) -> int:
-        """Compute scheduling int — lower = higher priority in PriorityQueue."""
-        # USER tasks get a 1000-point boost over EVOLVER tasks
-        base = -self.task.priority.value  # negate so higher enum = more negative = pops first
-        category_penalty = 0 if self.category == TaskCategory.USER else 1000
-        return base + category_penalty
-
 
 # ---------------------------------------------------------------------------
 # Callable type for task handlers
@@ -94,20 +41,11 @@ class TaskRecord(BaseModel):
 TaskHandler = Callable[[TaskRecord], Coroutine[Any, Any, Any]]
 
 
-class TaskDeferred(RuntimeError):
-    """A handler cannot safely continue until an external decision is recorded."""
-
-    def __init__(self, reason: str, details: Optional[Dict[str, Any]] = None) -> None:
-        super().__init__(reason)
-        self.reason = reason
-        self.details = dict(details or {})
-
-
 # ---------------------------------------------------------------------------
-# TaskManager
+# Task manager server
 # ---------------------------------------------------------------------------
 
-class TaskManager(metaclass=Singleton):
+class TaskManagerServer(metaclass=Singleton):
     """Singleton task scheduler with two-tier queuing and per-entity throttle.
 
     Usage::
@@ -128,6 +66,7 @@ class TaskManager(metaclass=Singleton):
     """
 
     def __init__(self) -> None:
+        self.goals = GoalStore()
         # (effective_priority, submission_order, task_id) → used for stable ordering
         self._queue: asyncio.PriorityQueue[Tuple[int, int, str]] = asyncio.PriorityQueue()
         self._records: Dict[str, TaskRecord] = {}
@@ -717,4 +656,4 @@ class TaskManager(metaclass=Singleton):
 # Global singleton
 # ---------------------------------------------------------------------------
 
-task_manager = TaskManager()
+task_manager = TaskManagerServer()

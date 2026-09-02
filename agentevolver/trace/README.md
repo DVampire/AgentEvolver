@@ -15,7 +15,8 @@ Captures structured lifecycle events, persists them, and fans them out to subscr
 |---|---|
 | `types.py` | Trace event contracts and event factories |
 | `request.py` | Versioned, content-addressed model request snapshots |
-| `checkpoint.py` | Semantic durability boundaries and integrity profiles |
+| `integrity.py` | Durability boundaries and fail-open/fail-closed integrity profiles |
+| `recovery.py` | Crash-recovery checkpoint derivation and effect reconciliation |
 | `writer.py` | Durable event writing |
 | `persistence.py` | Persistence protocol and indexed SQLite provider |
 | `projection.py` | Versioned projector registry and monotonic projection watermarks |
@@ -89,7 +90,7 @@ contain user information, query credentials, or internal topology. Message conte
 preserved because it is the training evidence itself and must be handled with the same
 privacy policy as every trajectory.
 
-The model layer emits and checkpoints this event before dispatch. Under `interactive`, an
+The model layer emits this event and makes it durable before dispatch. Under `interactive`, an
 unavailable/slow writer records degradation when possible and does not disable inference.
 Under `training` or `high_risk`, failure raises `TraceIntegrityError` before any provider
 request is sent; retry and fallback explicitly do not catch that error because another
@@ -106,9 +107,9 @@ events ever claim the same position.
 The number exists so one event can cite another. "Somewhere earlier in the file" cannot
 express a summary naming the range it replaced.
 
-## Semantic checkpoints and integrity profiles
+## Durability boundaries and integrity profiles
 
-`checkpoint_trace()` is used at three meaning-bearing boundaries rather than on a timer:
+`ensure_trace_durable()` is used at three meaning-bearing boundaries rather than on a timer:
 
 1. after the exact `model_request` snapshot is emitted and before provider dispatch;
 2. after PRE_ACTION facts/policy settle and before any Tool whose `mutates` is not
@@ -128,9 +129,13 @@ entered the bounded persistence queue. A queue overflow records a permanent Sess
 and both JSONL and SQLite providers retain the first write failure even after later events
 succeed. The first known gap is sealed under `<trace_root>/integrity/` with fsync and atomic
 replacement, so restarting the process cannot make the same Session appear complete.
-`flush()` followed by either condition still fails a strict checkpoint: missing evidence
+`flush()` followed by either condition still fails a strict durability boundary: missing evidence
 cannot be recreated by waiting longer. This also means a typo in profile naming is refused
 rather than interpreted as interactive.
+
+This is deliberately separate from `recovery.py`. Integrity decides whether preceding
+events are safely persisted before execution advances; recovery projects those durable
+events into one `ExecutionCheckpoint` after interruption. Only the latter is a checkpoint.
 
 Tool approvals are non-ignorable `custom` facts with
 `metadata.kind="tool_approval"`. They preserve request/response/timeout/cancellation,

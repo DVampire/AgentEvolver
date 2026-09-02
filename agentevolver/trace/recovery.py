@@ -1,4 +1,4 @@
-"""Derive a conservative crash-resume checkpoint from durable Trace events."""
+"""Derive and reconcile crash-recovery state from durable Trace events."""
 
 from __future__ import annotations
 

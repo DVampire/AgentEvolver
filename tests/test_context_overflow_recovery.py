@@ -154,7 +154,6 @@ class _Ahead(_Agent):
     from agentevolver.agent.types import Agent
 
     _fold_ahead = Agent._fold_ahead
-    _last_pressure_ratio = Agent._last_pressure_ratio
     _context_history_metrics = Agent._context_history_metrics
 
     def __init__(self, *, fold_at_pressure: float = 0.0, **kwargs):
@@ -165,7 +164,7 @@ class _Ahead(_Agent):
 
 @pytest.fixture
 def at_pressure(monkeypatch):
-    """Serve one recorded request pressure to `_last_pressure_ratio`."""
+    """Serve one recorded request pressure to `_context_history_metrics`."""
     from agentevolver.trace import trace_manager
     from agentevolver.trace.types import TraceEvent, TraceEventType
 

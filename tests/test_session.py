@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from agentevolver.session.project import SESSION_MANIFEST, stage_input_files, write_session_manifest
+from agentevolver.session.context import SESSION_MANIFEST, stage_input_files, write_session_manifest
 from agentevolver.session.types import BaseContext, SessionContext
 
 
@@ -189,9 +189,9 @@ def roots(tmp_path, monkeypatch):
     workspace.mkdir()
     log.mkdir()
     monkeypatch.setattr(
-        "agentevolver.session.project.config.workspace_root", str(workspace), raising=False
+        "agentevolver.session.context.config.workspace_root", str(workspace), raising=False
     )
-    monkeypatch.setattr("agentevolver.session.project.config.log_root", str(log), raising=False)
+    monkeypatch.setattr("agentevolver.session.context.config.log_root", str(log), raising=False)
     return workspace, log
 
 
@@ -296,7 +296,7 @@ def test_a_written_manifest_can_be_read_back(tmp_path):
     """
     import json
 
-    from agentevolver.session.project import SESSION_MANIFEST, read_session_manifest
+    from agentevolver.session.context import SESSION_MANIFEST, read_session_manifest
 
     (tmp_path / SESSION_MANIFEST).write_text(
         json.dumps(
@@ -319,7 +319,7 @@ def test_a_written_manifest_can_be_read_back(tmp_path):
 
 def test_a_directory_without_a_manifest_is_not_a_fault(tmp_path):
     """An older project simply predates the manifest; that is not an error to report."""
-    from agentevolver.session.project import read_session_manifest
+    from agentevolver.session.context import read_session_manifest
 
     assert read_session_manifest(tmp_path) is None
 
@@ -331,7 +331,7 @@ def test_a_manifest_that_will_not_parse_is_reported(monkeypatch, tmp_path):
     corrupt manifest is a real fault where a missing one is not.
     """
     import agentevolver.logger as logger_module
-    from agentevolver.session.project import SESSION_MANIFEST, read_session_manifest
+    from agentevolver.session.context import SESSION_MANIFEST, read_session_manifest
 
     said = []
     monkeypatch.setattr(logger_module.logger, "warning", lambda message: said.append(message))
@@ -349,7 +349,7 @@ def test_projects_are_listed_by_what_was_touched_last(tmp_path):
     """
     import json
 
-    from agentevolver.session.project import SESSION_MANIFEST, list_session_manifests
+    from agentevolver.session.context import SESSION_MANIFEST, list_session_manifests
 
     for name, created, updated in (
         ("old", "2026-01-01T00:00:00+00:00", "2026-08-15T09:00:00+00:00"),
@@ -375,7 +375,7 @@ def test_a_manifest_with_no_session_id_is_refused(tmp_path):
     """Identity is the one field the record exists to carry."""
     import json
 
-    from agentevolver.session.project import SESSION_MANIFEST, read_session_manifest
+    from agentevolver.session.context import SESSION_MANIFEST, read_session_manifest
 
     (tmp_path / SESSION_MANIFEST).write_text(json.dumps({"name": "nameless"}), encoding="utf-8")
 

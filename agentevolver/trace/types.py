@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field, ValidationError
 from agentevolver.trace.surface import APPEND
 from agentevolver.utils import make_id
 
-
 TRACE_FORMAT_VERSION = 1
 
 

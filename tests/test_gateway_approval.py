@@ -248,7 +248,7 @@ async def test_invalid_decision_is_rejected_without_settling_the_request():
 
 
 @pytest.mark.asyncio
-async def test_tool_body_runs_only_after_approval_and_the_final_checkpoint(
+async def test_tool_body_runs_only_after_approval_and_trace_is_durable(
     tmp_path,
     monkeypatch,
 ):
@@ -274,11 +274,13 @@ async def test_tool_body_runs_only_after_approval_and_the_final_checkpoint(
     project_id = await _session(gateway)
     manager.set_approval_resolver(gateway._approvals.request)
 
-    async def checkpoint(*args, **kwargs):
-        order.append("checkpoint")
+    async def ensure_durable(*args, **kwargs):
+        order.append("durable")
         return True
 
-    monkeypatch.setattr("agentevolver.trace.checkpoint.checkpoint_trace", checkpoint)
+    monkeypatch.setattr(
+        "agentevolver.trace.integrity.ensure_trace_durable", ensure_durable,
+    )
     running = asyncio.create_task(
         manager(
             name="deploy_tool",
@@ -303,7 +305,7 @@ async def test_tool_body_runs_only_after_approval_and_the_final_checkpoint(
     )
     result = await running
     assert delivered is True and result.success is True
-    assert order == ["checkpoint", "body"]
+    assert order == ["durable", "body"]
 
 
 def test_approval_resolver_disposer_cannot_remove_a_newer_resolver():

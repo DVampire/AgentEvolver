@@ -24,14 +24,15 @@ from pydantic import Field
 
 from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
-from agentevolver.session.query import (
+from agentevolver.session.server import (
     DEFAULT_HITS,
     DEFAULT_OUTLINE,
     MAX_HITS,
     MAX_OUTLINE,
-    session_query,
+    session_manager,
 )
-from agentevolver.tool.spill import SpillSource, save_text as spill_text
+from agentevolver.tool.spill import SpillSource
+from agentevolver.tool.spill import save_text as spill_text
 from agentevolver.tool.types import Tool
 
 #: An event read inline above this goes to the spill store instead, and the tool
@@ -130,7 +131,7 @@ def _not_found(session_id: str) -> Response:
     typo from an empty corpus, and its next move — guessing another id — is wrong in
     both cases.
     """
-    known = [record.session_id for record in session_query.sessions(limit=10)]
+    known = [record.session_id for record in session_manager.sessions(limit=10)]
     return Response(
         type=ResponseType.TOOL, success=False,
         message=(f"No past run {session_id!r}. Most recent runs: "
@@ -167,7 +168,7 @@ class SessionSearchTool(Tool):
             return Response(type=ResponseType.TOOL, success=False,
                             message="session_search_tool needs a query — some words describing the work.")
 
-        page = session_query.search_sessions(query, agent_name=agent_name, limit=limit)
+        page = session_manager.search_sessions(query, agent_name=agent_name, limit=limit)
         if not page.sessions:
             return Response(
                 type=ResponseType.TOOL, success=True,
@@ -232,10 +233,10 @@ class SessionEventSearchTool(Tool):
         if not str(query or "").strip():
             return Response(type=ResponseType.TOOL, success=False,
                             message="session_event_search_tool needs a query — words that appear in the step.")
-        if session_id and session_query.find(session_id) is None:
+        if session_id and session_manager.find(session_id) is None:
             return _not_found(session_id)
 
-        page = session_query.search_events(
+        page = session_manager.search_events(
             query, session_id=session_id, event_type=event_type,
             action_name=action_name, limit=limit)
         scope = f"run {session_id}" if session_id else f"{page.scanned} run(s)"
@@ -291,7 +292,7 @@ class SessionReadTool(Tool):
             limit: Lines to return, default 40, capped at 200.
             surface_only: Folded history (default) or raw write order.
         """
-        outline = session_query.outline(session_id, start=max(0, int(start)),
+        outline = session_manager.outline(session_id, start=max(0, int(start)),
                                         limit=limit, surface_only=surface_only)
         if outline is None:
             return _not_found(session_id)
@@ -357,10 +358,10 @@ class SessionEventReadTool(Tool):
             before: Preceding events to include, default 0, max 10.
             after: Following events to include, default 0, max 10.
         """
-        window = session_query.event_window(session_id, int(seq_no),
+        window = session_manager.event_window(session_id, int(seq_no),
                                             before=before, after=after)
         if window is None:
-            if session_query.find(session_id) is None:
+            if session_manager.find(session_id) is None:
                 return _not_found(session_id)
             return Response(
                 type=ResponseType.TOOL, success=False,
@@ -441,11 +442,11 @@ class SessionTraceTool(Tool):
         Args:
             session_id: From ``session_search_tool``.
         """
-        record = session_query.find(session_id)
+        record = session_manager.find(session_id)
         if record is None:
             return _not_found(session_id)
 
-        siblings = session_query.related(session_id)
+        siblings = session_manager.related(session_id)
         if not siblings:
             return Response(
                 type=ResponseType.TOOL, success=True,
