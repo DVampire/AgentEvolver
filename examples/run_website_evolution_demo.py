@@ -18,12 +18,14 @@ Run the bundled ECHO Ark demonstration with its configured heterogeneous panel::
     /home/wtzhang/miniconda3/envs/agentos/bin/python \
         examples/run_website_evolution_demo.py
 
-Use another domain and three hidden personas::
+Use another self-contained scenario directory::
 
     /home/wtzhang/miniconda3/envs/agentos/bin/python \
         examples/run_website_evolution_demo.py \
-        --site-brief /abs/brief.html \
-        --persona-brief /abs/p1.html /abs/p2.html /abs/p3.html
+        --scenario-dir /abs/my_scenario
+
+The directory contains ``scenario.html`` and ``persona_01.html`` through
+``persona_03.html``. Individual files can still be overridden explicitly.
 """
 
 from __future__ import annotations
@@ -36,11 +38,8 @@ from pathlib import Path
 from typing import Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_INPUT_DIR = ROOT / "examples" / "inputs" / "website_evolution_demo"
-DEFAULT_ECHO_INPUT_DIR = DEFAULT_INPUT_DIR / "echo_ark"
-DEFAULT_SITE_BRIEF = (
-    ROOT / "examples" / "tasks" / "website_evolution_scenarios" / "echo_ark.html"
-)
+SCENARIO_ROOT = ROOT / "examples" / "tasks" / "website_evolution"
+DEFAULT_SCENARIO_DIR = SCENARIO_ROOT / "echo_ark"
 DEFAULT_CONFIG = ROOT / "configs" / "website_evolution_demo.py"
 OPTIMIZATION_CYCLES = 5
 DEFAULT_USER_MODELS = [
@@ -56,19 +55,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Demo config path.")
     parser.add_argument(
+        "--scenario-dir",
+        default=str(DEFAULT_SCENARIO_DIR),
+        help=(
+            "Self-contained scenario directory with scenario.html and three persona files."
+        ),
+    )
+    parser.add_argument(
         "--site-brief",
-        default=str(DEFAULT_SITE_BRIEF),
-        help="Domain-specific scenario task passed to the Website Builder.",
+        default=None,
+        help="Override <scenario-dir>/scenario.html.",
     )
     parser.add_argument(
         "--persona-brief",
         nargs=3,
         metavar=("PERSONA_1", "PERSONA_2", "PERSONA_3"),
-        default=[
-            str(DEFAULT_ECHO_INPUT_DIR / f"persona_{index:02d}.html")
-            for index in range(1, 4)
-        ],
-        help="Exactly three persona files, routed one-to-one to the three browser co-designers.",
+        default=None,
+        help=(
+            "Override the three persona files from scenario-dir; routed one-to-one "
+            "to the browser co-designers."
+        ),
     )
     parser.add_argument(
         "--plan-mode",
@@ -118,12 +124,27 @@ def _existing_file(raw: str, role: str) -> Path:
     return path
 
 
+def _existing_directory(raw: str, role: str) -> Path:
+    path = Path(raw).expanduser().resolve()
+    if not path.is_dir():
+        raise FileNotFoundError(f"{role} directory not found: {path}")
+    return path
+
+
 def resolve_inputs(args: argparse.Namespace) -> tuple[Path, Path, list[Path]]:
     config_path = _existing_file(args.config, "config")
-    site_brief = _existing_file(args.site_brief, "site brief")
+    scenario_dir = _existing_directory(args.scenario_dir, "scenario")
+    site_brief = _existing_file(
+        args.site_brief or str(scenario_dir / "scenario.html"),
+        "site brief",
+    )
+    persona_briefs = args.persona_brief or [
+        str(scenario_dir / f"persona_{index:02d}.html")
+        for index in range(1, 4)
+    ]
     personas = [
         _existing_file(path, f"persona {index}")
-        for index, path in enumerate(args.persona_brief, start=1)
+        for index, path in enumerate(persona_briefs, start=1)
     ]
     names = [site_brief.name, *(path.name for path in personas)]
     if len(names) != len(set(names)):
