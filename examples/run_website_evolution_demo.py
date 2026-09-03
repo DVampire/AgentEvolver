@@ -47,7 +47,7 @@ ITERATION_STEP_BUDGET = 30
 DEFAULT_USER_MODELS = [
     "llm_hub/claude-opus-5",
     "llm_hub/gpt-5.6-sol",
-    "llm_hub/deepseek-v4-flash",
+    "llm_hub/gpt-5.6-luna",
 ]
 DEFAULT_ACCEPTANCE_MODEL = "llm_hub/gpt-5.6-sol"
 
@@ -452,6 +452,41 @@ def validate_local_artifacts(
         raise ValueError(
             "default per-dispatch user model routes are invalid: "
             f"{list(config.website_user_models)!r}"
+        )
+
+    # Every browser-driving role needs a route that accepts images. The browser
+    # environment attaches a screenshot to each observation, so a text-only route does
+    # not degrade — it returns 400 "Model do not support image input" on EVERY call and
+    # the participant contributes nothing to the round. `deepseek-v4-flash` sat in the
+    # panel exactly that way: three retries per step, no feedback, and the loop reading
+    # as a model that would not cooperate rather than as a route that cannot see.
+    from agentevolver.model.config import llm_hub_models
+
+    # Only `model_name` and `supports_vision` are read, so the sizing arguments are
+    # placeholders: this stays a local check that initializes no client.
+    catalog = llm_hub_models(
+        max_tokens=1, default_temperature=0.0, default_timeout=1.0,
+    )
+    blind = {
+        entry["model_name"]
+        for group in catalog.values()
+        for entry in group
+        if isinstance(entry, dict) and entry.get("supports_vision") is False
+    }
+    browser_routes = {
+        "browser_agent (acceptance)": [str(getattr(config, "browser_agent").get("model_name"))],
+        "website_user_models (the panel)": [str(m) for m in config.website_user_models],
+    }
+    sightless = {
+        role: [route for route in routes if route in blind]
+        for role, routes in browser_routes.items()
+    }
+    offenders = {role: routes for role, routes in sightless.items() if routes}
+    if offenders:
+        raise ValueError(
+            "a browser-driving role is routed to a model that cannot accept images; "
+            "the browser environment sends a screenshot every observation, so every "
+            f"call would be refused: {offenders}"
         )
 
     print("Website evolution demo validation: OK")

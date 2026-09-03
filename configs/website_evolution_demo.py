@@ -46,10 +46,15 @@ model_roles = dict(
     summarize=model_name,
 )
 agent_model_policy = "per_agent"
+# Three model families, so the panel is not one model agreeing with itself — but every
+# one of them has to accept images, because a participant only ever sees the product
+# through a browser screenshot. `deepseek-v4-flash` sat here and is text-only: the relay
+# answered 400 "Model do not support image input" on every call, three retries a step,
+# and that participant contributed nothing to any round.
 website_user_models = [
     "llm_hub/claude-opus-5",
     "llm_hub/gpt-5.6-sol",
-    "llm_hub/deepseek-v4-flash",
+    "llm_hub/gpt-5.6-luna",
 ]
 
 memory_names = ["file_system_memory"]
@@ -183,7 +188,13 @@ _USER = {
     # They need the same durable checkpoint + exact-tail
     # protocol as every other long-running Agent, especially after browser state resets.
     "use_memory": True,
-    "max_step": 30,
+    # 30 was not a session, it was an interrupted one. Measured on a single participant
+    # against the deployed site: all 30 steps were real interaction — one `goto`, six
+    # page reads, nineteen clicks, three inputs, a scroll — and the budget ran out
+    # before `done_tool`, so the round produced no report at all. A browser round costs
+    # roughly one step per interaction, and a resident participant pays it again on
+    # every release.
+    "max_step": 80,
     "timeout": 1800,
     "max_token": 1000000,
     "max_actions": 3,
@@ -200,7 +211,10 @@ browser_agent.update(
         "prompt_name": "browser_agent",
         "env_name": "browser_environment",
         "use_memory": False,
-        "max_step": 20,
+        # Acceptance is a checklist against one deployed artifact, not an open-ended
+        # session, but 20 steps is under what a page with 27 interactive elements takes
+        # to verify. Still bounded well below a participant's.
+        "max_step": 45,
         "timeout": 1200,
         "max_token": 500000,
         "max_actions": 3,

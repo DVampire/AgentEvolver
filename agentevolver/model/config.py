@@ -246,6 +246,13 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # returns content directly, finish_reason "stop", reasoning_tokens 0 — so it
             # behaves as a plain chat model here, not a reasoning one, and needs no
             # reasoning routing. DeepSeek accepts sampling params, so temperature is sent.
+            #
+            # Text only. The relay refuses an image part outright — 400 "Model do not
+            # support image input" — so an agent driving a vision environment on this
+            # route fails on EVERY call, not on the ones that happen to carry a
+            # screenshot. Declared here because the llm_hub branch otherwise marks every
+            # route vision-capable, which is the claim that let this reach a run.
+            "supports_vision": False,
             "temperature": default_temperature,
             "max_completion_tokens": max_tokens,
             "timeout": default_timeout,

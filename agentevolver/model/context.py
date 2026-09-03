@@ -703,7 +703,11 @@ class ModelContextManager:
                 reasoning=m.get("reasoning") or None,
                 max_completion_tokens=m.get("max_completion_tokens"),
                 timeout=m.get("timeout", self.default_timeout),
-                supports_streaming=True, supports_functions=True, supports_vision=True,
+                supports_streaming=True, supports_functions=True,
+                # Read from the catalog, not asserted for the whole relay. A text-only
+                # route answers an image part with a 400, and a blanket True made that
+                # look like a transient stream failure instead of a wrong pairing.
+                supports_vision=bool(m.get("supports_vision", True)),
                 output_version=None, fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"), max_retries=m.get("max_retries"),
                 native_compaction=bool(m.get("native_compaction", False)),
@@ -722,7 +726,8 @@ class ModelContextManager:
                 reasoning=m.get("reasoning") or None,
                 max_output_tokens=m.get("max_output_tokens"),
                 timeout=m.get("timeout", self.default_timeout),
-                supports_streaming=True, supports_functions=True, supports_vision=True,
+                supports_streaming=True, supports_functions=True,
+                supports_vision=bool(m.get("supports_vision", True)),
                 output_version=None, fallback_model=m.get("fallback_model"),
                 context_window=m.get("context_window"), max_retries=m.get("max_retries"),
                 native_compaction=bool(m.get("native_compaction", False)),
