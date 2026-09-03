@@ -198,12 +198,41 @@ event nobody can address to it, and a `RESPONDER` with one registers an edge it 
 moments later. Both are rejected at `spawn`, where the mistake is, rather than found in a
 run that produced no output.
 
-### One pattern deliberately absent
+### Every shape, and the two decisions
 
-PUSH/PULL — N workers competing for one queue — has no mode here. Dispatch names its
-worker; nothing hands work to whoever is free. Peer-to-peer has none either: `send` takes
-any pid, but nothing gives a process its sibling's, so two processes with no parent edge
-have no way to reach each other and no authority relation if they did.
+`publish` fans out; `assign` gives the same work to exactly ONE subscriber, preferring
+whoever is idle and then whoever waited longest. That is the competing-consumers
+discipline — PUSH/PULL rather than PUB/SUB — and it is what makes a pool of
+interchangeable workers expressible: fanning out would have every worker do the whole
+job, and naming the worker is dispatch rather than a pool.
+
+`tests/test_topologies.py` constructs each of these from the primitives, so the claim is
+checkable rather than asserted:
+
+| Shape | Built from |
+|---|---|
+| Star / hub-and-spoke | orchestrator + N `RESPONDER` |
+| Tree | orchestrators nested; depth is not special-cased |
+| Pipeline | a chain of dispatches — a degenerate tree |
+| Scatter/gather | fan out, collect the reports the kernel posts on exit |
+| Bus (1→N) | publisher + N `SUBSCRIBER` |
+| Bus (N→N) | any process in the task tree may publish |
+| Mesh / peer-to-peer | each peer subscribes to a topic named after itself |
+| Worker pool | N `SUBSCRIBER` on one topic + `assign` |
+| Request/reply, upward | `ask_parent` / `reply` along the parent edge |
+| Request/reply, async | a `SERVICE` and whoever holds its pid |
+
+Two things are deliberate rather than missing.
+
+**The dispatch graph stays acyclic** — one parent each, by construction. A cycle in
+supervision has no meaning; cycles between participants live on the bus, where a topic
+edge carries no lifecycle and A answering B answering A supervises nothing.
+
+**Peer addressing by pid is reachable but never handed out.** `list(session_id=...)`
+enumerates a session and `send` does not check kinship, so the kernel does not forbid it.
+No capability hands one process another's pid, which keeps it a deliberate act. Nothing
+is lost by that: a peer that subscribes to its own topic is addressable by any sibling
+without either holding a pid or having authority over the other.
 
 ## Dispatch and subscription are one mechanism
 

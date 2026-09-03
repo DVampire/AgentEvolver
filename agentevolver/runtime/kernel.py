@@ -65,6 +65,10 @@ class Kernel:
     def __init__(self) -> None:
         self._procs: Dict[str, Process] = {}
         self._topics = TopicRegistry()
+        #: When each process was last handed work by `assign`. The round-robin half of
+        #: competing consumers: without it an idle pool ties on every other key and one
+        #: worker takes everything.
+        self._assigned_at: Dict[str, float] = {}
 
     # ==================================================================
     # Process lifecycle
@@ -263,6 +267,64 @@ class Kernel:
             except ValueError:
                 names.append(str(topic).strip())
         return names
+
+    async def assign(
+        self,
+        topic: str,
+        task: str,
+        *,
+        ctx: Any = None,
+        **kwargs: Any,
+    ) -> str:
+        """Give this work to exactly ONE subscriber of ``topic``. Returns its pid, or "".
+
+        The competing-consumers half of a topic — PUSH/PULL rather than PUB/SUB. Both
+        indexes are the same one; what differs is the delivery discipline, and only this
+        one asks "who is free" instead of "who is listening".
+
+        Without it a pool of interchangeable workers was not expressible. `publish` fans
+        out, so N workers each did the whole job; `send` needs a pid, so the caller had
+        to choose, which is dispatch and not a pool. Anything that wants work spread
+        across whoever is available — a queue of subtasks, a rate-limited resource with
+        several holders — needed this and had to be faked by the caller picking.
+
+        Idle first, then fewest queued. A busy process would take the work and sit on it
+        until its current turn ends, which is the opposite of what a pool is for.
+        """
+        name = self._scope_all([topic], ctx)[0] if ctx is not None else topic
+        candidates = [
+            proc for proc in (self._procs.get(pid) for pid in self._topics.subscribers(name))
+            if proc is not None and proc.alive
+        ]
+        if not candidates:
+            logger.warning(
+                f"| 📭 assign {name} reached nobody"
+                + (f"; subscribed topics are {list(self._topics.all_topics())}"
+                   if self._topics.all_topics() else "; nothing is subscribed")
+            )
+            return ""
+        # Idle beats busy, then the shortest queue, then whoever was assigned longest
+        # ago. Ranked rather than filtered so a pool whose every worker is busy still
+        # takes the work instead of dropping it — a queue that refuses when everyone is
+        # working is not a queue.
+        #
+        # That last tie-break is what makes it a pool. Without it an idle pool with an
+        # empty queue is a three-way tie that `min` breaks the same way every time, so
+        # one worker took every job and the other two never ran.
+        chosen = min(
+            candidates,
+            key=lambda proc: (
+                proc.busy, len(proc.mailbox), self._assigned_at.get(proc.pid, 0.0),
+            ),
+        )
+        self._assigned_at[chosen.pid] = time.time()
+        if not await self.send(chosen, TaskEnvelope(task=task, kwargs=dict(kwargs))):
+            return ""
+        logger.info(
+            f"| 📥 assign {name} → {chosen.name}:{chosen.pid[:8]} "
+            f"(of {len(candidates)} subscriber(s))"
+        )
+        return chosen.pid
 
     async def publish(
         self,
