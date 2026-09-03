@@ -375,3 +375,50 @@ async def test_a_topic_still_pairs_up_without_a_session(kernel):
     await kernel.spawn(agent, "brief", topics=["plain"])
     await asyncio.sleep(0.05)
     assert await kernel.publish("plain", "started") == 1
+
+
+@pytest.mark.asyncio
+async def test_a_resident_keeps_its_standing_brief_however_it_is_woken(kernel):
+    """A subscriber's brief is its identity, and every turn needs it.
+
+    `_input_text` returned `envelope.task` alone for a TaskEnvelope, so a resident woken
+    by `send_message` — as opposed to by a published event — lost the standing brief it
+    was spawned with. In the website demo that brief carries the participant's assigned
+    persona, and the subscriber answered "NO ASSIGNED CONTEXT": a failure that reads like
+    the parent forgot to assign one rather than like the kernel discarding it.
+    """
+    seen: list[str] = []
+
+    class Panelist(Steps):
+        async def __call__(self, task, files=None, ctx=None, **kwargs):
+            seen.append(task)
+            await self.proc.gate()
+            return "ok"
+
+    ctx = SimpleNamespace(id="sess-1", extra={"root_session_id": "sess-1"})
+    proc = await kernel.spawn(
+        Panelist(name="panelist"), "You are participant_01. Report as that resident.",
+        ctx=ctx, topics=["deployment.ready"],
+    )
+    await asyncio.sleep(0.05)
+
+    await kernel.publish_scoped(
+        "deployment.ready", "deployment.ready", {"url": "http://site"}, ctx=ctx
+    )
+    await asyncio.sleep(0.15)
+    await kernel.send(proc, TaskEnvelope(task="Release 2 is up; take another look."))
+    await asyncio.sleep(0.15)
+
+    assert len(seen) == 2, seen
+    for turn in seen:
+        assert "participant_01" in turn, f"the brief was dropped: {turn!r}"
+    assert "http://site" in seen[0]
+    assert "Release 2" in seen[1]
+
+
+@pytest.mark.asyncio
+async def test_a_one_shot_dispatch_is_not_prefixed_with_anything(kernel):
+    """Only a resident has a brief; a plain dispatch must read exactly as it was sent."""
+    agent = Steps(name="worker", steps=1)
+    proc = await kernel.spawn(agent, "do exactly this")
+    assert await kernel.wait(proc, timeout=5) == "worker:do exactly this"

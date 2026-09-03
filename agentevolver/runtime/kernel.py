@@ -456,12 +456,19 @@ class Kernel:
         A subscriber's standing brief leads, because an event on its own does not say
         what this process is supposed to do about it.
         """
-        if isinstance(envelope, TaskEnvelope):
-            return envelope.task
         parts: List[str] = []
+        # The brief leads whatever woke the process, not only an event. A resident
+        # process's brief IS its identity — the persona a co-design participant was
+        # assigned, the standing instruction a watcher holds — and returning
+        # `envelope.task` alone dropped it for every direct message. A subscriber woken
+        # by `send_message` then answered "NO ASSIGNED CONTEXT", which reads like the
+        # parent forgot to assign one rather than like the kernel discarding it.
+        # A one-shot process has no brief, so this changes nothing for a plain dispatch.
         if proc.brief:
             parts.append(proc.brief)
-        if isinstance(envelope, EventEnvelope):
+        if isinstance(envelope, TaskEnvelope):
+            parts.append(envelope.task)
+        elif isinstance(envelope, EventEnvelope):
             body = "\n".join(
                 f"{key}: {value}" for key, value in sorted(envelope.payload.items())
             )

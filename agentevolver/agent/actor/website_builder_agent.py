@@ -149,6 +149,7 @@ async def start_subscriber(
     that has not happened yet. Its pid is what identifies it afterwards.
     """
     from agentevolver.agent.server import agent_manager
+    from agentevolver.agent.types import AgentContext
     from agentevolver.runtime import kernel
 
     template = await agent_manager.get(name)
@@ -157,11 +158,33 @@ async def start_subscriber(
     # The registry holds the program; each subscriber is its own process.
     child = template.fresh()
     child.model_name = model
+    # Its own session, exactly as a dispatched child gets one. Passing the parent's
+    # context gave all four subscribers the builder's session id, and a session id is
+    # what `BrowserEnvironment` keys a browser TAB on — so three participants and the
+    # acceptance worker, woken by the same event, drove one page at once. Each read a
+    # state another had just navigated away from, and reported "browser parked at
+    # about:blank" and "no browser navigation capability was available", neither of
+    # which was true: they had eleven browser actions each.
+    #
+    # The topic scope is read from the parent, so scoped events still reach them.
+    inherited = dict(getattr(ctx, "extra", None) or {})
+    child_ctx = AgentContext(
+        name=name,
+        parent_session_id=str(getattr(ctx, "id", "") or ""),
+        extra={
+            # A subscriber is a browser user; the builder's job-only scope is not its.
+            key: value for key, value in inherited.items()
+            if key in ("root_session_id", "source_workspace", "trace_integrity_profile")
+        },
+    )
+    child_ctx.extra.setdefault(
+        "root_session_id", str(getattr(ctx, "id", "") or "")
+    )
     subscriber = await kernel.spawn(
         child,
         task,
         files=list(files or ()),
-        ctx=ctx,
+        ctx=child_ctx,
         parent=proc,
         topics=["deployment.ready"],
     )
