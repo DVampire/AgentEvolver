@@ -188,10 +188,17 @@ class CapabilityRouter(ToolRouter):
         if entry is None:
             return ActionResult(call=call, error=f"No manager for {route[0]!r}")
         manager = entry.manager()
-        payload = dict(call.args)
-        if len(route) > 2 and route[2]:
-            payload.setdefault("action", route[2])
-        response = await manager(name=route[1], input=payload, ctx=ctx)
+        # `action` is a parameter of the manager, not one of the action's own arguments.
+        # Putting it inside `input` left `environment_manager.__call__` — where it is
+        # required and positional — raising `missing 1 required positional argument:
+        # 'action'` on every call. Every environment action was therefore dead:
+        # `job__output`, `job__wait`, `job__kill`, and every browser action. A container
+        # capability whose route carries no action addresses it by name alone, which is
+        # what `skill` and `workflow` do, and neither accepts the keyword.
+        extra = {"action": route[2]} if len(route) > 2 and route[2] else {}
+        response = await manager(
+            name=route[1], input=dict(call.args), ctx=ctx, **extra
+        )
         return self._from_response(call, response)
 
     async def _invoke_agent(
@@ -289,6 +296,16 @@ class CapabilityRouter(ToolRouter):
         keep = {"plugin_allowlist", "workflow_allowlist", "trace_integrity_profile",
                 "source_workspace", "child_reasoning_effort"}
         extra = {key: value for key, value in inherited.items() if key in keep}
+        # What the parent chose FOR THIS DISPATCH, as opposed to what it inherited. The
+        # evolution roles read their target from the context, because a generate run's
+        # target does not exist yet and so cannot be looked up by name. The dispatch
+        # schema has always declared these two and nothing carried them across, so every
+        # generate run ended `target_type must be one of ...; got ''` — 47 steps and
+        # $3.46 in one measured run, registering nothing.
+        for key in ("target_type", "target_name"):
+            value = str(brief.get(key) or "").strip()
+            if value:
+                extra[key] = value
         extra["task_contract"] = contract
         extra["task_files"] = list(brief.get("files") or ())
         extra["parent_session_id"] = str(getattr(ctx, "id", "") or "")

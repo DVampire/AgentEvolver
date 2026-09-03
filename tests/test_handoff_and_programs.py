@@ -15,6 +15,7 @@ from agentevolver.agent.loop import ActionCall, ActionResult, Agent, Decision, T
 from agentevolver.agent.loop.agent import INHERITED_CONTEXT_MAX
 from agentevolver.agent.loop.executor import ActionExecutor
 from agentevolver.agent.loop.guards import CapabilityChanges
+from agentevolver.agent.loop.router import CapabilityRouter
 from agentevolver.code import BATCH_CALL_TOOL
 from agentevolver.message.types import AssistantMessage, Function, ToolCall, ToolMessage
 
@@ -355,3 +356,51 @@ async def test_a_standalone_run_announces_nothing_and_does_not_wait(monkeypatch)
     answer = await module._ask_parent(_ctx(process_pid="orphan"), "blocked", "", "")
     assert "No parent to escalate to" in answer
     assert seen == []
+
+
+# ---------------------------------------------------------------------------
+# What an evolution run needs to know about its own target
+# ---------------------------------------------------------------------------
+
+
+def test_a_child_is_told_which_kind_of_component_it_is_working_on():
+    """`target_type` / `target_name` are chosen per dispatch, and must cross with it.
+
+    The evolution roles read their target from the context rather than from the task
+    text, because a generate run's target does not exist yet and so cannot be looked up
+    by name. The dispatch schema has always declared both fields — its own description
+    says "unstated, the run cannot install what it built" — and `_child_context` built
+    the child's extras only from what the PARENT had inherited, so neither ever arrived.
+
+    Every generate run therefore ended `target_type must be one of ...; got ''` at the
+    moment it tried to register what it had written. Measured on a live run: 47 steps,
+    $3.46, and a manifest of `{"components": []}`.
+    """
+    parent = SimpleNamespace(name="website_builder_agent")
+    brief = {
+        "task": "write a tool that renders the lore timeline",
+        "target_type": "tool",
+        "target_name": "lore_timeline_tool",
+    }
+    child = CapabilityRouter._child_context(brief, parent, _ctx())
+
+    assert child.extra["target_type"] == "tool"
+    assert child.extra["target_name"] == "lore_timeline_tool"
+
+
+def test_an_ordinary_dispatch_carries_no_target():
+    """Only an evolution dispatch names one; a worker must not inherit a stale target."""
+    parent = SimpleNamespace(name="meta_agent")
+    child = CapabilityRouter._child_context({"task": "read the log"}, parent, _ctx())
+    assert "target_type" not in child.extra
+    assert "target_name" not in child.extra
+
+
+def test_a_blank_target_is_not_carried_as_an_empty_string():
+    """An empty value is the same as absent; carrying "" would pass a `key in extra`
+    check and then fail the enum, which is the harder failure to read."""
+    parent = SimpleNamespace(name="meta_agent")
+    brief = {"task": "x", "target_type": "  ", "target_name": ""}
+    child = CapabilityRouter._child_context(brief, parent, _ctx())
+    assert "target_type" not in child.extra
+    assert "target_name" not in child.extra
