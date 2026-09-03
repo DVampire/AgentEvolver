@@ -61,19 +61,38 @@ def _client(**kwargs):
 # --------------------------------------------------------------------------- #
 # Catalog and dispatch
 # --------------------------------------------------------------------------- #
-def test_the_catalog_routes_the_model_to_responses():
+def test_the_catalog_routes_both_gpt_5_6_routes_to_responses():
+    """Both siblings need this surface, for the same reason found two different ways.
+
+    `sol` refuses function tools on chat/completions outright. `luna` accepts them only
+    when the request carries no reasoning effort — an agent loop always sends one, and
+    the relay answers 400 "Function tools with reasoning_effort are not supported ...
+    use /v1/responses". Its catalog entry recorded only the half that had been probed,
+    so it sat on chat/completions and every step of the participant routed to it failed.
+    """
     from agentevolver.model.config import llm_hub_models
 
     specs = llm_hub_models(max_tokens=8192, default_temperature=0.7, default_timeout=600)
+    by_name = {m["model_name"]: m for m in specs["response"]}
 
-    assert [m["model_name"] for m in specs["response"]] == ["llm_hub/gpt-5.6-sol"]
-    assert specs["response"][0]["model_type"] == "responses"
-    assert specs["response"][0]["native_compaction"] is True
-    assert specs["response"][0]["persisted_reasoning"] is True
-    assert specs["response"][0]["native_programmatic_tool_calling"] is True
-    assert specs["response"][0].get("native_multi_agent", False) is False
-    # And it must not still be on the surface that refuses its tools.
+    assert set(by_name) == {"llm_hub/gpt-5.6-sol", "llm_hub/gpt-5.6-luna"}
+    assert all(m["model_type"] == "responses" for m in by_name.values())
+    # Neither may remain on the surface that refuses its tools.
     assert not any("5.6-sol" in m["model_name"] for m in specs["chat"])
+    assert not any("5.6-luna" in m["model_name"] for m in specs["chat"])
+
+    sol = by_name["llm_hub/gpt-5.6-sol"]
+    assert sol["native_compaction"] is True
+    assert sol["persisted_reasoning"] is True
+    assert sol["native_programmatic_tool_calling"] is True
+    assert sol.get("native_multi_agent", False) is False
+
+    # Sharing a surface is not sharing a capability. `/responses/compact` was live-probed
+    # for `sol` only, so `luna` keeps the portable text checkpoint until someone probes
+    # it too — the assumption this file's sibling test exists to refuse.
+    luna = by_name["llm_hub/gpt-5.6-luna"]
+    assert luna.get("native_compaction", False) is False
+    assert luna.get("native_programmatic_tool_calling", False) is False
 
 
 def test_direct_openai_catalog_declares_the_same_protocol_with_a_tool_safe_fallback():

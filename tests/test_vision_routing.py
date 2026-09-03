@@ -80,3 +80,46 @@ def test_no_browser_driving_role_is_routed_to_a_blind_model():
     assert not offenders, (
         f"these browser-driving roles cannot see the screenshots they are sent: {offenders}"
     )
+
+
+def test_a_gpt_5_6_route_that_needs_the_responses_surface_is_on_it():
+    """Both gpt-5.6 siblings refuse function tools on chat/completions.
+
+    `sol` refuses them outright; `luna` accepts them only when the request carries no
+    reasoning effort, which an agent loop always does — the relay then answers 400
+    "Function tools with reasoning_effort are not supported ... use /v1/responses".
+    `luna`'s catalog entry recorded the half of that which was probed, so it sat on
+    chat/completions and every step of the participant routed to it failed.
+
+    Dropping the effort is not the trade for a role reasoning about a UI, so both belong
+    on the surface that takes tools and reasoning together.
+    """
+    surfaces = {
+        entry["model_name"]: entry["model_type"]
+        for entry in _entries()
+        if entry["model_name"] in ("llm_hub/gpt-5.6-sol", "llm_hub/gpt-5.6-luna")
+    }
+    assert surfaces == {
+        "llm_hub/gpt-5.6-sol": "responses",
+        "llm_hub/gpt-5.6-luna": "responses",
+    }, surfaces
+
+
+def test_every_panel_route_can_take_tools_and_reasoning_together():
+    """The panel drives a browser, which is tool calling with an effort on every step.
+
+    A chat/completions gpt-5.6 route in the panel is the exact configuration that just
+    failed, so it is refused here rather than one 400 at a time.
+    """
+    from mmengine.config import Config
+
+    config = Config.fromfile("configs/website_evolution_demo.py")
+    chat_only_gpt = {
+        entry["model_name"] for entry in _entries()
+        if entry["model_name"].startswith("llm_hub/gpt-5.6")
+        and entry["model_type"] == "chat/completions"
+    }
+    offenders = sorted(set(map(str, config.website_user_models)) & chat_only_gpt)
+    assert not offenders, (
+        f"these panel routes refuse function tools with a reasoning effort: {offenders}"
+    )

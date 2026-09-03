@@ -221,24 +221,6 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             "timeout": default_timeout,
         },
         {
-            "model_name": "llm_hub/gpt-5.6-luna",
-            "model_id": "gpt-5.6-luna",
-            "model_type": "chat/completions",
-            # A sibling of gpt-5.6-sol that, unlike sol, DOES accept function tools on
-            # chat/completions (verified live: a tool prompt returns finish_reason
-            # "tool_calls"), so the agent loop can use it directly here rather than on the
-            # Responses surface. Registered as an escape hatch from the Bedrock-routed
-            # `claude-opus-5`: that route currently returns empty completions for
-            # "analyse/run a compiled binary" content — the whole ProgramBench task class —
-            # while this GPT route (OpenAI-backed, not Bedrock) answers it normally
-            # (verified: cmatrix/zip reverse-engineering prompts return real content).
-            # sol itself is unusable through the relay right now (its upstream OpenAI account
-            # returns 401 account_deactivated). No `temperature`: the gpt-5.x reasoning
-            # models reject sampling params like the newer Anthropic ones.
-            "max_completion_tokens": max_tokens,
-            "timeout": default_timeout,
-        },
-        {
             "model_name": "llm_hub/deepseek-v4-flash",
             "model_id": "deepseek-v4-flash",
             "model_type": "chat/completions",
@@ -281,6 +263,35 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # Keep reasoning-capable demo roles on the framework-wide default.  This is
             # also the effort used by the SWE-bench MetaAgent unless a run explicitly
             # overrides it; role-specific model routing must not silently lower it.
+            "reasoning": {"effort": "high", "context": "all_turns"},
+            "max_output_tokens": max_tokens,
+            "timeout": default_timeout,
+        },
+        {
+            "model_name": "llm_hub/gpt-5.6-luna",
+            "model_id": "gpt-5.6-luna",
+            "model_type": "responses",
+            # Here for the same reason as its sibling, discovered the same way. A tool
+            # prompt on chat/completions does return `finish_reason: "tool_calls"` — but
+            # only when the request carries no reasoning effort. An agent loop sends one,
+            # and the relay then answers 400: "Function tools with reasoning_effort are
+            # not supported for gpt-5.6-luna in /v1/chat/completions. To use function
+            # tools, use /v1/responses or set reasoning_effort to 'none'." Dropping the
+            # effort is not the trade to make for a role that has to reason about a UI,
+            # so it moves to the surface that takes both.
+            #
+            # It is an OpenAI-backed route rather than a Bedrock one, which is why it is
+            # kept: it answers content that `claude-opus-5` returns empty for, and it
+            # gives the co-design panel a third model family that can still see images.
+            #
+            # NOT native_compaction. Moving surfaces does not move a capability: only
+            # `sol` has been live-probed for `/responses/compact`, and assuming a sibling
+            # supports it because it now shares a client is the exact mistake
+            # `test_only_verified_llm_hub_routes_declare_native_compaction` exists to
+            # catch — which it did. The portable text checkpoint covers this route until
+            # someone probes it.
+            "persisted_reasoning": True,
+            "context_window": 1_050_000,
             "reasoning": {"effort": "high", "context": "all_turns"},
             "max_output_tokens": max_tokens,
             "timeout": default_timeout,
