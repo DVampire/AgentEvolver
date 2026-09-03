@@ -151,6 +151,7 @@ async def start_subscriber(
     from agentevolver.agent.server import agent_manager
     from agentevolver.agent.types import AgentContext
     from agentevolver.runtime import kernel
+    from agentevolver.runtime.modes import InteractionMode
 
     template = await agent_manager.get(name)
     if template is None:
@@ -183,6 +184,7 @@ async def start_subscriber(
     subscriber = await kernel.spawn(
         child,
         task,
+        mode=InteractionMode.SUBSCRIBER,
         files=list(files or ()),
         ctx=child_ctx,
         parent=proc,

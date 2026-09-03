@@ -41,6 +41,12 @@ from agentevolver.runtime.errors import (
     Stopped,
     describe,
 )
+from agentevolver.runtime.modes import (
+    InteractionMode,
+    check_topics,
+    infer,
+    lifecycle,
+)
 from agentevolver.runtime.process import Process
 from agentevolver.runtime.signals import Signal
 from agentevolver.runtime.states import ExitStatus, ProcessState
@@ -72,6 +78,7 @@ class Kernel:
         files: Optional[Sequence[str]] = None,
         ctx: Any = None,
         parent: Optional[Target] = None,
+        mode: Optional[InteractionMode] = None,
         resident: bool = False,
         topics: Sequence[str] = (),
         name: str = "",
@@ -95,9 +102,17 @@ class Kernel:
             unless the caller wants the result.
         """
         parent_proc = self._resolve(parent, required=False) if parent else None
-        resident = resident or bool(topics)
+        # One place decides what each mode means. Callers used to assemble `resident`,
+        # `start_idle` and `topics` by hand, and a wrong combination raised nothing —
+        # it produced a process that looked spawned and did nothing. The old flags stay
+        # accepted and are mapped onto the mode they meant, so there is one
+        # implementation rather than two spellings that can drift.
+        mode = InteractionMode(mode) if mode is not None else infer(resident, topics)
+        check_topics(mode, topics)
+        shape = lifecycle(mode)
+        resident = shape.resident
         if start_idle is None:
-            start_idle = bool(topics)
+            start_idle = shape.start_idle
 
         pid = make_id()
         proc = Process(
@@ -110,6 +125,7 @@ class Kernel:
             session_id=str(getattr(ctx, "id", "") or ""),
             resident=resident,
             brief=task if start_idle else "",
+            mode=mode,
         )
         self._procs[pid] = proc
         if topics:

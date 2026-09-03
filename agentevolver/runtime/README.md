@@ -23,6 +23,7 @@ same kind of thing here — each is an object with a `__call__` and some optiona
 | `envelopes.py` | What travels on a mailbox: task, event, report, reply |
 | `mailbox.py` | One process's FIFO inbox |
 | `process.py` | The process control block, and the safe points |
+| `modes.py` | The three endpoint roles, and what each means to the kernel |
 | `topics.py` | Topic ↔ pid subscriptions |
 | `kernel.py` | Process table, turn driver, IPC, lifecycle |
 | `errors.py` | Kernel errors, and the two control-flow signals |
@@ -113,14 +114,106 @@ message between processes — routing it through the mailbox is what made the pr
 turn loop span four entry points and need hand-rolled reordering of external notes
 around an in-flight batch.
 
+## Interaction modes: three endpoint roles
+
+How work reaches a process is declared, not assembled. `modes.py` holds the three roles
+and what each means to the kernel; `spawn(mode=...)` is the only place that decides.
+
+| Mode | Runs on spawn | Addressed by | Kernel derives | Networking analogue |
+|---|---|---|---|---|
+| `RESPONDER` | yes | — (answers once, exits) | `resident=False` | REP |
+| `SERVICE` | yes | **pid** | `resident=True`, `start_idle=False` | ROUTER / DEALER |
+| `SUBSCRIBER` | **no** | **topic** | `resident=True`, `start_idle=True`, topics required | SUB |
+
+```
+                      ┌──────────── one task in, one answer out ────────────┐
+   orchestrator ──────▶  RESPONDER                                          │
+      │  spawn(mode=RESPONDER)            ReportEnvelope ───────────────────┘
+      │
+      │            ┌──── resident; whoever holds the pid keeps talking ─────┐
+      ├───────────▶  SERVICE  ◀── send_task(pid) ──── orchestrator          │
+      │  spawn(mode=SERVICE)              parks IDLE between turns ─────────┘
+      │
+      │            ┌──── resident; the publisher never learns who listens ──┐
+      └───────────▶  SUBSCRIBER  ◀─┐                                        │
+         spawn(mode=SUBSCRIBER,     │                                        │
+               topics=[...])        │      ┌─────────────────────────┐       │
+                                    └──────┤  topic index (kernel)   │◀──────┼── publish(topic)
+                     SUBSCRIBER  ◀─────────┤  {root}::{name} → pids  │       │   from ANY process
+                     SUBSCRIBER  ◀─────────┘─────────────────────────┘       │   in the task tree
+                                           standing brief leads every turn ──┘
+```
+
+**A mode is the inbound half only.** Whether a process may start others belongs to the
+agent template, not to its lifecycle, and lives there as `include_agents` — the
+difference between a leaf and an orchestrator. The two are independent, and one process
+routinely holds several roles at once, exactly as one ZeroMQ process holds several
+sockets: the website builder answers a task, dispatches sub-agents, and publishes
+releases.
+
+| Participant | Inbound | Outbound | Also |
+|---|---|---|---|
+| `meta_agent` | `RESPONDER` | orchestrator | — |
+| `website_builder_agent` | `RESPONDER` | orchestrator | publishes releases |
+| `website_user_agent` | `SUBSCRIBER` | leaf | — |
+| `browser_agent` (acceptance) | `SUBSCRIBER` | leaf | — |
+| `code_agent`, `monitor_agent` | `RESPONDER` | leaf | — |
+
+The same template takes different modes on different spawns — `website_user_agent` is a
+subscriber in the co-design panel and a `RESPONDER` when run standalone — which is why
+the mode is a property of the process and not of the class.
+
+### Why the names are roles and not topologies
+
+Networking separates three questions, and conflating them is what made this hard to name:
+
+- **Topology** — star, bus, tree, mesh. Describes a whole system, so it belongs in a
+  diagram like the one above rather than in a field on a participant.
+- **Message exchange pattern** — request/reply, publish/subscribe, one-way. Describes an
+  interaction, which has two ends.
+- **Endpoint role** — what one participant does. This is the only one of the three a
+  single process can declare about itself.
+
+ZeroMQ's decision is the one worth borrowing: there is no `PUBSUB` socket, only `PUB` and
+`SUB`. A participant labelled "broadcast" is either the publisher or one of the
+listeners, and nothing can tell which — so the label names the endpoint.
+
+### Why a name at all
+
+"Subscriber" was not a thing this runtime knew. It was `resident=True` plus
+`topics=[...]` plus `start_idle=True` plus a context of its own plus a standing brief
+that leads every turn — five facts, assembled by hand at each call site, where getting
+one wrong raised nothing and produced a process that looked spawned and did nothing.
+Three defects came from exactly that, each costing a whole run:
+
+- subscribers spawned with the parent's context shared one browser tab, so each read a
+  page another had just navigated away from and reported having no browser at all;
+- a standing brief was dropped on the direct-message path, so a participant answered
+  "NO ASSIGNED CONTEXT" about a persona it had been handed;
+- a topic registered unscoped while the publisher looked up a scoped name, so every
+  fan-out reached nobody and reported success.
+
+A mode refuses the contradictions instead: a `SUBSCRIBER` with no topic waits for an
+event nobody can address to it, and a `RESPONDER` with one registers an edge it drops
+moments later. Both are rejected at `spawn`, where the mistake is, rather than found in a
+run that produced no output.
+
+### One pattern deliberately absent
+
+PUSH/PULL — N workers competing for one queue — has no mode here. Dispatch names its
+worker; nothing hands work to whoever is free. Peer-to-peer has none either: `send` takes
+any pid, but nothing gives a process its sibling's, so two processes with no parent edge
+have no way to reach each other and no authority relation if they did.
+
 ## Dispatch and subscription are one mechanism
 
 ```python
-child = await kernel.spawn(agent, task, parent=self.proc)   # fork
-result = await kernel.wait(child)                            # waitpid
+child = await kernel.spawn(agent, task, mode=RESPONDER, parent=self.proc)  # fork
+result = await kernel.wait(child)                                          # waitpid
 
-watcher = await kernel.spawn(agent, brief, topics=["deploy"])  # daemon
-await kernel.publish("deploy", "finished", {"service": "api"}) # one turn each
+watcher = await kernel.spawn(agent, brief, mode=SUBSCRIBER,                # daemon
+                             topics=["deploy"], parent=self.proc)
+await kernel.publish_scoped("deploy", "finished", {...}, ctx=ctx)          # one turn each
 ```
 
 A dispatching parent does not have to block. When a child exits, the kernel posts a final
@@ -129,5 +222,6 @@ A dispatching parent does not have to block. When a child exits, the kernel post
 mechanism of its own either: `Process.ask_parent` sends a report marked `blocked` and
 then waits for a message, which is what a blocked child is.
 
-The difference between the two modes is one `resident` flag and one index. A subscriber
-registers IDLE without spending a turn on work that has not arrived yet.
+One process table and one mailbox serve both. What differs is the mode's lifecycle and
+which index finds the process — the pid table or the topic index — and a subscriber
+registers IDLE rather than spending a turn on work that has not arrived.

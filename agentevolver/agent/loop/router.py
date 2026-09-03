@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from agentevolver.agent.loop.decision import ActionCall, ActionResult
 from agentevolver.logger import logger
+from agentevolver.runtime.modes import InteractionMode
 
 #: Capability types whose manager is callable as ``manager(name=, input=, ctx=)``.
 _CALLABLE_MANAGERS = ("skill", "connector", "workflow", "plugin", "environment")
@@ -283,17 +284,24 @@ class CapabilityRouter(ToolRouter):
         # own. Naming a topic implies residency, because a subscriber that exited could
         # not receive the next event.
         topics = [str(item) for item in (brief.get("subscription_topics") or ())]
-        resident = bool(brief.get("continuable")) or bool(topics)
+        # The dispatch args say what the caller wants; the mode is what that means. One
+        # translation here rather than three booleans assembled at the call site.
+        if topics:
+            mode = InteractionMode.SUBSCRIBER
+        elif brief.get("continuable"):
+            mode = InteractionMode.SERVICE
+        else:
+            mode = InteractionMode.RESPONDER
         background = bool(brief.get("background") or brief.get("run_in_background")) \
-            or resident
+            or mode is not InteractionMode.RESPONDER
 
         proc = await kernel.spawn(
             child,
             str(brief["task"]).strip(),
+            mode=mode,
             files=list(brief.get("files") or ()),
             ctx=self._child_context(brief, parent, ctx),
             parent=getattr(parent, "proc", None),
-            resident=resident,
             topics=topics,
         )
         if background:

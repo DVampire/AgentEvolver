@@ -26,6 +26,7 @@ from agentevolver.logger import logger
 from agentevolver.runtime.envelopes import Envelope, ReplyEnvelope, ReportEnvelope
 from agentevolver.runtime.errors import Killed, ProcessDead, Stopped
 from agentevolver.runtime.mailbox import Mailbox
+from agentevolver.runtime.modes import InteractionMode, infer
 from agentevolver.runtime.signals import Signal, SignalBox
 from agentevolver.runtime.states import (
     LIVE,
@@ -60,6 +61,7 @@ class Process:
         session_id: str = "",
         resident: bool = False,
         brief: str = "",
+        mode: Optional[InteractionMode] = None,
     ) -> None:
         # -- identity
         self.pid = pid
@@ -69,6 +71,10 @@ class Process:
         self.session_id = session_id or str(getattr(ctx, "id", "") or "")
         self.parent_pid = parent_pid
         self.resident = resident
+        #: The endpoint role this process was started as. Recorded rather than derived,
+        #: so a listing and a log line can say "subscriber" instead of leaving a reader
+        #: to reconstruct it from two flags.
+        self.mode = InteractionMode(mode) if mode is not None else infer(resident, ())
         #: A resident subscriber's standing instruction. Prepended to every event-driven
         #: turn, so a broadcast does not have to restate what this process is for.
         self.brief = brief
@@ -356,6 +362,10 @@ class Process:
             "parent": self.parent_pid,
             "session": self.session_id,
             "resident": self.resident,
+            # The declared role, so `ps` reads it rather than inferring it from
+            # `resident` and a topic list — the inference that call sites used to do by
+            # hand, and got wrong.
+            "mode": self.mode.value,
             "turns": self.turns,
             "busy": self.busy,
             "queued": len(self.mailbox),
