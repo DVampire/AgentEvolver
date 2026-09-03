@@ -6,7 +6,7 @@ rather than switched off. Three differences, and only three:
 | | programbench_agent.py | this file |
 |---|---|---|
 | `agent_names` | meta_agent + generate/optimize/evaluate | meta_agent |
-| `tool_names` | bash + done + `evolution_tool` | bash + done |
+| `tool_names` | bash + done + `adoption_tool` | bash + done |
 | `skill_names` | `self_evolving_skill` | none |
 
 This arm carries no skills at all, so it measures what the tool roster alone
@@ -66,7 +66,7 @@ agent_names = [
     "meta_agent",
 ]
 
-# Only bash and done — the whole roster. No `evolution_tool` (that is what makes this the
+# Only bash and done — the whole roster. No `adoption_tool` (that is what makes this the
 # control arm; Agent._evolution_enabled() keys off it). Everything the evolving arm dropped
 # is dropped here too: file read/write/edit, list_dir, the code interpreter, and the
 # multi-agent messaging tools — a single bash tool does all of it, and with one agent there

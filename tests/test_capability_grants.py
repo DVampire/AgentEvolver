@@ -161,7 +161,7 @@ async def test_a_live_process_can_be_granted_a_capability(monkeypatch):
     """
     from agentevolver.runtime.kernel import Kernel
     from agentevolver.tool import tool_manager
-    from agentevolver.tool.default.evolution import EvolutionTool
+    from agentevolver.tool.default.coordination.grant import GrantTool
 
     await tool_manager.initialize(["done_tool", "inspect_tool"])
 
@@ -198,8 +198,8 @@ async def test_a_live_process_can_be_granted_a_capability(monkeypatch):
         from agentevolver.runtime import kernel as live_kernel
 
         monkeypatch.setattr(live_kernel, "get", lambda pid: kernel.get(pid))
-        result = await EvolutionTool()(
-            action="grant", job_id=proc.pid, module="tool", name="inspect_tool",
+        result = await GrantTool()(
+            job_id=proc.pid, module="tool", name="inspect_tool",
         )
         assert result.success, result.message
 
@@ -213,14 +213,14 @@ async def test_a_live_process_can_be_granted_a_capability(monkeypatch):
 async def test_granting_to_a_process_that_is_not_there_is_refused(monkeypatch):
     """A grant names a live process; a wrong pid must say so, not pass silently."""
     from agentevolver.runtime import kernel as live_kernel
-    from agentevolver.tool.default.evolution import EvolutionTool
+    from agentevolver.tool.default.coordination.grant import GrantTool
 
     monkeypatch.setattr(live_kernel, "get", lambda pid: None)
-    result = await EvolutionTool()(
-        action="grant", job_id="no-such-pid", module="tool", name="inspect_tool",
+    result = await GrantTool()(
+        job_id="no-such-pid", module="tool", name="inspect_tool",
     )
     assert result.success is False
-    assert "no live process" in result.message
+    assert "No live process" in result.message
 
 
 # ---------------------------------------------------------------------------

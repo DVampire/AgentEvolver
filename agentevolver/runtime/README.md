@@ -131,7 +131,7 @@ are three ways to write it. Which one applies is decided by two questions:
                                            yes                          no
                                             │                            │
                                   ② by pid, afterwards        ③ declared in advance
-                                    evolution_tool grant        accepts_evolved
+                                    adoption_tool grant        accepts_evolved
 ```
 
 | Mode | Exists when evolved? | Addressable? | Path |

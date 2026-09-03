@@ -2,6 +2,7 @@
 
 from .coordination import (
     EscalateTool,
+    GrantTool,
     PublishEventTool,
     ReplyTool,
     ReportTool,
@@ -14,7 +15,7 @@ from .evaluation import (
     SWEBenchVerifiedEvalTool,
 )
 from .execution import BatchCallTool
-from .evolution import EvolutionTool
+from .adoption import AdoptionTool
 from .lifecycle import (
     AskUserTool,
     CreateGoalTool,
@@ -69,9 +70,10 @@ __all__ = [
     "ListDirTool",
     "GitTool",
     "DeployTool",
-    "EvolutionTool",
+    "AdoptionTool",
     "JournalTool",
     "EscalateTool",
+    "GrantTool",
     "ProgramBenchEvalTool",
     "SWEBenchProEvalTool",
     "SWEBenchVerifiedEvalTool",

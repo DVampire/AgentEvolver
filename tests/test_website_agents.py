@@ -23,7 +23,7 @@ from agentevolver.agent.actor.website_user_agent import WebsiteUserAgent
 from agentevolver.environment.default.browser.service import BrowserService
 from agentevolver.environment.default.job.environment import JobEnvironment
 from agentevolver.tool.default.deployment.deploy import DeployTool
-from agentevolver.tool.default.evolution import EvolutionTool
+from agentevolver.tool.default.adoption import AdoptionTool
 
 
 def _task(manifest=None):
@@ -451,7 +451,7 @@ async def test_keep_decision_requires_real_change_and_evaluation(monkeypatch):
         ],
         "evolution_decisions": [],
     }
-    response = await EvolutionTool()(
+    response = await AdoptionTool()(
         action="record_decision",
         release_number=1,
         decision="keep",
@@ -620,7 +620,7 @@ def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
         "deploy_tool",
         "done_tool",
         "send_message_tool",
-        "evolution_tool",
+        "adoption_tool",
     ]
     assert cfg.skill_names == [
         "frontend_ui_engineering_skill",

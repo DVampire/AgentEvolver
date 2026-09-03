@@ -57,7 +57,7 @@ operations. They are intentionally not multiplexed through a generic Workflow to
 The self-evolution layer mirrors Skill: `generate_skill` / `optimize_skill` /
 `evaluate_skill` carry the per-type methodology and `self_evolving_skill` the loop; thin generate/optimize/evaluate Agents perform one phase each; a registration
 Hook registers validated HTML live, matching Tool/Skill; persisted version-scoped evidence
-guides keep/optimize/rollback decisions through the common `evolution_tool`.
+guides keep/optimize/rollback decisions through the common `adoption_tool`.
 
 ## Execution model
 

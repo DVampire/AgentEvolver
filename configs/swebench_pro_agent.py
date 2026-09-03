@@ -17,7 +17,7 @@ The roster, deliberately minimal:
   tests — never the gold patch, the `test_patch`, an expected value, or any test
   body. Present in BOTH arms, so it does not affect the evolution-only difference.
 - **The self-evolution roster** — `generate_agent` / `optimize_agent` /
-  `evaluate_agent`, `evolution_tool`, `self_evolving_skill`. This is the ONLY
+  `evaluate_agent`, `adoption_tool`, `self_evolving_skill`. This is the ONLY
   thing that differs from `swebench_pro_agent_baseline.py`; keep every other value
   in sync between the two arms or the comparison is meaningless (see
   test_shipped_configs).
@@ -41,7 +41,7 @@ with read_base():
     from .agents.optimize_agent import optimize_agent
     from .agents.evaluate_agent import evaluate_agent
     from .tools.bash import bash_tool
-    from .tools.evolution import evolution_tool
+    from .tools.adoption import adoption_tool
     from .memory.file_system_memory import file_system_memory
 
 tag = "swebench_pro_agent"
@@ -73,7 +73,7 @@ tool_names = [
     # fail (NAMES + counts only, never a test body or expected output). Host-mediated,
     # rate-limited. Present in both arms, so it does not affect the evolution difference.
     "swebench_pro_eval_tool",
-    "evolution_tool",
+    "adoption_tool",
 ]
 skill_names = [
     "self_evolving_skill",

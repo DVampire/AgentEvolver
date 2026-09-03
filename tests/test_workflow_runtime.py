@@ -925,11 +925,11 @@ def test_the_workflow_evaluator_can_read_and_record_but_not_change_what_it_grade
         "workflow_allowlist": ["parallel_review"],
     }
     assert evaluator.allow_read_only(
-        "evolution_tool",
+        "adoption_tool",
         {"action": "record_workflow_evaluation"},
     )
     assert not evaluator.allow_read_only(
-        "evolution_tool",
+        "adoption_tool",
         {"action": "rollback"},
     )
 

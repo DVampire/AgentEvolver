@@ -383,7 +383,7 @@ def validate_local_artifacts(
         "deploy_tool",
         "done_tool",
         "send_message_tool",
-        "evolution_tool",
+        "adoption_tool",
     }
     actual_tools = set(config.tool_names)
     if actual_tools != expected_tools:

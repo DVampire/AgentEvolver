@@ -1,3 +1,3 @@
-evolution_tool = dict(
+adoption_tool = dict(
     enable_evolving = False,
 )

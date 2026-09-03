@@ -3,7 +3,7 @@
 Structured like `configs/meta_agent.py`, trimmed to what a ProgramBench
 code-reconstruction run actually needs: the basic tools, the actor agents, and
 the self-evolution roster that applies here — the tool / agent / skill triads,
-`evolution_tool`, and `self_evolving_skill`.
+`adoption_tool`, and `self_evolving_skill`.
 `examples/run_programbench.py --no-evolve` strips the evolution roster back out
 for a lean, cheaper "just do the task" run.
 
@@ -43,7 +43,7 @@ with read_base():
     from .agents.optimize_agent import optimize_agent
     from .agents.evaluate_agent import evaluate_agent
     from .tools.bash import bash_tool
-    from .tools.evolution import evolution_tool
+    from .tools.adoption import adoption_tool
     from .memory.file_system_memory import file_system_memory
 
 tag = "programbench_agent"
@@ -93,7 +93,7 @@ agent_names = [
 # interpreter, and the multi-agent messaging tools (escalate/reply/report) — is deleted:
 # a single bash tool does all of it (cat/heredoc/sed to read and write, ls to look around),
 # exactly as the reference agent works, and with one agent there is no one to message. The
-# only addition over the baseline is `evolution_tool`.
+# only addition over the baseline is `adoption_tool`.
 tool_names = [
     "bash_tool",
     "done_tool",
@@ -102,7 +102,7 @@ tool_names = [
     # agent chooses when to spend. Present in both arms, so it does not affect the
     # evolution-only difference between them.
     "programbench_eval_tool",
-    "evolution_tool",
+    "adoption_tool",
 ]
 
 skill_names = [

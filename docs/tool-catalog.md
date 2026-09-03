@@ -28,6 +28,7 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 
 | Tool | Permission | Mutates | Class | Module |
 | --- | --- | --- | --- | --- |
+| [`adoption_tool`](#adoption_tool) | `workspace_write` | not declared | `AdoptionTool` | `agentevolver.tool.default.adoption` |
 | [`apply_patch_tool`](#apply_patch_tool) | `workspace_write` | yes | `ApplyPatchTool` | `agentevolver.tool.default.workspace.apply_patch` |
 | [`ask_user_question`](#ask_user_question) | `read_only` | no | `AskUserTool` | `agentevolver.tool.default.lifecycle.ask_user` |
 | [`bash_tool`](#bash_tool) | `workspace_write` | not declared | `BashTool` | `agentevolver.tool.default.workspace.bash` |
@@ -38,13 +39,13 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`done_tool`](#done_tool) | `workspace_write` | not declared | `DoneTool` | `agentevolver.tool.default.lifecycle.done` |
 | [`edit_file_tool`](#edit_file_tool) | `workspace_write` | yes | `EditFileTool` | `agentevolver.tool.default.workspace.edit_file` |
 | [`escalate_tool`](#escalate_tool) | `read_only` | not declared | `EscalateTool` | `agentevolver.tool.default.coordination.escalate` |
-| [`evolution_tool`](#evolution_tool) | `workspace_write` | not declared | `EvolutionTool` | `agentevolver.tool.default.evolution` |
 | [`exit_plan_mode`](#exit_plan_mode) | `read_only` | no | `ExitPlanModeTool` | `agentevolver.tool.default.lifecycle.exit_plan_mode` |
 | [`firecrawl_search_tool`](#firecrawl_search_tool) | `workspace_write` | not declared | `FirecrawlSearch` | `agentevolver.tool.default.web.search.firecrawl_search` |
 | [`get_goal_tool`](#get_goal_tool) | `read_only` | no | `GetGoalTool` | `agentevolver.tool.default.lifecycle.goal` |
 | [`git_tool`](#git_tool) | `workspace_write` | not declared | `GitTool` | `agentevolver.tool.default.workspace.git` |
 | [`glob_search_tool`](#glob_search_tool) | `read_only` | no | `GlobSearchTool` | `agentevolver.tool.default.workspace.glob_search` |
 | [`google_lens_search_tool`](#google_lens_search_tool) | `workspace_write` | not declared | `GoogleLensSearch` | `agentevolver.tool.default.web.search.google_lens_search` |
+| [`grant_tool`](#grant_tool) | `workspace_write` | yes | `GrantTool` | `agentevolver.tool.default.coordination.grant` |
 | [`grep_search_tool`](#grep_search_tool) | `read_only` | no | `GrepSearchTool` | `agentevolver.tool.default.workspace.grep_search` |
 | [`http_request_tool`](#http_request_tool) | `read_only` | not declared | `HttpRequestTool` | `agentevolver.tool.default.web.data_sources` |
 | [`inspect_tool`](#inspect_tool) | `read_only` | no | `InspectTool` | `agentevolver.tool.default.observability.inspect` |
@@ -74,7 +75,33 @@ required; the model must send it. "Mutates" is the tool's own `mutates` declarat
 | [`web_searcher_tool`](#web_searcher_tool) | `workspace_write` | no | `WebSearcherTool` | `agentevolver.tool.default.web.web_searcher` |
 | [`write_file_tool`](#write_file_tool) | `workspace_write` | yes | `WriteFileTool` | `agentevolver.tool.default.workspace.write_file` |
 
-45 tools.
+46 tools.
+
+## `adoption_tool`
+
+Manage and record the evaluated lifecycle of evolved extension components.
+
+Permission mode: `workspace_write` · does not declare whether it changes state
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `action` | `Literal['list_active', 'list_versions', 'diff', 'rollback', 'unload', 'record_workflow_evaluation', 'record_decision']` | no | `'list_active'` |
+| `module` | `Optional[str]` | no | `None` |
+| `name` | `Optional[str]` | no | `None` |
+| `version` | `Optional[str]` | no | `None` |
+| `version_a` | `Optional[str]` | no | `None` |
+| `version_b` | `Optional[str]` | no | `None` |
+| `success` | `Optional[bool]` | no | `None` |
+| `quality_score` | `Optional[float]` | no | `None` |
+| `run_id` | `Optional[str]` | no | `None` |
+| `case_id` | `Optional[str]` | no | `None` |
+| `token_cost` | `int` | no | `0` |
+| `elapsed_ms` | `float` | no | `0.0` |
+| `notes` | `str` | no | `''` |
+| `release_number` | `Optional[int]` | no | `None` |
+| `decision` | `Optional[Literal['keep', 'rollback', 'unload']]` | no | `None` |
+| `evidence` | `str` | no | `''` |
+| `evaluation` | `str` | no | `''` |
 
 ## `apply_patch_tool`
 
@@ -199,33 +226,6 @@ Permission mode: `read_only` · does not declare whether it changes state
 | `situation` | `str` | no | `''` |
 | `suggestion` | `str` | no | `''` |
 
-## `evolution_tool`
-
-Manage and record the evaluated lifecycle of evolved extension components.
-
-Permission mode: `workspace_write` · does not declare whether it changes state
-
-| Parameter | Type | Required | Default |
-| --- | --- | --- | --- |
-| `action` | `Literal['list_active', 'list_versions', 'diff', 'rollback', 'unload', 'record_workflow_evaluation', 'record_decision', 'grant']` | no | `'list_active'` |
-| `module` | `Optional[str]` | no | `None` |
-| `name` | `Optional[str]` | no | `None` |
-| `version` | `Optional[str]` | no | `None` |
-| `version_a` | `Optional[str]` | no | `None` |
-| `version_b` | `Optional[str]` | no | `None` |
-| `success` | `Optional[bool]` | no | `None` |
-| `quality_score` | `Optional[float]` | no | `None` |
-| `run_id` | `Optional[str]` | no | `None` |
-| `case_id` | `Optional[str]` | no | `None` |
-| `token_cost` | `int` | no | `0` |
-| `elapsed_ms` | `float` | no | `0.0` |
-| `notes` | `str` | no | `''` |
-| `release_number` | `Optional[int]` | no | `None` |
-| `decision` | `Optional[Literal['keep', 'rollback', 'unload']]` | no | `None` |
-| `evidence` | `str` | no | `''` |
-| `evaluation` | `str` | no | `''` |
-| `job_id` | `Optional[str]` | no | `None` |
-
 ## `exit_plan_mode`
 
 Present your finished plan for approval and leave plan mode if the user approves it.
@@ -295,6 +295,18 @@ Permission mode: `workspace_write` · does not declare whether it changes state
 | `num_results` | `Optional[int]` | no | `10` |
 | `filter_year` | `Optional[int]` | no | `None` |
 | `screenshot_dir` | `Optional[str]` | no | `None` |
+
+## `grant_tool`
+
+Give one running sub-agent access to one capability its own roster excludes.
+
+Permission mode: `workspace_write` · changes state
+
+| Parameter | Type | Required | Default |
+| --- | --- | --- | --- |
+| `job_id` | `str` | yes | — |
+| `module` | `str` | yes | — |
+| `name` | `str` | yes | — |
 
 ## `grep_search_tool`
 

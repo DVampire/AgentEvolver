@@ -201,7 +201,7 @@ def test_the_two_benchmark_arms_differ_only_in_evolution(evolving_name, baseline
     then a measurement of the difference nobody meant to introduce.
 
     The permitted difference is exactly the evolution capability: the three
-    generate/optimize/evaluate agents, `evolution_tool`, and `self_evolving_skill`. This
+    generate/optimize/evaluate agents, `adoption_tool`, and `self_evolving_skill`. This
     holds for every benchmark whose config ships an evolution arm and a control arm
     (ProgramBench, SWE-bench Pro).
     """
@@ -213,7 +213,7 @@ def test_the_two_benchmark_arms_differ_only_in_evolution(evolving_name, baseline
 
     EVOLUTION = {
         "agent_names": {"generate_agent", "optimize_agent", "evaluate_agent"},
-        "tool_names": {"evolution_tool"},
+        "tool_names": {"adoption_tool"},
         "skill_names": {"self_evolving_skill"},
     }
     ROSTERS = (

@@ -19,7 +19,7 @@ with read_base():
     from .tools.apply_patch import apply_patch_tool
     from .tools.bash import bash_tool
     from .tools.deploy import deploy_tool
-    from .tools.evolution import evolution_tool
+    from .tools.adoption import adoption_tool
     from .tools.send_message import send_message_tool
 
 
@@ -77,7 +77,7 @@ tool_names = [
     "deploy_tool",
     "done_tool",
     "send_message_tool",
-    "evolution_tool",
+    "adoption_tool",
 ]
 
 # Baseline product methods are intentionally useful but not exhaustive.  In particular, no
@@ -118,7 +118,7 @@ browser_environment = dict(
 bash_tool.update(enable_evolving=False)
 apply_patch_tool.update(enable_evolving=False)
 deploy_tool.update(enable_evolving=False)
-evolution_tool.update(enable_evolving=False)
+adoption_tool.update(enable_evolving=False)
 send_message_tool.update(enable_evolving=False)
 
 

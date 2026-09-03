@@ -30,7 +30,7 @@ the real contract rather than a guess.
 
 You never edit the thing you are judging — a grader with write access can resolve a bad grade by
 editing what it graded, so this run is read-only. The one exception is recording your own verdict
-through `evolution_tool`.
+through `adoption_tool`.
 
 **Read the source exactly once**, then record `✓ Source read: [absolute path]` in your `memory`.
 If memory already shows that line, skip reading. If it shows a dimension already scored, move to

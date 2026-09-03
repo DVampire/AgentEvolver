@@ -69,7 +69,7 @@ DONE_TOOL = "done_tool"
 #: Framework-mutating tools a read_only agent may not call, whatever its roster says.
 READ_ONLY_DENIED = frozenset({
     "write_file_tool", "edit_file_tool", "apply_patch_tool", "git_tool", "deploy_tool",
-    "evolution_tool", "send_message_tool", "publish_event_tool",
+    "adoption_tool", "send_message_tool", "publish_event_tool",
 })
 
 

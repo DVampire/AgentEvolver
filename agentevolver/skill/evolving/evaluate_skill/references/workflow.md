@@ -19,7 +19,7 @@ Evaluation is read-only:
    orchestration when available.
 4. Score outcome quality from 0.0–1.0 and report success, real run id, case id, elapsed time, token cost,
    and concrete notes.
-5. Call `evolution_tool` with `action=record_workflow_evaluation`. Recommend keep,
+5. Call `adoption_tool` with `action=record_workflow_evaluation`. Recommend keep,
    optimize, rollback, or unload from concrete evidence.
 
 A version is provisionally healthy after at least 3 evaluations, success rate at least

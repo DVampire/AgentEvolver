@@ -138,7 +138,7 @@ searches; the redundancy is in the code, not in any prompt.
 | Tool | mutates | What it does |
 |---|---|---|
 | `inspect_tool` | no | One component's full contract — instruction, call schema — plus live registry facts: version, evolvability, source paths. All eight component types. |
-| `evolution_tool` | | Manage evolved components: list active, list versions, roll back, unload. |
+| `adoption_tool` | | Manage evolved components: list active, list versions, roll back, unload. |
 | `journal_tool` | yes | The evolution journal: record a hypothesis, backfill its outcome, review prior rounds. |
 
 ### Talking to someone else

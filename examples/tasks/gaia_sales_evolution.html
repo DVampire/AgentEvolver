@@ -48,7 +48,7 @@ makes things worse.
 - Do NOT hard-code the answer anywhere. It must be computed from the spreadsheet
   and formatted by the capabilities in play.
 - If an evolution makes the answer worse or breaks something that previously
-  worked, roll it back with `evolution_tool` rather than patching over it.
+  worked, roll it back with `adoption_tool` rather than patching over it.
 </requirements>
 
 <interface>
@@ -120,7 +120,7 @@ round actually reported.
   from Round 2, the agent from Round 4, the prompt from Round 5), telling it the
   objective criterion: the run must now produce exactly `89706.00`, and nothing
   that worked before may be broken. Then act on its verdict with
-  `evolution_tool`:
+  `adoption_tool`:
   - verdict good → keep it (**accepted → commit**); record `list_versions`.
   - verdict regressed → `rollback` to the last known-good version
     (**rejected → rollback**), then retry the evolution differently.

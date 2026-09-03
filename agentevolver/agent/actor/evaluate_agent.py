@@ -41,9 +41,9 @@ class EvaluateAgent(Agent):
         """The one mutating call a read-only evaluator needs: recording its own verdict.
 
         Permission is per action rather than per tool, so being allowed to call
-        ``evolution_tool`` does not let this run reach ``rollback`` through it.
+        ``adoption_tool`` does not let this run reach ``rollback`` through it.
         """
-        return name == "evolution_tool" and args.get("action") == "record_workflow_evaluation"
+        return name == "adoption_tool" and args.get("action") == "record_workflow_evaluation"
 
     def _target_capability_allowlists(self, target_name: Optional[str],
                                       target_type: Optional[str] = None) -> Dict[str, Any]:

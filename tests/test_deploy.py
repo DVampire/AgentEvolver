@@ -36,7 +36,7 @@ from agentevolver.deploy.types import (
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.tool.context import ToolContextManager
 from agentevolver.tool.default.deployment.deploy import DeployTool, deployment_manager
-from agentevolver.tool.default.evolution import EvolutionTool
+from agentevolver.tool.default.adoption import AdoptionTool
 from agentevolver.tool.types import ToolContext
 
 
@@ -88,8 +88,8 @@ def test_deploy_tool_accepts_runtime_context_without_exposing_it_to_model():
     assert "ctx" not in dynamic_manager.get_parameters(DeployTool)["properties"]
 
 
-def test_evolution_tool_exposes_lifecycle_arguments_to_strict_providers():
-    parameters = dynamic_manager.get_parameters(EvolutionTool)
+def test_adoption_tool_exposes_lifecycle_arguments_to_strict_providers():
+    parameters = dynamic_manager.get_parameters(AdoptionTool)
 
     assert {
         "action",
@@ -109,7 +109,6 @@ def test_evolution_tool_exposes_lifecycle_arguments_to_strict_providers():
         "decision",
         "evidence",
         "evaluation",
-        "job_id",
     } == set(parameters["properties"])
     assert "record_decision" in parameters["properties"]["action"]["enum"]
     assert parameters["additionalProperties"] is False

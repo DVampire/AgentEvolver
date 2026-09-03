@@ -122,7 +122,7 @@ tries to overwrite a frozen component is **blocked at registration**.
    - **Helped** → keep it (it is already live) and continue the user task using it.
    - **No better, or regressed** → you must not leave it live. Register-is-live means a bad
      change is already active, so rolling back is required rather than optional:
-     `evolution_tool` `rollback` an optimized component to its previous version
+     `adoption_tool` `rollback` an optimized component to its previous version
      (`list_versions` first), or `unload` a brand-new one that has no prior version. Then
      re-dispatch with the failure evidence, or regenerate.
    - **Never evaluated at all** → also roll back. Not because the change is presumed bad, but
