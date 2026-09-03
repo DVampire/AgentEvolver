@@ -134,7 +134,12 @@ file_system_memory.update(
 
 
 EVOLUTION_MAX_STEP = 60
-BUILDER_MAX_STEP = 180
+#: The builder's budget. 180 was not enough: a measured run spent 171 steps and was cut
+#: off still producing ~3k output tokens a step, so it ended `FAILED: Reached the step
+#: budget` rather than landing its own work. The cost of raising it is bounded by
+#: `max_token` and `timeout`, which stop a runaway long before the step count does; the
+#: cost of leaving it low is a run that throws away everything it could not persist.
+BUILDER_MAX_STEP = 320
 WALL_CLOCK = 28800
 MAX_TOKEN = 10000000
 
@@ -149,7 +154,13 @@ _AGENT_CORE = dict(
     use_memory=True,
     retain_recent_steps=4,
     compact_after_steps=18,
-    compact_body_tokens=100000,
+    # Fold at 60k rather than 100k. Cache reads are charged per request, so a working
+    # context that sits at 80-120k is paid for on every step that follows: measured over
+    # 171 builder steps, the 57 steps spent above 80k cost $2.48 in reads alone against
+    # $1.89 for the 82 steps between 40k and 80k. Folding sooner trades a few more
+    # checkpoint calls — 8% of the cache-write bill, $0.79 across the whole run — for a
+    # smaller prefix on every step after each fold.
+    compact_body_tokens=60000,
     fold_at_pressure=0.85,
 )
 

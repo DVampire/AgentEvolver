@@ -311,12 +311,16 @@ def validate_local_artifacts(
     # All long-running roles use the same bounded-history protocol proven by the
     # SWE-bench MetaAgent.  A role-specific model may choose native or portable
     # compaction, but no role may silently disable compaction altogether.
-    expected_context_policy = {
-        "retain_recent_steps": 4,
-        "compact_after_steps": 18,
-        "compact_body_tokens": 100000,
-        "fold_at_pressure": 0.85,
-    }
+    # What matters is that every long-running role shares ONE policy and that none of
+    # them silently disables compaction — not which numbers the shared policy holds.
+    # Pinning the literals here meant tuning the fold threshold for cost broke the
+    # launcher instead of the config, which is the wrong file to have to edit.
+    policy_keys = (
+        "retain_recent_steps",
+        "compact_after_steps",
+        "compact_body_tokens",
+        "fold_at_pressure",
+    )
     context_roles = (
         "website_builder_agent",
         "generate_agent",
@@ -324,15 +328,27 @@ def validate_local_artifacts(
         "evaluate_agent",
         "website_user_agent",
     )
+    policies = {}
     for role in context_roles:
         role_config = dict(getattr(config, role))
-        actual_policy = {key: role_config.get(key) for key in expected_context_policy}
-        if actual_policy != expected_context_policy or not role_config.get("use_memory"):
+        policy = {key: role_config.get(key) for key in policy_keys}
+        if any(value is None for value in policy.values()):
+            raise ValueError(f"{role} does not declare a bounded-history policy: {policy}")
+        if not role_config.get("use_memory"):
+            raise ValueError(f"{role} must keep use_memory=True; compaction depends on it")
+        if not policy["compact_body_tokens"] or not policy["fold_at_pressure"]:
             raise ValueError(
-                f"{role} must use the SWE-bench bounded-history policy: "
-                f"expected={expected_context_policy}, actual={actual_policy}, "
-                f"use_memory={role_config.get('use_memory')!r}"
+                f"{role} disables compaction ({policy}); a long-running role that never "
+                "folds grows its prefix until the provider refuses the request"
             )
+        policies[role] = policy
+
+    distinct = {tuple(sorted(policy.items())) for policy in policies.values()}
+    if len(distinct) > 1:
+        raise ValueError(
+            "every long-running role must share one bounded-history policy, got "
+            + "; ".join(f"{role}={policy}" for role, policy in sorted(policies.items()))
+        )
 
     browser_config = dict(getattr(config, "browser_agent"))
     if browser_config.get("use_memory") or browser_config.get("env_name") != "browser_environment":
