@@ -8,6 +8,7 @@ are the same mechanism.
 """
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -341,3 +342,36 @@ async def test_a_suspend_and_a_resume_are_visible_from_outside_the_process(kerne
     # The agent's own phase hooks still ran; the broadcast is additional, not a
     # replacement — one is for the process, the other for everyone watching it.
     assert "on_suspend" in agent.log and "on_resume" in agent.log
+
+
+@pytest.mark.asyncio
+async def test_a_scoped_publish_reaches_processes_that_subscribed_by_name(kernel):
+    """Subscribe and publish must scope the topic the same way, or nothing is delivered.
+
+    `spawn(topics=[...])` registered the raw name while `publish_scoped` looked up
+    `{root}::{name}`, so the two never matched. It failed silently and in the worst
+    possible shape: the fan-out reported success with a count of zero, and every
+    resident subscriber sat IDLE forever waiting for an event delivered to nobody.
+    Caught on a live run — four subscribers registered and
+    `📡 publish … → 0 subscriber(s)`.
+    """
+    ctx = SimpleNamespace(id="sess-1", extra={"root_session_id": "sess-1"})
+    agents = [Steps(name=f"sub{i}", steps=1) for i in range(3)]
+    for agent in agents:
+        await kernel.spawn(agent, "standing brief", ctx=ctx, topics=["deployment.ready"])
+    await asyncio.sleep(0.05)
+
+    delivered, name, _ = await kernel.publish_scoped(
+        "deployment.ready", "deployment.ready", {"url": "http://site"}, ctx=ctx,
+    )
+    assert name == "sess-1::deployment.ready"
+    assert delivered == 3, "a scoped publish must reach every process that subscribed"
+
+
+@pytest.mark.asyncio
+async def test_a_topic_still_pairs_up_without_a_session(kernel):
+    """A bare kernel — a test, a script — keeps the plain name on both sides."""
+    agent = Steps(name="watcher", steps=1)
+    await kernel.spawn(agent, "brief", topics=["plain"])
+    await asyncio.sleep(0.05)
+    assert await kernel.publish("plain", "started") == 1

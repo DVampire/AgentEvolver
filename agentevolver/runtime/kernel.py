@@ -113,7 +113,12 @@ class Kernel:
         )
         self._procs[pid] = proc
         if topics:
-            self._topics.subscribe_many(pid, topics)
+            # Scoped with the SAME function the publisher uses. Subscribing under the
+            # raw name while `publish_scoped` looks up `{root}::{name}` is a silent
+            # no-match: the fan-out reports 0 subscribers and every resident process
+            # waits forever for an event that was delivered to nobody. Measured on a
+            # live run — four subscribers registered, `📡 publish … → 0 subscriber(s)`.
+            self._topics.subscribe_many(pid, self._scope_all(topics, ctx))
 
         # The agent's handle on its own process. Everything an agent can ask of the
         # kernel goes through this one attribute, so the dependency is visible.
@@ -226,6 +231,23 @@ class Kernel:
             target, ReplyEnvelope(text=text, in_reply_to=in_reply_to)
         )
 
+    @staticmethod
+    def _scope_all(topics: Sequence[str], ctx: Any) -> List[str]:
+        """Scope each topic to its task tree, falling back to the raw name.
+
+        A caller with no session identity — a test, a bare kernel — keeps the plain
+        name, so `publish`/`subscribe` still pair up outside a session.
+        """
+        from agentevolver.runtime.topics import scoped
+
+        names: List[str] = []
+        for topic in topics:
+            try:
+                names.append(scoped(topic, ctx))
+            except ValueError:
+                names.append(str(topic).strip())
+        return names
+
     async def publish(
         self,
         topic: str,
@@ -246,16 +268,34 @@ class Kernel:
             )
             if await self.send(proc, envelope):
                 delivered += 1
-        logger.info(f"| 📡 publish {topic}/{event_type} → {delivered} subscriber(s)")
+        if delivered:
+            logger.info(f"| 📡 publish {topic}/{event_type} → {delivered} subscriber(s)")
+        else:
+            # Loud, because the failure it catches is otherwise invisible: the call
+            # succeeds, returns 0, and every resident subscriber waits forever. Naming
+            # the topics that DO have subscribers is what makes a scope mismatch
+            # readable at the moment it happens rather than hours into a run.
+            known = self._topics.all_topics()
+            logger.warning(
+                f"| 📭 publish {topic}/{event_type} reached nobody"
+                + (f"; subscribed topics are {list(known)}" if known
+                   else "; nothing is subscribed")
+            )
         return delivered
 
     def subscribe(self, target: Target, topic: str) -> bool:
+        """Add one subscription, scoped to the process's own task tree.
+
+        Scoped here for the same reason `spawn` scopes: there is exactly one rule for
+        what a topic name means, and it is applied at every entry point. A second entry
+        point that skipped it would reintroduce the silent no-match this cost once.
+        """
         proc = self._resolve(target)
-        return self._topics.subscribe(proc.pid, topic)
+        return self._topics.subscribe(proc.pid, self._scope_all([topic], proc.ctx)[0])
 
     def unsubscribe(self, target: Target, topic: str) -> bool:
         proc = self._resolve(target)
-        return self._topics.unsubscribe(proc.pid, topic)
+        return self._topics.unsubscribe(proc.pid, self._scope_all([topic], proc.ctx)[0])
 
     def topics_of(self, pid: str) -> Sequence[str]:
         return self._topics.topics(pid)
