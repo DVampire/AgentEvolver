@@ -40,6 +40,16 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
   the current run actually changed and evaluated the candidate. Do not call this action
   when no evolution was started.
 
+- `grant`: give a live sub-agent access to a capability its own roster excludes. Args:
+  `job_id` (the pid a dispatch returned), `module`, `name`. Takes effect on that
+  process's next step; it does not interrupt one in progress.
+
+  A locked-down roster is an isolation contract — a website visitor must not reach the
+  workspace — and it is stated as a class field, so a component evolved during the run
+  cannot enter it by itself. That made the one consumer who genuinely lacked a capability
+  also the one who could never be given it. This grants a *named* component to a *named*
+  process, which keeps the contract explicit rather than widening it.
+
 `module` is one of: tool | agent | prompt | skill | environment | connector | workflow.
 
 - Pair with `reviewer_agent`: if the reviewer's verdict is that an evolution regressed the outcome, `rollback` to the prior version (use `list_versions` first to see what to roll back to), or `unload` a brand-new component that has no prior good version.
@@ -82,6 +92,7 @@ class EvolutionTool(Tool):
             "unload",
             "record_workflow_evaluation",
             "record_decision",
+            "grant",
         ] = "list_active",
         module: Optional[str] = None,
         name: Optional[str] = None,
@@ -99,6 +110,7 @@ class EvolutionTool(Tool):
         decision: Optional[Literal["keep", "rollback", "unload"]] = None,
         evidence: str = "",
         evaluation: str = "",
+        job_id: Optional[str] = None,
         **kwargs: Any,
     ) -> Response:
         """Inspect and roll back evolved components.
@@ -123,6 +135,9 @@ class EvolutionTool(Tool):
             decision: Evaluated candidate outcome: keep, rollback, or unload.
             evidence: Grounded reason for the task-scoped evolution decision.
             evaluation: Baseline comparison supporting the decision.
+            job_id: For ``grant``: the live sub-agent to widen, by the pid a dispatch
+                returned. A grant is for a process that is already running; a
+                re-dispatch would carry its roster in the dispatch args instead.
             **kwargs: Runtime-only injected values, including the current context.
         """
         from agentevolver.extension import (
@@ -237,6 +252,44 @@ class EvolutionTool(Tool):
                     success=True,
                     message=f"Recorded evaluation for workflow:{evaluation.workflow_name}. Summary: {summary}",
                     data={"evaluation": evaluation.model_dump(), "summary": summary},
+                )
+
+            if action == "grant":
+                if not job_id or not module or not name:
+                    raise KeyError("job_id, module, and name")
+                from agentevolver.agent.loop.router import grant as mark_granted
+                from agentevolver.runtime import kernel
+
+                target = kernel.get(str(job_id))
+                if target is None or not target.alive:
+                    raise RuntimeError(
+                        f"no live process {job_id!r} to grant to; a grant is for a "
+                        "running sub-agent, and a dispatch returned this pid"
+                    )
+                target_extra = getattr(target.ctx, "extra", None)
+                if not isinstance(target_extra, dict):
+                    raise RuntimeError(
+                        f"process {job_id!r} has no context to grant into"
+                    )
+                key = f"{module}_allowlist"
+                current = list(target_extra.get(key) or [])
+                if name not in current:
+                    current.append(name)
+                target_extra[key] = current
+                # Marked as granted, or the next step overwrites it from the agent's
+                # class field — which is exactly the roster this grant is widening.
+                mark_granted(target_extra, key)
+                logger.info(
+                    f"| 🎫 granted {module}:{name} to {target.name}:{str(job_id)[:8]}"
+                )
+                return Response(
+                    type=ResponseType.TOOL, success=True,
+                    message=(
+                        f"Granted {module}:{name} to {target.name} [{job_id}]. Its "
+                        f"{key} is now {current}; it takes effect on that process's "
+                        "next step."
+                    ),
+                    data={"job_id": str(job_id), key: current},
                 )
 
             if action == "record_decision":

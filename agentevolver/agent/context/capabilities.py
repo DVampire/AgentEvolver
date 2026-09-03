@@ -88,6 +88,24 @@ def forget(ctx: Any, agent_name: str) -> None:
             extra.pop("_capability_catalog_revisions", None)
 
 
+def _allowlist_fingerprint(extra: Any) -> str:
+    """A stable digest of the capability scope this context grants.
+
+    Part of the catalog's cache key, so a scope change rebuilds it. Sorted per key so
+    the same grant written in a different order is the same fingerprint.
+    """
+    if not isinstance(extra, dict):
+        return ""
+    parts = []
+    for key in sorted(extra):
+        if not str(key).endswith("_allowlist"):
+            continue
+        value = extra[key]
+        if isinstance(value, (list, tuple, set)):
+            parts.append(f"{key}={','.join(sorted(str(item) for item in value))}")
+    return "|".join(parts)
+
+
 def _tokens(value: str) -> set[str]:
     return set(re.findall(r"[a-z0-9_]+", str(value).lower()))
 
@@ -348,7 +366,15 @@ async def assemble_native_tools(
     metadata = catalog(ctx, agent_name)
     from agentevolver.extension import extension_manager
 
-    revision = extension_manager.capability_revision
+    # The catalog is cached against everything that can change what belongs in it: the
+    # extension registry's revision, and the scope this agent has been granted. Keying
+    # on the revision alone meant a grant made mid-run — handing a newly evolved
+    # component to an agent whose class default excluded it — was ignored until some
+    # unrelated registration happened to bump the revision.
+    revision = (
+        extension_manager.capability_revision,
+        _allowlist_fingerprint(extra),
+    )
     revisions = extra.setdefault("_capability_catalog_revisions", {})
     if not metadata or revisions.get(agent_name) != revision:
         # Freeze the lightweight index for one run. Full JSON schemas are built only

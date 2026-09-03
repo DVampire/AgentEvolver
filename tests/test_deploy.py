@@ -109,6 +109,7 @@ def test_evolution_tool_exposes_lifecycle_arguments_to_strict_providers():
         "decision",
         "evidence",
         "evaluation",
+        "job_id",
     } == set(parameters["properties"])
     assert "record_decision" in parameters["properties"]["action"]["enum"]
     assert parameters["additionalProperties"] is False

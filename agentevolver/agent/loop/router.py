@@ -21,6 +21,45 @@ from agentevolver.logger import logger
 #: Capability types whose manager is callable as ``manager(name=, input=, ctx=)``.
 _CALLABLE_MANAGERS = ("skill", "connector", "workflow", "plugin", "environment")
 
+#: Where the context records which allowlists were granted rather than defaulted. A
+#: grant survives a step; a default is re-derived from the agent's class field each time.
+GRANTED_ALLOWLISTS = "_granted_allowlists"
+
+def _evolved_names(capability_type: str, *, exclude: Sequence[str] = ()) -> List[str]:
+    """Registered extension components of one type, minus what is already listed.
+
+    Read from the extension manifest, which is the record of what actually registered —
+    an agent's account of a generate run is a claim, the manifest is the fact. Never
+    raises: an unreadable manifest means an agent keeps the roster it declared, which is
+    the safe direction for a list that bounds what a process may do.
+    """
+    try:
+        from agentevolver.extension import extension_manager
+
+        seen = set(exclude)
+        return [
+            component.name
+            for component in extension_manager.read_manifest().components
+            if component.module == capability_type and component.name not in seen
+        ]
+    except Exception as error:  # noqa: BLE001 - scope must not fail on a bad read
+        logger.warning(f"| ⚠️ could not read evolved {capability_type}s: {error}")
+        return []
+
+
+def grant(extra: Dict[str, Any], key: str) -> None:
+    """Mark one allowlist in this context as granted rather than defaulted.
+
+    Without the mark the next step overwrites it from the agent's class field, because
+    that is how a default stays current. One function so the dispatch path and any
+    later grant record it the same way.
+    """
+    marked = list(extra.get(GRANTED_ALLOWLISTS) or ())
+    if key not in marked:
+        marked.append(key)
+    extra[GRANTED_ALLOWLISTS] = marked
+
+
 #: The tool that ends a run. Recognised by name, as before: its Response carries the
 #: result in ``data`` but no "I am finished" flag, so a data-key check silently never
 #: fires and the loop runs on until the model stops calling tools by itself.
@@ -90,13 +129,28 @@ class CapabilityRouter(ToolRouter):
         from agentevolver.agent.context.capabilities import assemble_native_tools
 
         # The agent's declared scope, put where the capability managers look for it.
+        #
+        # A class field is a DEFAULT; a grant recorded in the context WINS. The two used
+        # to be told apart by `setdefault`, which freezes on first use: the default was
+        # copied into the context on step 0 and then occupied the key, so a grant made
+        # later could not get in. Defaults are therefore refreshed every step and only
+        # for keys nothing has granted, which is what lets an allowlist change during a
+        # run — the point of granting a newly evolved component to an agent that needs
+        # it, rather than only to whoever happened to be dispatched after it registered.
         extra = getattr(ctx, "extra", None)
         declared = getattr(agent, "capability_allowlists", None) or {}
         if isinstance(extra, dict):
+            granted = set(extra.get(GRANTED_ALLOWLISTS) or ())
+            accepts = {str(item) for item in (getattr(agent, "accepts_evolved", None) or ())}
             for capability_type, names in declared.items():
                 key = (capability_type if capability_type.endswith("_allowlist")
                        else f"{capability_type}_allowlist")
-                extra.setdefault(key, list(names))
+                if key in granted:
+                    continue
+                scope = list(names)
+                if capability_type in accepts:
+                    scope += _evolved_names(capability_type, exclude=scope)
+                extra[key] = scope
 
         tools, routing = await assemble_native_tools(
             agent, ctx, include_agents=self.include_agents
@@ -306,6 +360,19 @@ class CapabilityRouter(ToolRouter):
             value = str(brief.get(key) or "").strip()
             if value:
                 extra[key] = value
+        # Capability grants this dispatch makes. The dispatch schema has declared all
+        # five for as long as it has existed and nothing read them, so a parent narrowing
+        # or widening a child's roster was silently ignored and the child's class default
+        # stood — which is how an isolation contract meant to keep a visitor out of the
+        # workspace also made it impossible to hand that visitor a newly evolved tool.
+        #
+        # An empty list is a real grant and means "none of this kind", so presence is
+        # what matters here, not truthiness.
+        for key in ("tool_allowlist", "skill_allowlist", "connector_allowlist",
+                    "plugin_allowlist", "workflow_allowlist"):
+            if isinstance(brief.get(key), list):
+                extra[key] = [str(item).strip() for item in brief[key] if str(item).strip()]
+                grant(extra, key)
         extra["task_contract"] = contract
         extra["task_files"] = list(brief.get("files") or ())
         extra["parent_session_id"] = str(getattr(ctx, "id", "") or "")

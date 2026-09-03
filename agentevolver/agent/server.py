@@ -44,6 +44,14 @@ def validate_dispatch_input(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         ("read_set", MAX_DELEGATION_CONTRACT_ITEMS),
         ("write_set", MAX_DELEGATION_CONTRACT_ITEMS),
         ("acceptance", MAX_DELEGATION_CONTRACT_ITEMS),
+        # The capability grants this dispatch makes. Bounded like every other list in
+        # the contract, and validated here so a malformed grant is refused at the
+        # boundary rather than silently narrowing a child's roster to nothing.
+        ("tool_allowlist", MAX_DELEGATION_CONTRACT_ITEMS),
+        ("skill_allowlist", MAX_DELEGATION_CONTRACT_ITEMS),
+        ("connector_allowlist", MAX_DELEGATION_CONTRACT_ITEMS),
+        ("plugin_allowlist", MAX_DELEGATION_CONTRACT_ITEMS),
+        ("workflow_allowlist", MAX_DELEGATION_CONTRACT_ITEMS),
     ):
         items = value.get(name)
         if items is None:

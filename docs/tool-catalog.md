@@ -207,7 +207,7 @@ Permission mode: `workspace_write` · does not declare whether it changes state
 
 | Parameter | Type | Required | Default |
 | --- | --- | --- | --- |
-| `action` | `Literal['list_active', 'list_versions', 'diff', 'rollback', 'unload', 'record_workflow_evaluation', 'record_decision']` | no | `'list_active'` |
+| `action` | `Literal['list_active', 'list_versions', 'diff', 'rollback', 'unload', 'record_workflow_evaluation', 'record_decision', 'grant']` | no | `'list_active'` |
 | `module` | `Optional[str]` | no | `None` |
 | `name` | `Optional[str]` | no | `None` |
 | `version` | `Optional[str]` | no | `None` |
@@ -224,6 +224,7 @@ Permission mode: `workspace_write` · does not declare whether it changes state
 | `decision` | `Optional[Literal['keep', 'rollback', 'unload']]` | no | `None` |
 | `evidence` | `str` | no | `''` |
 | `evaluation` | `str` | no | `''` |
+| `job_id` | `Optional[str]` | no | `None` |
 
 ## `exit_plan_mode`
 

@@ -106,6 +106,21 @@ class Agent(BaseModel):
     #: prompt — expressing it as a method is what let each actor acquire a different
     #: assembly path.
     capability_allowlists: Dict[str, List[str]] = Field(default={})
+    #: Capability types whose evolved components join this agent's allowlist as they
+    #: register, without anyone granting them.
+    #:
+    #: Only meaningful for an agent that HAS an allowlist, because an empty allowlist
+    #: already means "everything". For a restricted agent the allowlist is an isolation
+    #: contract stated in code — a website visitor holds one tool and must not reach the
+    #: workspace — and that contract cannot be widened by a component that did not exist
+    #: when it was written.
+    #:
+    #: Declaring acceptance is what lets it be, and it is declared here rather than
+    #: granted at runtime because a grant needs an edge between the granter and the
+    #: granted. A publisher does not know its subscribers, and two peers have no edge at
+    #: all, so per-process granting cannot reach the topologies that need it most.
+    #: Declaring in advance needs no edge and stays reviewable: this line, in this file.
+    accepts_evolved: List[str] = Field(default=[])
 
     # -- route capabilities this agent opts into. Declared per agent because they change
     # -- what a turn can do, not merely how fast it runs; a route that has not declared
