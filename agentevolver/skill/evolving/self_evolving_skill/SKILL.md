@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
 description: When to evolve the framework's own components, and the loop that does it. Use whenever a task is blocked or degraded by a missing or weak capability, when a sub-agent repeatedly fails for a fixable reason, or when the user asks to create, improve or evaluate a component. Covers the decide → generate/optimize → evaluate → adopt-or-roll-back loop, the enable_evolving gate, and how to read an evaluation. The how-to for each of the eight component types lives in generate_skill, optimize_skill and evaluate_skill, which the three agents read. NOT for the user's own deliverable work.
-version: 2.0.0
+version: 2.0.1
 license: N/A
 type: [orchestrator]
 category: meta
@@ -49,12 +49,31 @@ Evolution targets a capability defect, never a one-off weak attempt, and needs a
 
 1. **Missing capability** — the task needs an operation no tool, skill or connector provides,
    and retrying cannot work → **generate** it. *The deliverable needs real product images and
-   there is no media-search tool.* A general-purpose shell counts as providing the operation;
-   "the agent did not think to do it" is not a missing capability.
-2. **Recurring structural failure** — the same agent fails the same way **≥2×** despite
-   corrective guidance, so the fault is in its prompt or tools rather than the attempt →
-   **optimize** it, or **generate** a skill that encodes the fix. The count comes from your own
-   dispatch history: one dispatch can never satisfy this.
+   there is no media-search tool.* "The agent did not think to do it" is not a missing
+   capability.
+
+   Missing is always **missing for whoever has to do it**. A general-purpose shell counts as
+   providing the operation — for whoever holds the shell. If the consumer is an agent whose
+   roster does not include one, an operation reachable from a shell somewhere else is not
+   reachable by them, and a script you can run yourself does not close their gap. Name the
+   consumer before deciding; the answer changes with it.
+
+   The converse is the more common trap: if *you* are the consumer and you hold a shell, you
+   almost certainly have no missing capability — you have work to do. Write the script.
+2. **Recurring structural failure** — the same fault appears **≥2×** despite corrective
+   guidance, so it is in a prompt or a tool rather than in the attempt → **optimize** it, or
+   **generate** a skill that encodes the fix.
+
+   The count is over *corrected attempts*: two occurrences separated by guidance that named
+   the fault and was acted on. That separation is the whole test — it is what distinguishes a
+   structural fault from one bad attempt. Re-dispatching a sub-agent is one way to produce a
+   corrected attempt; it is not the only one, and a run that never dispatches twice can still
+   have two of them. Identify what a corrected attempt is in the work you are actually doing,
+   and count those.
+
+   Retries inside one attempt do not count, however many there are. Neither does the same
+   fault seen twice without anything having been done about it in between.
+
 3. **Quality ceiling from a missing method** — output is *systematically* below bar on a
    dimension **you have measured**, because the agent has no method to do better and per-task
    instruction will not close the gap → **generate** a skill carrying the methodology. If you
@@ -96,21 +115,21 @@ tries to overwrite a frozen component is **blocked at registration**.
 2. **Change** — dispatch `generate_agent` or `optimize_agent` with `target_type` and
    `target_name`. It authors the files under `extension/` and registers them.
 3. **Evaluate** — dispatch `evaluate_agent` for a scored, per-dimension report.
-4. **Prove it helped** — for a component meant to help task execution, dispatch the *same* actor
-   agent twice on a representative probe: once with the new component and once without. You gate
-   what a sub-agent sees with an allowlist in its task args — `{"tool_allowlist": [...]}`,
-   `{"skill_allowlist": [...]}`, `{"connector_allowlist": [...]}`; an empty list is the baseline.
-5. **Decide, and own it** — from the score and the with-versus-baseline outcome, plus an
-   independent `reviewer_agent` pass for a substantial change:
+4. **Check it helped** — read the scored report against the defect that justified the change.
+   Does it say the thing that was wrong is now right? That is the bar.
+5. **Decide, and own it** — from the scored report, plus an independent `reviewer_agent` pass
+   for a substantial change:
    - **Helped** → keep it (it is already live) and continue the user task using it.
-   - **No better, regressed, or never evaluated** → you must not leave it live. Register-is-live
-     means a bad change is already active, so rolling back is required rather than optional:
-     `evolution_tool` `rollback` an optimized component to its previous version (`list_versions`
-     first), or `unload` a brand-new one that has no prior version. Then re-dispatch with the
-     failure evidence, or regenerate.
+   - **No better, or regressed** → you must not leave it live. Register-is-live means a bad
+     change is already active, so rolling back is required rather than optional:
+     `evolution_tool` `rollback` an optimized component to its previous version
+     (`list_versions` first), or `unload` a brand-new one that has no prior version. Then
+     re-dispatch with the failure evidence, or regenerate.
+   - **Never evaluated at all** → also roll back. Not because the change is presumed bad, but
+     because nothing looked: an unexamined component is live in the run and in every run
+     after it. Evaluating is one dispatch; do that instead of skipping to a decision.
 6. **Record** — state what you evolved, the score, the decision, and why.
 
-Typical shape: round N generate|optimize → round N+1 evaluate (with the baseline probe in the
-same round) → round N+2 decide.
+Typical shape: round N generate|optimize → round N+1 evaluate → round N+2 decide.
 
 One component change per optimize step, so the evaluation can attribute the effect.
