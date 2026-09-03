@@ -343,6 +343,22 @@ def test_full_job_output_read_acknowledges_one_subscriber_turn(monkeypatch):
     assert contract["collected_turns"] == {"user-job": 2}
 
 
+
+def seed_acceptance(contract, release, **verdicts):
+    """Record per-(release, subscriber) acceptance, as the protocol now does.
+
+    Replaces seeding `turn_success[release]` on a fake process. Those were the same
+    number by accident: a subscriber's Nth turn was assumed to be about release N, so a
+    subscriber that failed once and was asked to verify a fix produced turn 2 and left
+    `turn_success[1]` false forever. See tests/test_release_acceptance.py.
+    """
+    table = contract.setdefault("release_acceptance", {}).setdefault(str(release), {})
+    for job_id, ok in verdicts.items():
+        table[job_id] = {"status": "accepted" if ok else "failed", "attempts": 1,
+                         "turn": release}
+    return contract
+
+
 def test_next_deploy_waits_until_every_subscriber_feedback_is_read(monkeypatch):
     from agentevolver.runtime import kernel
 
@@ -369,6 +385,7 @@ def test_next_deploy_waits_until_every_subscriber_feedback_is_read(monkeypatch):
         "subscriber_job_ids": ["user-1", "acceptance"],
         "collected_turns": {"user-1": 1},
     }
+    seed_acceptance(contract, 1, **{"user-1": True, "acceptance": True})
     ctx = SimpleNamespace(
         extra={
             "website_runtime_contract": contract,
@@ -397,6 +414,7 @@ def test_next_release_does_not_require_an_evolution_decision(monkeypatch):
         "collected_turns": {"user": 1},
         "evolution_decisions": [],
     }
+    seed_acceptance(contract, 1, user=True)
     ctx = SimpleNamespace(
         extra={
             "website_runtime_contract": contract,
@@ -482,6 +500,7 @@ async def test_builder_completion_requires_release_feedback_collection(monkeypat
         "acceptance_job_id": "acceptance",
         "collected_turns": {"user-1": 1},
     }
+    seed_acceptance(contract, 1, **{"user-1": True, "acceptance": True})
     ctx = SimpleNamespace(
         extra={
             "website_runtime_contract": contract,
@@ -518,6 +537,8 @@ async def test_builder_completion_only_closes_self_initiated_evolution(monkeypat
         "collected_turns": {"acceptance": 1},
         "evolution_runs": [],
         "evolution_decisions": [],
+        "release_acceptance": {"1": {"acceptance": {"status": "accepted",
+                                                   "attempts": 1, "turn": 1}}},
     }
     ctx = SimpleNamespace(
         extra={

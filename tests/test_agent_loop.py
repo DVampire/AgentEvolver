@@ -371,3 +371,48 @@ async def test_a_fold_that_moves_nothing_still_says_so(monkeypatch):
     assert [event for event, _ in seen] == [HookEvent.PRE_COMPACT, HookEvent.POST_COMPACT]
     assert seen[1][1]["folded"] is False
     assert seen[1][1]["detail"] == "fold budget spent"
+
+
+# ---------------------------------------------------------------------------
+# A gate that cannot open
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_run_lands_when_one_blocker_refuses_it_over_and_over():
+    """A contract gate whose input cannot change is a protocol fault, not a retry.
+
+    Measured on a live website run: the deploy gate held on a subscriber verdict that
+    could never be updated, `done_tool` held on the release count that deploy could not
+    raise, and a middleware asked for a preview each step. The agent spent 58 of its 133
+    steps — 43% — alternating between them and ended cancelled by a human. Nothing in
+    the loop could recognise that the same sentence had come back unchanged.
+    """
+    class Blocked(Scripted):
+        async def completion_blocker(self, ctx):
+            return "release 1 subscriber turns failed: sub-b"
+
+    agent = make([Decision(text="done") for _ in range(20)], max_step=20)
+    agent.__class__ = type("BlockedProbe", (Blocked, type(agent)), {})
+
+    response = await agent("build the thing")
+    assert response.success is False
+    assert "Protocol blocker" in response.message
+    assert "sub-b" in response.message
+    # Landed on the threshold rather than burning the rest of the budget.
+    assert agent.step < 19, f"landed at step {agent.step}, budget was 20"
+
+
+@pytest.mark.asyncio
+async def test_a_blocker_that_keeps_changing_is_progress_and_is_not_cut_short():
+    """A moving gate means the run is getting somewhere; only a frozen one is stuck."""
+    class Moving(Scripted):
+        async def completion_blocker(self, ctx):
+            remaining = 8 - self.step
+            return f"{remaining} releases still required" if remaining > 0 else None
+
+    agent = make([Decision(text="done") for _ in range(20)], max_step=20)
+    agent.__class__ = type("MovingProbe", (Moving, type(agent)), {})
+
+    response = await agent("build the thing")
+    assert response.success is True, response.message

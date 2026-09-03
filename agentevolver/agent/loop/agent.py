@@ -29,7 +29,7 @@ imports this module.
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -227,6 +227,12 @@ class Agent(BaseModel):
         #: see each turn's spend exactly once.
         self._unspent_tokens = 0
         self._started_at = 0.0
+        #: How many consecutive completion attempts a single blocker has refused. A
+        #: contract gate that never opens is a protocol fault, and a run that cannot
+        #: name it as one spends its whole budget retrying: measured at 58 of 133 steps
+        #: alternating deploy and done against a gate whose input could not change.
+        self._blocker_repeats = 0
+        self._last_blocker = ""
 
     async def initialize(self) -> None:
         """Called once by the registry after construction."""
@@ -290,6 +296,10 @@ class Agent(BaseModel):
         self._truncated_turns = 0
         self._folds = 0
         self._unspent_tokens = 0
+        # Per-run, like everything above it: a resident process runs many turns, and a
+        # gate that blocked the previous one must not count against this one.
+        self._blocker_repeats = 0
+        self._last_blocker = ""
         await self._emit_start()
 
         for step in range(self.max_step):
@@ -342,6 +352,20 @@ class Agent(BaseModel):
 
             if decision.final:
                 blocker = await self.completion_blocker(ctx)
+                if blocker and self._stuck_on(blocker):
+                    # The same gate has refused this many times with nothing changing.
+                    # Landing here with the reason stated beats spending the remaining
+                    # budget retrying a gate whose input the agent cannot move.
+                    logger.error(
+                        f"| 🚧 [{self.name}] blocked {self._blocker_repeats}x by the same "
+                        f"contract gate; landing: {blocker}"
+                    )
+                    self.conversation.append(decision.as_assistant())
+                    await self._post_step(step, decision, ())
+                    return self._failed(
+                        f"Protocol blocker, unchanged after {self._blocker_repeats} "
+                        f"completion attempts: {blocker}"
+                    )
                 if blocker:
                     # Not finished after all. Recorded as an ordinary turn and answered
                     # in the live layer, so the model reads why and keeps working rather
@@ -508,6 +532,24 @@ class Agent(BaseModel):
         proceeds with.
         """
         return task, files
+
+    #: Completion attempts refused by an unchanged blocker before a run lands anyway.
+    MAX_BLOCKER_REPEATS: ClassVar[int] = 6
+
+    def _stuck_on(self, blocker: str) -> bool:
+        """Whether this exact blocker has refused too many times to be worth retrying.
+
+        Compared verbatim: a gate whose message changes is a gate whose input is moving,
+        and a run making progress toward it should not be cut short. What this catches is
+        the other shape — the identical sentence, step after step, because the thing it
+        waits for cannot happen.
+        """
+        if blocker != self._last_blocker:
+            self._last_blocker = blocker
+            self._blocker_repeats = 1
+            return False
+        self._blocker_repeats += 1
+        return self._blocker_repeats >= self.MAX_BLOCKER_REPEATS
 
     async def completion_blocker(self, ctx: Any) -> Optional[str]:
         """Why this run may not finish yet, or None to let it.

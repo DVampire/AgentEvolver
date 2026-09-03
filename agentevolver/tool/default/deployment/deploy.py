@@ -8,6 +8,7 @@ so this tool stays stable as new target types are added.
 
 import os
 import socket
+import time
 from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlsplit, urlunsplit
 
@@ -18,6 +19,12 @@ from agentevolver.logger import logger
 from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.types import Tool
+
+#: How long a release waits for an independent verdict before shipping without one.
+#: Absent acceptance is a quality fact recorded against the release; it is not a reason
+#: the pipeline may never move again. Long enough for a browser round to finish, short
+#: enough that a subscriber whose process died does not strand the run.
+ACCEPTANCE_TIMEOUT_S = 900.0
 
 _DESCRIPTION = "Deploy and manage web apps — from a one-call inline HTML page to a full frontend/backend project — each bound to a URL."
 
@@ -122,50 +129,125 @@ class DeployTool(Tool):
 
     @staticmethod
     def _previous_release_blocker(ctx: Any) -> str:
-        """Keep the release loop closed: observe feedback before publishing again."""
+        """Keep the release loop closed: observe feedback before publishing again.
+
+        Acceptance is keyed by (release, subscriber) and NOT by the subscriber's turn
+        number. Those were treated as the same thing — `turn_success[release_number]` —
+        on the assumption that a subscriber's Nth turn is always release N. A subscriber
+        that failed its first turn and was asked to try again produced turn 2, so
+        `turn_success[1]` stayed False for the rest of the run and no later release could
+        ever ship. Measured: 58 of 133 builder steps, 43% of the run, spent retrying
+        deploy and done against a gate that could not open.
+
+        Turn numbers are the runtime's own immutable record of how many times a process
+        ran. Which release a turn was *about* is a fact of this protocol, so this
+        protocol records it.
+        """
         extra = getattr(ctx, "extra", None) or {}
         contract = extra.get("website_runtime_contract")
         history = extra.get("deployment_release_history")
         if not isinstance(contract, dict) or not isinstance(history, list) or not history:
             return ""
 
-        from agentevolver.runtime import kernel
-
         release_number = len(history)
-        pending = []
-        failed = []
-        for job_id in contract.get("subscriber_job_ids") or []:
-            ref = kernel.get(str(job_id))
-            if (
-                ref is None
-                or not ref.alive
-                or ref.busy
-                or len(ref.mailbox)
-                or ref.turns < release_number
-            ):
-                pending.append(str(job_id))
-            elif ref.turn_success.get(release_number) is not True:
-                failed.append(str(job_id))
+        acceptance = DeployTool._release_acceptance(contract, release_number)
+        subscribers = [str(job_id) for job_id in contract.get("subscriber_job_ids") or []]
+
+        pending, failed = [], []
+        for job_id in subscribers:
+            state = DeployTool._acceptance_state(contract, release_number, job_id)
+            if state == "accepted":
+                continue
+            (failed if state == "failed" else pending).append(job_id)
+
         if pending:
-            return f"release {release_number} subscriber turns are not complete: " + ", ".join(
-                pending
+            waited = DeployTool._release_wait_seconds(contract, release_number)
+            if waited < ACCEPTANCE_TIMEOUT_S:
+                remaining = int(ACCEPTANCE_TIMEOUT_S - waited)
+                return (
+                    f"release {release_number} subscriber turns are not complete: "
+                    f"{', '.join(pending)} (waiting up to {remaining}s more)"
+                )
+            # Absent acceptance is a quality fact about the release, not a reason the
+            # deployment pipeline may never move again. It is recorded and the gate
+            # opens; the release history carries who never reported.
+            for job_id in pending:
+                acceptance[job_id] = {"status": "absent", "attempts": 0}
+            logger.warning(
+                f"| ⏳ release {release_number} proceeding without acceptance from "
+                f"{', '.join(pending)} after {int(waited)}s"
             )
+
         if failed:
-            return f"release {release_number} subscriber turns failed: " + ", ".join(failed)
+            return (
+                f"release {release_number} was rejected by {', '.join(failed)}. "
+                "Fix what they reported and ask the same subscriber to verify the fix "
+                "with send_message_tool; a passing retry replaces this verdict."
+            )
 
         collected = dict(contract.get("collected_turns") or {})
         unread = [
-            str(job_id)
-            for job_id in contract.get("subscriber_job_ids") or []
-            if int(collected.get(str(job_id)) or 0) < release_number
+            job_id for job_id in subscribers
+            if int(collected.get(job_id) or 0) < 1
         ]
         if unread:
             return (
-                f"release {release_number} feedback must be read with "
-                f"job__output(turn={release_number}) "
+                f"release {release_number} feedback must be read with job__output "
                 f"before another deploy: {', '.join(unread)}"
             )
         return ""
+
+    # -- acceptance, keyed by (release, subscriber) ---------------------------
+
+    @staticmethod
+    def _release_acceptance(contract: Dict[str, Any], release_number: int) -> Dict[str, Any]:
+        """The per-subscriber acceptance record for one release, created on demand."""
+        table = contract.setdefault("release_acceptance", {})
+        return table.setdefault(str(release_number), {})
+
+    @staticmethod
+    def _acceptance_state(
+        contract: Dict[str, Any], release_number: int, job_id: str
+    ) -> str:
+        """accepted / failed / absent / pending for one subscriber on one release."""
+        recorded = DeployTool._release_acceptance(contract, release_number).get(job_id)
+        if isinstance(recorded, dict):
+            return str(recorded.get("status") or "pending")
+        return "pending"
+
+    @staticmethod
+    def record_acceptance(
+        ctx: Any, job_id: str, *, success: bool, turn: int
+    ) -> str:
+        """Record what a subscriber said about the CURRENT release.
+
+        Called wherever a subscriber's turn is collected. A later attempt overwrites an
+        earlier verdict for the same release, which is what makes a rejection something
+        a run can recover from rather than a terminal state.
+        """
+        extra = getattr(ctx, "extra", None) or {}
+        contract = extra.get("website_runtime_contract")
+        history = extra.get("deployment_release_history")
+        if not isinstance(contract, dict) or not isinstance(history, list) or not history:
+            return ""
+        release_number = len(history)
+        acceptance = DeployTool._release_acceptance(contract, release_number)
+        previous = acceptance.get(str(job_id)) or {}
+        acceptance[str(job_id)] = {
+            "status": "accepted" if success else "failed",
+            "attempts": int(previous.get("attempts") or 0) + 1,
+            "turn": int(turn),
+        }
+        return acceptance[str(job_id)]["status"]
+
+    @staticmethod
+    def _release_wait_seconds(contract: Dict[str, Any], release_number: int) -> float:
+        """How long this release has been waiting for its first acceptance."""
+        started = contract.setdefault("release_wait_started", {})
+        key = str(release_number)
+        if key not in started:
+            started[key] = time.time()
+        return max(0.0, time.time() - float(started[key]))
 
     @staticmethod
     def _preview_site_id(site_id: str, ctx: Any) -> str:

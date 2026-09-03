@@ -529,23 +529,19 @@ class WebsiteBuilderAgent(MetaAgent):
                 f"{expected_fanout} subscribers"
             )
 
+        # The same acceptance table the deploy gate reads, for the same reason: a
+        # subscriber's turn number is not the release it was about, and binding them
+        # made a first rejection permanent in BOTH gates at once.
         from agentevolver.runtime import kernel
+        from agentevolver.tool.default.deployment.deploy import DeployTool
 
         release_turn = len(history)
-        pending = []
-        failed = []
+        pending, failed = [], []
         for pid in contract.get("subscriber_job_ids") or []:
-            subscriber = kernel.get(str(pid))
-            if (
-                subscriber is None
-                or not subscriber.alive
-                or subscriber.busy
-                or len(subscriber.mailbox)
-                or subscriber.turns < release_turn
-            ):
-                pending.append(str(pid))
-            elif subscriber.turn_success.get(release_turn) is not True:
-                failed.append(str(pid))
+            state = DeployTool._acceptance_state(contract, release_turn, str(pid))
+            if state in ("accepted", "absent"):
+                continue
+            (failed if state == "failed" else pending).append(str(pid))
         if pending:
             return (
                 f"release {release_turn} still awaits subscriber turn completion: "

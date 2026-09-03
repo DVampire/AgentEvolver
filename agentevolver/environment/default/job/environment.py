@@ -115,6 +115,21 @@ class JobEnvironment(Environment):
             int(collected.get(job_id) or 0),
             completed_turn,
         )
+        # Reading a subscriber's turn is also when this protocol learns what that
+        # subscriber said about the CURRENT release. Recorded against the release rather
+        # than inferred from the turn number: a subscriber asked to verify a fix runs a
+        # second turn about the SAME release, and binding the two made a first rejection
+        # permanent — no later release could ever ship.
+        try:
+            from agentevolver.tool.default.deployment.deploy import DeployTool
+
+            DeployTool.record_acceptance(
+                ctx, job_id,
+                success=bool(ref.turn_success.get(completed_turn)),
+                turn=completed_turn,
+            )
+        except Exception as error:  # noqa: BLE001 - reading output must not fail on this
+            logger.warning(f"| ⚠️ could not record release acceptance for {job_id}: {error}")
         return int(collected[job_id])
 
     # ------------------------------------------------------------------ actions
