@@ -237,7 +237,8 @@ def resolve_artifact(
         target_name: Component name, used for the staged-path fallback.
         artifact_path: A path the run passed as data rather than prose.
         reasoning: The run's ``done_tool`` reasoning.
-        extension_root: Root that relative paths are resolved against.
+        extension_root: Root that relative paths are resolved against, and the first
+            of the two staging roots the ``target_name`` fallback looks in.
         matches: Predicate deciding whether a prose mention could be this artifact.
 
     Returns:
@@ -281,7 +282,18 @@ def resolve_artifact(
     if target_name:
         from agentevolver.extension import extension_manager
         leaf = target_name if directory else f"{target_name}{suffix}"
-        return accept(extension_manager.stage_path(module, leaf))
+        # Both staging roots, nearest first. `extension_root` is the tree the prompt told
+        # this run to write into; `stage_path` is the configured root. They are the same
+        # path in a plain run and diverge whenever a session stages its own extension
+        # tree — and then a run that did exactly as instructed had its artifact declared
+        # missing, because only the root it was never shown was searched.
+        for candidate in (
+            os.path.join(extension_root, module, leaf) if extension_root else "",
+            extension_manager.stage_path(module, leaf),
+        ):
+            resolved = accept(candidate) if candidate else None
+            if resolved:
+                return resolved
     return None
 
 

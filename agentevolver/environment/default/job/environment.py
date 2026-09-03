@@ -71,14 +71,69 @@ class JobEnvironment(Environment):
 
         A bare "not found" leaves the agent guessing at a handle it is holding — usually
         one it mistyped, or one from a session that has since been forgotten.
+
+        Two registries answer to a job id and only one used to be asked. A backgrounded
+        command is a `job_manager` entry; a sub-agent is a kernel process, and a parent
+        holding a pid a dispatch returned has every reason to read its output with the
+        same action. Asking only `job_manager` made every such read fail before reaching
+        the rest of this action — including `_record_subscriber_collection`, the ONLY
+        writer of `collected_turns`, which `deploy_tool`'s gate requires. A release
+        therefore could not be published no matter what its subscribers reported, and the
+        error the parent saw named background commands rather than the process it asked
+        about.
         """
-        job = job_manager.get(job_id)
         owner = self._session(ctx)
+        job = job_manager.get(job_id)
         if job is not None and (not owner or job.session_id == owner):
             return job, None
+
+        process = self._as_job(job_id, owner)
+        if process is not None:
+            return process, None
+
         known = [j.id for j in job_manager.list(owner)]
         return None, _fail(
             f"No job {job_id!r}. This session has: {', '.join(known) if known else '(none)'}"
+        )
+
+    @staticmethod
+    def _as_job(job_id: str, owner: str):
+        """A kernel process, shaped like the job record this action reads.
+
+        Exactly the fields this action reads, each answered from the process's own
+        state rather than invented: a process has a state, a parent, a start time and an
+        error, and those map onto what the header prints. `truncated` is always False
+        because a turn result is a return value, not a captured stream that could have
+        been cut.
+
+        A sub-agent is visible to whoever can already address it: a pid comes from a
+        dispatch, so holding one is the permission. The session check that guards
+        `job_manager` does not transfer — a child runs in its own session by design, and
+        applying it would hide every sub-agent from the parent that started it.
+        """
+        import time
+        from types import SimpleNamespace
+
+        from agentevolver.runtime import kernel
+
+        process = kernel.get(str(job_id))
+        if process is None:
+            return None
+        ended = process.ended_at or time.time()
+        return SimpleNamespace(
+            id=process.pid,
+            status=SimpleNamespace(
+                value=process.state.value,
+                is_final=not process.alive,
+            ),
+            exit_code=(
+                None if process.alive
+                else (1 if process.error else 0)
+            ),
+            session_id=process.session_id,
+            elapsed=max(0.0, ended - (process.started_at or ended)),
+            truncated=False,
+            error=process.error or "",
         )
 
     @staticmethod
@@ -279,12 +334,11 @@ class JobEnvironment(Environment):
         if timeout <= 0 or timeout > 3600:
             return _fail("timeout must be greater than 0 and at most 3600 seconds")
 
-        owner = self._session(ctx)
         resolved = []
         for job_id in ids:
-            job = job_manager.get(job_id)
-            if job is None or (owner and job.session_id != owner):
-                return _fail(f"No background job {job_id!r} in this session")
+            job, failure = self._resolve(job_id, ctx)
+            if failure:
+                return failure
             resolved.append(job)
 
         def snapshots() -> tuple[List[Dict[str, Any]], bool, bool]:

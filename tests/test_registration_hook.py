@@ -705,3 +705,54 @@ def test_dispatch_and_the_plan_gate_look_up_all_seven():
     assert capability_type("environment") is None
     assert mounted_type("environment") is not None
     assert mounted_type("memory") is None, "memory is not mounted; it is merged into context"
+
+
+def test_the_fallback_looks_in_the_root_the_run_was_shown(bound_session, monkeypatch, tmp_path):
+    """A run that wrote where it was told must not be declared empty-handed.
+
+    The prompt names one staging tree — the session's own — and the configured
+    `extension_root` can be another. The `target_name` fallback consulted only the
+    configured one, so a run that followed its instructions exactly had its artifact
+    reported missing, and the live symptom was "Could not locate generated tool file"
+    for a file sitting on disk.
+    """
+    from agentevolver.extension import extension_manager
+
+    elsewhere = tmp_path / "configured_root"
+    monkeypatch.setattr(
+        extension_manager, "stage_path",
+        lambda module, leaf: str(elsewhere / module / leaf),
+    )
+    artifact = _staged(bound_session["extension"], "tool", "subscription_turn_tool.py")
+    artifact.write_text("# tool")
+
+    found = resolve_artifact(
+        module="tool",
+        target_name="subscription_turn_tool",
+        reasoning="Registered it.",
+        extension_root=str(bound_session["extension"]),
+        matches=_mentions("tool", component_type("tool")),
+    )
+    assert found == str(artifact)
+
+
+def test_the_fallback_still_looks_in_the_configured_root(bound_session, monkeypatch, tmp_path):
+    """The root that used to be the only one searched stays searched."""
+    from agentevolver.extension import extension_manager
+
+    configured = tmp_path / "configured_root"
+    artifact = _staged(configured, "tool", "subscription_turn_tool.py")
+    artifact.write_text("# tool")
+    monkeypatch.setattr(
+        extension_manager, "stage_path",
+        lambda module, leaf: str(configured / module / leaf),
+    )
+
+    found = resolve_artifact(
+        module="tool",
+        target_name="subscription_turn_tool",
+        reasoning="Registered it.",
+        extension_root=str(bound_session["extension"]),
+        matches=_mentions("tool", component_type("tool")),
+    )
+    assert found == str(artifact)
