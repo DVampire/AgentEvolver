@@ -120,6 +120,16 @@ class Agent(BaseModel):
     #: granted. A publisher does not know its subscribers, and two peers have no edge at
     #: all, so per-process granting cannot reach the topologies that need it most.
     #: Declaring in advance needs no edge and stays reviewable: this line, in this file.
+    #:
+    #: What is accepted is PROVISIONAL. A component is live the moment it registers —
+    #: there is no candidate pool and no promotion step — so acceptance hands over
+    #: something that has not been evaluated yet, and may still be rolled back. That is
+    #: the framework's register-is-live contract rather than a gap here, but it means
+    #: this field says "I will work with what this run produces", not "I will work with
+    #: what this run has proven".
+    #:
+    #: A name that later unloads stays in the list and is simply skipped: a roster is
+    #: built from what is registered, so a dead name reaches no model.
     accepts_evolved: List[str] = Field(default=[])
 
     # -- route capabilities this agent opts into. Declared per agent because they change

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from agentevolver.hook.events import HookEvent
 from agentevolver.logger import logger
@@ -352,6 +352,24 @@ class Process:
     # Reporting
     # ------------------------------------------------------------------
 
+    def _grants(self) -> Dict[str, List[str]]:
+        """The allowlists this process was granted, as opposed to defaulted.
+
+        Reads the marker the router writes, so a default derived from the agent's class
+        field is not reported as a grant — the distinction is the whole point of the
+        marker, and a listing that blurred it would say every restricted agent had been
+        granted its own restriction.
+        """
+        extra = getattr(self.ctx, "extra", None)
+        if not isinstance(extra, dict):
+            return {}
+        granted = extra.get("_granted_allowlists") or ()
+        return {
+            key: [str(item) for item in (extra.get(key) or ())]
+            for key in granted
+            if isinstance(extra.get(key), (list, tuple))
+        }
+
     def snapshot(self) -> Dict[str, Any]:
         """A small, JSON-safe view for ``ps``-style listings and the UI."""
         return {
@@ -370,6 +388,11 @@ class Process:
             "busy": self.busy,
             "queued": len(self.mailbox),
             "topics": list(self._kernel.topics_of(self.pid)) if self._kernel else [],
+            # What this process was granted beyond what its agent declares. A grant is
+            # written into the process's own context, so without this there is no way to
+            # answer "which processes hold the capability this run just evolved" — the
+            # record exists but nothing surfaces it.
+            "grants": self._grants(),
             "started_at": self.started_at,
             "ended_at": self.ended_at,
             "error": self.error,

@@ -69,7 +69,11 @@ def _child_ctx(name, session="s1"):
 async def test_star_one_orchestrator_many_responders(kernel):
     """Hub and spoke. Request/reply, fanned out and collected."""
     workers = [Node(name=f"w{index}") for index in range(4)]
-    hub = await kernel.spawn(Node("hub", steps=8), "coordinate", ctx=_root())
+    # SERVICE for the same reason the pipeline's head is one: an orchestrator that exits
+    # reaps its children, and a test that waits on them must not race that.
+    hub = await kernel.spawn(
+        Node("hub", steps=2), "coordinate", mode=InteractionMode.SERVICE, ctx=_root(),
+    )
     procs = [
         await kernel.spawn(w, f"job {index}", parent=hub,
                            mode=InteractionMode.RESPONDER)
@@ -84,9 +88,13 @@ async def test_star_one_orchestrator_many_responders(kernel):
 async def test_tree_orchestrators_nest(kernel):
     """A child that dispatches its own children. Depth is not special-cased."""
     leaf = Node("leaf")
-    middle = Node("middle", steps=6)
-    root = await kernel.spawn(Node("root", steps=10), "top", ctx=_root())
-    mid_proc = await kernel.spawn(middle, "middle work", parent=root)
+    middle = Node("middle", steps=2)
+    root = await kernel.spawn(
+        Node("root", steps=2), "top", mode=InteractionMode.SERVICE, ctx=_root(),
+    )
+    mid_proc = await kernel.spawn(
+        middle, "middle work", mode=InteractionMode.SERVICE, parent=root,
+    )
     leaf_proc = await kernel.spawn(leaf, "leaf work", parent=mid_proc)
 
     assert await kernel.wait(leaf_proc, timeout=5) == "leaf:done"
@@ -97,13 +105,45 @@ async def test_tree_orchestrators_nest(kernel):
 
 @pytest.mark.asyncio
 async def test_pipeline_each_stage_dispatches_the_next(kernel):
-    """A chain. Expressed as a degenerate tree, so nothing new is needed."""
-    stages = [Node(f"stage{index}", steps=4) for index in range(3)]
-    parent = await kernel.spawn(Node("source", steps=12), "start", ctx=_root())
+    """A chain, where each stage outlives the one it started.
+
+    That is not a detail of the test: a dispatching parent must outlive its child,
+    because `_exit` reaps whatever a process spawned. An intermediate stage that answers
+    and exits takes the rest of the chain down with it, so every stage but the last is a
+    SERVICE — it parks rather than finishing, which is what "waiting on the next stage"
+    means in process terms.
+    """
+    stages = [Node(f"stage{index}", steps=2) for index in range(3)]
+    parent = await kernel.spawn(
+        Node("source", steps=2), "start", mode=InteractionMode.SERVICE, ctx=_root(),
+    )
     for index, stage in enumerate(stages):
-        parent = await kernel.spawn(stage, f"stage {index} input", parent=parent)
+        last = index == len(stages) - 1
+        parent = await kernel.spawn(
+            stage, f"stage {index} input", parent=parent,
+            mode=InteractionMode.RESPONDER if last else InteractionMode.SERVICE,
+        )
     assert await kernel.wait(parent, timeout=5) == "stage2:done"
     assert [s.turns[0] for s in stages] == [f"stage {i} input" for i in range(3)]
+
+
+@pytest.mark.asyncio
+async def test_a_parent_that_exits_takes_its_children_with_it(kernel):
+    """The property the pipeline has to respect, stated on its own.
+
+    Supervision, not a leak: nobody is left to collect a child whose parent is gone. It
+    is also the sharpest edge in composing topologies — an orchestrator that answers and
+    exits while its children are still working destroys their work, and the failure
+    reads as a child that never finished.
+    """
+    orphan = Node("orphan", steps=60, sleep=0.02)
+    parent = await kernel.spawn(Node("brief", steps=1), "answer fast", ctx=_root())
+    child = await kernel.spawn(orphan, "long job", parent=parent)
+
+    assert await kernel.wait(parent, timeout=5) == "brief:done"
+    await asyncio.sleep(0.1)
+    assert not child.alive, "a child outliving its parent would have no collector"
+    assert len(orphan.turns) == 1 and orphan.turns[0] == "long job"
 
 
 @pytest.mark.asyncio
@@ -114,7 +154,9 @@ async def test_scatter_gather_collects_children_as_they_finish(kernel):
     SIGCHLD analogue — so the collecting half needs no mechanism of its own.
     """
     collector = Node("collector", steps=20, sleep=0.02)
-    parent = await kernel.spawn(collector, "gather", ctx=_root())
+    parent = await kernel.spawn(
+        collector, "gather", mode=InteractionMode.SERVICE, ctx=_root(),
+    )
     for index in range(3):
         await kernel.spawn(Node(f"leaf{index}"), f"part {index}", parent=parent)
     await asyncio.sleep(0.45)
@@ -131,7 +173,8 @@ async def test_scatter_gather_collects_children_as_they_finish(kernel):
 async def test_bus_one_publisher_many_subscribers(kernel):
     """Publish/subscribe. The publisher never learns who listened."""
     root = _root()
-    hub = await kernel.spawn(Node("hub", steps=12), "publish later", ctx=root)
+    hub = await kernel.spawn(Node("hub", steps=12), "publish later",
+                             mode=InteractionMode.SERVICE, ctx=root)
     listeners = [Node(f"sub{index}") for index in range(3)]
     for index, listener in enumerate(listeners):
         await kernel.spawn(
@@ -155,14 +198,16 @@ async def test_bus_one_publisher_many_subscribers(kernel):
 async def test_bus_many_publishers_reach_the_same_listeners(kernel):
     """Many-to-many. Any process in the task tree may publish."""
     root = _root()
-    hub = await kernel.spawn(Node("hub", steps=14), "x", ctx=root)
+    hub = await kernel.spawn(Node("hub", steps=14), "x",
+                             mode=InteractionMode.SERVICE, ctx=root)
     listener = Node("listener", steps=2)
     await kernel.spawn(
         listener, "brief", mode=InteractionMode.SUBSCRIBER,
         ctx=_child_ctx("listener"), parent=hub, topics=["bus"],
     )
     speaker_ctx = _child_ctx("speaker")
-    await kernel.spawn(Node("speaker", steps=10), "y", ctx=speaker_ctx, parent=hub)
+    await kernel.spawn(Node("speaker", steps=10), "y",
+                       mode=InteractionMode.SERVICE, ctx=speaker_ctx, parent=hub)
     await asyncio.sleep(0.05)
 
     # Once from the hub's context, once from a sibling's. Same topic, same listener.
@@ -182,7 +227,8 @@ async def test_mesh_peers_reach_each_other_over_the_bus(kernel):
     peer addressing costs no expressiveness.
     """
     root = _root()
-    hub = await kernel.spawn(Node("hub", steps=14), "x", ctx=root)
+    hub = await kernel.spawn(Node("hub", steps=14), "x",
+                             mode=InteractionMode.SERVICE, ctx=root)
     a, b = Node("A", steps=2), Node("B", steps=2)
     ctx_a, ctx_b = _child_ctx("A"), _child_ctx("B")
     proc_a = await kernel.spawn(a, "I am A", mode=InteractionMode.SUBSCRIBER,
@@ -212,7 +258,8 @@ async def test_competing_consumers_spread_work_across_a_pool(kernel):
     pool. `assign` is the delivery discipline that asks who is free.
     """
     root = _root()
-    hub = await kernel.spawn(Node("hub", steps=20, sleep=0.02), "x", ctx=root)
+    hub = await kernel.spawn(Node("hub", steps=20, sleep=0.02), "x",
+                             mode=InteractionMode.SERVICE, ctx=root)
     pool = [Node(f"w{index}", steps=1) for index in range(3)]
     for index, worker in enumerate(pool):
         await kernel.spawn(
@@ -255,7 +302,8 @@ async def test_a_child_can_ask_its_parent_and_be_answered(kernel):
             answer["said"] = await self.proc.ask_parent("which way?", timeout=5)
             return "asked"
 
-    parent = await kernel.spawn(Node("parent", steps=20, sleep=0.02), "x", ctx=_root())
+    parent = await kernel.spawn(Node("parent", steps=20, sleep=0.02), "x",
+                              mode=InteractionMode.SERVICE, ctx=_root())
     child = await kernel.spawn(Asker("asker"), "decide", parent=parent)
     await asyncio.sleep(0.1)
     assert await kernel.reply(child, "left")
@@ -287,8 +335,12 @@ async def test_the_dispatch_graph_stays_acyclic(kernel):
     Cycles between participants are expressible on the bus, where they belong: a topic
     edge carries no lifecycle, so A answering B answering A supervises nothing.
     """
-    root = await kernel.spawn(Node("root", steps=10), "x", ctx=_root())
-    child = await kernel.spawn(Node("child", steps=6), "y", parent=root)
+    root = await kernel.spawn(
+        Node("root", steps=2), "x", mode=InteractionMode.SERVICE, ctx=_root(),
+    )
+    child = await kernel.spawn(
+        Node("child", steps=2), "y", mode=InteractionMode.SERVICE, parent=root,
+    )
     grandchild = await kernel.spawn(Node("grand", steps=2), "z", parent=child)
 
     seen, cursor = set(), grandchild
@@ -309,7 +361,9 @@ async def test_a_peer_pid_is_reachable_but_not_handed_out(kernel):
     rather than an accident.
     """
     root = _root()
-    a = await kernel.spawn(Node("A", steps=8), "x", ctx=root)
+    a = await kernel.spawn(
+        Node("A", steps=8), "x", mode=InteractionMode.SERVICE, ctx=root,
+    )
     b = Node("B", steps=8)
     proc_b = await kernel.spawn(b, "y", mode=InteractionMode.SERVICE, ctx=root)
     await asyncio.sleep(0.05)

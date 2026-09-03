@@ -1,6 +1,6 @@
 """WebsiteUserAgent — a browser-only visitor that reports back what using the site is like."""
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from pydantic import Field
 
@@ -26,6 +26,14 @@ class WebsiteUserAgent(BrowserAgent):
         default={"role": "website_user", "browser_only": True}
     )
     prompt_name: str = Field(default="website_user_agent")
+    #: Inherited from `BrowserAgent`, and correct here for a different reason. A
+    #: participant is a visitor: it must keep meeting the product through the page,
+    #: which is what makes its account of the product worth anything. So no skill, no
+    #: connector, no shell — but an instrument built during the run to describe what it
+    #: actually experienced is not a shortcut past the UI, it is a way to report on the
+    #: UI precisely. A run cannot hand it over by name either, because a publisher does
+    #: not know which participants are listening.
+    accepts_evolved: List[str] = Field(default=["tool"])
 
 
 __all__ = ["WebsiteUserAgent"]

@@ -103,6 +103,73 @@ Two properties hold the whole arrangement together:
 
 `agentevolver/hook/README.md` draws every event's position relative to these phases.
 
+## Capability sync: one store, three ways in
+
+A component evolved mid-run has to reach the participants that need it. Two different
+things travel, and only one of them is a problem.
+
+**Visibility is already solved, in every topology.** Registering a component moves
+`extension_manager.capability_revision`, every roster is keyed on it, and each process
+rebuilds on its next step. That is a broadcast: it does not ask who exists, so dispatch
+and subscription are served identically and nothing needs arranging.
+
+**Permission is the design.** A roster bound by `capability_allowlists` states an
+isolation contract — a website visitor holds one tool and must keep meeting the product
+through the page — so a component that did not exist when the contract was written cannot
+enter it by itself. Permission lives in one place, the process's own context, and there
+are three ways to write it. Which one applies is decided by two questions:
+
+```
+                         does the process exist yet?
+                                    │
+              ┌─────────────────────┴─────────────────────┐
+             no                                          yes
+              │                                           │
+     ① with its creation                        can the granter address it?
+       dispatch args carry                                │
+       tool_allowlist, …                    ┌─────────────┴─────────────┐
+                                           yes                          no
+                                            │                            │
+                                  ② by pid, afterwards        ③ declared in advance
+                                    evolution_tool grant        accepts_evolved
+```
+
+| Mode | Exists when evolved? | Addressable? | Path |
+|---|---|---|---|
+| `RESPONDER` | no — the dispatch comes after | — | ① |
+| `SERVICE` | yes | yes, a pid is how it is addressed at all | ② |
+| `SUBSCRIBER` spawned by the granter | yes | yes, via `children()` | ② |
+| `SUBSCRIBER` spawned by someone else | yes | **no** | ③ |
+
+`RESPONDER` has no sync problem: the grant rides with the dispatch, so the ordering is
+right by construction. The last row is the only hole, and only ③ can close it — a grant
+needs an edge between granter and granted, and a publisher deliberately has none to its
+subscribers. Declaring in advance needs no edge.
+
+### What acceptance actually promises
+
+Acceptance is **provisional**. A component is live the moment it registers — there is no
+candidate pool and no promotion step — so a declared type admits something that has not
+been evaluated and may still be rolled back. That is the register-is-live contract rather
+than a gap, but it means `accepts_evolved` says "I will work with what this run
+produces", not "with what this run has proven".
+
+A granted name whose component later unloads stays in the list and is skipped: a roster
+is built from what is registered, so a dead name reaches no model. The alternative — a
+scope that raises once a component unloads — would take down every step of every process
+that had been granted it.
+
+### Who declares what
+
+`accepts_evolved` is a field, so it can be set in two places that mean different things.
+An actor states the conservative default, because the isolation contract is a property of
+the role and should be legible in the file that defines it. A config may widen it for one
+deployment without editing the framework.
+
+`Process.snapshot()` reports grants separately from defaults, so a listing can answer
+which processes hold what a run evolved. Only grants: reporting a default as a grant
+would say every restricted agent had been granted its own restriction.
+
 ## Two channels, and what is on neither
 
 Signals are preemptive and coalescing: a process told to stop three times stops once, and

@@ -221,3 +221,142 @@ async def test_granting_to_a_process_that_is_not_there_is_refused(monkeypatch):
     )
     assert result.success is False
     assert "no live process" in result.message
+
+
+# ---------------------------------------------------------------------------
+# Declared acceptance: the path that needs no edge
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_declared_type_admits_components_registered_during_the_run(router, monkeypatch):
+    """The path that reaches a subscriber, which no grant can address.
+
+    A publisher does not know who listens — that is what the indirection is for — so a
+    component evolved mid-run cannot be handed to a listening process by name. Declaring
+    a type in advance needs no edge at all.
+    """
+    from agentevolver.extension import extension_manager
+    from agentevolver.extension.types import Manifest, ManifestComponent
+
+    monkeypatch.setattr(
+        extension_manager, "read_manifest",
+        lambda: Manifest(components=[
+            ManifestComponent(module="tool", name="inspect_tool",
+                              version="1.0.0", file="tool/inspect_tool.py"),
+        ]),
+    )
+    closed = _isolated_agent()
+    closed.accepts_evolved = []
+    opened = _isolated_agent()
+    opened.accepts_evolved = ["tool"]
+
+    assert await _tools(router, closed, _ctx("closed")) == ["done_tool"]
+    assert await _tools(router, opened, _ctx("opened")) == ["done_tool", "inspect_tool"]
+
+
+@pytest.mark.asyncio
+async def test_acceptance_does_not_widen_a_type_that_was_not_declared(router, monkeypatch):
+    """A browser agent accepts tools and not skills, and the difference has to hold.
+
+    A skill would let it read the source instead of using the product, which is the one
+    thing that makes its account of the product worth having.
+    """
+    from agentevolver.extension import extension_manager
+    from agentevolver.extension.types import Manifest, ManifestComponent
+
+    monkeypatch.setattr(
+        extension_manager, "read_manifest",
+        lambda: Manifest(components=[
+            ManifestComponent(module="skill", name="read_the_source_skill",
+                              version="1.0.0", file="skill/read_the_source_skill"),
+        ]),
+    )
+    agent = _isolated_agent()
+    agent.capability_allowlists = {"tool": ["done_tool"], "skill": []}
+    agent.accepts_evolved = ["tool"]
+
+    ctx = _ctx("typed")
+    await router.schemas(agent, ctx)
+    assert ctx.extra["skill_allowlist"] == [], "an undeclared type stays closed"
+
+
+@pytest.mark.asyncio
+async def test_a_name_that_unloaded_is_skipped_rather_than_fatal(router):
+    """A grant writes a name; the component behind it may be rolled back later.
+
+    A roster is built from what is registered, so the dead name simply does not appear.
+    Asserted because the alternative — a scope that raises once a component unloads —
+    would take down every step of every process that had been granted it.
+    """
+    agent = _isolated_agent()
+    ctx = _ctx("dead-name")
+    ctx.extra["tool_allowlist"] = ["done_tool", "ghost_tool_that_was_unloaded"]
+    grant(ctx.extra, "tool_allowlist")
+    assert await _tools(router, agent, ctx) == ["done_tool"]
+
+    ctx.extra["tool_allowlist"] = ["ghost_a", "ghost_b"]
+    assert await _tools(router, agent, ctx) == [], "all-dead is empty, not an error"
+
+
+def test_the_browser_roles_accept_tools_and_nothing_else():
+    """The two roles that most need this, and the one type they may safely take."""
+    import agentevolver.agent  # noqa: F401 - registers the actors
+    from agentevolver.registry import AGENT
+
+    for name in ("BrowserAgent", "WebsiteUserAgent"):
+        agent = AGENT.get(name)(base_dir="")
+        assert agent.accepts_evolved == ["tool"], name
+        assert agent.capability_allowlists["tool"] == ["done_tool"], name
+        assert agent.capability_allowlists["skill"] == [], name
+
+
+def test_an_unrestricted_agent_declares_nothing():
+    """An empty allowlist already means everything; declaring acceptance would be noise."""
+    import agentevolver.agent  # noqa: F401 - registers the actors
+    from agentevolver.registry import AGENT
+
+    for name in ("MetaAgent", "CodeAgent", "WebsiteBuilderAgent"):
+        agent = AGENT.get(name)(base_dir="")
+        assert agent.accepts_evolved == [], name
+        assert not agent.capability_allowlists.get("tool"), name
+
+
+@pytest.mark.asyncio
+async def test_a_listing_reports_grants_but_not_defaults():
+    """`ps` should answer "who holds what this run evolved".
+
+    Only grants: reporting a default as a grant would say every restricted agent had
+    been granted its own restriction, which is the distinction the marker exists for.
+    """
+    from agentevolver.runtime.kernel import Kernel
+    from agentevolver.runtime.modes import InteractionMode
+
+    class Idler:
+        name = "visitor"
+
+        async def __call__(self, task, files=None, ctx=None, **kwargs):
+            for _ in range(8):
+                await self.proc.gate()
+                await asyncio.sleep(0.03)
+            return "ok"
+
+        async def on_event(self, envelope, proc):
+            pass
+
+    kernel = Kernel()
+    try:
+        ctx = AgentContext(name="v", extra={})
+        proc = await kernel.spawn(
+            Idler(), "x", mode=InteractionMode.SERVICE, ctx=ctx,
+        )
+        await asyncio.sleep(0.05)
+        assert proc.snapshot()["grants"] == {}
+
+        ctx.extra["tool_allowlist"] = ["done_tool", "media_probe_tool"]
+        grant(ctx.extra, "tool_allowlist")
+        assert proc.snapshot()["grants"] == {
+            "tool_allowlist": ["done_tool", "media_probe_tool"],
+        }
+    finally:
+        await kernel.shutdown(timeout=5)

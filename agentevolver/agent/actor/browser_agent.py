@@ -59,6 +59,20 @@ class BrowserAgent(Agent):
         "plugin": [],
         "workflow": [],
     })
+    #: Tools evolved during a run join this roster; nothing else does.
+    #:
+    #: A browser agent judges a product the way a person would, so it has to keep
+    #: reaching it only through the page — no shell, no workspace, and no skill that
+    #: would let it read the source instead of using the thing. Those stay excluded.
+    #:
+    #: A tool is the exception because the gap it closes here is real and cannot be
+    #: closed any other way. This agent found that a release's video would not play and
+    #: could not say how long that video was, what codec it used, or how large it was:
+    #: it has no shell, so `ffprobe` existing on the host means nothing to it, and it had
+    #: to take the builder's word — which its own instructions tell it never to do. A run
+    #: that evolves an instrument for exactly that can hand it over, and does not have to
+    #: know this process is listening in order to.
+    accepts_evolved: List[str] = Field(default=["tool"])
 
     def __init__(self, base_dir: str = "", **kwargs: Any) -> None:
         super().__init__(base_dir=base_dir, **kwargs)
