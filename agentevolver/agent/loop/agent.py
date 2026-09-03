@@ -122,6 +122,23 @@ class Agent(BaseModel):
     compact_output_tokens: int = Field(
         default=2048, description="Size budget for a checkpoint summary."
     )
+    # The fold policy, declared rather than inherited. These were accepted by
+    # `extra="allow"` and never read: the agent took the shared module-level assembler
+    # and rebuilt it only when `compact_output_tokens` differed, so a config asking to
+    # fold at 60k folded at the shared default of 100k and nothing said otherwise.
+    # `None` means "whatever the shared assembler was built with".
+    compact_body_tokens: Optional[int] = Field(
+        default=None, description="Fold once history's body exceeds this many tokens."
+    )
+    retain_recent_steps: Optional[int] = Field(
+        default=None, description="Whole turns kept verbatim after a fold."
+    )
+    compact_after_steps: Optional[int] = Field(
+        default=None, description="Fold once history holds this many turns."
+    )
+    fold_at_pressure: Optional[float] = Field(
+        default=None, description="Fold once the request fills this share of the window."
+    )
     memory_name: str = Field(
         default="", description="Memory backend this agent reads and writes."
     )
@@ -155,18 +172,33 @@ class Agent(BaseModel):
             include_agents=self.include_agents
         )
         self.assembler: ContextAssembler = kwargs.get("assembler") or context_assembler
-        # One budget, not two: the agent declares it and the assembler enforces it, so a
-        # config that raises the checkpoint size cannot be silently overruled by the
-        # shared default the assembler was constructed with.
-        if self.compact_output_tokens != self.assembler.compact_output_tokens:
+        # One policy, not two: whatever this agent declares wins over the shared
+        # assembler's default, and an undeclared field keeps that default. Rebuilt only
+        # when something actually differs, so agents that declare nothing keep sharing
+        # one object.
+        declared = {
+            "retain_turns": self.retain_recent_steps,
+            "compact_after_turns": self.compact_after_steps,
+            "compact_body_tokens": self.compact_body_tokens,
+            "fold_at_pressure": self.fold_at_pressure,
+            "compact_output_tokens": self.compact_output_tokens,
+        }
+        settings = {
+            "retain_turns": self.assembler.retain_turns,
+            "compact_after_turns": self.assembler.compact_after_turns,
+            "compact_body_tokens": self.assembler.compact_body_tokens,
+            "fold_at_pressure": self.assembler.fold_at_pressure,
+            "compact_output_tokens": self.assembler.compact_output_tokens,
+        }
+        overrides = {
+            key: value for key, value in declared.items()
+            if value is not None and value != settings[key]
+        }
+        if overrides:
             self.assembler = ContextAssembler(
-                retain_turns=self.assembler.retain_turns,
-                compact_after_turns=self.assembler.compact_after_turns,
-                compact_body_tokens=self.assembler.compact_body_tokens,
-                fold_at_pressure=self.assembler.fold_at_pressure,
+                **{**settings, **overrides},
                 max_folds=self.assembler.max_folds,
                 context_window=self.assembler.context_window,
-                compact_output_tokens=self.compact_output_tokens,
             )
         self.executor = ActionExecutor(self.router)
         #: Step middleware. Each is ``async (agent, step) -> str``; what it returns rides

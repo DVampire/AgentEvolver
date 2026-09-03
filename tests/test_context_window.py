@@ -270,3 +270,65 @@ def test_the_compaction_policy_carries_all_four_signals_to_the_model_layer():
         "retain_recent_steps", "compact_after_steps",
         "compact_body_tokens", "fold_at_pressure",
     }
+
+
+# ---------------------------------------------------------------------------
+# A declared fold policy has to reach the assembler
+# ---------------------------------------------------------------------------
+
+
+def test_a_declared_fold_policy_overrides_the_shared_default():
+    """`extra="allow"` accepts any field, which is why this could look configured.
+
+    The agent took the shared module-level assembler and rebuilt it only when
+    `compact_output_tokens` differed, so `compact_body_tokens`, `retain_recent_steps`,
+    `compact_after_steps` and `fold_at_pressure` were stored on the model and never
+    read. A config asking to fold at 60k folded at the shared default of 100k, and a
+    live run's context climbed past 100k with the tuning apparently in place — the same
+    shape as the `env_name` field three configs set and a property silently overruled.
+    """
+    from tests.agent_probe import AgentProbe
+
+    agent = AgentProbe(
+        base_dir="",
+        compact_body_tokens=60_000,
+        retain_recent_steps=2,
+        compact_after_steps=9,
+        fold_at_pressure=0.7,
+    )
+    assert agent.assembler.compact_body_tokens == 60_000
+    assert agent.assembler.retain_turns == 2
+    assert agent.assembler.compact_after_turns == 9
+    assert agent.assembler.fold_at_pressure == 0.7
+
+
+def test_an_agent_that_declares_nothing_keeps_sharing_one_assembler():
+    """Rebuilding per agent would multiply a shared object for no reason."""
+    from agentevolver.agent.context import context_assembler
+    from tests.agent_probe import AgentProbe
+
+    assert AgentProbe(base_dir="").assembler is context_assembler
+
+
+def test_declaring_the_same_values_is_not_an_override():
+    """Equality, not presence, decides — restating a default must not fork the object."""
+    from agentevolver.agent.context import context_assembler
+    from tests.agent_probe import AgentProbe
+
+    agent = AgentProbe(
+        base_dir="",
+        compact_body_tokens=context_assembler.compact_body_tokens,
+        fold_at_pressure=context_assembler.fold_at_pressure,
+    )
+    assert agent.assembler is context_assembler
+
+
+def test_a_declared_policy_actually_changes_when_history_folds():
+    """The point of the field is the decision it drives, not the number it stores."""
+    from tests.agent_probe import AgentProbe
+
+    patient = AgentProbe(base_dir="", compact_body_tokens=10**9)
+    eager = AgentProbe(base_dir="", compact_body_tokens=1)
+    held = conversation(turns=6)
+    assert eager.assembler.fold_reason(held) != ""
+    assert "body" not in patient.assembler.fold_reason(held)
