@@ -577,6 +577,44 @@ class DeploymentManagerServer(BaseModel):
         await self._ensure_initialized()
         return self._sites.get(site_id)
 
+    # -- name-addressed sites -------------------------------------------------
+
+    def resolve_port(self, name: str) -> Optional[int]:
+        """The port a site name answers on right now, or None.
+
+        Deliberately synchronous and lock-free: it is called per HTTP request by the
+        gateway's relay, and it reads one dict.
+
+        A site's PORT changes on every redeploy — the deployer asks for a free one — so
+        an address built from a port dies with the release that minted it. Every
+        participant in the website scenario is asked to come back to an ark they visited
+        before, and every one of them was handed a different URL each round instead. The
+        name is the stable identity; the port is an implementation detail behind it.
+
+        `<site>--r<n>` addresses one exact release, which is what an independent
+        acceptance worker needs: a verdict on "the current site" is not a verdict on the
+        release it was asked about.
+        """
+        record = self._sites.get(name)
+        if record is None and "--r" in name:
+            base, _, suffix = name.rpartition("--r")
+            if suffix.isdigit():
+                record = self._sites.get(base)
+                if record is not None and str(
+                    getattr(record, "release_number", "")
+                ) != suffix:
+                    return None
+        if record is None or record.status is not SiteStatus.RUNNING:
+            return None
+        return int(record.port) if record.port else None
+
+    def public_names(self) -> List[str]:
+        """Every name that currently resolves, for diagnostics and the 404 body."""
+        return sorted(
+            name for name, rec in self._sites.items()
+            if rec.status is SiteStatus.RUNNING and rec.port
+        )
+
     async def stop_site(self, site_id: str) -> SiteRecord:
         await self._ensure_initialized()
         rec = self._sites.get(site_id)

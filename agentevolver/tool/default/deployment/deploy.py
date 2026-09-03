@@ -125,7 +125,29 @@ class DeployTool(Tool):
                     parsed.fragment,
                 )
             )
+        urls.update(DeployTool._named_urls(rec))
         return urls
+
+    @staticmethod
+    def _named_urls(rec) -> Dict[str, str]:
+        """The address that outlives this deployment, when a gateway can serve it.
+
+        `site_url` follows the site across releases; `release_url` pins this one. Both go
+        through the gateway rather than at a port, because the port is chosen fresh on
+        every redeploy — an address built from one names a deployment, not a site, and
+        every link handed out with it stops working at the next release.
+
+        Absent a gateway base, nothing is added: a caller then sees only the port-based
+        URLs it always saw, rather than an address that resolves nowhere.
+        """
+        base = (os.environ.get("GATEWAY_PUBLIC_BASE") or "").strip().rstrip("/")
+        if not base or not rec.site_id:
+            return {}
+        named = {"site_url": f"{base}/s/{rec.site_id}/"}
+        release = int(getattr(rec, "release_number", 0) or 0)
+        if release:
+            named["release_url"] = f"{base}/s/{rec.site_id}--r{release}/"
+        return named
 
     @staticmethod
     def _previous_release_blocker(ctx: Any) -> str:
@@ -288,6 +310,12 @@ class DeployTool(Tool):
             history = []
             extra["deployment_release_history"] = history
         release_number = len(history) + 1
+        # Stamped on the record so `/s/<site>--r<n>` can address this exact release
+        # after the name has moved on to the next one.
+        try:
+            rec.release_number = release_number
+        except Exception:  # noqa: BLE001 - a stamp must not fail a publish
+            pass
         payload = {
             "release_number": release_number,
             "action": action,

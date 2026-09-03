@@ -147,6 +147,14 @@ class SiteRecord(BaseModel):
         default="",
         description="Stable SHA-256 identity of the source material used for this release.",
     )
+    release_number: int = Field(
+        default=0,
+        description=(
+            "Which release of this site is currently serving, so `/s/<site>--r<n>` can "
+            "address one exactly. An independent verdict is about a release, not about "
+            "whatever the name happens to point at when the verdict is read."
+        ),
+    )
     created_at: str = ""
     updated_at: str = ""
     error: Optional[str] = None
