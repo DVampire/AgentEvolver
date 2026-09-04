@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import shlex
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -63,6 +64,11 @@ _SKIP_DIRS = {
 }
 _SANDBOX_KIND = "opensandbox"
 
+# How long a lazily-started older release keeps running after its last request. Long
+# enough to read a page and click through it; short enough that comparing six releases
+# does not leave six servers behind.
+_RELEASE_IDLE_S = 900.0
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -74,6 +80,8 @@ class DeploymentManagerServer(BaseModel):
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
         self._sites: Dict[str, SiteRecord] = {}
+        # Last time each on-demand release was asked for, so idle ones can be reclaimed.
+        self._release_seen: Dict[str, float] = {}
         # Site ids created or redeployed by this process. Global teardown must not stop
         # a persisted deployment merely because another run loaded its registry record.
         self._owned_sites: set[str] = set()
@@ -185,6 +193,45 @@ class DeploymentManagerServer(BaseModel):
         sites = path_manager.resolve_under(base, "sites")
         site = path_manager.resolve_under(sites, site_id)
         return str(path_manager.resolve_under(site, "app"))
+
+    def _release_dir(self, site_id: str, release: int) -> str:
+        """Where release ``n`` of ``site_id`` keeps its own copy of the source.
+
+        A release has to be a thing that exists, not just a number. The agent edits its
+        workspace in place, the staging tree is wiped on every redeploy, and the registry
+        holds one record per site — so before this, the moment release n+1 landed, every
+        earlier release's bytes were gone from the machine entirely. `--r<n>` could only
+        ever have answered for whatever was current.
+        """
+        base = (
+            os.path.dirname(self._registry_path)
+            if self._registry_path
+            else str(path_manager.get(P.DEPLOY))
+        )
+        sites = path_manager.resolve_under(base, "sites")
+        site = path_manager.resolve_under(sites, site_id)
+        releases = path_manager.resolve_under(site, "releases")
+        return str(path_manager.resolve_under(releases, f"r{int(release)}"))
+
+    def _archive_release(self, site_id: str, release: int, source_dir: str) -> str:
+        """Copy this release's source aside so it can be served again later."""
+        import shutil
+
+        destination = self._release_dir(site_id, release)
+        if os.path.isdir(destination):
+            shutil.rmtree(destination, ignore_errors=True)
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        try:
+            shutil.copytree(
+                source_dir,
+                destination,
+                ignore=shutil.ignore_patterns(*_SKIP_DIRS),
+            )
+        except OSError as exc:
+            # An unreadable source costs this release its archive, never its deploy.
+            logger.warning(f"| 📦 could not archive release {release} of '{site_id}': {exc}")
+            return ""
+        return destination
 
     @staticmethod
     def _reserve_host_port(site_id: str, preferred: int) -> int:
@@ -412,6 +459,18 @@ class DeploymentManagerServer(BaseModel):
         # `... --port $PORT`) resolve, regardless of backend.
         spec.env = {**spec.env, "PORT": str(spec.port)}
 
+        # A release is what this site published, so the count belongs to the site and
+        # advances only when its source actually changed. Redeploying identical bytes is
+        # a restart, not a new release, and giving it a number would make `--r<n>` point
+        # somewhere the reader never saw. This field had no writer at all before: it sat
+        # at its default of 0, which silently disabled both `release_url` and every
+        # `--r<n>` lookup that checked it.
+        release_number = int(getattr(previous, "release_number", 0) or 0)
+        if previous is None or previous.source_revision != source_revision:
+            release_number += 1
+        if request.source_dir and os.path.isdir(request.source_dir):
+            self._archive_release(request.site_id, release_number, request.source_dir)
+
         rec = SiteRecord(
             site_id=request.site_id,
             runtime=spec.runtime,
@@ -420,6 +479,7 @@ class DeploymentManagerServer(BaseModel):
             image=spec.image,
             backend=backend,
             reuse_key=request.site_id,
+            release_number=release_number,
             source_revision=source_revision,
             created_at=self._sites.get(
                 request.site_id, SiteRecord(site_id=request.site_id, runtime=spec.runtime)
@@ -621,6 +681,88 @@ class DeploymentManagerServer(BaseModel):
         if record is None or record.status is not SiteStatus.RUNNING:
             return None
         return int(record.port) if record.port else None
+
+    @staticmethod
+    def _split_release(name: str) -> Optional[tuple]:
+        """``("echo-ark", 3)`` for ``"echo-ark--r3"``, else ``None``."""
+        if "--r" not in name:
+            return None
+        base, _, suffix = name.rpartition("--r")
+        if not base or not suffix.isdigit():
+            return None
+        return base, int(suffix)
+
+    async def ensure_release(self, name: str) -> Optional[int]:
+        """The port serving one pinned release, starting it from its archive if needed.
+
+        Kept separate from ``resolve_port`` so the hot path stays a lock-free dict read:
+        the gateway asks this only after the plain lookup came back empty, which is the
+        rare case of someone opening an older release.
+
+        An archived release is served by deploying it as an ordinary site under its own
+        pinned name, so it reaches the visitor through the same relay as anything else
+        rather than a second serving path that could drift from the first. Older releases
+        stay stopped until somebody asks for one, and go back to being files afterwards.
+        """
+        split = self._split_release(name)
+        if split is None:
+            return None
+        base, release = split
+
+        await self._ensure_initialized()
+        current = self._sites.get(base)
+        if current is not None and int(getattr(current, "release_number", 0) or 0) == release:
+            return self.resolve_port(base)
+
+        running = self.resolve_port(name)
+        if running:
+            self._release_seen[name] = time.time()
+            return running
+
+        archive = self._release_dir(base, release)
+        if not os.path.isdir(archive):
+            return None
+
+        # Reuse the release's own deploy request: its runtime and overrides are what made
+        # those bytes serveable, and re-deriving them here would be a second opinion about
+        # a site that already has one.
+        stored = dict((getattr(current, "request", None) or {}))
+        stored.update(
+            site_id=name,
+            source_dir=archive,
+            content=None,
+            files=None,
+            git_url=None,
+            backend="host",
+            port=None,
+        )
+        try:
+            await self.deploy(DeployRequest(**stored))
+        except Exception as exc:
+            logger.warning(f"| 📦 could not start release {release} of '{base}': {exc}")
+            return None
+        self._release_seen[name] = time.time()
+        await self._reap_idle_releases()
+        return self.resolve_port(name)
+
+    async def _reap_idle_releases(self) -> None:
+        """Stop pinned releases nobody has opened lately.
+
+        Only sites this manager started on demand are candidates — a release someone
+        deployed by that name themselves is theirs, not scratch space to reclaim.
+        """
+        cutoff = time.time() - _RELEASE_IDLE_S
+        for name, seen in list(self._release_seen.items()):
+            if seen > cutoff:
+                continue
+            self._release_seen.pop(name, None)
+            record = self._sites.get(name)
+            if record is None or record.status is not SiteStatus.RUNNING:
+                continue
+            try:
+                await self.stop_site(name)
+            except Exception as exc:
+                logger.warning(f"| 📦 could not stop idle release '{name}': {exc}")
 
     def public_names(self) -> List[str]:
         """Every name that currently resolves, for diagnostics and the 404 body."""

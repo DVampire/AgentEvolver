@@ -281,6 +281,11 @@ def create_websocket_app(
 
         port = deployment_manager.resolve_port(name)
         if not port:
+            # A pinned older release is archived rather than running: bring it back for
+            # whoever asked. Only reached when the plain lookup found nothing, so the
+            # current site keeps costing one dict read per request.
+            port = await deployment_manager.ensure_release(name)
+        if not port:
             known = deployment_manager.public_names()
             return Response(
                 status_code=404,
