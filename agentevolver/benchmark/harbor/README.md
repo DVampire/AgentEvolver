@@ -47,9 +47,15 @@ config file is for:
 | `AGENTEVOLVER_CONFIG` | `configs/meta_agent.py` | Config the trial runs under |
 | `AGENTEVOLVER_AGENT` | `meta_agent` | Agent to run |
 | `AGENTEVOLVER_STEP_BUDGET` | `120` | Steps per task, which Harbor knows nothing about |
+| `AGENTEVOLVER_EXTENSION_ROOT` | the config's | Writable tree for evolved components |
 
 Harbor's `--model` beats the config's, because that name is part of what a leaderboard row
-means.
+means. All of these are applied through the config's own `cfg_options` channel, so an
+agent reads them when it is built rather than after.
+
+Set `AGENTEVOLVER_EXTENSION_ROOT` when the repository's `extension/` is not writable — a
+shared checkout can have it owned by another account, and then every trial fails in setup
+on a manifest it cannot open, long before the task is read.
 
 ## How it fits
 

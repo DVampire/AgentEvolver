@@ -86,6 +86,12 @@ async def bring_up(*, plugins: Optional[List[str]] = None, quiet: bool = False) 
     await workflow_manager.initialize(workflow_names=getattr(config, "workflow_names", []))
 
     # Last, so a hot-plugged component layers over a built-in rather than under it.
+    # Pointing it at the configured root belongs here, beside the initialization it
+    # governs: `config.extension_root` can name a writable tree precisely because the
+    # repository's own `extension/` may not be — a shared checkout can have it owned by
+    # another account — and a caller that set the config but forgot this line still wrote
+    # to the default and died on a manifest it could not open.
+    extension_manager.set_base_dir(config.extension_root)
     manifest = await extension_manager.initialize()
 
     loaded = {

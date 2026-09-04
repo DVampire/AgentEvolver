@@ -52,10 +52,20 @@ class HarborSandbox(Sandbox):
 
     @property
     def container_workspace(self) -> Optional[str]:
-        # Harbor's convention: the task's working tree is at /app in the task container.
-        # Tasks that use another root say so in task.toml, and a caller passing
-        # `workspace_root` overrides this per command.
-        return getattr(self._environment, "working_dir", None) or "/app"
+        """Unknown to this backend, deliberately.
+
+        Harbor resolves a task's working directory itself — every one of its environments
+        does so privately (`_detect_workdir`, `_effective_cwd`, `_resolve_workdir`) and
+        none exposes the answer, because `task.toml`'s `workdir` only *overrides* the
+        container's own WORKDIR when it is set. There is nothing to read, so naming a
+        path here would be a guess: an earlier version answered `/app`, which is where
+        SWE-bench Pro's images keep their tree and is wrong for any task built otherwise.
+
+        The base contract reads None as "host paths, no remapping". That is not quite
+        this case — the container is real — but it is the honest answer to "which path",
+        and the alternative was a directory that may not exist.
+        """
+        return None
 
     @property
     def resource_id(self) -> Optional[str]:
@@ -90,7 +100,10 @@ class HarborSandbox(Sandbox):
         try:
             result = await self._environment.exec(
                 command,
-                cwd=workspace_root or self.container_workspace,
+                # Only when the caller named one. Harbor applies the task's own working
+                # directory when cwd is absent, and substituting a default here would
+                # run every command somewhere the task never chose.
+                cwd=workspace_root or None,
                 env=env or None,
                 timeout_sec=seconds,
             )

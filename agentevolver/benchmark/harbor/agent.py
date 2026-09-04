@@ -1,6 +1,7 @@
 """The class Harbor calls: one trial of one task, run by this framework's agent."""
 
 import os
+from argparse import Namespace
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -29,7 +30,8 @@ class AgentEvolverAgent(BaseAgent):
     """
 
     def __init__(self, *args: Any, config_path: str = "", agent_name: str = "",
-                 step_budget: Optional[int] = None, **kwargs: Any):
+                 step_budget: Optional[int] = None, extension_root: str = "",
+                 **kwargs: Any):
         super().__init__(*args, **kwargs)
         # Harbor passes `--model`; the rest comes from this framework's own config, since
         # which agent and which tools are exactly what a config file is for.
@@ -40,6 +42,7 @@ class AgentEvolverAgent(BaseAgent):
         self._step_budget = step_budget or int(
             os.environ.get("AGENTEVOLVER_STEP_BUDGET", DEFAULT_STEP_BUDGET)
         )
+        self._extension_root = extension_root or os.environ.get("AGENTEVOLVER_EXTENSION_ROOT", "")
         self._sandbox: Any = None
         self._session: Any = None
         self._usage: dict = {}
@@ -52,6 +55,31 @@ class AgentEvolverAgent(BaseAgent):
         from agentevolver import __version__
 
         return __version__
+
+    def config_overrides(self) -> dict:
+        """What this trial changes about the config, as `cfg_options` keys.
+
+        `cfg_options` is the config's own override channel: dotted keys merged before the
+        agent sections are processed, so an agent reads the overridden value at the moment
+        it is built. Two earlier attempts were both wrong — `config.initialize` was called
+        without its required `args`, and the step budget was passed as a call argument to
+        `agent_manager`, where it merged into the agent's payload, matched no parameter,
+        and was dropped without a word, so every trial silently ran at whatever the config
+        file said. The field is `max_step`, singular.
+        """
+        overrides = {f"{self._agent_name}.max_step": self._step_budget}
+        # A run writes evolved components into `extension_root`, and the repository's own
+        # `extension/` is not always writable — a shared checkout can have it owned by
+        # another account, and then every trial dies in setup on a manifest it cannot
+        # open, long before the task is even read.
+        if self._extension_root:
+            overrides["extension_root"] = self._extension_root
+        if self.model_name:
+            # Harbor names the model on its command line, and that name is part of what a
+            # leaderboard row means. It has to beat the config, or the flag would be a lie.
+            overrides["model_name"] = self.model_name
+            overrides[f"{self._agent_name}.model_name"] = self.model_name
+        return overrides
 
     async def setup(self, environment: Any) -> None:
         """Bring the framework up and bind its sandbox to Harbor's container.
@@ -66,15 +94,11 @@ class AgentEvolverAgent(BaseAgent):
         from agentevolver.session.context import bind_session_roots, ensure_session_sandbox
         from agentevolver.session.types import SessionContext
 
-        config.initialize(config_path=self._config_path)
-        if self.model_name:
-            # Harbor names the model on its command line, and that name is part of what a
-            # leaderboard row means. It has to beat the config, or every trial would run
-            # whatever the file happened to say and the `--model` flag would be a lie.
-            config.model_name = self.model_name
-            for role in getattr(config, "agent_names", None) or []:
-                if isinstance(getattr(config, role, None), dict):
-                    getattr(config, role)["model_name"] = self.model_name
+        config.initialize(
+            config_path=self._config_path,
+            args=Namespace(cfg_options=self.config_overrides()),
+            verbose=False,
+        )
 
         self._session = SessionContext(id=make_id(), name="harbor_trial")
         session_sandbox = ensure_session_sandbox(
@@ -105,7 +129,6 @@ class AgentEvolverAgent(BaseAgent):
                 name=self._agent_name,
                 input={"task": instruction, "files": []},
                 ctx=self._session,
-                max_steps=self._step_budget,
             )
         except Exception as exc:
             # A crashed agent is a failed trial, not a broken harness: let Harbor grade

@@ -130,3 +130,86 @@ def test_usage_is_absent_rather_than_zero_when_unmeasured(monkeypatch):
     agent = AgentEvolverAgent.__new__(AgentEvolverAgent)
     agent._session = None
     assert agent._collect_usage() == {}
+
+
+@pytest.mark.asyncio
+async def test_no_working_directory_is_invented():
+    """Harbor resolves a task's working directory itself and exposes it nowhere, so a
+    default here is a guess. An earlier version answered `/app` — where SWE-bench Pro's
+    images keep their tree, and wrong for any task built otherwise."""
+    environment = _Environment()
+    sandbox = HarborSandbox(environment=environment)
+
+    assert sandbox.container_workspace is None
+    await sandbox.run_command("true")
+    assert environment.calls[-1]["cwd"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_caller_can_still_name_a_directory():
+    """Not passing a default is not the same as refusing one that was asked for."""
+    environment = _Environment()
+    await HarborSandbox(environment=environment).run_command("true", workspace_root="/tmp")
+    assert environment.calls[-1]["cwd"] == "/tmp"
+
+
+def test_the_step_budget_is_named_the_way_the_agent_declares_it():
+    """It used to be passed as a call argument to agent_manager, which merges kwargs into
+    the agent's payload — it matched no parameter and was dropped without a word, so every
+    trial ran at whatever the config file said. The field is `max_step`, singular."""
+    from agentevolver.agent.loop.agent import Agent
+    from agentevolver.benchmark.harbor.agent import AgentEvolverAgent
+
+    assert "max_step" in Agent.model_fields
+    assert "max_steps" not in Agent.model_fields
+
+    agent = AgentEvolverAgent.__new__(AgentEvolverAgent)
+    agent._agent_name = "meta_agent"
+    agent._step_budget = 7
+    agent._extension_root = ""
+    agent.model_name = None
+    assert agent.config_overrides() == {"meta_agent.max_step": 7}
+
+
+def test_the_model_harbor_named_beats_the_config():
+    """That name is part of what a leaderboard row means, so the flag cannot be a lie."""
+    from agentevolver.benchmark.harbor.agent import AgentEvolverAgent
+
+    agent = AgentEvolverAgent.__new__(AgentEvolverAgent)
+    agent._agent_name = "meta_agent"
+    agent._step_budget = 7
+    agent._extension_root = "/tmp/ext"
+    agent.model_name = "llm_hub/claude-opus-5"
+
+    assert agent.config_overrides() == {
+        "meta_agent.max_step": 7,
+        "extension_root": "/tmp/ext",
+        "model_name": "llm_hub/claude-opus-5",
+        "meta_agent.model_name": "llm_hub/claude-opus-5",
+    }
+
+
+def test_bring_up_points_the_extension_manager_at_the_configured_root():
+    """`config.extension_root` can name a writable tree precisely because the repository's
+    own `extension/` may not be — a shared checkout can have it owned by another account.
+    A caller that set the config but forgot to pass it on still wrote to the default and
+    died on a manifest it could not open, so the line lives beside the initialization it
+    governs rather than in each caller."""
+    source = open("agentevolver/session/bringup.py").read()
+    set_at = source.index("extension_manager.set_base_dir(config.extension_root)")
+    init_at = source.index("await extension_manager.initialize()")
+    assert set_at < init_at, "the root must be set before the manager reads it"
+
+
+def test_the_adapter_configures_through_the_config_override_channel():
+    """Calling `config.initialize` without its required `args` failed outright; mutating
+    config attributes afterwards would depend on the config's shape and land after the
+    agent sections are processed."""
+    import inspect
+
+    from agentevolver.benchmark.harbor.agent import AgentEvolverAgent
+    from agentevolver.config import config
+
+    assert "args" in inspect.signature(config.initialize).parameters
+    source = inspect.getsource(AgentEvolverAgent.setup)
+    assert "args=Namespace(cfg_options=self.config_overrides())" in source
