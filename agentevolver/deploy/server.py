@@ -132,30 +132,44 @@ class DeploymentManagerServer(BaseModel):
             return True
         return os.path.exists("/var/run/docker.sock")
 
-    def _backend_kind(self, request: Optional[DeployRequest] = None) -> str:
+    def _backend_kind(
+        self,
+        request: Optional[DeployRequest] = None,
+        previous: Optional[SiteRecord] = None,
+    ) -> str:
         """Pick the sandbox backend.
 
-        Precedence: the request's own ``backend`` (a per-deploy choice), then the
-        ``DEPLOY_BACKEND`` env, then ``auto``. ``host`` = local, no container
-        (lightweight/instant); ``opensandbox`` = isolated Docker container (heavy);
-        ``auto`` = opensandbox when a container runtime is available, else host.
+        Precedence: the request's own ``backend`` (a per-deploy choice), then the backend
+        this ``site_id`` is already running on, then the ``DEPLOY_BACKEND`` env, then the
+        source's default. ``host`` = local, no container (lightweight/instant);
+        ``opensandbox`` = isolated Docker container (heavy); ``auto`` = opensandbox when a
+        container runtime is available, else host.
 
-        One default rides on this: an inline artifact (``content``/``files`` with no
-        source_dir/git_url) is meant to be lightweight, so when nothing forces a
-        backend it deploys on the host rather than spinning a container per page.
+        A site keeps the substrate it was born on. ``site_id`` is a stable identity, and a
+        redeploy that silently moved between host and container changed the URL's shape
+        under whoever was already holding it and discarded whatever the server had written
+        since — for one live site that meant six releases split across two substrates
+        because a single optional argument stopped being passed. Moving is still possible,
+        but it now takes saying so.
+
+        The source decides the rest. Anything local — inline ``content``/``files``, or a
+        ``source_dir`` this agent just wrote in its own workspace — deploys on the host: a
+        container cannot isolate the machine from code the agent is already running
+        unsandboxed beside it, so the isolation would be nominal while the costs are real
+        (an opaque proxy URL, a build per deploy, a filesystem that resets each time). A
+        ``git_url`` is the genuinely different case: foreign code arriving over the
+        network, where the container earns its keep. That one still defaults to ``auto``.
         """
         choice = ""
         if request is not None and request.backend:
             choice = request.backend.lower().strip()
+        if not choice and previous is not None and previous.backend:
+            choice = previous.backend.lower().strip()
         if not choice:
             choice = (os.environ.get("DEPLOY_BACKEND") or "").lower().strip()
         if not choice:
-            inline = (
-                request is not None
-                and (request.content or request.files)
-                and not (request.source_dir or request.git_url)
-            )
-            choice = "host" if inline else "auto"
+            foreign = request is not None and bool(request.git_url)
+            choice = "auto" if foreign else "host"
         if choice in ("host", "local"):
             return "host"
         if choice in ("sandbox", "opensandbox", "docker"):
@@ -361,8 +375,8 @@ class DeploymentManagerServer(BaseModel):
             await self.stop_site(request.site_id)
 
         # Decide the backend *before* materializing inline content — materialization sets
-        # source_dir, which would otherwise mask the "inline ⇒ host by default" rule.
-        backend = self._backend_kind(request)
+        # source_dir, which would otherwise mask the "local source ⇒ host by default" rule.
+        backend = self._backend_kind(request, previous)
 
         # Lightweight path: turn inline content/files into a source_dir the normal flow
         # can upload. git_url and an explicit source_dir take precedence and skip this.

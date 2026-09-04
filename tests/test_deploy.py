@@ -347,8 +347,8 @@ def test_auto_falls_back_to_the_host_when_no_container_runtime_is_reachable(mana
 
 
 def test_auto_prefers_the_container_when_one_is_reachable(manager, monkeypatch):
-    """With no env var set at all, the isolated backend is what a site gets."""
-    monkeypatch.delenv("DEPLOY_BACKEND", raising=False)
+    """``auto`` still means the isolated backend wherever a container runtime answers."""
+    monkeypatch.setenv("DEPLOY_BACKEND", "auto")
     monkeypatch.setattr(manager, "_container_runtime_available", staticmethod(lambda: True))
     assert manager._backend_kind() == "opensandbox"
 
@@ -381,12 +381,48 @@ def test_inline_content_defaults_to_the_host_backend(manager, monkeypatch):
     assert manager._backend_kind(DeployRequest(site_id="s", files={"index.html": "x"})) == "host"
 
 
-def test_a_source_dir_still_defaults_to_a_container(manager, monkeypatch):
-    """The inline-⇒-host rule must not leak onto real project trees: a source_dir is a
-    heavier deploy that still wants isolation when Docker is around."""
+def test_a_source_dir_deploys_on_the_host(manager, monkeypatch):
+    """A source_dir is a directory this agent just wrote in its own workspace, and the
+    agent is already free to run it through bash. A container cannot isolate the machine
+    from code that is running unsandboxed beside it, so the isolation would be nominal
+    while the costs are real — an opaque proxy URL instead of a localhost port, a build per
+    deploy, and a filesystem that resets under whatever the server has written."""
     monkeypatch.delenv("DEPLOY_BACKEND", raising=False)
     monkeypatch.setattr(manager, "_container_runtime_available", staticmethod(lambda: True))
-    assert manager._backend_kind(DeployRequest(site_id="s", source_dir="/tmp/x")) == "opensandbox"
+    assert manager._backend_kind(DeployRequest(site_id="s", source_dir="/tmp/x")) == "host"
+
+
+def test_a_git_url_still_defaults_to_a_container(manager, monkeypatch):
+    """Foreign code arriving over the network is the case where isolation is earned."""
+    monkeypatch.delenv("DEPLOY_BACKEND", raising=False)
+    monkeypatch.setattr(manager, "_container_runtime_available", staticmethod(lambda: True))
+    req = DeployRequest(site_id="s", git_url="https://example.com/app.git")
+    assert manager._backend_kind(req) == "opensandbox"
+
+
+def test_a_site_keeps_the_backend_it_is_already_running_on(manager, monkeypatch):
+    """``site_id`` is a stable identity, so a redeploy must not move the site.
+
+    One live site shipped six releases split across two substrates because a single
+    optional argument stopped being passed: the URL changed shape under everyone already
+    holding it, and each move discarded what the server had written since."""
+    from agentevolver.deploy.types import SiteRecord
+
+    monkeypatch.delenv("DEPLOY_BACKEND", raising=False)
+    monkeypatch.setattr(manager, "_container_runtime_available", staticmethod(lambda: True))
+    born_in_a_container = SiteRecord(site_id="s", runtime="python", url="http://x", backend="opensandbox")
+    req = DeployRequest(site_id="s", source_dir="/tmp/x")
+    assert manager._backend_kind(req, born_in_a_container) == "opensandbox"
+
+
+def test_an_explicit_backend_moves_a_site(manager, monkeypatch):
+    """Keeping the substrate is a default, not a cage: saying so still moves the site."""
+    from agentevolver.deploy.types import SiteRecord
+
+    monkeypatch.delenv("DEPLOY_BACKEND", raising=False)
+    born_in_a_container = SiteRecord(site_id="s", runtime="python", url="http://x", backend="opensandbox")
+    req = DeployRequest(site_id="s", source_dir="/tmp/x", backend="host")
+    assert manager._backend_kind(req, born_in_a_container) == "host"
 
 
 def test_an_explicit_backend_beats_the_inline_host_default(manager, monkeypatch):

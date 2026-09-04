@@ -43,7 +43,7 @@ Deploy a web app and bind it to a reachable URL, then manage deployed sites. Eac
     - `source_dir` (str): host directory uploaded as the app.
     - `git_url` (str): repo cloned inside the container (needs network).
   - `filename` (str, optional): filename for `content` (default `index.html`).
-  - `backend` (str, optional): `host` (local, no container — lightweight/instant), `opensandbox` (isolated Docker container — heavy/isolated), or `auto`. Inline `content`/`files` default to `host`; a `source_dir`/`git_url` defaults to `auto`.
+  - `backend` (str, optional): `host` (local, no container — lightweight/instant), `opensandbox` (isolated Docker container — heavy/isolated), or `auto`. A local source (`content`/`files`/`source_dir`) defaults to `host`; only `git_url` defaults to `auto`. Redeploying an existing `site_id` keeps the backend it already runs on unless you pass this.
   - `port` (int, optional): override the profile's default port. On the host backend the port is allocated/de-conflicted through the central port registry.
   - `env` (dict, optional): environment variables.
   - `overrides` (dict, optional): field-level spec overrides — `image`, `build` (list of shell cmds), `start` (server cmd, MUST bind 0.0.0.0:$PORT), `workspace_root`, `health` ({type: http|command|none, path, command, timeout_s}). `custom` runtime REQUIRES `overrides.start`.
@@ -55,7 +55,7 @@ Deploy a web app and bind it to a reachable URL, then manage deployed sites. Eac
 - Fastest path — publish a page: `deploy` with just `site_id` + `content` (the HTML). It serves on the host at `http://localhost:<port>` right away.
 - The service MUST listen on `0.0.0.0` (not `127.0.0.1`) or the URL won't be reachable.
 - `static` serves the files as-is; `node` needs a buildable project (has package.json); `python` defaults to the `app:app` entrypoint — override `start` for another (e.g. `uvicorn main:app --host 0.0.0.0 --port 8000`).
-- Backend: inline content/files run on the host by default (instant, no isolation); source_dir/git_url use the isolated container when Docker is available, else the host. Force per-deploy with `backend`, or globally with the `DEPLOY_BACKEND` env var. On the host backend, distinct sites get distinct ports automatically.
+- Backend: anything local (inline content/files, or a source_dir) runs on the host by default — instant, and a plain `http://localhost:<port>` URL. Only git_url uses the isolated container when Docker is available. A site keeps its backend across redeploys; pass `backend` to move it, or set the `DEPLOY_BACKEND` env var globally. On the host backend, distinct sites get distinct ports automatically.
 """
 
 _EXAMPLES = [
