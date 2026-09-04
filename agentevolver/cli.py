@@ -174,6 +174,18 @@ class GatewayLauncher:
         )
         app.router.lifespan_context = lifespan
         port_manager.register("gateway", self._port, type="host")
+
+        # Deployed sites are addressed by name through this server's own `/s/<name>/`
+        # route, and the base of that address is something only this process knows. It
+        # used to be read from an environment variable nothing ever set, so the named
+        # URLs were never produced by any run — a site kept handing out `host:PORT`
+        # addresses that die with the release that minted them. Serving the route is what
+        # makes the base true, so it is published here and not, say, in a config file that
+        # would claim it while no gateway is listening. An explicit value still wins: it
+        # is the only way to name a proxy or hostname in front of this process.
+        os.environ.setdefault(
+            "GATEWAY_PUBLIC_BASE", f"http://{self._host}:{self._port}"
+        )
         uvicorn.run(app, host=self._host, port=self._port, log_level="info")
         return 0
 

@@ -91,8 +91,18 @@ class DeployTool(Tool):
         """Format one deployment record as a tab-separated line for the `list` view.
 
         Columns: site id, runtime, status, and URL (or "-" when not yet assigned).
+
+        A `<site>--r<n>` row is an older release someone opened, brought up from its
+        archive by the visit itself and gone again once nobody is reading it. The caller
+        never deployed it and cannot keep it, so the row says what it is: hiding it would
+        be worse — it is a real process holding a real port — but leaving it to read as
+        one more site the caller published invites managing something that manages itself.
         """
-        return f"{rec.site_id}\t{rec.runtime}\t{rec.status.value}\t{rec.url or '-'}"
+        line = f"{rec.site_id}\t{rec.runtime}\t{rec.status.value}\t{rec.url or '-'}"
+        base, _, suffix = str(rec.site_id).rpartition("--r")
+        if base and suffix.isdigit():
+            line += f"\t(archived release {suffix} of {base}, served on demand)"
+        return line
 
     @staticmethod
     def _access_urls(rec) -> Dict[str, str]:

@@ -133,3 +133,53 @@ async def test_the_gateway_serves_a_named_site_from_its_own_origin(registered, t
     finally:
         server.terminate()
         server.wait(timeout=10)
+
+
+def test_the_gateway_publishes_the_base_its_own_route_answers_on(monkeypatch):
+    """The named URLs were produced by no run at all.
+
+    `/s/<name>/` is served by the gateway, and the base of that address is something only
+    the serving process knows — but it was read from an environment variable nothing ever
+    set. So every deploy fell through the guard and handed out `host:PORT` addresses that
+    die with the release that minted them, which is the exact failure named sites exist to
+    fix. Serving the route is what makes the base true, so serving it is what publishes."""
+    from agentevolver.cli import GatewayLauncher
+
+    monkeypatch.delenv("GATEWAY_PUBLIC_BASE", raising=False)
+    monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "agentevolver.gateway.transport.create_websocket_app", lambda *a, **k: _StubApp()
+    )
+    GatewayLauncher("configs/meta_agent.py", transport="websocket",
+                    host="127.0.0.1", port=9411)._serve_websocket()
+
+    import os
+
+    assert os.environ["GATEWAY_PUBLIC_BASE"] == "http://127.0.0.1:9411"
+
+
+def test_an_explicit_base_wins_over_the_gateway_address(monkeypatch):
+    """A proxy or hostname in front of this process can only be named from outside it."""
+    from agentevolver.cli import GatewayLauncher
+
+    monkeypatch.setenv("GATEWAY_PUBLIC_BASE", "https://ark.example")
+    monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "agentevolver.gateway.transport.create_websocket_app", lambda *a, **k: _StubApp()
+    )
+    GatewayLauncher("configs/meta_agent.py", transport="websocket",
+                    host="127.0.0.1", port=9411)._serve_websocket()
+
+    import os
+
+    assert os.environ["GATEWAY_PUBLIC_BASE"] == "https://ark.example"
+
+
+class _StubApp:
+    """Just enough FastAPI surface for the launcher to attach a lifespan to."""
+
+    class _Router:
+        lifespan_context = None
+
+    def __init__(self):
+        self.router = self._Router()
