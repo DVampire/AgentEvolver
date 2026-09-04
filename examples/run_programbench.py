@@ -285,6 +285,10 @@ def parse_args():
     parser.add_argument("--start", type=int, default=None, help="Start index (inclusive) into the loaded instance list")
     parser.add_argument("--end", type=int, default=None, help="End index (exclusive) into the loaded instance list")
     parser.add_argument("--out", default=None, help="Results JSON output directory")
+    parser.add_argument("--no-monitor", action="store_true",
+                        help="Do not deploy the live benchmark monitor (enabled by default).")
+    parser.add_argument("--monitor-port", type=int, default=8765,
+                        help="Preferred monitor port; deploy allocates another when busy.")
     parser.add_argument(
         "--concurrency", type=int, default=1,
         help="How many instances to run at once (each in its own container). Default 1 "
@@ -1199,6 +1203,7 @@ def check_shared_roots_readable() -> None:
 
 async def run_launcher(args) -> int:
     from agentevolver.data.programbench import ProgramBenchDataset
+    from agentevolver.visual import BenchmarkMonitor
 
     await sandbox_manager.initialize()
     check_shared_roots_readable()
@@ -1223,7 +1228,7 @@ async def run_launcher(args) -> int:
     out_dir = args.out or str(path_manager.under(
         config.project_root,
         P.PROJECT_RESULT_RUN,
-        run_id="programbench",
+        run_id=f"programbench_{time.strftime('%Y%m%d_%H%M%S')}",
     ))
     os.makedirs(out_dir, exist_ok=True)
     results_path = str(path_manager.resolve_under(out_dir, f"run_{make_id()}.json"))
@@ -1231,6 +1236,22 @@ async def run_launcher(args) -> int:
     results_lock = asyncio.Lock()
     max_concurrency = max(1, int(getattr(args, "concurrency", 1) or 1))
     sem = asyncio.Semaphore(max_concurrency)
+    owner = str(config.get("output_owner") or config.tag)
+    monitor = BenchmarkMonitor(
+        out_dir,
+        "programbench",
+        len(selected),
+        max_concurrency,
+        results_path=results_path,
+        owner_dir=str(path_manager.get(P.OWNER, owner=owner)),
+        title="ProgramBench",
+    )
+    if not args.no_monitor:
+        try:
+            url = await monitor.deploy(args.monitor_port)
+            logger.info(f"| 📊 Benchmark monitor: {url or 'deployment failed'}")
+        except Exception as error:
+            logger.warning(f"| ⚠️ Benchmark monitor unavailable: {error}")
 
     def _write_results():
         # Rewritten after every instance finishes so a mid-run crash still leaves a usable
@@ -1251,6 +1272,7 @@ async def run_launcher(args) -> int:
     async def _run_one_instance(index, instance):
         instance_id = instance["instance_id"]
         image_ref = f"{instance.get('image_name', '')}:{IMAGE_TAG}"
+        monitor.task(instance_id, "preparing", position=index)
         logger.info(f"| ▶️ [{index}/{len(selected)}] {instance_id} (image={image_ref})")
 
         started = time.time()
@@ -1333,6 +1355,7 @@ async def run_launcher(args) -> int:
                 timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
             )
             command = inner_command(instance, args, resume=resuming)
+            monitor.task(instance_id, "solving", position=index)
             logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
             # Serve the agent's grader-eval requests for as long as it runs. Started here and
             # cancelled in the finally so a scoring pass in flight cannot outlive the run.
@@ -1390,6 +1413,7 @@ async def run_launcher(args) -> int:
         async with results_lock:
             results.append(record)
             _write_results()
+            monitor.finish_task(instance_id)
         return record
 
     async def _bounded(index, instance):
@@ -1404,15 +1428,19 @@ async def run_launcher(args) -> int:
                 async with results_lock:
                     results.append(rec)
                     _write_results()
+                    monitor.finish_task(str(instance.get("instance_id")))
                 return rec
 
-    await asyncio.gather(*[_bounded(i, inst) for i, inst in enumerate(selected, start=1)])
+    try:
+        await asyncio.gather(*[_bounded(i, inst) for i, inst in enumerate(selected, start=1)])
+    except BaseException:
+        monitor.close("interrupted")
+        raise
 
     # Ownership is handed back once, after every container is done — doing it per instance
     # would chown the shared trees out from under instances still running concurrently.
     restore_ownership(str(path_manager.get(P.OUTPUT)))
     restore_ownership(str(path_manager.get(P.EXTENSION)))
-    await sandbox_manager.cleanup()
 
     done = sum(1 for r in results if r["status"] == "done")
     print(f"\n✅ ProgramBench run done: {done}/{len(results)} task(s) completed")
@@ -1432,6 +1460,7 @@ async def run_launcher(args) -> int:
     grand = sum((r.get("spend") or {}).get("total_cost_usd") or 0.0 for r in results)
     if grand:
         print(f"   ── estimated total cost ≈ ${grand:.2f} (list-price estimate; tokens exact) ──")
+    monitor.close("completed")
     return 0
 
 

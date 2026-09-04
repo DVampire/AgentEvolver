@@ -44,6 +44,11 @@ adding selection logic to the server.
 them. The three with launchers need per-instance Docker containers and a host-side grader,
 which is orchestration a `Benchmark` class deliberately does not do.
 
+Every maintained launcher publishes the same `visual.BenchmarkMonitor` state and deploys
+its read-only dashboard through `deployment_manager` by default. Use `--no-monitor` for
+headless automation or `--monitor-port` to request a preferred host port; port conflicts
+are resolved centrally by the deploy subsystem.
+
 `exact_match` is a scorer, not a task source: it has no dataset and appears here only
 because it is registered alongside the rest.
 

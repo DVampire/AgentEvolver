@@ -15,15 +15,15 @@ Usage:
 Note: the old guide referenced a bus/planner/opencode pipeline and a viewer.html — those
 are not part of this repo; this runner uses the current agent + benchmark managers.
 """
+# ruff: noqa: E402
+import argparse
+import asyncio
+import json
 import os
 import sys
-import json
 import time
-import asyncio
-import argparse
-from pathlib import Path
 from datetime import datetime
-from argparse import Namespace
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -34,19 +34,19 @@ from mmengine import DictAction
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 
-from agentevolver.config import config
-from agentevolver.logger import logger
-from agentevolver.version import version_manager
-from agentevolver.model import model_manager
-from agentevolver.prompt import prompt_manager
-from agentevolver.memory import memory_manager
-from agentevolver.tool import tool_manager
-from agentevolver.skill import skill_manager
-from agentevolver.connector import connector_manager
-from agentevolver.agent import agent_manager
+from agentevolver.agent import AgentContext, agent_manager
 from agentevolver.benchmark import benchmark_manager
+from agentevolver.config import config
+from agentevolver.connector import connector_manager
 from agentevolver.hook import hook_manager
+from agentevolver.logger import logger
+from agentevolver.memory import memory_manager
+from agentevolver.model import model_manager
 from agentevolver.paths import P, path_manager
+from agentevolver.prompt import prompt_manager
+from agentevolver.skill import skill_manager
+from agentevolver.tool import tool_manager
+from agentevolver.version import version_manager
 
 
 def parse_args():
@@ -62,6 +62,10 @@ def parse_args():
     p.add_argument("--resume", default=None, help="Resume from a results JSON (skip answered tasks).")
     p.add_argument("--eval-only", action="store_true", help="Re-judge answers in --resume without re-answering.")
     p.add_argument("--out", default=None, help="Results output directory (default: <log_root>/results/hle).")
+    p.add_argument("--no-monitor", action="store_true",
+                   help="Do not deploy the live benchmark monitor (enabled by default).")
+    p.add_argument("--monitor-port", type=int, default=8765,
+                   help="Preferred monitor port; deploy allocates another when busy.")
     p.add_argument("--cfg-options", nargs="+", action=DictAction, help="Override config options.")
     return p.parse_args()
 
@@ -120,26 +124,39 @@ def _write_results(path: str, records: list, summary: dict):
     os.replace(tmp, path)
 
 
-async def _answer_all(tasks, agent_name, max_concurrency):
+async def _answer_all(tasks, agent_name, max_concurrency, monitor=None):
     """Answer every task concurrently via the agent, filling task.result."""
     sem = asyncio.Semaphore(max_concurrency)
     done = {"n": 0}
 
-    async def answer(task):
+    async def answer(position, task):
         async with sem:
+            if monitor:
+                monitor.task(task.task_id, "solving", position=position)
             t0 = time.time()
             try:
-                resp = await agent_manager(agent_name, input={"task": task.input})
+                payload = {"task": task.input}
+                resp = await agent_manager(
+                    agent_name,
+                    input=payload,
+                    ctx=AgentContext(id=str(task.task_id), name=agent_name, input=payload),
+                )
                 task.result = _extract_answer(resp)
             except Exception as e:  # noqa: BLE001
                 logger.error(f"| ❌ answering {task.task_id} failed: {e}")
                 task.result = ""
-            task.time = time.time() - t0
-            done["n"] += 1
-            mark = "✅" if task.result else "❌"
-            logger.info(f"| {mark} [{done['n']}/{len(tasks)}] {task.task_id} answered in {task.time:.1f}s")
+            finally:
+                task.time = time.time() - t0
+                done["n"] += 1
+                mark = "✅" if task.result else "❌"
+                logger.info(
+                    f"| {mark} [{done['n']}/{len(tasks)}] "
+                    f"{task.task_id} answered in {task.time:.1f}s"
+                )
+                if monitor:
+                    monitor.finish_task(task.task_id)
 
-    await asyncio.gather(*[answer(t) for t in tasks])
+    await asyncio.gather(*[answer(i, task) for i, task in enumerate(tasks, start=1)])
 
 
 async def main():
@@ -173,6 +190,26 @@ async def main():
         tasks.append(t)
         t = await benchmark_manager.step("hle")
     logger.info(f"| 🧪 HLE: {len(tasks)} question(s) to evaluate")
+    out_path = _results_path(args)
+    from agentevolver.visual import BenchmarkMonitor
+
+    monitor = BenchmarkMonitor(
+        os.path.splitext(out_path)[0],
+        "hle",
+        len(tasks),
+        args.max_concurrency,
+        results_path=out_path,
+        owner_dir=str(path_manager.get(
+            P.OWNER, owner=str(config.get("output_owner") or config.tag),
+        )),
+        title="Humanity's Last Exam",
+    )
+    if not args.no_monitor:
+        try:
+            url = await monitor.deploy(args.monitor_port)
+            logger.info(f"| 📊 Benchmark monitor: {url or 'deployment failed'}")
+        except Exception as error:
+            logger.warning(f"| ⚠️ Benchmark monitor unavailable: {error}")
 
     # Resume: carry over answers already present for matching task_ids.
     prior = {}
@@ -187,18 +224,21 @@ async def main():
     if not args.eval_only:
         todo = [tk for tk in tasks if not (tk.result and str(tk.result).strip())]
         logger.info(f"| ▶️ answering {len(todo)} task(s) (resumed {len(tasks) - len(todo)})")
-        await _answer_all(todo, args.agent, args.max_concurrency)
+        await _answer_all(todo, args.agent, args.max_concurrency, monitor)
 
     # Judge every task.
-    for tk in tasks:
+    records = []
+    for position, tk in enumerate(tasks, start=1):
+        monitor.task(tk.task_id, "grading", position=position)
         await benchmark_manager.eval("hle", tk)
+        records.append(tk.model_dump())
+        _write_results(out_path, records, {})
+        monitor.finish_task(tk.task_id)
 
     stats = await benchmark_manager.stats("hle")
     summary = stats.model_dump() if hasattr(stats, "model_dump") else (stats or {})
-    records = [tk.model_dump() for tk in tasks]
-
-    out_path = _results_path(args)
     _write_results(out_path, records, summary)
+    monitor.close()
 
     acc = summary.get("accuracy", 0.0) if isinstance(summary, dict) else 0.0
     total = summary.get("total", len(tasks)) if isinstance(summary, dict) else len(tasks)

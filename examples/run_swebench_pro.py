@@ -985,6 +985,7 @@ async def run_inner_process(row: dict, args, env: dict, resume: bool, timeout: i
 # --------------------------------------------------------------------------- #
 async def run_launcher(args) -> int:
     from agentevolver.sandbox import sandbox_manager
+    from agentevolver.visual import BenchmarkMonitor
 
     check_shared_roots_readable()
 
@@ -1068,7 +1069,24 @@ async def run_launcher(args) -> int:
         f"| 📋 SWE-bench Pro: {selection_size} selected, {len(completed_ids)} already "
         f"scored, {len(pending)} pending, concurrency={args.concurrency}"
     )
+    owner = str(config.get("output_owner") or config.tag)
+    monitor = BenchmarkMonitor(
+        out_dir,
+        "swebench_pro",
+        selection_size,
+        args.concurrency,
+        results_path=results_path,
+        owner_dir=str(path_manager.get(P.OWNER, owner=owner)),
+        title="SWE-bench Pro",
+    )
+    if not args.no_monitor:
+        try:
+            url = await monitor.deploy(args.monitor_port)
+            logger.info(f"| 📊 Benchmark monitor: {url or 'deployment failed'}")
+        except Exception as error:  # monitoring must never invalidate a benchmark
+            logger.warning(f"| ⚠️ Benchmark monitor unavailable: {error}")
     if not pending:
+        monitor.close()
         logger.info(f"| ✅ Nothing to resume; all {selection_size} instances are scored")
         return 0
 
@@ -1091,6 +1109,7 @@ async def run_launcher(args) -> int:
     async def _run_one_instance(index, row):
         instance_id = row["instance_id"]
         ref = image_ref(row)
+        monitor.task(instance_id, "preparing", position=index)
         logger.info(f"| ▶️ [{index}/{len(selected)}] {instance_id} (image={ref})")
         started = time.time()
         record: dict = {"instance_id": instance_id, "status": "failed", "error": None}
@@ -1137,6 +1156,7 @@ async def run_launcher(args) -> int:
                 timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
             )
             command = inner_command(row, args, resume=resuming)
+            monitor.task(instance_id, "solving", position=index)
             logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
             watcher_task = asyncio.create_task(
                 eval_bridge_watcher(bridge_dir, workspace_dir, row, grader_repo, _EVAL_BUDGET, eval_counter))
@@ -1170,6 +1190,7 @@ async def run_launcher(args) -> int:
 
             # Final leaderboard-style grade of the patch the agent left behind. Counts only,
             # exactly as the mid-run bridge would return; the oracle never crosses back.
+            monitor.task(instance_id, "grading", position=index)
             logger.info(f"| ⚖️ [{instance_id}] final grade of the collected patch…")
             final = await _grade_once(workspace_dir, row, grader_repo)
             record["final_grade"] = final
@@ -1215,6 +1236,7 @@ async def run_launcher(args) -> int:
             results[:] = [item for item in results if item.get("instance_id") != instance_id]
             results.append(record)
             _write_results()
+            monitor.finish_task(instance_id)
         return record
 
     sem = asyncio.Semaphore(max(1, int(args.concurrency or 1)))
@@ -1225,9 +1247,19 @@ async def run_launcher(args) -> int:
                 return await _run_one_instance(index, row)
             except Exception as e:  # noqa: BLE001
                 logger.error(f"| ❌ [{row['instance_id']}] crashed: {e}")
-                return {"instance_id": row["instance_id"], "status": "failed", "error": str(e)}
+                record = {"instance_id": row["instance_id"], "status": "failed", "error": str(e)}
+                async with results_lock:
+                    results[:] = [item for item in results if item.get("instance_id") != row["instance_id"]]
+                    results.append(record)
+                    _write_results()
+                    monitor.finish_task(row["instance_id"])
+                return record
 
-    await asyncio.gather(*[_bounded(i, row) for i, row in pending])
+    try:
+        await asyncio.gather(*[_bounded(i, row) for i, row in pending])
+    except BaseException:
+        monitor.close("interrupted")
+        raise
 
     # Two different numbers, and reporting only the first is how a run that never happened
     # reads as a run that did. `status == "done"` says the agent finished its turn;
@@ -1249,6 +1281,7 @@ async def run_launcher(args) -> int:
             f"| ❌ {r.get('instance_id')} produced no score: "
             f"{grade.get('error_code') or r.get('error') or 'unknown'}"
         )
+    monitor.close("completed" if not unscored else "completed_with_errors")
     return 1 if unscored else 0
 
 
@@ -1280,6 +1313,10 @@ def parse_args():
     parser.add_argument("--no-reclaim-disk", dest="reclaim_disk", action="store_false",
                         help="Keep each instance's workspace and image (needs ~1GB per instance).")
     parser.add_argument("--out", default=None, help="Results output directory.")
+    parser.add_argument("--no-monitor", action="store_true",
+                        help="Do not deploy the live benchmark monitor (enabled by default).")
+    parser.add_argument("--monitor-port", type=int, default=8765,
+                        help="Preferred monitor port; deploy allocates another when busy.")
     parser.add_argument(
         "--resume", action="store_true",
         help="Resume a durable run from --out: restore its output namespace, skip every "

@@ -5,6 +5,8 @@ from html import escape
 
 from agentevolver.paths import path_manager
 
+from .benchmark import BenchmarkMonitor, build_snapshot
+
 
 def css_path(filename: str) -> str:
     """Return the absolute path to a CSS file in agentevolver/visual/css/."""
@@ -46,3 +48,12 @@ def render_task_page(html_body: str, out_path: str, title: str = "Task") -> str:
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(page)
     return out_path
+
+
+__all__ = [
+    "BenchmarkMonitor",
+    "build_snapshot",
+    "css_path",
+    "js_path",
+    "render_task_page",
+]

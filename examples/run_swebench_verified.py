@@ -669,6 +669,7 @@ def inner_command(row: dict, args) -> str:
 # --------------------------------------------------------------------------- #
 async def run_launcher(args) -> int:
     from agentevolver.sandbox import sandbox_manager
+    from agentevolver.visual import BenchmarkMonitor
 
     check_shared_roots_readable()
 
@@ -715,15 +716,32 @@ async def run_launcher(args) -> int:
         run_id=time.strftime("run_%Y%m%d_%H%M%S"),
     ))
     os.makedirs(out_dir, exist_ok=True)
+    results_path = str(path_manager.resolve_under(out_dir, "results.json"))
+    owner = str(config.get("output_owner") or config.tag)
+    monitor = BenchmarkMonitor(
+        out_dir,
+        "swebench_verified",
+        len(selected),
+        args.concurrency,
+        results_path=results_path,
+        owner_dir=str(path_manager.get(P.OWNER, owner=owner)),
+        title="SWE-bench Verified",
+    )
+    if not args.no_monitor:
+        try:
+            url = await monitor.deploy(args.monitor_port)
+            logger.info(f"| 📊 Benchmark monitor: {url or 'deployment failed'}")
+        except Exception as error:
+            logger.warning(f"| ⚠️ Benchmark monitor unavailable: {error}")
 
     def _write_results():
-        results_path = path_manager.resolve_under(out_dir, "results.json")
         with open(results_path, "w", encoding="utf-8") as handle:
             json.dump(results, handle, ensure_ascii=False, indent=2)
 
     async def _run_one_instance(index, row):
         instance_id = row["instance_id"]
         ref = image_ref(row)
+        monitor.task(instance_id, "preparing", position=index)
         logger.info(f"| ▶️ [{index}/{len(selected)}] {instance_id} (image={ref})")
         started = time.time()
         record: dict = {"instance_id": instance_id, "status": "failed", "error": None}
@@ -762,6 +780,7 @@ async def run_launcher(args) -> int:
                 timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
             )
             command = inner_command(row, args)
+            monitor.task(instance_id, "solving", position=index)
             logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
             watcher_task = asyncio.create_task(
                 eval_bridge_watcher(bridge_dir, workspace_dir, row, grader_repo, _EVAL_BUDGET, eval_counter))
@@ -782,6 +801,7 @@ async def run_launcher(args) -> int:
 
             # Final leaderboard-style grade of the patch the agent left behind. Counts only,
             # exactly as the mid-run bridge would return; the oracle never crosses back.
+            monitor.task(instance_id, "grading", position=index)
             logger.info(f"| ⚖️ [{instance_id}] final grade of the collected patch…")
             final = await _grade_once(workspace_dir, row, grader_repo)
             record["final_grade"] = final
@@ -813,6 +833,7 @@ async def run_launcher(args) -> int:
         async with results_lock:
             results.append(record)
             _write_results()
+            monitor.finish_task(instance_id)
         return record
 
     sem = asyncio.Semaphore(max(1, int(args.concurrency or 1)))
@@ -823,16 +844,26 @@ async def run_launcher(args) -> int:
                 return await _run_one_instance(index, row)
             except Exception as e:  # noqa: BLE001
                 logger.error(f"| ❌ [{row['instance_id']}] crashed: {e}")
-                return {"instance_id": row["instance_id"], "status": "failed", "error": str(e)}
+                record = {"instance_id": row["instance_id"], "status": "failed", "error": str(e)}
+                async with results_lock:
+                    results.append(record)
+                    _write_results()
+                    monitor.finish_task(row["instance_id"])
+                return record
 
+    completed = False
     try:
         await asyncio.gather(*[_bounded(i + 1, r) for i, r in enumerate(selected)])
+        completed = True
     finally:
+        if not completed:
+            monitor.close("interrupted")
         for shared in (str(path_manager.get(P.OUTPUT)), config.extension_root):
             with contextlib.suppress(Exception):
                 restore_ownership(shared)
 
     done = sum(1 for r in results if r.get("status") == "done")
+    monitor.close("completed")
     logger.info(f"| ✅ SWE-bench Pro run done: {done}/{len(selected)} completed. Results: {out_dir}")
     return 0
 
@@ -857,6 +888,10 @@ def parse_args():
     parser.add_argument("--no-reclaim-disk", dest="reclaim_disk", action="store_false",
                         help="Keep each instance's workspace and image (needs ~1GB per instance).")
     parser.add_argument("--out", default=None, help="Results output directory.")
+    parser.add_argument("--no-monitor", action="store_true",
+                        help="Do not deploy the live benchmark monitor (enabled by default).")
+    parser.add_argument("--monitor-port", type=int, default=8765,
+                        help="Preferred monitor port; deploy allocates another when busy.")
     parser.add_argument("--cfg-options", nargs="+", default=None,
                         help="Config overrides, e.g. model_name=llm_hub/claude-opus-5")
     return parser.parse_args()
