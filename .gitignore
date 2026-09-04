@@ -222,7 +222,12 @@ node_modules/
 frontend/dist/
 frontend/.vite/
 
-datasets/
+# Downloaded data is not source, but the scripts that fetch and describe it are — and
+# ignoring the whole directory meant the loader could not be committed beside the
+# benchmarks that depend on it.
+datasets/*
+!datasets/load.py
+!datasets/README.md
 output/
 
 # User-level AgentEvolver home (config, staging, deploy registry, caches)
