@@ -36,9 +36,8 @@ def test_a_missing_directory_is_not_a_dataset(tmp_path):
     assert not _dir_has_content(str(tmp_path / "never-created"))
 
 
-def test_every_benchmark_has_a_row_in_the_dataset_index():
-    """`datasets/load.py` is how someone fetches data before a run needs it, so a
-    benchmark absent from it is one whose data can only appear as a surprise mid-run."""
+def _dataset_index():
+    """`datasets/load.py`, loaded by path — it is a script, not an importable module."""
     import importlib.util
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,14 +46,79 @@ def test_every_benchmark_has_a_row_in_the_dataset_index():
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def test_every_benchmark_with_data_is_in_the_dataset_index():
+    """`datasets/load.py` is how someone fetches data before a run needs it, so a
+    benchmark absent from it is one whose data can only appear as a surprise mid-run."""
+    import agentevolver.benchmark.default  # noqa: F401  (registers the built-ins)
+    from agentevolver.registry import BENCHMARK
+
+    index = _dataset_index()
+    with_data = set()
+    for class_name in BENCHMARK.module_dict:
+        fields = BENCHMARK.module_dict[class_name].model_fields
+        if (fields["path"].default if "path" in fields else ""):
+            with_data.add(fields["name"].default)
+
+    missing = sorted(with_data - set(index.SOURCES))
+    assert not missing, f"no datasets/load.py row for: {missing}"
+
+
+def test_the_index_takes_each_location_from_the_benchmark_itself():
+    """Where a dataset lives is the benchmark's own field, and stating it twice is how
+    this index came to name three HuggingFace repos no benchmark had ever used."""
+    import agentevolver.benchmark.default  # noqa: F401
+    from agentevolver.registry import BENCHMARK
+
+    index = _dataset_index()
+    for class_name in BENCHMARK.module_dict:
+        fields = BENCHMARK.module_dict[class_name].model_fields
+        name = fields["name"].default
+        row = index.SOURCES.get(name)
+        if row is None:
+            continue
+        declared = (fields["hf_repo_id"].default if "hf_repo_id" in fields else "") or ""
+        assert row.hf_repo_id == declared, (
+            f"{name}: index says {row.hf_repo_id!r}, the benchmark says {declared!r}"
+        )
+
+
+def test_the_readme_table_lists_every_registered_benchmark():
+    """The supported-benchmarks table is what someone reads to find out what this
+    framework can run. A benchmark registered but absent from it is one nobody knows is
+    there; a row for one that no longer registers sends them after something gone."""
+    import re
 
     import agentevolver.benchmark.default  # noqa: F401  (registers the built-ins)
     from agentevolver.registry import BENCHMARK
 
-    # exact_match and leetcode carry no downloadable dataset of their own.
-    named = {
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    readme = open(os.path.join(root, "agentevolver", "benchmark", "README.md")).read()
+    table = readme[readme.index("## Supported benchmarks"):readme.index("### Not supported")]
+    listed = set(re.findall(r"^\| `([a-z0-9_]+)` \|", table, re.M))
+
+    registered = {
         BENCHMARK.module_dict[cls].model_fields["name"].default
         for cls in BENCHMARK.module_dict
-    } - {"exact_match", "leet_code_benchmark", "leetcode"}
-    missing = sorted(named - set(module.SOURCES))
-    assert not missing, f"no datasets/load.py row for: {missing}"
+    }
+    assert not registered - listed, f"registered but not in the README table: {sorted(registered - listed)}"
+    assert not listed - registered, f"in the README table but not registered: {sorted(listed - registered)}"
+
+
+def test_the_readme_instance_counts_match_the_dataset_index():
+    """Two places state how many instances a set holds, and a reader compares a score
+    against whichever they saw. They have to agree."""
+    import re
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    readme = open(os.path.join(root, "agentevolver", "benchmark", "README.md")).read()
+    table = readme[readme.index("## Supported benchmarks"):readme.index("### Not supported")]
+
+    index = _dataset_index()
+    for name, count in re.findall(r"^\| `([a-z0-9_]+)` \|[^|]*\|\s*([0-9]+)\s*\|", table, re.M):
+        expected = index.SOURCES[name].expected
+        assert expected == int(count), (
+            f"{name}: README says {count}, datasets/load.py says {expected}"
+        )

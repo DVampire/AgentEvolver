@@ -23,8 +23,8 @@ Downloads are idempotent — a populated dataset is reported and left alone.
 | `gpqa` | `GPQA/` | 448 | `Idavidrein/gpqa` — gated, needs `HF_TOKEN` |
 | `gsm8k` | `gsm8k/` | 1319 | `openai/gsm8k` (config `main`) |
 | `hle` | `hle/` | 2500 | `cais/hle` |
-| `deepweb` | `deepweb-bench/` | — | ships with the repository |
-| `programbench` | `ProgramBench-Tests/` | 200 | `programbench/ProgramBench-Tests` (~8 GB) |
+| `deepweb` | `deepweb-bench/` | 100 | ships with the repository |
+| `programbench` | `ProgramBench-Tests/` | 201 | `programbench/ProgramBench-Tests` (~8 GB) |
 | `swebench_verified` | `SWE-bench_Verified/` | 500 | `SWE-bench/SWE-bench_Verified` |
 | `swebench_pro` | `SWE-bench_Pro/` | 731 | `ScaleAI/SWE-bench_Pro` |
 

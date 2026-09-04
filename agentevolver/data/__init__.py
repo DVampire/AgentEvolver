@@ -6,6 +6,7 @@ from .leetcode import LeetCodeDataset
 from .hle import HLEDataset
 from .deepweb import DeepWebDataset
 from .programbench import ProgramBenchDataset
+from .swebench import SWEBenchProDataset, SWEBenchVerifiedDataset
 from .server import DataManager, data_manager
 
 __all__ = [
@@ -17,6 +18,8 @@ __all__ = [
     'HLEDataset',
     'DeepWebDataset',
     'ProgramBenchDataset',
+    'SWEBenchVerifiedDataset',
+    'SWEBenchProDataset',
     'DataManager',
     'data_manager',
 ]

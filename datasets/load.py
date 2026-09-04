@@ -26,45 +26,102 @@ from typing import Dict, NamedTuple, Optional, Tuple
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-class Source(NamedTuple):
-    """One dataset: where it comes from, where it lands, and how big it should be."""
+class Shape(NamedTuple):
+    """What a benchmark class does not carry: how to count it, and what to expect.
 
-    directory: str          # under datasets/
-    hf_repo_id: str         # HuggingFace repo, or "" when it is not fetchable from there
-    split: str              # split to count after loading, or "" to count directories
-    expected: Optional[int] # published instance count, or None when the set is not fixed
+    Where the data comes from and where it lands are the benchmark's own fields, read
+    straight off the registered class. Restating them here is how this file came to name
+    three HuggingFace repos that no benchmark had ever used.
+    """
+
+    split: str = "test"     # split to count, or "" to count directories
+    expected: Optional[int] = None   # published instance count, when the set is fixed
+    config: str = ""        # HuggingFace config, for repos shipping more than one
+    data_files: str = ""    # glob, for repos whose layout is not a recognised split
     note: str = ""
-    config: str = ""        # HuggingFace config, for repos that ship more than one
-    data_files: str = ""    # glob, for repos whose files are not a recognised split layout
 
 
-#: Keyed by the benchmark name registered in `agentevolver/benchmark/default/`, so a row
-#: here and a benchmark there are obviously the same thing.
-SOURCES: Dict[str, Source] = {
-    "aime24": Source("AIME24", "HuggingFaceH4/aime_2024", "train", 30,
-                     data_files="*.parquet"),
-    "aime25": Source("AIME25", "yentinglin/aime_2025", "train", 30,
-                     data_files="*.jsonl"),
-    "gpqa": Source("GPQA", "Idavidrein/gpqa", "train", 448,
-                   "Gated on HuggingFace — needs HF_TOKEN in .env.",
-                   data_files="gpqa_diamond.csv"),
-    "gsm8k": Source("gsm8k", "openai/gsm8k", "test", 1319, config="main"),
-    "hle": Source("hle", "cais/hle", "test", 2500),
-    "deepweb": Source("deepweb-bench", "", "", None,
-                      "Ships with the repository; not fetched from HuggingFace."),
-    "programbench": Source("ProgramBench-Tests", "programbench/ProgramBench-Tests", "", 200,
-                           "Per-branch test blobs (~8 GB), one directory per instance."),
-    "swebench_verified": Source("SWE-bench_Verified", "SWE-bench/SWE-bench_Verified", "test", 500),
-    "swebench_pro": Source("SWE-bench_Pro", "ScaleAI/SWE-bench_Pro", "test", 731),
+#: Keyed by the benchmark's registered `name`. A benchmark absent from here still works —
+#: it is simply reported without an expected count.
+SHAPES: Dict[str, Shape] = {
+    "aime24": Shape("train", 30, data_files="*.parquet"),
+    "aime25": Shape("train", 30, data_files="*.jsonl"),
+    "gpqa": Shape("train", 448, data_files="gpqa_diamond.csv",
+                  note="Gated on HuggingFace — needs HF_TOKEN in .env."),
+    "gsm8k": Shape("test", 1319, config="main"),
+    "hle": Shape("test", 2500),
+    # The snapshot on this machine has no `data/cases.jsonl`, so its dataset class — and
+    # therefore the benchmark — cannot load. Reported as uncountable rather than as a
+    # count this cannot verify.
+    "deepweb": Shape("", 100, note="Ships with the repository; not fetched from HuggingFace."),
+    "leetcode": Shape("", None, note="Supplied locally; no HuggingFace source."),
+    # 201 task definitions, which ship with the `programbench` pip package and are what
+    # its dataset class counts. `datasets/ProgramBench-Tests` holds the per-branch test
+    # blobs (~8 GB) those tasks are graded against — related, but not the same count.
+    "programbench": Shape("", 201,
+                          note="Task definitions from the pip package; test blobs (~8 GB) on disk."),
+    "swebench_verified": Shape("test", 500),
+    "swebench_pro": Shape("test", 731),
     # Listed so that looking for it finds the reason rather than nothing. Cognition
     # states they "don't currently plan to release the tasks publicly to avoid
     # contamination" and instead evaluate submitted models themselves; Epoch AI's page
     # sources its numbers from Cognition's leaderboard rather than running the set. So
     # there is no download, no harness, and no schema to write a loader against.
-    "frontiercode": Source("FrontierCode", "", "test", 150,
-                           "Not public — Cognition evaluates submitted models; tasks are "
-                           "withheld to avoid contamination. 150 tasks (Main=100)."),
+    "frontiercode": Shape("test", 150,
+                          note="Not public — Cognition evaluates submitted models; tasks "
+                               "are withheld to avoid contamination. 150 tasks (Main=100)."),
 }
+
+
+class Source(NamedTuple):
+    """One dataset, assembled from the benchmark class plus its shape."""
+
+    name: str
+    directory: str
+    hf_repo_id: str
+    split: str
+    expected: Optional[int]
+    note: str
+    config: str
+    data_files: str
+
+
+def sources() -> Dict[str, Source]:
+    """Every benchmark that reads a dataset, with its location taken from its own class.
+
+    A benchmark with no `path` (`exact_match` scores answers it is handed) has no dataset
+    and is left out.
+    """
+    import agentevolver.benchmark.default  # noqa: F401  (registers the built-ins)
+    from agentevolver.registry import BENCHMARK
+
+    found: Dict[str, Source] = {}
+    for class_name in BENCHMARK.module_dict:
+        fields = BENCHMARK.module_dict[class_name].model_fields
+        name = fields["name"].default
+        path = (fields["path"].default if "path" in fields else "") or ""
+        if not path:
+            continue
+        shape = SHAPES.get(name, Shape())
+        found[name] = Source(
+            name=name,
+            directory=os.path.basename(path.rstrip("/")),
+            hf_repo_id=(fields["hf_repo_id"].default if "hf_repo_id" in fields else "") or "",
+            split=shape.split,
+            expected=shape.expected,
+            note=shape.note,
+            config=shape.config,
+            data_files=shape.data_files,
+        )
+    # Shapes for things that have no benchmark class yet, so the reason is still findable.
+    for name, shape in SHAPES.items():
+        if name not in found and shape.note:
+            found[name] = Source(name, name.title(), "", shape.split, shape.expected,
+                                 shape.note, shape.config, shape.data_files)
+    return dict(sorted(found.items()))
+
+
+SOURCES: Dict[str, Source] = sources()
 
 
 def _root() -> str:
@@ -83,31 +140,48 @@ def _present(directory: str) -> bool:
     return _dir_has_content(os.path.join(_root(), directory))
 
 
+#: Benchmarks whose registered `name` differs from their dataset class's stem in
+#: `agentevolver/data/`. Everything else is found by name.
+_DATASET_CLASS = {
+    "swebench_verified": "SWEBenchVerifiedDataset",
+    "swebench_pro": "SWEBenchProDataset",
+    "gpqa": "GPQADataset",
+    "gsm8k": "GSM8kDataset",
+    "programbench": "ProgramBenchDataset",
+    "deepweb": "DeepWebDataset",
+    "leetcode": "LeetCodeDataset",
+    "hle": "HLEDataset",
+    "aime24": "AIME24Dataset",
+    "aime25": "AIME25Dataset",
+}
+
+
 def _count(source: Source) -> Tuple[Optional[int], str]:
     """Instances on disk, plus why they could not be counted when they could not.
 
-    The reason is returned rather than swallowed: a bare "?" beside a dataset says
-    nothing about whether it is absent, gated, or simply laid out in a way this counter
-    does not recognise, and those need different responses from whoever is reading.
+    Counting goes through the dataset class in `agentevolver/data/`, which is where this
+    project puts dataset parsing — so what this reports is what a benchmark will actually
+    see, not a second opinion about the same files. Counting them here independently is
+    how a set with a custom layout gets reported as 2 instances when it holds 100.
 
-    ProgramBench is a directory per instance rather than a split, so it is counted as
-    directories; anything with a split is loaded and measured.
+    The reason is returned rather than swallowed: a bare "?" says nothing about whether a
+    dataset is absent, gated, or merely laid out unexpectedly, and those need different
+    responses from whoever is reading.
     """
-    path = os.path.join(_root(), source.directory)
-    if not source.split:
-        return sum(
-            1 for entry in os.listdir(path)
-            if os.path.isdir(os.path.join(path, entry)) and not entry.startswith(".")
-        ), ""
-    try:
-        from datasets import load_dataset
+    import agentevolver.data  # noqa: F401  (registers the dataset classes)
+    from agentevolver.registry import DATASET
 
-        kwargs = {"split": source.split}
-        if source.config:
-            kwargs["name"] = source.config
-        if source.data_files:
-            kwargs["data_files"] = source.data_files
-        return len(load_dataset(path, **kwargs)), ""
+    class_name = _DATASET_CLASS.get(source.name)
+    loader = DATASET.module_dict.get(class_name) if class_name else None
+    if loader is None:
+        return None, f"no dataset class registered for {source.name!r}"
+    kwargs = {}
+    if source.config:
+        kwargs["name"] = source.config
+    if source.split:
+        kwargs["split"] = source.split
+    try:
+        return len(loader(path=os.path.join("datasets", source.directory), **kwargs)), ""
     except Exception as exc:
         return None, f"{type(exc).__name__}: {str(exc).splitlines()[0][:70]}"
 
