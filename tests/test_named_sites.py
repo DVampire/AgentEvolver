@@ -13,6 +13,8 @@ asked about.
 `/s/<site>/` follows the site; `/s/<site>--r<n>/` pins one release.
 """
 
+import os
+
 import pytest
 
 from agentevolver.deploy import deployment_manager
@@ -183,3 +185,36 @@ class _StubApp:
 
     def __init__(self):
         self.router = self._Router()
+
+
+def test_the_site_relay_is_one_router_not_two_copies():
+    """The gateway serves deployed-site names for interactive sessions, and a headless
+    run mounts the same router so a script that deploys can hand out names too.
+
+    Two servings of one address would be two chances to disagree about what it means, so
+    the route has exactly one definition and both servers include it."""
+    from agentevolver.gateway.transport import site_relay
+
+    assert [route.path for route in site_relay.routes] == ["/s/{name}/{path:path}"]
+
+
+@pytest.mark.asyncio
+async def test_a_headless_run_leaves_the_address_to_whoever_already_serves_it(monkeypatch):
+    """A gateway already listening owns the address. Claiming it anyway would publish a
+    base this run cannot answer on, which is worse than the port-based URLs it replaces."""
+    import socket
+
+    from examples.run_meta_agent import serve_deployed_site_names
+
+    monkeypatch.delenv("GATEWAY_PUBLIC_BASE", raising=False)
+
+    class _Taken:
+        def bind(self, *a):
+            raise OSError("address in use")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(socket, "socket", lambda *a, **k: _Taken())
+    assert await serve_deployed_site_names() is None
+    assert "GATEWAY_PUBLIC_BASE" not in os.environ

@@ -201,6 +201,78 @@ async def teardown() -> None:
         logger.warning(f"| ⚠️ trace cleanup: {error}")
 
 
+# How long the deployed-site server gets to finish in-flight requests at shutdown.
+_TASK_STOP_SECONDS = 5.0
+
+
+async def serve_deployed_site_names():
+    """Answer `/s/<name>/` for this run's deployed sites, if nobody else is.
+
+    A deployer asks for a free port each time it runs, so `http://host:PORT` names one
+    deployment rather than one site: every redeploy hands out a different address and
+    every link already given out stops working. `/s/<site>/` is the fix, and
+    `/s/<site>--r<n>` reaches an older release from its archive — but both are routes on
+    the gateway's app, and a headless run starts no gateway. So the addresses existed only
+    for interactive sessions, and a run whose whole premise is asking people to return to
+    a site they visited before handed each of them a different port every round.
+
+    This serves the gateway's own app rather than a second copy of the route, because two
+    servings of one address are two chances to disagree about it. If the port is already
+    taken, a gateway is answering there and this run has nothing to add.
+    """
+    import socket
+
+    from agentevolver.port import GATEWAY as GATEWAY_PORT
+
+    host = "127.0.0.1"
+    probe = socket.socket()
+    try:
+        probe.bind((host, GATEWAY_PORT))
+    except OSError:
+        # Something already listens there. Whatever it is owns the address, so leave
+        # GATEWAY_PUBLIC_BASE to it rather than claiming an address this run cannot serve.
+        logger.info(f"| 🌐 port {GATEWAY_PORT} is taken; leaving deployed-site names to it")
+        return None
+    finally:
+        probe.close()
+
+    try:
+        import uvicorn
+        from fastapi import FastAPI
+
+        from agentevolver.gateway.transport import site_relay
+    except Exception as exc:
+        logger.warning(f"| 🌐 deployed sites stay port-addressed: {exc}")
+        return None
+
+    # Only the site relay, and the gateway's own definition of it. Serving the whole
+    # gateway app would put an AgentGateway behind routes nobody started, and a second
+    # copy of the route would be a second chance to disagree about what `/s/<name>/`
+    # means. This run answers for deployed sites and nothing else.
+    app = FastAPI(title="AgentEvolver deployed sites", version="1.0.0")
+    app.include_router(site_relay)
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=GATEWAY_PORT, log_level="warning"))
+    task = asyncio.create_task(server.serve(), name="deployed-site-names")
+    os.environ.setdefault("GATEWAY_PUBLIC_BASE", f"http://{host}:{GATEWAY_PORT}")
+    logger.info(f"| 🌐 deployed sites are addressable at http://{host}:{GATEWAY_PORT}/s/<site>/")
+
+    async def stop() -> None:
+        """Ask the server to finish, rather than cancelling it mid-request.
+
+        Cancelling uvicorn's `serve()` unwinds the ASGI lifespan through a
+        CancelledError and prints a traceback at the end of every run that used this —
+        an alarming way to report an ordinary shutdown.
+        """
+        server.should_exit = True
+        try:
+            await asyncio.wait_for(task, timeout=_TASK_STOP_SECONDS)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    return stop
+
+
 async def run_with_lifecycle() -> None:
     """Run the configured launcher and turn SIGINT/SIGTERM into graceful teardown."""
     loop = asyncio.get_running_loop()
@@ -219,6 +291,7 @@ async def run_with_lifecycle() -> None:
         except (NotImplementedError, RuntimeError):
             pass
 
+    stop_names = await serve_deployed_site_names()
     run_task = asyncio.create_task(main(), name="agent-launcher")
     signal_task = asyncio.create_task(stop_requested.wait(), name="launcher-stop-signal")
     try:
@@ -238,6 +311,8 @@ async def run_with_lifecycle() -> None:
             run_task.cancel()
             await asyncio.gather(run_task, return_exceptions=True)
         await teardown()
+        if stop_names is not None:
+            await stop_names()
         for sig in installed:
             loop.remove_signal_handler(sig)
 
