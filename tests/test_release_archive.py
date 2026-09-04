@@ -129,3 +129,95 @@ async def test_an_archived_release_is_started_on_demand(manager, tmp_path, monke
     assert started["site_id"] == "echo-ark--r1"
     assert started["backend"] == "host"
     assert open(os.path.join(started["source_dir"], "index.html")).read() == "<h1>one</h1>"
+
+
+@pytest.mark.asyncio
+async def test_a_pinned_release_does_not_archive_itself(manager, tmp_path, monkeypatch):
+    """A `<site>--r<n>` site is an archive being served, not a site that publishes.
+
+    Archiving it again copied an archive into an archive on every lazy start — the same
+    bytes duplicated under a nested releases/ directory each time anyone opened an older
+    release — and numbered it by this site's own deploy count instead of the release it
+    is pinned to."""
+    archived = []
+    monkeypatch.setattr(
+        manager, "_archive_release",
+        lambda site_id, release, source: archived.append((site_id, release)) or "",
+    )
+    src = _source(tmp_path / "ws", "<h1>three</h1>")
+
+    # Let the real bookkeeping run, then stop at the sandbox so no process is started.
+    from agentevolver.deploy import server as server_module
+
+    async def _no_sandbox(*a, **k):
+        raise RuntimeError("stop after the bookkeeping")
+
+    monkeypatch.setattr(server_module.sandbox_manager, "acquire", _no_sandbox)
+    # The deploy fails at the sandbox; the bookkeeping under test already ran.
+    await manager.deploy(DeployRequest(site_id="echo-ark--r3", runtime="static", source_dir=src))
+
+    assert archived == []
+    assert manager._sites["echo-ark--r3"].release_number == 3
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_site_still_archives(manager, tmp_path, monkeypatch):
+    """The guard above must not switch archiving off for sites that do publish."""
+    archived = []
+    monkeypatch.setattr(
+        manager, "_archive_release",
+        lambda site_id, release, source: archived.append((site_id, release)) or "",
+    )
+    src = _source(tmp_path / "ws", "<h1>one</h1>")
+
+    from agentevolver.deploy import server as server_module
+
+    async def _no_sandbox(*a, **k):
+        raise RuntimeError("stop after the bookkeeping")
+
+    monkeypatch.setattr(server_module.sandbox_manager, "acquire", _no_sandbox)
+    await manager.deploy(DeployRequest(site_id="echo-ark", runtime="static", source_dir=src))
+
+    assert archived == [("echo-ark", 1)]
+
+
+@pytest.mark.asyncio
+async def test_stopping_a_site_stops_the_releases_opened_beside_it(manager, monkeypatch):
+    """An older release exists to be read beside the site it is a version of.
+
+    Left running it outlives that site, holding a port and answering for something that
+    is gone — and nobody owns it: the caller never deployed it, it appeared because a
+    visitor opened one."""
+    for name, release in (("echo-ark", 3), ("echo-ark--r1", 1)):
+        manager._sites[name] = SiteRecord(
+            site_id=name, runtime="static", status=SiteStatus.RUNNING,
+            url="http://localhost:8899", port=8899, release_number=release,
+        )
+    manager._release_seen["echo-ark--r1"] = 0.0
+
+    from agentevolver.deploy import server as server_module
+
+    async def _released(*a, **k):
+        return True
+
+    monkeypatch.setattr(server_module.sandbox_manager, "release", _released)
+    await manager.stop_site("echo-ark")
+
+    assert manager._sites["echo-ark--r1"].status is SiteStatus.STOPPED
+
+
+@pytest.mark.asyncio
+async def test_a_release_left_by_a_previous_process_still_gets_reaped(manager):
+    """The registry survives a restart; the last-seen times do not. A pinned release with
+    no sighting must not become a port held forever — nor be cut off mid-read, so it gets
+    a first sighting now and a full idle window from there."""
+    manager._sites["echo-ark--r1"] = SiteRecord(
+        site_id="echo-ark--r1", runtime="static", status=SiteStatus.RUNNING,
+        url="http://localhost:9001", port=9001, release_number=1,
+    )
+    assert "echo-ark--r1" not in manager._release_seen
+
+    await manager._reap_idle_releases()
+
+    assert manager._sites["echo-ark--r1"].status is SiteStatus.RUNNING
+    assert "echo-ark--r1" in manager._release_seen

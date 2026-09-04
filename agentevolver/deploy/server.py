@@ -465,11 +465,18 @@ class DeploymentManagerServer(BaseModel):
         # somewhere the reader never saw. This field had no writer at all before: it sat
         # at its default of 0, which silently disabled both `release_url` and every
         # `--r<n>` lookup that checked it.
-        release_number = int(getattr(previous, "release_number", 0) or 0)
-        if previous is None or previous.source_revision != source_revision:
-            release_number += 1
-        if request.source_dir and os.path.isdir(request.source_dir):
-            self._archive_release(request.site_id, release_number, request.source_dir)
+        # A site pinned to one release (`<site>--r<n>`) is an archive being served, not a
+        # site that publishes. It carries the number it was asked for, and archiving it
+        # again would copy an archive into an archive on every lazy start.
+        pinned = self._split_release(request.site_id)
+        if pinned is not None:
+            release_number = pinned[1]
+        else:
+            release_number = int(getattr(previous, "release_number", 0) or 0)
+            if previous is None or previous.source_revision != source_revision:
+                release_number += 1
+            if request.source_dir and os.path.isdir(request.source_dir):
+                self._archive_release(request.site_id, release_number, request.source_dir)
 
         rec = SiteRecord(
             site_id=request.site_id,
@@ -751,7 +758,16 @@ class DeploymentManagerServer(BaseModel):
         Only sites this manager started on demand are candidates — a release someone
         deployed by that name themselves is theirs, not scratch space to reclaim.
         """
-        cutoff = time.time() - _RELEASE_IDLE_S
+        now = time.time()
+        # A pinned release this process did not start is one a previous process left
+        # behind: the registry survives a restart but the last-seen times do not. Give it
+        # a first sighting now rather than reaping it on the spot, so it still gets a full
+        # idle window and a visitor mid-read is not cut off.
+        for name, rec in list(self._sites.items()):
+            if rec.status is SiteStatus.RUNNING and self._split_release(name):
+                self._release_seen.setdefault(name, now)
+
+        cutoff = now - _RELEASE_IDLE_S
         for name, seen in list(self._release_seen.items()):
             if seen > cutoff:
                 continue
@@ -794,7 +810,26 @@ class DeploymentManagerServer(BaseModel):
         rec.updated_at = _now()
         self._save()
         logger.info(f"| 🛑 Site '{site_id}' stopped")
+
+        # Older releases of this site exist only to be read beside it. Left running they
+        # outlive the thing they are a version of, holding a port and answering for a
+        # site that is gone — and nobody owns them: the caller never deployed them, they
+        # appeared because a visitor opened one.
+        if self._split_release(site_id) is None:
+            for pinned in self._pinned_releases_of(site_id):
+                try:
+                    await self.stop_site(pinned)
+                except Exception as exc:
+                    logger.warning(f"| 📦 could not stop pinned release '{pinned}': {exc}")
         return rec
+
+    def _pinned_releases_of(self, site_id: str) -> List[str]:
+        """Names of the running ``<site_id>--r<n>`` archives, if any."""
+        return [
+            name for name, rec in list(self._sites.items())
+            if rec.status is SiteStatus.RUNNING
+            and (self._split_release(name) or (None,))[0] == site_id
+        ]
 
     async def redeploy(self, site_id: str) -> SiteRecord:
         """Tear down and rebuild a site from its stored request (new URL likely)."""
