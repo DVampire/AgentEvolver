@@ -10,10 +10,10 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
+from agentevolver.paths import P, path_manager
 from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import TOOL
-from agentevolver.config import config
-from agentevolver.paths import P, path_manager
+from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.types import OUTPUT_LIMIT, Tool
 from agentevolver.utils.terminal import (
     PTY_COLS,
@@ -22,7 +22,6 @@ from agentevolver.utils.terminal import (
     PTY_ROWS,
     render_terminal,
 )
-from agentevolver.response.types import Response, ResponseType
 
 _DESCRIPTION = "Execute bash commands in the shell."
 
@@ -60,6 +59,56 @@ _EXAMPLES = [
     '{"name": "bash_tool", "args": {"command": "./viewer --colour red", "tty": true, "stdin": "q", "timeout": 3}}',
     '{"name": "bash_tool", "args": {"command": "python train.py", "run_in_background": true}}',
 ]
+
+# Benchmark launchers can keep the Agent runtime on the host while commands execute in
+# the task image. This avoids importing a host-built Python/Conda runtime into arbitrary
+# glibc and musl images; only the shell crosses that boundary.
+_EXEC_CONTAINER_ENV = "AGENTEVOLVER_EXEC_CONTAINER"
+_EXEC_WORKDIR_ENV = "AGENTEVOLVER_EXEC_WORKDIR"
+_DOCKER = os.environ.get("AGENTEVOLVER_DOCKER", "docker")
+
+
+async def _run_in_container(
+    container: str,
+    workdir: str,
+    command: str,
+    stdin: str,
+    timeout: float,
+) -> tuple[str, str, Optional[int], bool]:
+    """Run one shell command in a launcher-owned task container.
+
+    Docker receives every control value as an argv item; only ``command`` is interpreted,
+    and it is interpreted by the shell inside the task container. ``bash -c`` deliberately
+    avoids a login profile replacing the PATH baked into the image.
+    """
+    args = [_DOCKER, "exec"]
+    if stdin:
+        args.append("-i")
+    if workdir:
+        args.extend(("--workdir", workdir))
+    args.extend((container, "bash", "-c", command))
+    process = await asyncio.create_subprocess_exec(
+        *args,
+        stdin=asyncio.subprocess.PIPE if stdin else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(stdin.encode("utf-8") if stdin else None),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        process.kill()
+        await process.wait()
+        return "", "", None, True
+    return (
+        stdout.decode("utf-8", errors="replace").strip(),
+        stderr.decode("utf-8", errors="replace").strip(),
+        process.returncode,
+        False,
+    )
 
 
 def _bash_archive_path(stem: Optional[str] = None) -> Optional[str]:
@@ -392,6 +441,48 @@ class BashTool(Tool):
         warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
 
         try:
+            exec_container = os.environ.get(_EXEC_CONTAINER_ENV, "").strip()
+            if exec_container:
+                if run_in_background or tty:
+                    mode = "background" if run_in_background else "TTY"
+                    return Response(
+                        type=ResponseType.TOOL,
+                        success=False,
+                        message=(
+                            f"Error: {mode} execution is unavailable for this externally "
+                            "controlled task container; run a bounded foreground command."
+                        ),
+                    )
+                stdout_str, stderr_str, exit_code, timed_out = await _run_in_container(
+                    exec_container,
+                    os.environ.get(_EXEC_WORKDIR_ENV, "/workspace"),
+                    command,
+                    stdin,
+                    float(limit),
+                )
+                if timed_out:
+                    return Response(
+                        type=ResponseType.TOOL,
+                        success=False,
+                        message=f"Error: Command timed out after {limit} seconds and was abandoned. Command: {command}",
+                        data={"exit_code": None, "command": command, "timed_out": True},
+                    )
+                parts = []
+                if stdout_str:
+                    parts.append(f"STDOUT:\n{stdout_str}")
+                if stderr_str:
+                    parts.append(f"STDERR:\n{stderr_str}")
+                if exit_code:
+                    parts.append(f"Exit code: {exit_code}")
+                body = "\n\n".join(parts) if parts else f"Command completed with exit code: {exit_code}"
+                archived = _write_bash_archive(command, body)
+                return Response(
+                    type=ResponseType.TOOL,
+                    success=True,
+                    message=_with_archive_note(warning_prefix + body, archived),
+                    data={"exit_code": exit_code, "command": command, "archived": archived},
+                )
+
             # Commands run in the current runtime environment, which is the container the
             # agent system is running inside. Keep python3 and pip on the interpreter that
             # launched us.

@@ -44,9 +44,11 @@ import asyncio
 import contextlib
 import json
 import os
+import random
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -62,7 +64,6 @@ from agentevolver.paths import P, path_manager
 # code only computes paths/constants.
 from examples.run_programbench import (  # noqa: E402
     _LANDING_MARGIN_SECONDS,
-    CONTAINER_EVAL_BRIDGE,
     CONTAINER_USER,
     CONTAINER_WORKSPACE,
     _summarise_spend,
@@ -70,7 +71,6 @@ from examples.run_programbench import (  # noqa: E402
     check_shared_roots_readable,
     grant_to_container_user,
     host_repo_root,
-    interpreter_prefix,
     restore_ownership,
 )
 
@@ -98,6 +98,23 @@ DEFAULT_GRADER_REPO = os.path.join(root, "others", "SWE-bench_Pro")
 #: Per-run grader-eval budget (see swebench_pro_eval.py) and how long one grade may take.
 _EVAL_BUDGET = 6
 _GRADE_TIMEOUT_SECONDS = 1800
+
+#: Seeding copies a whole checkout out of the image and then garbage-collects its history.
+#: 900s was not enough for the largest repos in the set.
+_SEED_TIMEOUT_SECONDS = 2700
+_PULL_TIMEOUT_SECONDS = 2700
+_PULL_ATTEMPTS = 4
+
+#: How much of each grader log to keep. A Go build log runs to megabytes and the cause of a
+#: zero is always at the end, so the tail is the part worth the disk.
+_EVIDENCE_TAIL = 200_000
+
+# The model/runtime stays in the known ``agentos`` host environment. Only repository
+# commands execute in the task image, so an Alpine/musl image never has to load a
+# glibc-linked host Python.
+_EXEC_CONTAINER_ENV = "AGENTEVOLVER_EXEC_CONTAINER"
+_EXEC_WORKDIR_ENV = "AGENTEVOLVER_EXEC_WORKDIR"
+_TASK_WORKSPACE_ENV = "AGENTEVOLVER_TASK_WORKSPACE"
 
 #: The ONLY instance fields that may enter the container. Everything else in the row is the
 #: answer key or host-side scoring metadata and is withheld. Order fixes the task-doc slots.
@@ -129,12 +146,14 @@ def _benchmark():
     return SWEBenchProBenchmark(base_dir="output/benchmark/swebench_pro")
 
 
-def load_instances() -> list:
-    """Load the SWE-bench Pro split as a list of dict rows (full, incl. oracle)."""
-    import asyncio
+async def load_instances() -> list:
+    """Load the SWE-bench Pro split as a list of dict rows (full, incl. oracle).
 
+    Awaited rather than wrapping `asyncio.run`: the only caller is `run_launcher`, which
+    is already inside the loop `main()` opened, and a nested `asyncio.run` raises there.
+    """
     benchmark = _benchmark()
-    asyncio.run(benchmark.initialize())
+    await benchmark.initialize()
     return benchmark.instances()
 
 
@@ -298,6 +317,40 @@ def _load_script(grader_repo: str, instance_id: str, name: str) -> str:
         return h.read()
 
 
+def _argv_safe_run_script(script: str) -> str:
+    """Make the common grader wrapper consume the argv we already parsed.
+
+    Some generated scripts also treat a comma in their *first argument* as a legacy list
+    separator. A real Go subtest name can itself contain a comma, so that heuristic changes
+    the test identity and silently executes nothing. The dataset field is already a list;
+    preserve its elements exactly.
+    """
+    legacy = '''if [[ "$1" == *","* ]]; then
+    IFS=',' read -r -a TEST_FILES <<< "$1"
+else
+    TEST_FILES=("$@")
+fi'''
+    return script.replace(legacy, 'TEST_FILES=("$@")')
+
+
+def _parser_with_fail_boundaries(script: str) -> str:
+    """Keep Jest FAIL sections from being attributed to the preceding PASS file.
+
+    A number of shipped parsers use PASS as the only file boundary. Jest prints a FAIL
+    header in the same position, and a failed suite may still contain hundreds of passing
+    tests. Parsing both headers preserves those passing results while the failed assertion
+    remains absent/failed as before.
+    """
+    script = script.replace(
+        'if line.startswith("PASS"):',
+        'if line.startswith(("PASS", "FAIL")):',
+    )
+    return script.replace(
+        'not lines[i].strip().startswith("PASS")',
+        'not lines[i].strip().startswith(("PASS", "FAIL"))',
+    )
+
+
 def _build_entryscript(row: dict, grader_repo: str) -> str:
     """Mirror swe_bench_pro_eval.create_entryscript: ENV from the dockerfiles, then reset to
     base, apply the agent's patch, run before_repo_set_cmd (which checks out the resolution
@@ -316,7 +369,7 @@ def _build_entryscript(row: dict, grader_repo: str) -> str:
                 if line.startswith("ENV"):
                     env_cmds.append(line.replace("ENV", "export", 1))
     before = row.get("before_repo_set_cmd", "").strip().split("\n")[-1]
-    test_files = " ".join(_as_list(row, "selected_test_files_to_run"))
+    test_files = shlex.join(str(item) for item in _as_list(row, "selected_test_files_to_run"))
     base = row.get("base_commit", "")
     return "\n".join(env_cmds) + f"""
 set +e
@@ -347,6 +400,60 @@ def _counts(results, fail_to_pass: list, pass_to_pass: list) -> dict:
     }
 
 
+#: Where a grading round leaves its own evidence, beside the bridge's request/response.
+_GRADER_EVIDENCE = ("stdout.log", "stderr.log", "output.json")
+
+
+async def _save_grader_evidence(sbx, workspace_dir: str, run) -> None:
+    """Copy the grading container's own logs out before it is destroyed.
+
+    The container is thrown away at the end of the round, so anything not copied here is
+    gone. Failures are swallowed: evidence is what explains a score, never what decides it.
+    """
+    dest = os.path.join(workspace_dir, os.pardir, "eval_bridge")
+    with contextlib.suppress(Exception):
+        os.makedirs(dest, exist_ok=True)
+        seq = len([n for n in os.listdir(dest) if n.startswith("grader-") and n.endswith(".entry.log")])
+        with contextlib.suppress(Exception):
+            entry = (getattr(run, "stdout", "") or "") + (getattr(run, "stderr", "") or "")
+            with open(os.path.join(dest, f"grader-{seq}.entry.log"), "w", encoding="utf-8") as h:
+                h.write(entry[-_EVIDENCE_TAIL:])
+        for name in _GRADER_EVIDENCE:
+            with contextlib.suppress(Exception):
+                data = await sbx.read_file(f"/workspace/{name}")
+                with open(os.path.join(dest, f"grader-{seq}.{name}"), "w", encoding="utf-8") as h:
+                    h.write(data[-_EVIDENCE_TAIL:] if isinstance(data, str) else str(data))
+
+
+def _diagnose_zero(workspace_dir: str) -> str:
+    """Read back this round's own entry log and name the first cause it proves.
+
+    Ordered by how early it happens: a patch that did not apply makes the build and the
+    selector irrelevant, and reporting the later symptom would send the reader to the wrong
+    place. Returns "" when the log shows none of them, because a guess is worse than nothing.
+    """
+    dest = os.path.join(workspace_dir, os.pardir, "eval_bridge")
+    try:
+        logs = sorted(n for n in os.listdir(dest) if n.startswith("grader-"))
+        if not logs:
+            return ""
+        seq = logs[-1].split(".", 1)[0]
+        text = ""
+        for name in (f"{seq}.entry.log", f"{seq}.stderr.log", f"{seq}.stdout.log"):
+            with contextlib.suppress(Exception):
+                with open(os.path.join(dest, name), encoding="utf-8") as h:
+                    text += h.read()
+    except Exception:  # noqa: BLE001
+        return ""
+    if "error: patch failed" in text or "does not apply" in text or "unrecognized input" in text:
+        return "the agent's patch did not apply to the base checkout — the tests ran unpatched"
+    if "no tests to run" in text or "testing: warning: no tests to run" in text:
+        return "the test selector matched nothing — no target test was executed"
+    if "no test files" in text or "build failed" in text or "cannot find package" in text:
+        return "the test build failed — no test binary ran"
+    return ""
+
+
 async def _grade_once(workspace_dir: str, row: dict, grader_repo: str) -> dict:
     """Score the current patch in a PEER SANDBOX (the framework's own machinery, like the
     agent's own container) — not Scale AI's Beta ``--use_local_docker`` path. Returns COUNTS
@@ -362,8 +469,12 @@ async def _grade_once(workspace_dir: str, row: dict, grader_repo: str) -> dict:
     if not patch.strip():
         return {"error_code": "empty_patch", "error_details": "the working tree is unchanged from base"}
     try:
-        run_script = _load_script(grader_repo, instance_id, "run_script.sh")
-        parser_py = _load_script(grader_repo, instance_id, "parser.py")
+        run_script = _argv_safe_run_script(
+            _load_script(grader_repo, instance_id, "run_script.sh")
+        )
+        parser_py = _parser_with_fail_boundaries(
+            _load_script(grader_repo, instance_id, "parser.py")
+        )
         entryscript = _build_entryscript(row, grader_repo)
     except Exception as e:  # noqa: BLE001
         return {"error_code": "scripts_missing", "error_details": str(e)}
@@ -384,15 +495,32 @@ async def _grade_once(workspace_dir: str, row: dict, grader_repo: str) -> dict:
                            ("/workspace/parser.py", parser_py),
                            ("/workspace/entryscript.sh", entryscript)):
             await sbx.write_file(path, data)
-        await sbx.run_command("bash /workspace/entryscript.sh",
-                              timeout=_GRADE_TIMEOUT_SECONDS)
+        run = await sbx.run_command("bash /workspace/entryscript.sh",
+                                    timeout=_GRADE_TIMEOUT_SECONDS)
+        # Keep the grader's own evidence beside the counts. Without it a 0/N result cannot
+        # be told apart from a patch that never applied, a build that never compiled, and a
+        # test selector that matched nothing — three different failures that look identical
+        # from the counts alone. `set +e` in the entryscript means none of them stop the run.
+        await _save_grader_evidence(sbx, workspace_dir, run)
         try:
             output = await sbx.read_file("/workspace/output.json")
             results = json.loads(output)
         except Exception as e:  # noqa: BLE001
             return {"error_code": "no_output_json",
                     "error_details": f"the test run produced no output.json ({e})"}
-        return _counts(results, _as_list(row, "fail_to_pass"), _as_list(row, "pass_to_pass"))
+        counts = _counts(results, _as_list(row, "fail_to_pass"), _as_list(row, "pass_to_pass"))
+        # A patch that did not apply scores every target test as still-failing, which reads
+        # as "the agent did not fix it". Say which one it was.
+        if counts["fail_to_pass_resolved"] == 0 and counts["fail_to_pass_total"] > 0:
+            note = _diagnose_zero(workspace_dir)
+            if note:
+                counts["grader_note"] = note
+                if "selector matched nothing" in note:
+                    return {
+                        "error_code": "test_selection_failed",
+                        "error_details": note,
+                    }
+        return counts
     except Exception as e:  # noqa: BLE001
         return {"error_code": "grade_failed", "error_details": str(e)}
     finally:
@@ -476,6 +604,38 @@ def _reclaim_instance_disk(workspace_dir, image_ref_str) -> None:
 # --------------------------------------------------------------------------- #
 # Workspace seeding (from /app in the image)
 # --------------------------------------------------------------------------- #
+def ensure_image(image_ref_str: str) -> None:
+    """Ensure one task image is local, retrying transient registry failures."""
+    present = subprocess.run(
+        ["docker", "image", "inspect", image_ref_str],
+        capture_output=True,
+        timeout=60,
+    )
+    if present.returncode == 0:
+        return
+
+    last = ""
+    for attempt in range(1, _PULL_ATTEMPTS + 1):
+        try:
+            pulled = subprocess.run(
+                ["docker", "pull", image_ref_str],
+                capture_output=True,
+                text=True,
+                timeout=_PULL_TIMEOUT_SECONDS,
+            )
+            if pulled.returncode == 0:
+                return
+            last = (pulled.stderr or pulled.stdout).strip()
+        except subprocess.TimeoutExpired as error:
+            last = f"pull exceeded {_PULL_TIMEOUT_SECONDS}s: {error}"
+        if attempt < _PULL_ATTEMPTS:
+            time.sleep((2 ** attempt) + random.uniform(0.0, 1.0))
+    raise RuntimeError(
+        f"could not pull {image_ref_str} after {_PULL_ATTEMPTS} attempts: "
+        f"{last[-1000:] or '(no Docker output)'}"
+    )
+
+
 def seed_workspace(image_ref_str: str, base_commit: str, destination: str) -> None:
     """Copy the image's /app into destination at base_commit, the way the grader starts.
 
@@ -499,6 +659,7 @@ def seed_workspace(image_ref_str: str, base_commit: str, destination: str) -> No
     os.makedirs(destination, exist_ok=True)
     if not base_commit:
         raise ValueError("base_commit is required to seed a GT-safe SWE-bench Pro workspace")
+    ensure_image(image_ref_str)
     quoted_base = shlex.quote(base_commit)
     reset = (
         f"git reset --hard {quoted_base} && "
@@ -514,11 +675,27 @@ def seed_workspace(image_ref_str: str, base_commit: str, destination: str) -> No
         f'git config --global --add safe.directory /seed; {reset}'
         'chown -R 1000:1000 /seed'
     )
-    result = subprocess.run(
-        ["docker", "run", "--rm", "--entrypoint", "sh",
-         "-v", f"{destination}:/seed", image_ref_str, "-c", script],
-        capture_output=True, text=True, timeout=900,
-    )
+    # `cp -a` of a whole checkout plus a `git gc` runs long on a large repo and a busy
+    # volume; navidrome hit the previous 900s and the instance was recorded failed without
+    # ever running. The copy is bounded by disk, not by anything a shorter deadline makes
+    # safer, so the deadline is the one thing here worth being generous about.
+    try:
+        result = subprocess.run(
+            ["docker", "run", "--rm", "--entrypoint", "sh",
+             "-v", f"{destination}:/seed", image_ref_str, "-c", script],
+            capture_output=True, text=True, timeout=_SEED_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as e:
+        # Say what it was doing. A bare TimeoutExpired names the docker command line and
+        # nothing about which of copy, reset or gc was still running when it expired.
+        tail = (e.stderr or e.stdout or b"")
+        if isinstance(tail, bytes):
+            tail = tail.decode("utf-8", "replace")
+        raise RuntimeError(
+            f"seeding the workspace from {image_ref_str} exceeded "
+            f"{_SEED_TIMEOUT_SECONDS}s (copy + reset + gc of the checkout). "
+            f"Last output: {tail.strip()[-300:] or '(none)'}"
+        ) from e
     if result.returncode != 0:
         raise RuntimeError(
             f"could not seed the workspace from {image_ref_str}: "
@@ -531,6 +708,70 @@ async def seed_workspace_async(
 ) -> None:
     """Seed without blocking concurrent agents on the launcher's event loop."""
     await asyncio.to_thread(seed_workspace, image_ref_str, base_commit, destination)
+
+
+def has_resumable_workspace(workspace_dir: str, base_commit: str) -> bool:
+    """Whether ``workspace_dir`` is a usable checkout for an interrupted instance.
+
+    A resume is intentionally coarse-grained: completed instances are skipped from the
+    durable run ledger, while an in-flight instance reuses its checkout and starts a fresh
+    agent turn over the existing edits.  Requiring both a valid HEAD and the benchmark base
+    object avoids building on a half-copied or corrupted seed after a host failure.
+    """
+    git_dir = os.path.join(workspace_dir, ".git")
+    if not base_commit or not os.path.isdir(git_dir):
+        return False
+
+    def _git(*items):
+        return subprocess.run(
+            ["git", f"--git-dir={git_dir}", f"--work-tree={workspace_dir}", *items],
+            capture_output=True, text=True, timeout=30,
+        )
+
+    try:
+        head = _git("rev-parse", "--verify", "HEAD^{commit}")
+        base = _git("cat-file", "-e", f"{base_commit}^{{commit}}")
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return head.returncode == 0 and base.returncode == 0
+
+
+def load_run_results(results_path: str) -> list[dict]:
+    """Load the durable per-instance ledger used by ``--resume``."""
+    if not os.path.isfile(results_path):
+        return []
+    with open(results_path, encoding="utf-8") as handle:
+        value = json.load(handle)
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise ValueError(f"invalid SWE-bench Pro results ledger: {results_path}")
+    return value
+
+
+def scored_instance_ids(records: list[dict]) -> set[str]:
+    """Instances whose official final grade was already recorded.
+
+    Resolved and unresolved scores are both terminal. Re-running only the unresolved ones
+    would turn crash recovery into hidden-test retrying and invalidate the experiment.
+    """
+    completed = set()
+    for record in records:
+        grade = record.get("final_grade")
+        if isinstance(grade, dict) and not grade.get("error_code"):
+            instance_id = record.get("instance_id")
+            if instance_id:
+                completed.add(str(instance_id))
+    return completed
+
+
+def atomic_write_json(path: str, value) -> None:
+    """Replace a JSON checkpoint atomically so interruption cannot truncate it."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(value, handle, ensure_ascii=False, indent=2)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
 
 
 # --------------------------------------------------------------------------- #
@@ -569,7 +810,11 @@ async def run_inner(args) -> int:
         shared_extension_root=shared_extension_root,
     )
     bind_session_roots(config, fs_sandbox)
-    bind_task_workspace(ctx, fs_sandbox)
+    bind_task_workspace(
+        ctx,
+        fs_sandbox,
+        os.environ.get(_TASK_WORKSPACE_ENV, CONTAINER_WORKSPACE),
+    )
 
     extension_manager.set_base_dir(shared_extension_root)
     logger.initialize(config=config)
@@ -600,6 +845,16 @@ async def run_inner(args) -> int:
     await task_manager.start(num_workers=1)
 
     content, task_files, task_meta = build_task_content(instance, args.task_file, task_log_root)
+
+    if getattr(args, "resume", False):
+        content = (
+            "## RESUMING an interrupted attempt — preserve useful work\n\n"
+            "The repository may contain source edits and commits from an earlier process. "
+            "Inspect `git status`, `git log`, and the current diff before changing anything. "
+            "Continue from useful work, repair incomplete edits, run the repository tests, "
+            "and do not reset or rewrite the solution merely because this is a new process.\n\n"
+            "The original task contract follows.\n\n---\n\n" + content
+        )
 
     async def handler(record):
         return await agent_manager(
@@ -674,21 +929,55 @@ async def run_inner(args) -> int:
     return 0 if result["status"] == "done" else 1
 
 
-def inner_command(row: dict, args) -> str:
-    """The command the launcher runs inside the container — SAFE fields only in the payload."""
+def inner_argv(row: dict, args, resume: bool = False) -> list[str]:
+    """Host-runtime argv for one isolated Agent process — SAFE row fields only."""
     payload = json.dumps(_safe_instance(row))
     parts = [
-        shlex.quote(sys.executable),
-        shlex.quote(f"{CONTAINER_REPO}/examples/run_swebench_pro.py"),
-        "--instance-json", shlex.quote(payload),
-        "--config", shlex.quote(args.config.replace(root, CONTAINER_REPO)),
-        "--task-file", shlex.quote(args.task_file.replace(root, CONTAINER_REPO)),
+        sys.executable,
+        os.path.join(root, "examples", "run_swebench_pro.py"),
+        "--instance-json", payload,
+        "--config", os.path.abspath(args.config),
+        "--task-file", os.path.abspath(args.task_file),
     ]
+    if resume:
+        parts.append("--resume")
     overrides = getattr(args, "user_cfg_options", None) or {}
     if overrides:
         parts.append("--cfg-options")
-        parts.extend(shlex.quote(f"{k}={v}") for k, v in overrides.items())
-    return " ".join(parts)
+        parts.extend(f"{key}={value}" for key, value in overrides.items())
+    return parts
+
+
+def inner_command(row: dict, args, resume: bool = False) -> str:
+    """Printable form of :func:`inner_argv`; never executed through a host shell."""
+    return shlex.join(inner_argv(row, args, resume=resume))
+
+
+async def run_inner_process(row: dict, args, env: dict, resume: bool, timeout: int) -> int:
+    """Run one Agent brain in its own host process and bound its whole process group."""
+    process = await asyncio.create_subprocess_exec(
+        *inner_argv(row, args, resume=resume),
+        env=env,
+        start_new_session=True,
+    )
+    async def stop() -> None:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGTERM)
+        try:
+            await asyncio.wait_for(process.wait(), timeout=10)
+        except asyncio.TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            await process.wait()
+
+    try:
+        return await asyncio.wait_for(process.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        await stop()
+        return 124
+    except asyncio.CancelledError:
+        await stop()
+        raise
 
 
 # --------------------------------------------------------------------------- #
@@ -699,55 +988,105 @@ async def run_launcher(args) -> int:
 
     check_shared_roots_readable()
 
-    # A benchmark instance may be run repeatedly with different models. Session state
-    # includes memory, trajectories, prompts and grader counters, so keying it only by
-    # instance_id can leak an earlier model's work into a later run. Give every launcher
-    # invocation its own owner namespace unless the caller deliberately supplied one.
-    overrides = dict(getattr(args, "user_cfg_options", None) or {})
-    if not overrides.get("output_owner"):
-        run_namespace = f"{config.get('tag') or 'swebench_pro'}_{time.strftime('%Y%m%d_%H%M%S')}"
-        overrides["output_owner"] = run_namespace
-        args.user_cfg_options = overrides
-        setattr(config, "output_owner", run_namespace)
-        logger.info(f"| 🧰 Isolated run namespace: {run_namespace}")
-
-    grader_repo = os.path.abspath(args.grader_repo)
-    if not os.path.isfile(os.path.join(grader_repo, "swe_bench_pro_eval.py")):
-        logger.error(f"| ❌ grader repo not found at {grader_repo} — clone scaleapi/SWE-bench_Pro-os there")
+    if getattr(args, "resume", False) and not args.out:
+        logger.error("| ❌ --resume requires a stable --out directory")
         return 1
 
-    instances = load_instances()
-    task_ids = [t.strip() for t in args.task_ids.split(",")] if args.task_ids else None
-    selected = select_instances(instances, task_ids=task_ids, start=args.start, end=args.end)
-    if not selected:
-        logger.error("| ❌ no instances selected")
-        return 1
-    logger.info(f"| 📋 SWE-bench Pro: {len(selected)} instance(s), concurrency={args.concurrency}")
-
-    wall_clock = int(getattr(config, "WALL_CLOCK", 7200) or 7200)
-    forwarded = {k: os.environ[k] for k in _FORWARDED_ENV if os.environ.get(k)}
-    prefix = interpreter_prefix()
-    mounts = {root: CONTAINER_REPO, prefix: prefix}
-
-    # The shared extension library lives inside the mounted repo at
-    # ``/AgentEvolver/extension``; the inner run writes its manifest there as the
-    # container user. Grant it once here (not per instance — concurrent instances
-    # would chown it under one another); ``restore_ownership`` below hands it back.
-    grant_to_container_user(str(path_manager.get(P.EXTENSION)))
-
-    results: list = []
-    results_lock = asyncio.Lock()
     out_dir = args.out or str(path_manager.under(
         config.project_root,
         P.PROJECT_RESULT_RUN,
         run_id=time.strftime("run_%Y%m%d_%H%M%S"),
     ))
     os.makedirs(out_dir, exist_ok=True)
+    state_path = path_manager.resolve_under(out_dir, "run_state.json")
+    results_path = path_manager.resolve_under(out_dir, "results.json")
+
+    prior_state = {}
+    if getattr(args, "resume", False) and os.path.isfile(state_path):
+        with open(state_path, encoding="utf-8") as handle:
+            prior_state = json.load(handle)
+
+    # A benchmark instance may be run repeatedly with different models. Session state
+    # includes memory, trajectories, prompts and grader counters, so keying it only by
+    # instance_id can leak an earlier model's work into a later run. A fresh launcher gets
+    # an isolated owner; a resumed launcher recovers the exact owner from run_state.json.
+    overrides = dict(getattr(args, "user_cfg_options", None) or {})
+    prior_owner = prior_state.get("output_owner")
+    requested_owner = overrides.get("output_owner")
+    if prior_owner and requested_owner and prior_owner != requested_owner:
+        logger.error(
+            f"| ❌ resume owner mismatch: state={prior_owner}, requested={requested_owner}"
+        )
+        return 1
+    if prior_owner:
+        overrides["output_owner"] = prior_owner
+        args.user_cfg_options = overrides
+        setattr(config, "output_owner", prior_owner)
+        logger.info(f"| ⏩ Restored run namespace: {prior_owner}")
+    elif not requested_owner:
+        run_namespace = f"{config.get('tag') or 'swebench_pro'}_{time.strftime('%Y%m%d_%H%M%S')}"
+        overrides["output_owner"] = run_namespace
+        args.user_cfg_options = overrides
+        setattr(config, "output_owner", run_namespace)
+        logger.info(f"| 🧰 Isolated run namespace: {run_namespace}")
+
+    run_state = {
+        "config": os.path.abspath(args.config),
+        "task_ids": args.task_ids,
+        "start": args.start,
+        "end": args.end,
+        "output_owner": str(config.get("output_owner") or config.tag),
+    }
+    if prior_state:
+        for key in ("config", "task_ids", "start", "end"):
+            if prior_state.get(key) != run_state.get(key):
+                logger.error(
+                    f"| ❌ resume selection mismatch for {key}: "
+                    f"state={prior_state.get(key)!r}, requested={run_state.get(key)!r}"
+                )
+                return 1
+    atomic_write_json(state_path, run_state)
+
+    grader_repo = os.path.abspath(args.grader_repo)
+    if not os.path.isfile(os.path.join(grader_repo, "swe_bench_pro_eval.py")):
+        logger.error(f"| ❌ grader repo not found at {grader_repo} — clone scaleapi/SWE-bench_Pro-os there")
+        return 1
+
+    instances = await load_instances()
+    task_ids = [t.strip() for t in args.task_ids.split(",")] if args.task_ids else None
+    selected = select_instances(instances, task_ids=task_ids, start=args.start, end=args.end)
+    if not selected:
+        logger.error("| ❌ no instances selected")
+        return 1
+    selection_size = len(selected)
+
+    results = load_run_results(results_path) if getattr(args, "resume", False) else []
+    completed_ids = scored_instance_ids(results)
+    pending = [(index, row) for index, row in enumerate(selected, start=1)
+               if row["instance_id"] not in completed_ids]
+    logger.info(
+        f"| 📋 SWE-bench Pro: {selection_size} selected, {len(completed_ids)} already "
+        f"scored, {len(pending)} pending, concurrency={args.concurrency}"
+    )
+    if not pending:
+        logger.info(f"| ✅ Nothing to resume; all {selection_size} instances are scored")
+        return 0
+
+    wall_clock = int(getattr(config, "WALL_CLOCK", 7200) or 7200)
+    forwarded = {k: os.environ[k] for k in _FORWARDED_ENV if os.environ.get(k)}
+
+    # The Agent brain now stays in the known host runtime; only repository commands run
+    # inside the task image. Recover the shared library from a previously interrupted
+    # container-hosted run before any host worker tries to update its manifest.
+    restore_ownership(str(path_manager.get(P.EXTENSION)))
+
+    results_lock = asyncio.Lock()
+    provision_sem = asyncio.Semaphore(max(1, int(args.provision_concurrency or 1)))
 
     def _write_results():
-        results_path = path_manager.resolve_under(out_dir, "results.json")
-        with open(results_path, "w", encoding="utf-8") as handle:
-            json.dump(results, handle, ensure_ascii=False, indent=2)
+        order = {row["instance_id"]: index for index, row in enumerate(selected)}
+        results.sort(key=lambda item: order.get(item.get("instance_id"), selection_size))
+        atomic_write_json(results_path, results)
 
     async def _run_one_instance(index, row):
         instance_id = row["instance_id"]
@@ -759,6 +1098,7 @@ async def run_launcher(args) -> int:
         watcher_task = None
         workspace_dir = None
         eval_counter = {"count": 0}
+        attempt_completed = False
         try:
             owner = str(config.get("output_owner") or config.tag)
             workspace_dir = str(path_manager.get(
@@ -767,45 +1107,65 @@ async def run_launcher(args) -> int:
             session_path = str(path_manager.get(
                 P.SESSION, owner=owner, session_id=instance_id,
             ))
-            await seed_workspace_async(ref, row.get("base_commit", ""), workspace_dir)
+            resuming = bool(getattr(args, "resume", False)) and has_resumable_workspace(
+                workspace_dir, row.get("base_commit", "")
+            )
+            if resuming:
+                logger.info(f"| ⏩ [{instance_id}] Reusing interrupted workspace: {workspace_dir}")
+                async with provision_sem:
+                    await asyncio.to_thread(ensure_image, ref)
+                grant_to_container_user(workspace_dir)
+            else:
+                async with provision_sem:
+                    await seed_workspace_async(ref, row.get("base_commit", ""), workspace_dir)
 
             bridge_dir = str(path_manager.under(session_path, P.PROJECT_EVAL_BRIDGE))
             os.makedirs(bridge_dir, exist_ok=True)
-            os.chmod(bridge_dir, 0o777)
-            grant_to_container_user(session_path)
-            logger.info(f"| 🌱 [{instance_id}] Seeded and mounted at {CONTAINER_WORKSPACE} (owned by {CONTAINER_USER})")
+            logger.info(
+                f"| {'⏩' if resuming else '🌱'} [{instance_id}] "
+                f"{'Reused' if resuming else 'Seeded'} and mounted at {CONTAINER_WORKSPACE} "
+                f"(owned by {CONTAINER_USER})"
+            )
 
             sandbox = await sandbox_manager.acquire(
                 "docker", reuse_key=instance_id, image=ref, network=False, user=CONTAINER_USER,
                 workdir=CONTAINER_WORKSPACE,
-                mounts={**mounts, workspace_dir: CONTAINER_WORKSPACE, bridge_dir: CONTAINER_EVAL_BRIDGE},
-                env={
-                    "PYTHONPATH": CONTAINER_REPO,
-                    "AGENTEVOLVER_EVAL_BRIDGE": CONTAINER_EVAL_BRIDGE,
-                    "AGENTEVOLVER_EVAL_BUDGET": str(_EVAL_BUDGET),
-                    "AGENTEVOLVER_HOME": CONTAINER_REPO,
-                    "LITELLM_LOCAL_MODEL_COST_MAP": "True",
-                    **forwarded,
-                },
+                mounts={workspace_dir: CONTAINER_WORKSPACE},
+                env={},
+                allow_hosts=[],
+                deny_hosts=[],
                 timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
             )
-            command = inner_command(row, args)
+            command = inner_command(row, args, resume=resuming)
             logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
             watcher_task = asyncio.create_task(
                 eval_bridge_watcher(bridge_dir, workspace_dir, row, grader_repo, _EVAL_BUDGET, eval_counter))
-            execution = await sandbox.run_command(
-                command, workspace_root=CONTAINER_REPO, timeout=wall_clock + _LANDING_MARGIN_SECONDS)
-            if execution.stdout:
-                print(execution.stdout)
-            if execution.stderr:
-                print(execution.stderr, file=sys.stderr)
+            inner_env = {
+                **os.environ,
+                **forwarded,
+                _EXEC_CONTAINER_ENV: sandbox.container_name,
+                _EXEC_WORKDIR_ENV: CONTAINER_WORKSPACE,
+                _TASK_WORKSPACE_ENV: workspace_dir,
+                "AGENTEVOLVER_EVAL_BRIDGE": bridge_dir,
+                "AGENTEVOLVER_EVAL_BUDGET": str(_EVAL_BUDGET),
+                "AGENTEVOLVER_HOME": root,
+                "PYTHONPATH": root,
+                "LITELLM_LOCAL_MODEL_COST_MAP": "True",
+            }
+            exit_code = await run_inner_process(
+                row,
+                args,
+                inner_env,
+                resume=resuming,
+                timeout=wall_clock + _LANDING_MARGIN_SECONDS,
+            )
 
             inner_result = str(path_manager.under(session_path, P.PROJECT_RESULT))
             if os.path.isfile(inner_result):
                 with open(inner_result, encoding="utf-8") as handle:
                     record.update(json.load(handle))
             else:
-                record["error"] = f"the inner run left no result.json (container exit {execution.exit_code})"
+                record["error"] = f"the inner run left no result.json (process exit {exit_code})"
             record["egress_audit"] = sandbox_manager.egress_audit(sandbox)
 
             # Final leaderboard-style grade of the patch the agent left behind. Counts only,
@@ -814,8 +1174,11 @@ async def run_launcher(args) -> int:
             final = await _grade_once(workspace_dir, row, grader_repo)
             record["final_grade"] = final
             record["resolved"] = bool(final.get("resolved"))
+            if final.get("error_code"):
+                record["error"] = f"final grader failed: {final['error_code']}"
             logger.info(f"| {'🟢 RESOLVED' if record['resolved'] else '🔴 unresolved'} "
                         f"[{instance_id}] {final}")
+            attempt_completed = not final.get("error_code") and os.path.isfile(inner_result)
         except Exception as e:  # noqa: BLE001
             logger.error(f"| ❌ [{instance_id}] launcher failure: {e}", exc_info=True)
             record["error"] = str(e)
@@ -824,21 +1187,32 @@ async def run_launcher(args) -> int:
                 watcher_task.cancel()
                 with contextlib.suppress(Exception):
                     await watcher_task
-            record["grader_evals"] = eval_counter["count"]
-            if eval_counter["count"]:
+            bridge_requests = []
+            if session_path:
+                bridge = str(path_manager.under(session_path, P.PROJECT_EVAL_BRIDGE))
+                with contextlib.suppress(OSError):
+                    bridge_requests = [
+                        name for name in os.listdir(bridge)
+                        if name.startswith("request-") and name.endswith(".json")
+                    ]
+            record["grader_evals"] = len(bridge_requests)
+            if bridge_requests:
                 record["leaderboard_comparable"] = False
             if sandbox is not None:
                 await sandbox_manager.release("docker", reuse_key=instance_id)
             # Bounded disk on a near-full shared volume: each instance has its own ~1GB
             # image and a seeded repo workspace. Reclaim both once graded — result.json and
             # agent.patch live in the session root (not the workspace), so scores survive.
-            if getattr(args, "reclaim_disk", True):
+            # Cancellation is resumable: retain the Git workspace and session state.
+            # A later ``--resume`` run can continue them after the sandbox is released.
+            if attempt_completed and getattr(args, "reclaim_disk", True):
                 await asyncio.to_thread(_reclaim_instance_disk, workspace_dir, ref)
 
         record.setdefault("time_seconds", round(time.time() - started, 1))
         logger.info(f"| {'✅' if record['status'] == 'done' else '❌'} [{index}/{len(selected)}] "
                     f"{instance_id} → {record['status']} in {record['time_seconds']}s")
         async with results_lock:
+            results[:] = [item for item in results if item.get("instance_id") != instance_id]
             results.append(record)
             _write_results()
         return record
@@ -853,16 +1227,29 @@ async def run_launcher(args) -> int:
                 logger.error(f"| ❌ [{row['instance_id']}] crashed: {e}")
                 return {"instance_id": row["instance_id"], "status": "failed", "error": str(e)}
 
-    try:
-        await asyncio.gather(*[_bounded(i + 1, r) for i, r in enumerate(selected)])
-    finally:
-        for shared in (str(path_manager.get(P.OUTPUT)), config.extension_root):
-            with contextlib.suppress(Exception):
-                restore_ownership(shared)
+    await asyncio.gather(*[_bounded(i, row) for i, row in pending])
 
+    # Two different numbers, and reporting only the first is how a run that never happened
+    # reads as a run that did. `status == "done"` says the agent finished its turn;
+    # `resolved` says the grader accepted the patch. An instance that never produced a score
+    # — a seeding timeout, a crash — is a harness failure, not a benchmark answer, so it
+    # leaves through a non-zero exit while an honestly unresolved instance does not.
     done = sum(1 for r in results if r.get("status") == "done")
-    logger.info(f"| ✅ SWE-bench Pro run done: {done}/{len(selected)} completed. Results: {out_dir}")
-    return 0
+    resolved = sum(1 for r in results if r.get("resolved"))
+    scored = [r for r in results if isinstance(r.get("final_grade"), dict)
+              and not r["final_grade"].get("error_code")]
+    unscored = [r for r in results if r not in scored]
+    logger.info(
+        f"| ✅ SWE-bench Pro: {resolved}/{selection_size} resolved, "
+        f"{len(scored)}/{selection_size} scored, {done}/{selection_size} ran. Results: {out_dir}"
+    )
+    for r in unscored:
+        grade = r.get("final_grade") or {}
+        logger.error(
+            f"| ❌ {r.get('instance_id')} produced no score: "
+            f"{grade.get('error_code') or r.get('error') or 'unknown'}"
+        )
+    return 1 if unscored else 0
 
 
 # --------------------------------------------------------------------------- #
@@ -881,12 +1268,25 @@ def parse_args():
     parser.add_argument("--grader-repo", default=DEFAULT_GRADER_REPO,
                         help="Path to the cloned scaleapi/SWE-bench_Pro-os checkout.")
     parser.add_argument("--concurrency", type=int, default=1)
+    parser.add_argument(
+        "--provision-concurrency",
+        type=int,
+        default=4,
+        help="Maximum concurrent image pulls/workspace seeds, separate from Agent workers.",
+    )
     parser.add_argument("--reclaim-disk", dest="reclaim_disk", action="store_true", default=True,
                         help="After each instance is graded, delete its seeded workspace and its "
                              "docker image to bound disk on a full volume (default on).")
     parser.add_argument("--no-reclaim-disk", dest="reclaim_disk", action="store_false",
                         help="Keep each instance's workspace and image (needs ~1GB per instance).")
     parser.add_argument("--out", default=None, help="Results output directory.")
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Resume a durable run from --out: restore its output namespace, skip every "
+             "instance with a recorded final score, and reuse a valid interrupted Git "
+             "workspace instead of seeding it again. Resolved and unresolved scores are "
+             "both terminal so recovery never becomes hidden-test retrying.",
+    )
     parser.add_argument("--cfg-options", nargs="+", default=None,
                         help="Config overrides, e.g. model_name=llm_hub/claude-opus-5")
     return parser.parse_args()
@@ -901,10 +1301,12 @@ async def main() -> int:
     args = parse_args()
     overrides = parse_cfg_options(args.cfg_options)
     # Config.initialize expects a mapping, while argparse collects repeatable options
-    # as a list. Normalize before crossing that boundary.
-    args.cfg_options = overrides
+    # as a list. It also mutates that mapping with ordinary launcher arguments, so keep a
+    # separate copy: forwarding start/end/out host paths into the inner config previously
+    # polluted every container invocation.
+    args.cfg_options = dict(overrides)
     config.initialize(config_path=args.config, args=args)
-    args.user_cfg_options = overrides
+    args.user_cfg_options = dict(overrides)
     if overrides:
         for key, value in overrides.items():
             with contextlib.suppress(Exception):

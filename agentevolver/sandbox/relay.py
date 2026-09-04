@@ -128,6 +128,13 @@ class EgressRelay:
         self._on_decision = on_decision
         self._connect_timeout = connect_timeout
         self._server: Optional[asyncio.AbstractServer] = None
+        # Every in-flight connection handler. `start_unix_server` spawns one task per
+        # connection and hands us no way to reach them, so closing the server stops new
+        # connections and leaves the open ones running. A proxied connection can stay
+        # open indefinitely, so the loop then tears down with tasks still pending —
+        # which is where `Task was destroyed but it is pending` and the GeneratorExit
+        # thrown into a suspended `_handle` both came from.
+        self._handlers: set = set()
 
     # ----------------------------------------------------------------- lifecycle
     async def start(self) -> "EgressRelay":
@@ -144,7 +151,7 @@ class EgressRelay:
         # though nothing is listening.
         with contextlib.suppress(FileNotFoundError):
             self.socket_path.unlink()
-        self._server = await asyncio.start_unix_server(self._handle, path=str(self.socket_path))
+        self._server = await asyncio.start_unix_server(self._track, path=str(self.socket_path))
         # The sandbox runs as a different user than this process may; the socket is the
         # only thing it needs, and it sits in a directory we created.
         os.chmod(self.socket_path, 0o666)
@@ -154,10 +161,37 @@ class EgressRelay:
     async def stop(self) -> None:
         if self._server is not None:
             self._server.close()
+            # Cancel the open connections before waiting: `wait_closed()` waits for every
+            # handler to finish, and a spliced connection finishes when the peer decides to,
+            # which may be never. Cancelling first bounds the wait; awaiting the tasks
+            # afterwards is what lets each one run its own cleanup while the loop is still
+            # alive, instead of being destroyed mid-await at interpreter shutdown.
+            await self._cancel_handlers()
             await self._server.wait_closed()
             self._server = None
+        else:
+            await self._cancel_handlers()
         with contextlib.suppress(FileNotFoundError):
             self.socket_path.unlink()
+
+    async def _track(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """Run one connection, registered so `stop()` can reach it."""
+        task = asyncio.current_task()
+        if task is not None:
+            self._handlers.add(task)
+        try:
+            await self._handle(reader, writer)
+        finally:
+            if task is not None:
+                self._handlers.discard(task)
+
+    async def _cancel_handlers(self) -> None:
+        pending = [t for t in self._handlers if not t.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        self._handlers.clear()
 
     async def __aenter__(self) -> "EgressRelay":
         return await self.start()
@@ -229,6 +263,10 @@ class EgressRelay:
                 return
 
             await self._splice_to_target(head, method, host, port, reader, writer)
+        except asyncio.CancelledError:
+            # A cancelled handler is the relay being stopped, not a policy or transport
+            # failure. Logging it as an error made every shutdown look like a fault.
+            raise
         except (ConnectionResetError, BrokenPipeError, asyncio.IncompleteReadError):
             pass
         except Exception as e:  # noqa: BLE001

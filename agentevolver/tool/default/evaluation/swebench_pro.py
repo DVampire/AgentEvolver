@@ -29,13 +29,15 @@ unavailable and changes nothing.
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List
 
 from pydantic import Field
 
-from agentevolver.tool.types import Tool
-from agentevolver.response.types import Response
 from agentevolver.registry import TOOL
+from agentevolver.response.types import Response
+from agentevolver.tool.types import Tool
+
 from .bridge import DEFAULT_BUDGET, format_swebench_counts, request_evaluation
 
 #: Container path of the bind-mounted bridge, and the per-run call budget. Both are set by
@@ -43,6 +45,7 @@ from .bridge import DEFAULT_BUDGET, format_swebench_counts, request_evaluation
 #: is running outside a launcher and should no-op. Shared with programbench_eval — only one
 #: benchmark launcher runs at a time.
 _WORKSPACE = "/workspace"
+_TASK_WORKSPACE_ENV = "AGENTEVOLVER_TASK_WORKSPACE"
 _DEFAULT_BUDGET = DEFAULT_BUDGET
 
 _DESCRIPTION = (
@@ -95,7 +98,7 @@ class SWEBenchProEvalTool(Tool):
         return await request_evaluation(
             tool_name=self.name,
             benchmark_label="SWE-bench Pro",
-            workspace=_WORKSPACE,
+            workspace=os.environ.get(_TASK_WORKSPACE_ENV, _WORKSPACE),
             focus=focus,
             format_result=_format_result,
             exhausted_guidance=(

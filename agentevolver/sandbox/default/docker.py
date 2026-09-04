@@ -46,6 +46,29 @@ _NAME_PREFIX = "agentevolver-sbx"
 
 _DOCKER = os.environ.get("AGENTEVOLVER_DOCKER", "docker")
 
+#: A login shell reads ``/etc/profile``, and Debian's sets ``PATH`` to a fixed default —
+#: discarding whatever the image's own ``ENV PATH`` put there. For an image whose toolchain
+#: lives outside the standard directories that silently removes the toolchain: an image
+#: derived from ``golang:1.16-bullseye`` carries ``/usr/local/go/bin`` on the image PATH and
+#: nowhere else, so every ``go`` call inside the sandbox failed with ``go: command not
+#: found`` while ``docker run sh -c`` on the same image found it. This module exists so that
+#: "a task image with its own toolchain behaves the way it was built to"; a login shell that
+#: drops the image's PATH is that promise broken in the one place nothing checks.
+#:
+#: The image's PATH is passed in under its own name — the profile overwrites ``PATH``, not
+#: this — and put back in front, so anything the profile added stays reachable behind it.
+_IMAGE_PATH_VAR = "_AE_IMAGE_PATH"
+
+
+def _restore_image_path(image_path: Optional[str]) -> str:
+    """A prologue re-prepending the image's own PATH; empty when it could not be read."""
+    if not image_path:
+        return ""
+    return (
+        f'if [ -n "${{{_IMAGE_PATH_VAR}:-}}" ]; then '
+        f'PATH="${_IMAGE_PATH_VAR}${{PATH:+:$PATH}}"; export PATH; fi\n'
+    )
+
 
 def _container_name(key: str) -> str:
     """A readable, stable, collision-resistant container name for `key`.
@@ -87,6 +110,7 @@ class DockerSandbox(Sandbox):
         # image would otherwise collide on one container name.
         self._name = _container_name(self.config.sandbox_key or self.config.image)
         self._forwarder_started = False
+        self._image_path_value: Optional[str] = None
 
     @property
     def container_name(self) -> str:
@@ -107,11 +131,6 @@ class DockerSandbox(Sandbox):
 
     # ------------------------------------------------------------- lifecycle
     def _run_args(self) -> List[str]:
-        # `--init` because PID 1 here is `sleep infinity`, which does not reap. Anything a
-        # command leaves behind — a killed process group's grandchildren, a backgrounded
-        # server, a build's stragglers — is reparented to PID 1 and stays a zombie forever.
-        # Measured: 51 of them accumulated in the first 13 minutes of one task, and a long
-        # run would eventually exhaust the pid limit. `--init` puts a real reaper there.
         # `--init` because PID 1 here is `sleep infinity`, which does not reap. Anything a
         # command leaves behind — a killed process group's grandchildren, a backgrounded
         # server, a build's stragglers — is reparented to PID 1 and stays a zombie forever.
@@ -285,6 +304,30 @@ class DockerSandbox(Sandbox):
         return code == 0 and out.strip() == "true"
 
     # ------------------------------------------------------------- execution
+    async def _image_path(self) -> Optional[str]:
+        """The container's own ``PATH``, read once from its config and cached.
+
+        Read from the container rather than the image so that an ``-e PATH=...`` at
+        creation is honoured too. A failure returns None and the prologue becomes empty:
+        a missing PATH is worth losing, a broken command is not.
+        """
+        if self._image_path_value is not None:
+            return self._image_path_value or None
+        self._image_path_value = ""
+        try:
+            code, out, _err = await _run(
+                _DOCKER, "inspect", "--format",
+                "{{range .Config.Env}}{{println .}}{{end}}", self._name, timeout=30,
+            )
+        except asyncio.TimeoutError:
+            return None
+        if code == 0:
+            for line in out.splitlines():
+                if line.startswith("PATH="):
+                    self._image_path_value = line[len("PATH="):].strip()
+                    break
+        return self._image_path_value or None
+
     async def run_command(
         self,
         command: str,
@@ -303,7 +346,10 @@ class DockerSandbox(Sandbox):
         workdir = workspace_root or self.config.workdir
         if workdir:
             args += ["--workdir", workdir]
-        args += [self._name, "bash", "-lc", command]
+        image_path = await self._image_path()
+        if image_path:
+            args += ["-e", f"{_IMAGE_PATH_VAR}={image_path}"]
+        args += [self._name, "bash", "-lc", _restore_image_path(image_path) + command]
 
         try:
             code, out, err = await _run(*args, timeout=float(seconds))

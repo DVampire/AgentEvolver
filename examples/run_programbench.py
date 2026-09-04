@@ -772,7 +772,7 @@ def audit_reference_binary(log_root: str) -> dict:
 # --------------------------------------------------------------------------- #
 # Inner mode — the MAS run for one instance, inside that instance's container
 # --------------------------------------------------------------------------- #
-def bind_task_workspace(ctx, fs_sandbox) -> None:
+def bind_task_workspace(ctx, fs_sandbox, task_workspace: str = CONTAINER_WORKSPACE) -> None:
     """Point the run's working directory at the task workspace, and check it landed.
 
     ``bind_session_roots`` puts ``workspace_root`` inside the session directory, which is
@@ -800,11 +800,12 @@ def bind_task_workspace(ctx, fs_sandbox) -> None:
     # from inside the container, and no host-side table can derive a mount point. Declared
     # through the path manager so it is one visible exception rather than a value
     # substituted into a context dict, indistinguishable from a default.
-    config.workspace_root = CONTAINER_WORKSPACE
-    path_manager.override(P.SESSION_WORKSPACE, CONTAINER_WORKSPACE)
+    task_workspace = os.path.abspath(task_workspace)
+    config.workspace_root = task_workspace
+    path_manager.override(P.SESSION_WORKSPACE, task_workspace)
 
     def inside_workspace(path: str) -> bool:
-        return path == CONTAINER_WORKSPACE or path.startswith(CONTAINER_WORKSPACE + os.sep)
+        return path == task_workspace or path.startswith(task_workspace + os.sep)
 
     for label, path in (
         ("the session tree", str(fs_sandbox.project_root)),
@@ -1107,7 +1108,7 @@ def seed_workspace(image_ref: str, destination: str) -> None:
         )
 
 
-def grant_to_container_user(session_path: str) -> None:
+def grant_to_container_user(session_path: str, writable_dir: str | None = None) -> None:
     """Make the trees the run writes into writable by the user the container runs as.
 
     Two of them. The session tree holds its logs, its trace and its result. The shared
@@ -1129,8 +1130,15 @@ def grant_to_container_user(session_path: str) -> None:
     # step meant to make the session writable. Verified both ways: as the owner the chmod
     # succeeds and `strings` then works; left as root it fails and `strings` keeps saying
     # Permission denied.
+    writable = ""
+    if writable_dir is not None:
+        relative = os.path.relpath(writable_dir, session_path)
+        if relative == ".." or relative.startswith(f"..{os.sep}") or os.path.isabs(relative):
+            raise ValueError(f"writable directory must be inside the session: {writable_dir}")
+        target = shlex.quote(f"/session/{relative}")
+        writable = f"mkdir -p {target} && chmod 0777 {target} && "
     script = (
-        f"chown -R {CONTAINER_USER} /session && "
+        f"{writable}chown -R {CONTAINER_USER} /session && "
         f"if [ -e /session/workspace/executable ]; then chown 0:0 /session/workspace/executable; fi"
     )
     result = subprocess.run(
@@ -1287,10 +1295,7 @@ async def run_launcher(args) -> int:
             # this host launcher (other) can still write — the container drops requests, the
             # host writes responses.
             bridge_dir = str(path_manager.under(session_path, P.PROJECT_EVAL_BRIDGE))
-            os.makedirs(bridge_dir, exist_ok=True)
-            os.chmod(bridge_dir, 0o777)
-
-            grant_to_container_user(session_path)
+            grant_to_container_user(session_path, bridge_dir)
             logger.info(
                 f"| {'⏩' if resuming else '🌱'} [{instance_id}] Workspace "
                 f"{'reused' if resuming else 'seeded'} and mounted: {workspace_dir} "

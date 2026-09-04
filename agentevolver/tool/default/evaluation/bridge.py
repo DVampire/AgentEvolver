@@ -14,7 +14,6 @@ from agentevolver.logger import logger
 from agentevolver.paths import path_manager
 from agentevolver.response.types import Response, ResponseType
 
-
 BRIDGE_ENV = "AGENTEVOLVER_EVAL_BRIDGE"
 BUDGET_ENV = "AGENTEVOLVER_EVAL_BUDGET"
 DEFAULT_BUDGET = 4
@@ -23,6 +22,22 @@ POLL_INTERVAL_SECONDS = 3.0
 
 
 def _git(workspace: str, *args: str) -> subprocess.CompletedProcess:
+    container = os.environ.get("AGENTEVOLVER_EXEC_CONTAINER", "").strip()
+    if container:
+        return subprocess.run(
+            [
+                os.environ.get("AGENTEVOLVER_DOCKER", "docker"),
+                "exec",
+                "--workdir",
+                os.environ.get("AGENTEVOLVER_EXEC_WORKDIR", "/workspace"),
+                container,
+                "git",
+                *args,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
     return subprocess.run(
         ["git", "-C", workspace, *args],
         capture_output=True,
