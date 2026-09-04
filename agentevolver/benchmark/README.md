@@ -31,7 +31,7 @@ adding selection logic to the server.
 | `aime25` | Competition maths (AIME 2025) | 30 | `opencompass/AIME2025` | exact match, or LLM judge | in-process |
 | `gpqa` | Graduate-level science MCQ | 448 | `Idavidrein/gpqa` — gated | exact match, or LLM judge | in-process |
 | `gsm8k` | Grade-school word problems | 1319 | `openai/gsm8k` | exact match, or LLM judge | in-process |
-| `hle` | Humanity's Last Exam, multi-modal | 2500 | `cais/hle` | exact match, or LLM judge | `examples/run_hle.py` |
+| `hle` | Humanity's Last Exam, multi-modal | 2500 | `cais/hle` — gated | exact match, or LLM judge | `examples/run_hle.py` |
 | `deepweb` | Deep-research over the live web | 100 | ships with the repo | exact match, or LLM judge | in-process |
 | `leetcode` | Programming problems, resumable | — | supplied locally | hidden tests, in a subprocess | in-process |
 | `programbench` | Rebuild a codebase from its binary | 201 | `programbench/ProgramBench-Tests` | official `programbench eval`, per-branch tests in Docker | `examples/run_programbench.py` |

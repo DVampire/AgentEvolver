@@ -47,13 +47,11 @@ SHAPES: Dict[str, Shape] = {
     "aime24": Shape("train", 30, data_files="*.parquet"),
     "aime25": Shape("train", 30, data_files="*.jsonl"),
     "gpqa": Shape("train", 448, data_files="gpqa_diamond.csv",
-                  note="Gated on HuggingFace — needs HF_TOKEN in .env."),
+                  note="Gated — needs HF_TOKEN in .env plus granted access."),
     "gsm8k": Shape("test", 1319, config="main"),
-    "hle": Shape("test", 2500),
-    # The snapshot on this machine has no `data/cases.jsonl`, so its dataset class — and
-    # therefore the benchmark — cannot load. Reported as uncountable rather than as a
-    # count this cannot verify.
-    "deepweb": Shape("", 100, note="Ships with the repository; not fetched from HuggingFace."),
+    "hle": Shape("test", 2500,
+                 note="Gated — needs HF_TOKEN in .env plus granted access."),
+    "deepweb": Shape("", 100),
     "leetcode": Shape("", None, note="Supplied locally; no HuggingFace source."),
     # 201 task definitions, which ship with the `programbench` pip package and are what
     # its dataset class counts. `datasets/ProgramBench-Tests` holds the per-branch test
@@ -186,6 +184,46 @@ def _count(source: Source) -> Tuple[Optional[int], str]:
         return None, f"{type(exc).__name__}: {str(exc).splitlines()[0][:70]}"
 
 
+def repair(name: str, source: Source) -> bool:
+    """Re-run the download over an existing directory, filling in whatever is missing.
+
+    `ensure_dataset` skips a directory that already holds data, deliberately: fetching
+    first and caching after works on a connected machine and fails on the cluster this
+    runs on. The cost is that a download interrupted partway can never heal itself — the
+    directory looks populated, so nothing tries again.
+
+    That is not hypothetical. `deepweb-bench` sat with three of its five data files, and
+    its dataset class raised FileNotFoundError on the two that never arrived; the
+    benchmark could not initialize at all, and the directory read as present the whole
+    time.
+
+    Idempotent in result, not in bytes moved: with a `local_dir`, existing files are
+    skipped only when the cache metadata beside them can vouch for them. A directory
+    populated by some other means has no such metadata, so its files are fetched again
+    even though they were already correct.
+    """
+    if not source.hf_repo_id:
+        print(f"  ✘ {name}: nothing to repair from — {source.note or 'no HuggingFace source'}")
+        return False
+
+    from dotenv import load_dotenv
+    from huggingface_hub import snapshot_download
+
+    load_dotenv(os.path.join(os.path.dirname(_root()), ".env"))
+    print(f"  ⟳ {name}: re-checking {source.hf_repo_id} against datasets/{source.directory}")
+    try:
+        snapshot_download(
+            repo_id=source.hf_repo_id,
+            repo_type="dataset",
+            local_dir=os.path.join(_root(), source.directory),
+            token=os.environ.get("HF_TOKEN") or None,
+        )
+    except Exception as exc:
+        print(f"  ✘ {name}: {type(exc).__name__}: {str(exc).splitlines()[0][:90]}")
+        return False
+    return True
+
+
 def fetch(name: str, source: Source) -> bool:
     """Ensure one dataset is on disk. True if it is there when this returns."""
     if _present(source.directory):
@@ -233,6 +271,9 @@ def main() -> int:
     parser.add_argument("names", nargs="*", help="Benchmark names to fetch (default: report only).")
     parser.add_argument("--all", action="store_true", help="Fetch every fetchable dataset.")
     parser.add_argument("--list", action="store_true", help="Report what is on disk and exit.")
+    parser.add_argument("--repair", action="store_true",
+                        help="Re-check named datasets against their source, filling in "
+                             "files a partial download left behind.")
     args = parser.parse_args()
 
     unknown = [n for n in args.names if n not in SOURCES]
@@ -247,8 +288,12 @@ def main() -> int:
         return 0
 
     wanted = sorted(SOURCES) if args.all else args.names
-    print("Fetching:")
-    ok = all(fetch(name, SOURCES[name]) for name in wanted)
+    if args.repair:
+        print("Repairing:")
+        ok = all(repair(name, SOURCES[name]) for name in wanted)
+    else:
+        print("Fetching:")
+        ok = all(fetch(name, SOURCES[name]) for name in wanted)
     print("\nDatasets on disk:")
     for name in wanted:
         report(name, SOURCES[name])

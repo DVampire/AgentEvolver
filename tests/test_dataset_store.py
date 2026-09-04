@@ -122,3 +122,37 @@ def test_the_readme_instance_counts_match_the_dataset_index():
         assert expected == int(count), (
             f"{name}: README says {count}, datasets/load.py says {expected}"
         )
+
+
+def test_repair_refetches_a_directory_that_already_has_data(tmp_path, monkeypatch):
+    """A download interrupted partway can never heal itself, by design.
+
+    `ensure_dataset` skips a populated directory deliberately — fetching first and caching
+    after works on a connected machine and fails on the cluster this runs on. The cost is
+    that a partial snapshot reads as present forever. `deepweb-bench` sat with three of
+    its five data files and its benchmark could not initialize at all, while every check
+    reported the dataset as there.
+    """
+    index = _dataset_index()
+    monkeypatch.setattr(index, "_root", lambda: str(tmp_path))
+    (tmp_path / "deepweb-bench").mkdir()
+    (tmp_path / "deepweb-bench" / "README.md").write_text("# card")
+
+    called = {}
+
+    def _snapshot(repo_id=None, repo_type=None, local_dir=None, token=None):
+        called["repo_id"] = repo_id
+        called["local_dir"] = local_dir
+        return local_dir
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", _snapshot)
+    assert index.repair("deepweb", index.SOURCES["deepweb"])
+    assert called["repo_id"] == index.SOURCES["deepweb"].hf_repo_id
+    assert called["local_dir"].endswith("deepweb-bench")
+
+
+def test_repair_says_so_when_there_is_no_source(monkeypatch):
+    """A locally-supplied dataset cannot be repaired from anywhere; saying "done" would
+    send the reader looking for a download that never happened."""
+    index = _dataset_index()
+    assert not index.repair("leetcode", index.SOURCES["leetcode"])
