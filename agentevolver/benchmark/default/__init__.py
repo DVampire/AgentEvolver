@@ -6,6 +6,7 @@ from .gsm8k import GSM8kBenchmark
 from .hle import HLEBenchmark
 from .deepweb import DeepWebBenchmark
 from .programbench import ProgramBenchmark
+from .swebench import SWEBenchProBenchmark, SWEBenchVerifiedBenchmark
 from .exact_match import ExactMatchBenchmark
 
 __all__ = [
@@ -17,5 +18,7 @@ __all__ = [
     "HLEBenchmark",
     "DeepWebBenchmark",
     "ProgramBenchmark",
+    "SWEBenchVerifiedBenchmark",
+    "SWEBenchProBenchmark",
     "ExactMatchBenchmark",
 ]

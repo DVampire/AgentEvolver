@@ -14,14 +14,33 @@ def clean_text(text: str) -> str:
         return text
 
 
+#: Names that a snapshot leaves behind whether or not any data came with it. A directory
+#: holding only these is a download that did not happen — a gated repo refused without a
+#: token, or one interrupted after the card and before the rows.
+_NOT_DATA = {
+    ".cache", ".huggingface", ".gitattributes", ".gitignore",
+    "readme.md", "license", "license.md", "license.txt",
+    "croissant.json", "eval.yaml",
+}
+
+
 def _dir_has_content(path: str) -> bool:
-    """True if `path` is a non-empty directory (ignoring caches/hidden cruft)."""
+    """True if `path` holds actual dataset files, not just the card that came with them.
+
+    Any entry used to count, so a directory containing one README looked identical to a
+    populated one. Two datasets in this repository were in exactly that state — GPQA held
+    only its README because the repo is gated and the download had no token, and HLE held
+    a README beside an empty `data/` — and because the directory read as present, the
+    download was never retried. The failure surfaced much later as a load error naming a
+    file nobody had ever fetched, rather than as the missing download it was.
+    """
     if not os.path.isdir(path):
         return False
-    for entry in os.listdir(path):
-        if entry in (".cache", ".huggingface", ".gitattributes"):
-            continue
-        return True
+    for current, dirs, files in os.walk(path):
+        dirs[:] = [d for d in dirs if d not in _NOT_DATA and not d.startswith(".")]
+        for name in files:
+            if name.lower() not in _NOT_DATA and not name.startswith("."):
+                return True
     return False
 
 

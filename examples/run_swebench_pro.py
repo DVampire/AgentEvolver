@@ -48,18 +48,23 @@ import re
 import shlex
 import shutil
 import subprocess
-import tempfile
 import sys
+import tempfile
 import time
+
+from agentevolver.benchmark.default.swebench import SWEBenchProBenchmark
+from agentevolver.config import config
+from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
 
 # Reuse the proven, benchmark-agnostic host machinery from the ProgramBench launcher rather
 # than duplicate it. Importing is safe: its main() is guarded by __main__, and module-level
 # code only computes paths/constants.
 from examples.run_programbench import (  # noqa: E402
+    _LANDING_MARGIN_SECONDS,
     CONTAINER_EVAL_BRIDGE,
     CONTAINER_USER,
     CONTAINER_WORKSPACE,
-    _LANDING_MARGIN_SECONDS,
     _summarise_spend,
     bind_task_workspace,
     check_shared_roots_readable,
@@ -68,10 +73,6 @@ from examples.run_programbench import (  # noqa: E402
     interpreter_prefix,
     restore_ownership,
 )
-
-from agentevolver.config import config
-from agentevolver.logger import logger
-from agentevolver.paths import P, path_manager
 
 root = host_repo_root()
 
@@ -100,8 +101,10 @@ _GRADE_TIMEOUT_SECONDS = 1800
 
 #: The ONLY instance fields that may enter the container. Everything else in the row is the
 #: answer key or host-side scoring metadata and is withheld. Order fixes the task-doc slots.
-_SAFE_FIELDS = ("instance_id", "repo", "repo_language", "base_commit",
-                "problem_statement", "requirements", "interface")
+#: Derived from the benchmark class rather than restated here. Which fields may
+#: enter a container IS the GT-safety design, and a second copy of that list is a
+#: second thing to keep in step.
+_SAFE_FIELDS = SWEBenchProBenchmark.model_fields["safe_fields"].default
 
 _FORWARDED_ENV = (
     "OPENAI_API_KEY", "OPENAI_API_BASE",
@@ -115,15 +118,29 @@ _FORWARDED_ENV = (
 # --------------------------------------------------------------------------- #
 # Dataset + GT-safe field filtering
 # --------------------------------------------------------------------------- #
+def _benchmark():
+    """The one loader for this dataset, shared with the benchmark registry.
+
+    This used to call `load_dataset` here, which put the rows in the HuggingFace cache
+    instead of under `datasets/` where every other benchmark keeps its data — and stated
+    a second time, in this file, which fields an agent may see. That list is the whole
+    GT-safety design, and a copy of it is a copy that can drift.
+    """
+    return SWEBenchProBenchmark(base_dir="output/benchmark/swebench_pro")
+
+
 def load_instances() -> list:
-    """Load the SWE-bench Pro public split as a list of dict rows (full, incl. oracle)."""
-    from datasets import load_dataset
-    return list(load_dataset(HF_DATASET, split="test"))
+    """Load the SWE-bench Pro split as a list of dict rows (full, incl. oracle)."""
+    import asyncio
+
+    benchmark = _benchmark()
+    asyncio.run(benchmark.initialize())
+    return benchmark.instances()
 
 
 def _safe_instance(row: dict) -> dict:
     """The subset of a row the container may see — never the gold patch or the tests."""
-    return {k: row.get(k, "") for k in _SAFE_FIELDS}
+    return {key: row.get(key, "") for key in _SAFE_FIELDS}
 
 
 def image_ref(row: dict) -> str:
