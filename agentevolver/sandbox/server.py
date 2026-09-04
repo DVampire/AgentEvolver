@@ -103,6 +103,22 @@ class SandboxManagerServer(BaseModel):
             await self.initialize()
 
     # ------------------------------------------------------------- handles
+    def adopt(self, handle: Sandbox, *, reuse_key: str) -> Sandbox:
+        """Register a sandbox this manager did not create, so callers can find it.
+
+        `acquire` builds its own handle from a `SandboxConfig`, which cannot express a
+        container that already exists and belongs to someone else. A benchmark harness is
+        exactly that case: Harbor builds the task container, hands it to an agent, and
+        runs its verifier in it afterwards — so the handle must be constructed by the
+        adapter that has the harness's environment object, and only then made visible.
+
+        No relay is registered and no lifecycle is assumed. Whoever owns the container
+        stops it; releasing it from here would take the verifier's subject with it.
+        """
+        self._handles[f"{handle.name}:{reuse_key}"] = handle
+        logger.info(f"| 📦 Adopted external sandbox '{handle.name}' as '{reuse_key}'")
+        return handle
+
     async def acquire(
         self,
         type: str = "opensandbox",
