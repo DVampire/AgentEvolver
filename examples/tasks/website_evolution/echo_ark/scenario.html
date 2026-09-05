@@ -3,88 +3,113 @@
 <head>
   <meta charset="UTF-8">
   <meta name="name" content="echo_ark">
-  <meta name="description" content="A showcase-quality playable science-fiction world with original art direction and visitor-led refinement">
-  <meta name="version" content="4.2.0">
-  <title>ECHO — Wake the Ark</title>
+  <meta name="description" content="An original real-time 3D ocean adventure: pilot, explore, salvage and grow your own floating ark">
+  <meta name="version" content="6.0.0">
+  <title>ECHO — Arkbound</title>
 </head>
 <body><main>
-  <h1>ECHO — Wake the Ark</h1>
+  <h1>ECHO — Arkbound</h1>
   <section id="product-intent">
-    <h2>A world worth entering</h2>
-    <p>Create a fancy, visually memorable and genuinely playable science-fiction website
-    aboard a generation ship waking after centuries of silence. Its caretaker, ECHO, remembers
-    fragments of the voyage. Visitors discover the world through interaction and leave a
-    recognizable change behind. Aim for the authored atmosphere and tactile polish of a
-    compelling indie-game opening, not a functional prototype with decorative CSS.</p>
-    <p>The website is the fictional experience, not a developer collaboration portal. Do not
-    turn feedback handling, release approvals or experiment controls into product features.
-    ECHO belongs to the story, not to the development process.</p>
+    <h2>A little ark on an ocean worth exploring</h2>
+    <p>Build a fancy, genuinely playable 3D browser game about piloting and improving a
+    small floating ark on a beautiful ocean. ECHO is its fictional companion and guide.
+    The pleasure is steering through waves toward a distant discovery, bringing useful
+    things aboard, and seeing your fragile vessel become your own capable floating home.</p>
+    <p>Capture the appeal of raft-survival and seafaring adventures in an original, small
+    game, not a copy of another game's assets, characters, interface or progression. This
+    is not the previous ship-interior puzzle: remove the grid, discrete turns, airlock
+    extraction and recorded-action echo mechanic. ECHO names the companion, not a required
+    time-replay system. No developer chat, feedback portal or experiment controls belongs
+    in the product.</p>
   </section>
-  <section id="creative-freedom">
-    <h2>Your design decisions</h2>
-    <p>Choose the ship's spaces, narrative, interaction mechanics, visual language, palette,
-    typography, layout and implementation. There is no required room count, clue count,
-    ending count or exact play time. A puzzle, a creative act, a simulation, an exploration
-    or another coherent approach can work. Requirements describe the experience to deliver;
-    examples are optional inspiration, not a feature checklist.</p>
+  <section id="playable-world">
+    <h2>Real 3D navigation is the essential experience</h2>
+    <p>Render an actual three-dimensional world with a perspective camera, ocean surface,
+    modeled vessel, islands or other substantial landmarks, spatial depth and occlusion.
+    The ark moves and turns continuously through that world under player control; steering
+    changes where you actually travel. A static illustration, CSS perspective, an SVG
+    board or a top-down tile game is not an acceptable substitute.</p>
+    <p>Start with a comfortable third-person follow camera that lets the player admire the
+    boat and read the route ahead. Allow looking around without fighting the steering.
+    Give the craft responsive acceleration, turning, stopping and readable contact with
+    obstacles. Light buoyancy and a wake should make it feel afloat without disorienting
+    camera motion. Choose the engine and physics approach; photorealistic simulation is
+    not required.</p>
+    <p>Use continuous keyboard controls, such as WASD or arrows, and reachable on-screen
+    touch controls. Held inputs must release on key-up, blur, pause and lost touch so the
+    boat cannot run away. Pause should actually pause dangerous simulation; returning to
+    a backgrounded tab must not cause a huge physics jump or unexplained loss.</p>
   </section>
-  <section id="core-experience">
-    <h2>A short, satisfying experience</h2>
-    <p>Welcome visitors into a compelling scene with a discoverable first action, without
-    an account or long explanation blocking entry. Let them understand enough of the world
-    to act intentionally, then see a meaningful consequence in the world itself. Clicking
-    through prose or changing a counter alone is not the complete experience.</p>
-    <p>Make interaction responsive and rewarding, with understandable cause and effect.
-    Offer enough agency or discovery to make further exploration or another visit appealing.
-    Help should be available when needed; mistakes should not create unexplained dead ends.
-    Choose a small scope that feels complete in a short visit, and polish it instead of
-    filling the ship with placeholder rooms, menus or nonfunctional controls.</p>
+  <section id="game-loop">
+    <h2>Sail, discover, salvage, build, sail farther</h2>
+    <p>Make one satisfying voyage possible: steer toward a visible point of interest,
+    collect useful driftwood or salvage through an intentional nearby interaction,
+    return to a safe anchorage or slow down to build, then use an improvement to try a
+    different route. Collection should have spatial feedback, not be a remote menu
+    increment. Exploring the sea and driving the boat must remain enjoyable between goals.</p>
+    <p>At least one affordable improvement must visibly change the ark and meaningfully
+    affect play: for example propulsion, carrying space or resilience. Choose a coherent
+    small set yourself. Show the cost before spending, prevent unaffordable purchases,
+    and make the effect observable rather than promising a hidden statistic.</p>
+    <p>Give the player a real reason to choose a route: sheltered but modest salvage versus
+    an exposed valuable find is one possibility. Include a readable, forgiving danger
+    and a way to recover. Reefs, a rough-water passage or another authored obstacle can
+    work; constant hunger meters, combat and punishing survival timers are not required.
+    Rewards should support exploration or building, not only raise an abstract score.</p>
   </section>
-  <section id="visual-direction">
-    <h2>Distinctive, composed and beautiful</h2>
-    <p>Commit to a cohesive art direction: recognizable forms, intentional composition,
-    expressive lighting or color, and carefully chosen typography. Scene artwork and
-    interactive details should feel designed together. A generic card template, a background
-    gradient or decorative effects alone is not enough to establish the setting.</p>
-    <p>Make the opening visually compelling and keep the next action legible. Adapt the
-    composition deliberately to desktop and narrow mobile screens. Choose imagery and a
-    rendering technique suited to your concept; neither photorealism nor 3D is required.
-    A restrained design can be as striking as an elaborate one when it is well authored.</p>
-    <p>Use motion and sound where they improve atmosphere or feedback. Interaction stays
-    immediate, sound starts off, and reduced-motion users can still perceive meaningful
-    changes. Fancy means memorable and polished, not visually noisy or slow.</p>
+  <section id="scope">
+    <h2>A polished little sea, not an unfinished huge game</h2>
+    <p>First deliver one complete sailing-and-upgrade loop in a bounded, visually composed
+    ocean region with a few distinct landmarks and room to steer freely. Make getting
+    underway quick and understandable, with short contextual help rather than a manual.
+    Do not spend the first release constructing an enormous empty map.</p>
+    <p>A walkable deck, island landings, fishing, changing weather or more construction
+    could be later directions if players want them. They are not an initial checklist.
+    Multiplayer, procedural infinity, complex crafting trees and a cinematic campaign
+    are out of scope until the small game is demonstrably enjoyable. Keep the core game
+    playable without an LLM request per action or a paid external service.</p>
   </section>
-  <section id="optional-inspiration">
-    <h2>Possible directions, not requirements</h2>
-    <p>A botanical habitat coming alive, an observatory revealing a lost destination, or a
-    musical system restoring the ship's voice could each support this premise. Arrival,
-    discovery and awakening might form an emotional arc, but need not be separate screens
-    or follow a fixed sequence. Use, combine or ignore these ideas. An original direction
-    meeting the experience goals is equally welcome; none of these examples is an acceptance
-    criterion.</p>
+  <section id="art-direction">
+    <h2>A scene you want to sail into</h2>
+    <p>Make the game world fill the main view, with a restrained HUD rather than a dashboard
+    surrounding a tiny canvas. Use an expressive, cohesive stylized 3D art direction:
+    readable vessel silhouettes, inviting islands, water with animated surface detail,
+    believable lighting, a horizon with atmosphere, and satisfying wakes and pickup effects.
+    Choose the palette, materials and setting; it need not be dark science fiction.</p>
+    <p>Make the opening an actual playable vista, not a title-screen promise. Ship upgrades
+    should look attached to the vessel; scenery should have recognizable form rather than
+    remaining a collection of unexplained placeholder cubes. Original procedural geometry
+    and properly licensed assets are both acceptable. Avoid overengineering water effects
+    at the expense of steering, clarity or frame rate.</p>
+    <p>Keep a stable horizon, readable contrast and visible focus. Start sound off; offer
+    reduced camera motion without removing navigation feedback. Provide a usable narrow-screen
+    layout and adjustable rendering quality. Measure responsiveness and frame pacing on the
+    available browser and state its environment; never claim universal performance from an
+    FPS label. Explain WebGL failure clearly rather than silently replacing the game with 2D.</p>
   </section>
-  <section id="continuity">
-    <h2>A reason to return</h2>
-    <p>Preserve meaningful progress or choices when returning in the same browser with its
-    site storage retained. Provide an understandable way to begin again. Explain the storage
-    boundary briefly, without promising cross-device recovery or shared state unless actually
-    implemented. No real account, payment or private external service is needed.</p>
-    <p>Later improvements should respond to actual visitor needs. Revisit the initial design
-    when evidence warrants it; do not freeze its mechanics or style just because they shipped
-    first. Different preferences can coexist without forcing every visitor down one path.</p>
+  <section id="player-continuity">
+    <h2>Make the ark feel like mine</h2>
+    <p>Save meaningful vessel progress, upgrades and preferences in the same browser.
+    Resume at a safe, understandable position and offer a confirmed reset. Handle unavailable
+    storage honestly. Across updates, preserve saves or provide explicit safe recovery;
+    local storage does not promise accounts, cross-device play or a shared multiplayer ocean.</p>
+    <p>Different players may enjoy relaxed sightseeing, efficient salvage or building a
+    personal home. Let real conversation and play feedback guide those choices. Avoid
+    forcing a challenging mode or intrusive guidance on everyone. Do not prebuild a giant
+    preferences panel or named persona modes before learning what actually helps.</p>
   </section>
-  <section id="quality-bar">
-    <h2>Judge the rendered experience</h2>
-    <p>The result should be visually distinctive, enjoyable to interact with and complete
-    enough to demonstrate. A visitor can enter, discover something, act with intention,
-    perceive a consequence, and return to recognizable progress. Evaluate these outcomes
-    against the implemented concept, not optional examples or invented controls.</p>
-    <p>All visible controls work. Support keyboard navigation, visible focus, readable
-    contrast, reduced motion and use without sound. Keep loading reasonable and provide
-    usable feedback when something fails. Functional correctness does not establish beauty
-    or playability: inspect the rendered scenes and actually try the core interaction.
-    Assess composition, coherence, clarity and responsiveness with concrete evidence, rather
-    than treating a preferred palette or genre as an objective pass condition.</p>
+  <section id="quality-evidence">
+    <h2>Play the voyage, do not just inspect the HUD</h2>
+    <p>Verify the exact deployed version through real keyboard or touch input: launch,
+    steer and stop, navigate around a landmark, collect salvage, purchase and observe an
+    upgrade, encounter and recover from a setback, pause/resume, and reload saved progress.
+    Check camera comfort, collision behavior, missing assets and browser errors. Do not
+    teleport the player or modify inventory in the console and call that a successful playtest.</p>
+    <p>A technical PASS establishes working interactions, not fun or visual quality.
+    Separately show what made sailing satisfying, why a route or upgrade was worth choosing,
+    and what gives a second voyage value. Compare like-for-like screenshots and play sequences
+    when revising the product. Label a keyboard bug fix as a bug fix, not a visual redesign
+    or deeper gameplay. Record observed limitations and untested claims honestly.</p>
   </section>
 </main></body>
 </html>

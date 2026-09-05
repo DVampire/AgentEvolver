@@ -12,6 +12,7 @@ addresses it.
 """
 
 import os
+import asyncio
 
 import pytest
 
@@ -27,12 +28,14 @@ def manager(tmp_path, monkeypatch):
     )
     deployment_manager._sites.pop("echo-ark", None)
     deployment_manager._release_seen.clear()
+    deployment_manager._release_locks.clear()
     try:
         yield deployment_manager
     finally:
         deployment_manager._sites.pop("echo-ark", None)
         deployment_manager._sites.pop("echo-ark--r1", None)
         deployment_manager._release_seen.clear()
+        deployment_manager._release_locks.clear()
 
 
 def _source(root, text):
@@ -51,6 +54,18 @@ def test_publishing_archives_the_source(manager, tmp_path):
 
     archived = os.path.join(manager._release_dir("echo-ark", 1), "index.html")
     assert open(archived).read() == "<h1>release one</h1>"
+
+
+def test_monitor_refresh_preserves_inflight_deployment_record(manager):
+    record = SiteRecord(site_id="echo-ark", runtime="static", status=SiteStatus.BUILDING)
+    manager._sites[record.site_id] = record
+    manager._save()
+    manager.refresh()
+    assert manager._sites[record.site_id] is record
+    record.status = SiteStatus.RUNNING
+    record.port = 8899
+    manager._save()
+    assert manager.resolve_port("echo-ark") == 8899
 
 
 def test_each_release_gets_its_own_directory(manager, tmp_path):
@@ -270,3 +285,48 @@ async def test_a_release_left_by_a_previous_process_still_gets_reaped(manager):
 
     assert manager._sites["echo-ark--r1"].status is SiteStatus.RUNNING
     assert "echo-ark--r1" in manager._release_seen
+
+
+@pytest.mark.asyncio
+async def test_replacement_keeps_old_version_server(manager, tmp_path, monkeypatch):
+    from agentevolver.deploy import server as module
+
+    for name in ("echo-ark", "echo-ark--r1"):
+        manager._sites[name] = SiteRecord(
+            site_id=name, runtime="static", status=SiteStatus.RUNNING,
+            port=8899, url="http://localhost:8899", release_number=1)
+
+    async def released(*args, **kwargs):
+        return True
+
+    async def no_sandbox(*args, **kwargs):
+        raise RuntimeError("stop after replacement bookkeeping")
+
+    monkeypatch.setattr(module.sandbox_manager, "release", released)
+    monkeypatch.setattr(module.sandbox_manager, "acquire", no_sandbox)
+    await manager.deploy(DeployRequest(site_id="echo-ark", runtime="static",
+        source_dir=_source(tmp_path / "new", "release two")))
+    assert manager._sites["echo-ark--r1"].status is SiteStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_concurrent_archive_visits_launch_once_and_refresh_activity(manager, tmp_path, monkeypatch):
+    manager._archive_release("echo-ark", 1, _source(tmp_path / "old", "one"))
+    launched = []
+
+    async def deploy(request):
+        launched.append(request.site_id)
+        await asyncio.sleep(0.01)
+        manager._sites[request.site_id] = SiteRecord(
+            site_id=request.site_id, runtime="static", status=SiteStatus.RUNNING,
+            port=8899, url="http://localhost:8899", release_number=1)
+
+    monkeypatch.setattr(manager, "deploy", deploy)
+    ports = await asyncio.gather(*(manager.ensure_release("echo-ark--r1") for _ in range(6)))
+    assert ports == [8899] * 6
+    assert launched == ["echo-ark--r1"]
+    manager._release_seen["echo-ark--r1"] = 0
+    from agentevolver.gateway.sites import site_target
+    monkeypatch.setattr(manager, "refresh", lambda: None)
+    assert await site_target("echo-ark--r1") == "http://localhost:8899"
+    assert manager._release_seen["echo-ark--r1"] > 0

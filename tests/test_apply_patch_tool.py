@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+import pytest
+
 from agentevolver.tool.default.workspace.apply_patch import ApplyPatchTool
 
 
@@ -132,3 +134,32 @@ def test_apply_patch_rejects_workspace_escape(tmp_path):
 
     assert not response.success
     assert "unsafe patch path" in response.message
+
+
+@pytest.mark.parametrize("prefix", ["", "b/"])
+def test_nested_creation_uses_the_declared_target(tmp_path, prefix):
+    patch = f"--- /dev/null\n+++ {prefix}app/index.html\n@@ -0,0 +1 @@\n+<main>ECHO</main>\n"
+    response = _call(tmp_path, patch)
+    assert response.success, response.message
+    assert (tmp_path / "app/index.html").read_text() == "<main>ECHO</main>\n"
+    assert not (tmp_path / "index.html").exists()
+    assert response.files == [str(tmp_path / "app/index.html")]
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+def test_classic_nested_patch_does_not_touch_same_named_root_file(tmp_path, operation):
+    target = tmp_path / "app/index.html"
+    target.parent.mkdir()
+    target.write_text("old\n")
+    decoy = tmp_path / "index.html"
+    decoy.write_text("old\n")
+    patch = ("--- app/index.html\n+++ app/index.html\n@@ -1 +1 @@\n-old\n+new\n"
+             if operation == "update" else
+             "--- app/index.html\n+++ /dev/null\n@@ -1 +0,0 @@\n-old\n")
+    response = _call(tmp_path, patch)
+    assert response.success, response.message
+    assert decoy.read_text() == "old\n"
+    if operation == "update":
+        assert target.read_text() == "new\n"
+    else:
+        assert not target.exists()

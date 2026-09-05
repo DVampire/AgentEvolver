@@ -122,3 +122,54 @@ async def test_an_unknown_id_still_fails(subscriber):
         name="job", action="output", input={"job_id": "nope"}, ctx=_parent_ctx(proc.pid),
     )
     assert not result.success
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["exited", "failed", "cancelled", "disappeared"])
+async def test_wait_observes_subagent_changes_after_wait_begins(monkeypatch, outcome):
+    from agentevolver.runtime import kernel
+    from agentevolver.environment.default.job import JobEnvironment
+
+    proc = SimpleNamespace(
+        pid="changing-child", state=SimpleNamespace(value="running"), alive=True,
+        error="", ended_at=None, started_at=1, session_id="child-session",
+        turns=0, busy=True, mailbox=[], resident=False,
+    )
+    processes = {proc.pid: proc}
+    monkeypatch.setattr(kernel, "get", lambda pid: processes.get(pid))
+    env = JobEnvironment()
+    resolved = asyncio.Event()
+    original = env._resolve
+
+    def resolve(pid, ctx):
+        result = original(pid, ctx)
+        resolved.set()
+        return result
+
+    monkeypatch.setattr(env, "_resolve", resolve)
+    waiter = asyncio.create_task(env.wait(
+        job_ids=[proc.pid], condition="finished", timeout=0.8, ctx=_parent_ctx(proc.pid),
+    ))
+    try:
+        await asyncio.wait_for(resolved.wait(), timeout=1)
+        # _as_job returned a snapshot while the process was still running.
+        if outcome == "disappeared":
+            processes.clear()
+        else:
+            proc.state.value = outcome
+            proc.alive = False
+            proc.busy = False
+            proc.turns = 1
+            proc.error = "failed deliberately" if outcome == "failed" else ""
+        result = await asyncio.wait_for(waiter, timeout=2)
+        assert not result.get("timed_out", False), result
+        if outcome == "disappeared":
+            assert not result["success"]
+            assert "No job" in result["jobs"][0]["error"]
+        else:
+            assert result["success"], result
+            assert result["jobs"][0]["status"] == outcome
+            assert result["jobs"][0]["ready"]
+    finally:
+        waiter.cancel()
+        await asyncio.gather(waiter, return_exceptions=True)

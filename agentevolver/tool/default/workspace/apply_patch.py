@@ -34,7 +34,7 @@ run syntax checks, formatters, builds, and tests afterwards.
   extend it with later patches instead of emitting the whole application at once.
 - Context lines must match the current file. A stale or malformed patch is rejected without
   changing the workspace; inspect again and generate a fresh, smaller patch.
-- Paths are workspace-relative `a/...` and `b/...` paths. Absolute paths, traversal,
+- Paths are workspace-relative, optionally prefixed with Git's `a/` and `b/`. Absolute paths, traversal,
   binary patches, renames, and writes outside the active workspace are rejected.
 """
 
@@ -136,6 +136,27 @@ def _workspace_target(patch: str, ctx: Any) -> tuple[Path, Path]:
     return workspace, target
 
 
+def _git_patch(patch: str) -> str:
+    """Give Git exactly the path validated for permissions, with explicit -p1 headers.
+
+    Classic `+++ app/index.html` must not become `index.html`. Only rewrite the
+    file headers; hunk contents (including lines resembling headers) stay intact.
+    """
+    target = patch_target(patch)
+    lines = patch.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if line.startswith("@@"):
+            break
+        if line.startswith("diff --git "):
+            lines[index] = f"diff --git a/{target} b/{target}\n"
+        elif line.startswith(("--- ", "+++ ")):
+            raw = line[4:].split("\t", 1)[0].strip()
+            prefix = "a" if line.startswith("--- ") else "b"
+            path = f"{prefix}/{target}" if _header_path(raw) else "/dev/null"
+            lines[index] = f"{line[:4]}{path}\n"
+    return "".join(lines)
+
+
 @TOOL.register_module(force=True)
 class ApplyPatchTool(Tool):
     """Apply one atomic, workspace-scoped text patch."""
@@ -185,13 +206,14 @@ class ApplyPatchTool(Tool):
                     message=f"Permission denied: {decision.reason}",
                 )
 
+            git_patch = _git_patch(patch)
             command = [
-                "git", "apply", "--recount", "--whitespace=nowarn", "-",
+                "git", "apply", "-p1", "--recount", "--whitespace=nowarn", "-",
             ]
             checked = subprocess.run(
                 [*command[:2], "--check", *command[2:]],
                 cwd=workspace,
-                input=patch,
+                input=git_patch,
                 text=True,
                 capture_output=True,
                 timeout=45,
@@ -206,7 +228,7 @@ class ApplyPatchTool(Tool):
             applied = subprocess.run(
                 command,
                 cwd=workspace,
-                input=patch,
+                input=git_patch,
                 text=True,
                 capture_output=True,
                 timeout=45,
@@ -225,15 +247,15 @@ class ApplyPatchTool(Tool):
                     type=ResponseType.TOOL,
                     success=False,
                     message=(
-                        "Patch command reported success but left the target unchanged; "
-                        "workspace unchanged. Check the unified-diff hunk ranges."
+                        "Patch command reported success but left the declared target unchanged. "
+                        "Inspect the target and unified-diff hunk ranges before retrying."
                     ),
                 )
         except (PatchError, OSError, subprocess.SubprocessError) as error:
             return Response(
                 type=ResponseType.TOOL,
                 success=False,
-                message=f"Patch rejected; workspace unchanged: {error}",
+                message=f"Patch failed: {error}",
             )
 
         additions = sum(

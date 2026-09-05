@@ -38,9 +38,9 @@ def headers_to_upstream(headers, prefix):
 
 async def site_target(name):
     deployment_manager.refresh()
+    if deployment_manager._split_release(name):
+        await deployment_manager.ensure_release(name)
     url = deployment_manager.resolve_url(name)
-    if not url and await deployment_manager.ensure_release(name):
-        url = deployment_manager.resolve_url(name)
     return url if url and urlsplit(url).scheme in {"http", "https"} else None
 
 
@@ -221,7 +221,12 @@ async def ensure_site_gateway():
             with log.open("ab") as output:
                 process = subprocess.Popen(
                     [sys.executable, "-m", "agentevolver.gateway.sites"],
-                    env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+                    # Export the package root, not this interpreter's standard library:
+                    # deployed apps may use a different Python executable.
+                    env={**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, (
+                        str(path_manager.package_resource().parent),
+                        os.environ.get("PYTHONPATH"),
+                    )))},
                     stdin=subprocess.DEVNULL, stdout=output, stderr=output, start_new_session=True)
             for _ in range(50):
                 if await ready():

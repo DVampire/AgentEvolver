@@ -1,6 +1,7 @@
 import asyncio
 import json
 import threading
+import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -14,6 +15,50 @@ import pytest_asyncio
 from agentevolver.deploy import DeploymentManagerServer, SiteRecord, SiteStatus
 from agentevolver.gateway.sites import site_relay
 
+
+@pytest.mark.asyncio
+async def test_gateway_launch_does_not_export_interpreter_library_paths(tmp_path, monkeypatch):
+    from agentevolver.gateway import sites
+    from agentevolver.paths import path_manager
+
+    captured = {}
+
+    class Client:
+        def __init__(self, **kwargs):
+            self.calls = 0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url):
+            self.calls += 1
+            if self.calls == 1:
+                raise httpx.ConnectError("not started")
+            return httpx.Response(200, json={"service": "agentevolver-sites"})
+
+    class Process:
+        def poll(self):
+            return None
+
+    def launch(*args, **kwargs):
+        captured.update(kwargs)
+        return Process()
+
+    monkeypatch.setattr(httpx, "AsyncClient", Client)
+    monkeypatch.setattr(path_manager, "get", lambda *args, **kwargs: tmp_path)
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    monkeypatch.setenv("GATEWAY_PUBLIC_BASE", "http://127.0.0.1:9876")
+    with monkeypatch.context() as patch:
+        patch.setattr(sites.subprocess, "Popen", launch)
+        await sites.ensure_site_gateway()
+    assert captured["env"]["PYTHONPATH"] == str(path_manager.package_resource().parent)
+    # The host static profile uses system python3, not necessarily the gateway's Python.
+    result = subprocess.run(["/usr/bin/python3", "-c", "import runpy, http.server"],
+                            env=captured["env"], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("streamed", [False, True])

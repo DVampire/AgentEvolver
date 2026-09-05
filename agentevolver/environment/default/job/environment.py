@@ -334,18 +334,25 @@ class JobEnvironment(Environment):
         if timeout <= 0 or timeout > 3600:
             return _fail("timeout must be greater than 0 and at most 3600 seconds")
 
-        resolved = []
         for job_id in ids:
-            job, failure = self._resolve(job_id, ctx)
+            _, failure = self._resolve(job_id, ctx)
             if failure:
                 return failure
-            resolved.append(job)
 
         def snapshots() -> tuple[List[Dict[str, Any]], bool, bool]:
             rows: List[Dict[str, Any]] = []
             all_ready = True
             terminal_failure = False
-            for job in resolved:
+            for job_id in ids:
+                # Kernel jobs are snapshots, not live Job objects. Resolve again so
+                # completion, cancellation and removal cannot leave us waiting on
+                # the state copied before the child finished.
+                job, failure = self._resolve(job_id, ctx)
+                if failure:
+                    rows.append({"job_id": job_id, "ready": False, "error": failure["message"]})
+                    all_ready = False
+                    terminal_failure = True
+                    continue
                 ref = kernel.get(job.id)
                 row: Dict[str, Any] = {
                     "job_id": job.id,

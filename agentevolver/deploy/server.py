@@ -83,6 +83,7 @@ class DeploymentManagerServer(BaseModel):
         self._sites: Dict[str, SiteRecord] = {}
         # Last time each on-demand release was asked for, so idle ones can be reclaimed.
         self._release_seen: Dict[str, float] = {}
+        self._release_locks: Dict[str, asyncio.Lock] = {}
         # Site ids created or redeployed by this process. Global teardown must not stop
         # a persisted deployment merely because another run loaded its registry record.
         self._owned_sites: set[str] = set()
@@ -368,6 +369,10 @@ class DeploymentManagerServer(BaseModel):
                 raw = json.load(stream)
             for sid, value in raw.items():
                 local = self._sites.get(sid)
+                # A deploy coroutine still owns this object while awaiting readiness.
+                # Reloading identical bytes would detach its subsequent RUNNING update.
+                if local is not None and local.model_dump() == value:
+                    continue
                 if local is None or local.model_dump() == self._saved_sites.get(sid):
                     self._sites[sid] = SiteRecord(**value)
                     self._saved_sites[sid] = value
@@ -528,7 +533,7 @@ class DeploymentManagerServer(BaseModel):
                 archived_source = self._archive_release(request.site_id, release_number, request.source_dir)
 
         if previous is not None and previous.status not in {SiteStatus.STOPPED, SiteStatus.FAILED}:
-            await self.stop_site(request.site_id)
+            await self.stop_site(request.site_id, include_versions=False)
 
         # The host backend has no container filesystem, so run in a real host directory
         # and write the server log beside it (containers keep a per-container /tmp log).
@@ -795,9 +800,7 @@ class DeploymentManagerServer(BaseModel):
     async def ensure_release(self, name: str) -> Optional[int]:
         """The port serving one pinned release, starting it from its archive if needed.
 
-        Kept separate from ``resolve_port`` so the hot path stays a lock-free dict read:
-        the gateway asks this only after the plain lookup came back empty, which is the
-        rare case of someone opening an older release.
+        Concurrent first visits share one launch. Every visit refreshes the idle timer.
 
         An archived release is served by deploying it as an ordinary site under its own
         pinned name, so it reaches the visitor through the same relay as anything else
@@ -807,7 +810,10 @@ class DeploymentManagerServer(BaseModel):
         split = self._split_release(name)
         if split is None:
             return None
-        base, release = split
+        async with self._release_locks.setdefault(name, asyncio.Lock()):
+            return await self._serve_release(name, *split)
+
+    async def _serve_release(self, name: str, base: str, release: int) -> Optional[int]:
 
         await self._ensure_initialized()
         current = self._sites.get(base)
@@ -898,7 +904,7 @@ class DeploymentManagerServer(BaseModel):
                  "versions": self.version_history(record)}
                 for record in self._sites.values()]
 
-    async def stop_site(self, site_id: str) -> SiteRecord:
+    async def stop_site(self, site_id: str, *, include_versions: bool = True) -> SiteRecord:
         await self._ensure_initialized()
         rec = self._sites.get(site_id)
         if rec is None:
@@ -922,11 +928,9 @@ class DeploymentManagerServer(BaseModel):
         self._save()
         logger.info(f"| 🛑 Site '{site_id}' stopped")
 
-        # Older releases of this site exist only to be read beside it. Left running they
-        # outlive the thing they are a version of, holding a port and answering for a
-        # site that is gone — and nobody owns them: the caller never deployed them, they
-        # appeared because a visitor opened one.
-        if self._split_release(site_id) is None:
+        # Explicit shutdown includes archive servers; replacing the latest version does
+        # not interrupt readers comparing previously published versions.
+        if include_versions and self._split_release(site_id) is None:
             for pinned in self._pinned_releases_of(site_id):
                 try:
                     await self.stop_site(pinned)
@@ -949,7 +953,7 @@ class DeploymentManagerServer(BaseModel):
         if rec is None or not rec.request:
             raise ValueError(f"No redeployable request stored for site {site_id!r}")
         request = DeployRequest(**rec.request)
-        await self.stop_site(site_id)
+        await self.stop_site(site_id, include_versions=False)
         return await self.deploy(request)
 
     async def cleanup(self) -> None:
