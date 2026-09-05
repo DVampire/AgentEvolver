@@ -1,54 +1,25 @@
-"""Run AgentEvolver on SWE-bench Verified — mirrors run_swebench_pro.py in shape.
+"""Run SWE-bench Verified tasks and submit frozen patches to BenchmarkManager.
 
-A launcher on the host starts one task container per instance and runs the MetaAgent
-inside it; the agent edits the repository, and whatever it changes is collected as a git
-patch and scored by the official ``swebench`` harness. Two arms
-(configs/swebench_verified_agent.py and .._baseline.py) differ only in the evolution roster.
-
-Key points, all deliberate:
-
-- **The repo lives at ``/testbed``** in the instance image, installed *editable* into the
-  image's ``testbed`` conda env. The session workspace is seeded from that ``/testbed`` on
-  the host, then mounted back at ``/testbed`` so the agent's edits take effect when it runs
-  the suite locally, and the patch is ``git diff`` there against the base commit. The grader's
-  throwaway peer sandbox uses the image-native ``/testbed`` too.
-
-- **GT-SAFETY by field filtering.** The HuggingFace row carries the answer key —
-  ``patch`` (gold fix), ``test_patch``, ``FAIL_TO_PASS``, ``PASS_TO_PASS``. Only
-  ``problem_statement`` (plus repo/base_commit for setup) is ever handed to the container;
-  ``_safe_instance`` strips the rest. The oracle stays on the host, where the grader runs.
-
-- **The grader runs in a PEER SANDBOX, counts-only.** ``swebench_verified_eval_tool`` bridges
-  out to ``_grade_once`` on the host, which spins a THROWAWAY container from the same instance
-  image (the framework's own ``sandbox_manager``), applies the agent's patch to /testbed, runs
-  swebench's ``eval_script`` (which resets the test files, applies the hidden ``test_patch``,
-  and runs the suite), parses the log with ``get_eval_report``, and returns only how many
-  ``FAIL_TO_PASS`` now pass and how many ``PASS_TO_PASS`` still pass — never a test name.
-
-- **Grading needs no external checkout** — the installed ``swebench`` package's
-  ``make_test_spec`` / ``get_eval_report`` provide the per-instance image, eval script, and
-  per-repo log parser straight from the ``SWE-bench/SWE-bench_Verified`` dataset row.
-
-Modes: ``launcher`` (default, host) selects instances and runs a container each; ``inner``
-(``--instance-json``) is the actual MAS run inside that container.
+The launcher owns task scheduling and agent lifecycle. SWEBenchVerifiedBenchmark
+owns the host-side official harness; hidden grading never returns to an agent.
 """
 from __future__ import annotations
 
 import argparse
-import ast
 import asyncio
 import contextlib
 import json
 import os
-import re
 import shlex
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 
 from agentevolver.benchmark.default.swebench import SWEBenchVerifiedBenchmark
+from agentevolver.benchmark import benchmark_manager
+from agentevolver.benchmark.types import Task
+from examples.run_swebench_pro import collect_patch, freeze_submission, load_submission
 from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
@@ -58,7 +29,6 @@ from agentevolver.paths import P, path_manager
 # code only computes paths/constants.
 from examples.run_programbench import (  # noqa: E402
     _LANDING_MARGIN_SECONDS,
-    CONTAINER_EVAL_BRIDGE,
     CONTAINER_USER,
     _summarise_spend,
     bind_task_workspace,
@@ -87,9 +57,6 @@ CONTAINER_REPO = "/AgentEvolver"
 
 DEFAULT_TASK_FILE = os.path.join(root, "examples", "tasks", "swebench_verified_resolution.html")
 
-#: Per-run grader-eval budget and how long one grade may take.
-_EVAL_BUDGET = 6
-_GRADE_TIMEOUT_SECONDS = 1800
 
 #: The ONLY instance fields that may enter the container. Everything else in the row is the
 #: answer key or host-side scoring metadata and is withheld. Order fixes the task-doc slots.
@@ -122,12 +89,12 @@ def _benchmark():
     return SWEBenchVerifiedBenchmark(base_dir="output/benchmark/swebench_verified")
 
 
-def load_instances() -> list:
+async def load_instances() -> list:
     """Load the SWE-bench Verified split as a list of dict rows (full, incl. oracle)."""
-    import asyncio
 
     benchmark = _benchmark()
-    asyncio.run(benchmark.initialize())
+    await benchmark.initialize()
+    await benchmark_manager.register(benchmark, override=True)
     return benchmark.instances()
 
 
@@ -200,225 +167,6 @@ def build_task_content(instance_full: dict, task_file=None, task_log_root=None):
 # --------------------------------------------------------------------------- #
 # Patch collection + grading (host side — has the oracle)
 # --------------------------------------------------------------------------- #
-def collect_patch(workspace: str, base_commit: str) -> str:
-    """The agent's change as a git patch: everything the tree differs from base_commit.
-
-    Both committed and uncommitted edits are captured — the agent is told to commit, but a
-    forgotten commit must not lose the work. Returns '' when the tree is unchanged. This is
-    the raw agent patch, exactly like an SWE-agent ``.pred``; binary noise from the image's
-    baked-in git quirks is dropped later by ``strip_binary_hunks`` at grade time, matching the
-    official harness.
-    """
-    git_dir = os.path.join(workspace, ".git")
-
-    def _git(*args, env=None):
-        # The seeded tree belongs to the sandbox uid, which need not match the host
-        # watcher uid.  Explicit git/work-tree paths avoid Git's ownership discovery
-        # check without weakening the user's global safe.directory configuration.
-        return subprocess.run(
-            ["git", f"--git-dir={git_dir}", f"--work-tree={workspace}", *args],
-            capture_output=True, text=True, timeout=120, env=env,
-        )
-
-    # Use a disposable index: ``add -N`` makes untracked files visible to diff, but the
-    # host watcher must never write the sandbox-owned repository index.
-    with tempfile.TemporaryDirectory(prefix="agentevolver-patch-index-") as tmp_dir:
-        env = os.environ.copy()
-        env["GIT_INDEX_FILE"] = os.path.join(tmp_dir, "index")
-        object_dir = os.path.join(tmp_dir, "objects")
-        os.makedirs(object_dir)
-        env["GIT_OBJECT_DIRECTORY"] = object_dir
-        env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = os.path.join(git_dir, "objects")
-        initialized = _git("read-tree", "HEAD", env=env)
-        if initialized.returncode != 0:
-            raise RuntimeError(
-                f"git read-tree failed while collecting patch: {initialized.stderr.strip()}"
-            )
-        staged = _git("add", "-A", "-N", env=env)
-        if staged.returncode != 0:
-            raise RuntimeError(f"git add -N failed while collecting patch: {staged.stderr.strip()}")
-        diff = _git("diff", "--binary", base_commit, env=env)
-        if diff.returncode != 0:
-            raise RuntimeError(f"git diff failed while collecting patch: {diff.stderr.strip()}")
-        return diff.stdout
-
-
-def strip_binary_hunks(patch: str) -> str:
-    """Drop binary diff sections from a git patch — verbatim from the official harness.
-
-    swe_bench_pro_eval.py:assemble_workspace_files runs this before ``git apply``, so the
-    benchmark grades text changes only. We do the same so a binary hunk the agent's ``git
-    diff`` picked up (notably these images' baked-in "deleted but present" test fixtures)
-    cannot fail the whole apply and zero out an otherwise-correct patch.
-    """
-    if not patch:
-        return patch
-    sections = re.split(r'(?=^diff --git )', patch, flags=re.MULTILINE)
-    kept: list = []
-    for section in sections:
-        if not section.strip():
-            continue
-        if re.search(r'^Binary files .* differ$', section, re.MULTILINE):
-            continue
-        if re.search(r'^GIT binary patch$', section, re.MULTILINE):
-            continue
-        kept.append(section)
-    return "".join(kept)
-
-
-def _as_list(row: dict, field: str) -> list:
-    v = row.get(field, "")
-    try:
-        if not isinstance(v, str):
-            return list(v or [])
-        if not v.strip():
-            return []
-        try:
-            parsed = json.loads(v)
-        except json.JSONDecodeError:
-            # SWE-bench Pro follows the official evaluator's Python-literal format for
-            # a few rows whose test names are not valid JSON strings.
-            parsed = ast.literal_eval(v)
-        return list(parsed or [])
-    except Exception:  # noqa: BLE001
-        return []
-
-
-def _counts_from_report(report_iid: dict, n_f2p: int, n_p2p: int) -> dict:
-    """swebench get_eval_report[iid] → COUNTS ONLY (no test names cross back to the agent).
-
-    ``tests_status`` maps FAIL_TO_PASS / PASS_TO_PASS each to {success:[...], failure:[...]};
-    we surface only how many of each passed, plus swebench's own ``resolved`` verdict.
-    """
-    ts = report_iid.get("tests_status") or {}
-    f2p_ok = len((ts.get("FAIL_TO_PASS") or {}).get("success") or [])
-    p2p_ok = len((ts.get("PASS_TO_PASS") or {}).get("success") or [])
-    return {
-        "fail_to_pass_resolved": f2p_ok, "fail_to_pass_total": n_f2p,
-        "pass_to_pass_preserved": p2p_ok, "pass_to_pass_total": n_p2p,
-        "resolved": bool(report_iid.get("resolved")),
-    }
-
-
-async def _grade_once(workspace_dir: str, row: dict, grader_repo: str = None) -> dict:
-    """Score the current patch in a PEER SANDBOX using the official swebench harness. Returns
-    COUNTS ONLY; the oracle (which tests, the resolution criteria) never leaves the host.
-
-    swebench ``make_test_spec`` yields the image, the ``eval_script`` (which resets the test
-    files, applies the hidden ``test_patch``, and runs the suite between Start/End markers),
-    and the per-repo log parser. We apply the agent's patch to /testbed, run that eval_script,
-    and hand the captured log to ``get_eval_report`` — the same grading the leaderboard uses.
-    ``grader_repo`` is unused here (kept for a uniform watcher signature).
-    """
-    from swebench.harness.grading import get_eval_report
-    from swebench.harness.utils import make_test_spec
-
-    from agentevolver.sandbox import sandbox_manager
-
-    instance_id = row["instance_id"]
-    try:
-        patch = strip_binary_hunks(collect_patch(workspace_dir, row.get("base_commit", "")))
-    except Exception as e:  # noqa: BLE001
-        return {"error_code": "patch_collection_failed", "error_details": str(e)}
-    if not patch.strip():
-        return {"error_code": "empty_patch", "error_details": "the working tree is unchanged from base"}
-    try:
-        spec = make_test_spec(row)
-    except Exception as e:  # noqa: BLE001
-        return {"error_code": "spec_failed", "error_details": str(e)}
-
-    # Apply the agent's patch to the image-native /testbed (editable install lives there), then
-    # run swebench's eval_script; capture everything to a log the parser reads.
-    wrapper = (
-        "cd /testbed && git config --global --add safe.directory /testbed && "
-        "( git apply -v /tmp/agent_patch.diff || echo '[grader] agent patch did not apply' ) ; "
-        "bash /tmp/eval_script.sh > /tmp/test_output.log 2>&1 ; echo '[grader] eval done'"
-    )
-    reuse = f"eval-{instance_id}"
-    sbx = None
-    try:
-        # A separate, throwaway container from the SAME image the agent used. Root + FULLY
-        # OPEN network so the eval setup (pip install -e .[test]) can run; fully-open needs no
-        # egress relay. Grader isolation does not weaken the agent's — its sandbox stays offline.
-        sbx = await sandbox_manager.acquire(
-            "docker", reuse_key=reuse, image=image_ref(row), network=True,
-            allow_hosts=[], deny_hosts=[], user="0:0", workdir="/testbed")
-        await sbx.write_file("/tmp/agent_patch.diff", patch)
-        await sbx.write_file("/tmp/eval_script.sh", spec.eval_script)
-        await sbx.run_command(wrapper, timeout=_GRADE_TIMEOUT_SECONDS)
-        try:
-            log_text = await sbx.read_file("/tmp/test_output.log")
-        except Exception as e:  # noqa: BLE001
-            return {"error_code": "no_test_output", "error_details": f"eval produced no log ({e})"}
-    except Exception as e:  # noqa: BLE001
-        return {"error_code": "grade_failed", "error_details": str(e)}
-    finally:
-        if sbx is not None:
-            with contextlib.suppress(Exception):
-                await sandbox_manager.release("docker", reuse_key=reuse)
-
-    # Parse the captured log with swebench's per-repo parser, on the host (oracle-side).
-    with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as fh:
-        fh.write(log_text)
-        log_path = fh.name
-    try:
-        prediction = {"instance_id": instance_id, "model_name_or_path": "agentevolver",
-                      "model_patch": patch}
-        report = get_eval_report(spec, prediction, log_path, include_tests_status=True)
-        return _counts_from_report(report.get(instance_id, {}),
-                                   len(spec.FAIL_TO_PASS), len(spec.PASS_TO_PASS))
-    except Exception as e:  # noqa: BLE001
-        return {"error_code": "report_failed", "error_details": str(e)}
-    finally:
-        with contextlib.suppress(Exception):
-            os.unlink(log_path)
-
-
-async def eval_bridge_watcher(bridge_dir: str, workspace_dir: str, row: dict,
-                              grader_repo: str, budget: int, counter: dict) -> None:
-    """Serve swebench_pro_eval_tool requests from inside the sandbox, host-side.
-
-    One grade per request (capped at budget); writes back response-<n>.json carrying only
-    the counts. Cancelled when the inner run finishes.
-    """
-    os.makedirs(bridge_dir, exist_ok=True)
-    served: set = set()
-    instance_id = row["instance_id"]
-    try:
-        while True:
-            for name in sorted(os.listdir(bridge_dir)):
-                if not (name.startswith("request-") and name.endswith(".json")):
-                    continue
-                seq = name[len("request-"):-len(".json")]
-                response_path = os.path.join(bridge_dir, f"response-{seq}.json")
-                if seq in served or os.path.isfile(response_path):
-                    continue
-                served.add(seq)
-                try:
-                    seq_n = int(seq)
-                except ValueError:
-                    continue
-                if seq_n >= budget:
-                    report = {"error_code": "budget_exhausted",
-                              "error_details": f"{seq_n} requested, budget {budget}"}
-                else:
-                    logger.info(f"| 🧪 [{instance_id}] grading eval #{seq_n} for the agent…")
-                    report = await _grade_once(workspace_dir, row, grader_repo)
-                    counter["count"] = counter.get("count", 0) + 1
-                    logger.info(
-                        f"| 🧪 [{instance_id}] eval #{seq_n}: "
-                        f"f2p={report.get('fail_to_pass_resolved')}/{report.get('fail_to_pass_total')} "
-                        f"error={report.get('error_code')}")
-                tmp = response_path + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as handle:
-                    json.dump(report, handle)
-                os.chmod(tmp, 0o644)  # the container runs as another uid and must read it
-                os.replace(tmp, response_path)
-            await asyncio.sleep(2.0)
-    except asyncio.CancelledError:
-        pass
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"| ❌ [{instance_id}] eval bridge watcher stopped: {e}")
 
 
 # --------------------------------------------------------------------------- #
@@ -685,11 +433,8 @@ async def run_launcher(args) -> int:
         setattr(config, "output_owner", run_namespace)
         logger.info(f"| 🧰 Isolated run namespace: {run_namespace}")
 
-    # Grading uses the installed swebench harness (make_test_spec / get_eval_report); there is
-    # no external grader checkout to point at. Kept as a local for a uniform watcher signature.
-    grader_repo = None
 
-    instances = load_instances()
+    instances = await load_instances()
     task_ids = [t.strip() for t in args.task_ids.split(",")] if args.task_ids else None
     selected = select_instances(instances, task_ids=task_ids, start=args.start, end=args.end)
     if not selected:
@@ -746,9 +491,7 @@ async def run_launcher(args) -> int:
         started = time.time()
         record: dict = {"instance_id": instance_id, "status": "failed", "error": None}
         sandbox = None
-        watcher_task = None
         workspace_dir = None
-        eval_counter = {"count": 0}
         try:
             owner = str(config.get("output_owner") or config.tag)
             workspace_dir = str(path_manager.get(
@@ -757,53 +500,57 @@ async def run_launcher(args) -> int:
             session_path = str(path_manager.get(
                 P.SESSION, owner=owner, session_id=instance_id,
             ))
-            await seed_workspace_async(ref, row.get("base_commit", ""), workspace_dir)
-
-            bridge_dir = str(path_manager.under(session_path, P.PROJECT_EVAL_BRIDGE))
-            os.makedirs(bridge_dir, exist_ok=True)
-            os.chmod(bridge_dir, 0o777)
-            grant_to_container_user(session_path)
-            logger.info(f"| 🌱 [{instance_id}] Seeded and mounted at {CONTAINER_APP} (owned by {CONTAINER_USER})")
-
-            sandbox = await sandbox_manager.acquire(
-                "docker", reuse_key=instance_id, image=ref, network=False, user=CONTAINER_USER,
-                workdir=CONTAINER_APP,
-                mounts={**mounts, workspace_dir: CONTAINER_APP, bridge_dir: CONTAINER_EVAL_BRIDGE},
-                env={
-                    "PYTHONPATH": CONTAINER_REPO,
-                    "AGENTEVOLVER_EVAL_BRIDGE": CONTAINER_EVAL_BRIDGE,
-                    "AGENTEVOLVER_EVAL_BUDGET": str(_EVAL_BUDGET),
-                    "AGENTEVOLVER_HOME": CONTAINER_REPO,
-                    "LITELLM_LOCAL_MODEL_COST_MAP": "True",
-                    **forwarded,
-                },
-                timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
-            )
-            command = inner_command(row, args)
-            monitor.task(instance_id, "solving", position=index)
-            logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
-            watcher_task = asyncio.create_task(
-                eval_bridge_watcher(bridge_dir, workspace_dir, row, grader_repo, _EVAL_BUDGET, eval_counter))
-            execution = await sandbox.run_command(
-                command, workspace_root=CONTAINER_REPO, timeout=wall_clock + _LANDING_MARGIN_SECONDS)
-            if execution.stdout:
-                print(execution.stdout)
-            if execution.stderr:
-                print(execution.stderr, file=sys.stderr)
-
-            inner_result = str(path_manager.under(session_path, P.PROJECT_RESULT))
-            if os.path.isfile(inner_result):
-                with open(inner_result, encoding="utf-8") as handle:
-                    record.update(json.load(handle))
+            submission_path = os.path.join(session_path, "submission.json")
+            if os.path.exists(submission_path):
+                submission = load_submission(submission_path, instance_id, row["base_commit"])
+                record.update(submission.get("agent_result") or {})
             else:
-                record["error"] = f"the inner run left no result.json (container exit {execution.exit_code})"
-            record["egress_audit"] = sandbox_manager.egress_audit(sandbox)
+                await seed_workspace_async(ref, row.get("base_commit", ""), workspace_dir)
 
-            # Final leaderboard-style grade of the patch the agent left behind. Counts only,
-            # exactly as the mid-run bridge would return; the oracle never crosses back.
+                grant_to_container_user(session_path)
+                logger.info(f"| 🌱 [{instance_id}] Seeded and mounted at {CONTAINER_APP} (owned by {CONTAINER_USER})")
+
+                sandbox = await sandbox_manager.acquire(
+                    "docker", reuse_key=instance_id, image=ref, network=False, user=CONTAINER_USER,
+                    workdir=CONTAINER_APP,
+                    mounts={**mounts, workspace_dir: CONTAINER_APP},
+                    env={
+                        "PYTHONPATH": CONTAINER_REPO,
+                        "AGENTEVOLVER_HOME": CONTAINER_REPO,
+                        "LITELLM_LOCAL_MODEL_COST_MAP": "True",
+                        **forwarded,
+                    },
+                    timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
+                )
+                command = inner_command(row, args)
+                monitor.task(instance_id, "solving", position=index)
+                logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
+                execution = await sandbox.run_command(
+                    command, workspace_root=CONTAINER_REPO, timeout=wall_clock + _LANDING_MARGIN_SECONDS)
+                if execution.stdout:
+                    print(execution.stdout)
+                if execution.stderr:
+                    print(execution.stderr, file=sys.stderr)
+
+                inner_result = str(path_manager.under(session_path, P.PROJECT_RESULT))
+                if os.path.isfile(inner_result):
+                    with open(inner_result, encoding="utf-8") as handle:
+                        record.update(json.load(handle))
+                else:
+                    record["error"] = f"the inner run left no result.json (container exit {execution.exit_code})"
+                record["egress_audit"] = sandbox_manager.egress_audit(sandbox)
+
+                await sandbox_manager.release("docker", reuse_key=instance_id)
+                sandbox = None
+            submission = freeze_submission(submission_path, workspace_dir, row, record)
             monitor.task(instance_id, "grading", position=index)
-            logger.info(f"| ⚖️ [{instance_id}] final grade of the collected patch…")
-            final = await _grade_once(workspace_dir, row, grader_repo)
+            evaluated = await benchmark_manager.eval("swebench_verified", Task(
+                task_id=instance_id, result=submission, extra={"workspace_dir": workspace_dir}))
+            final = evaluated.evaluation.details
+            record.update(evaluation_protocol="swe-final-only-v1", grader_evals=0,
+                          submission_sha256=submission["sha256"])
+            if final.get("error_code"):
+                record["error"] = final["error_code"]
             record["final_grade"] = final
             record["resolved"] = bool(final.get("resolved"))
             logger.info(f"| {'🟢 RESOLVED' if record['resolved'] else '🔴 unresolved'} "
@@ -812,13 +559,6 @@ async def run_launcher(args) -> int:
             logger.error(f"| ❌ [{instance_id}] launcher failure: {e}", exc_info=True)
             record["error"] = str(e)
         finally:
-            if watcher_task is not None:
-                watcher_task.cancel()
-                with contextlib.suppress(Exception):
-                    await watcher_task
-            record["grader_evals"] = eval_counter["count"]
-            if eval_counter["count"]:
-                record["leaderboard_comparable"] = False
             if sandbox is not None:
                 await sandbox_manager.release("docker", reuse_key=instance_id)
             # Bounded disk on a near-full shared volume: each instance has its own ~1GB

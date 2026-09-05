@@ -97,63 +97,11 @@ with a 15-minute limit, and drives the resulting binary against hidden tests.
   and removed. Only what `compile.sh` produces is run.
 </how-you-are-graded>
 
-<checking-against-the-real-grader>
-You have one tool, `programbench_eval_tool`, that scores your CURRENT build against the
-real hidden suite and returns **which tests still fail — their names only, never an
-expected output, input, or any reference source.** A failing name like
-`tests.test_flags.test_invalid_color_exits_nonzero` tells you *which* behaviour is still
-wrong, not what the right answer is; you still reproduce the correct behaviour by probing
-`./reference_executable`, exactly as always. Do not invent an expected output from a test
-name.
-
-Use it as a blind-spot finder AND as your finish line, because it is heavy and rate-limited
-(a full build plus the whole suite runs on the host — minutes per call — and you get only a
-few calls per run):
-- Your own differential loop against `./reference_executable` is free and unlimited — that
-  is your primary signal. Make a batch of real, locally-verified improvements first.
-- Then spend one grader eval to reveal behaviours your own checks missed. Take the failing
-  names as a prioritised to-do list and go reproduce each against the reference.
-- **The grader eval DRIVES the loop — this is mandatory, not optional pacing.** The moment an
-  eval hands you a failing list, that list is your ONLY authoritative to-do: work it down
-  against the reference, then IMMEDIATELY re-evaluate to get the next list. Repeat —
-  eval → fix the reported failures → re-eval → fix → re-eval — until an eval returns the same
-  failing set as the one before it. Do not do one eval and then grind the rest of the run on
-  local checks: `check.sh` cannot tell you whether your fixes closed grader tests (they were
-  for tests it never had), so every stretch of fixing after an eval has an unknown effect
-  until the next eval measures it. The single most common way a run underperforms is fixing
-  many tests after its first eval and never re-evaluating — it ends not knowing its own score
-  and leaves most of its eval budget unspent. Spend the budget: on a large failing set, that
-  means several evals across the run, not one.
-- **HARD RULE: you may NOT call `done_tool` while the build has changed since your last grader
-  eval.** A stale eval is not a result. If you have edited the build at all since the last
-  eval, re-evaluate first, then decide. `done_tool` is legitimate only right after an eval
-  whose failing set is either empty or unchanged from the eval before it — never off local
-  checks alone, never on an eval that predates your latest fixes. (The one exception: if your
-  eval budget is exhausted, `done_tool` on your best build is correct — the rule assumes you
-  still have an eval to spend.)
-- **An unchanged failing set means your last attempt did not work — CHANGE APPROACH, do not
-  quit.** When a re-eval returns the same failures, it is telling you your fix missed, not
-  that those tests are unclosable. Most of them are reproducible: go back to
-  `./reference_executable`, re-derive the EXACT behaviour for a still-failing test from
-  scratch (you likely misread an edge — a stream, an exit code, exact bytes, a flag
-  interaction), and try a genuinely different fix. Do not conclude a test is impossible off
-  one failed batch, and do not stop with a large failing set still open — a run that gives up
-  the moment a fix batch fails to land leaves reproducible tests on the table (that is exactly
-  how a run scored 75% where a more persistent one scored 88%).
-- **Finish only when what remains is truly irreducible OR you are genuinely out of ideas after
-  different attempts.** `done_tool` is right when the still-failing set is small and provably
-  unreproducible (RNG-driven frames; a constant you have already hardcoded to match), or when
-  you have attacked the same set in two or more *different* ways across evals and it will not
-  move and you have no new idea to try. A high pass rate with a couple of irreducible failures
-  is a finished run; a mid pass rate with untried failures is not.
-- Evaluate only a build that compiles and runs — an eval on a broken `compile.sh` just
-  spends a call to tell you it did not build.
-- When a fixed string you cannot derive is what a test wants (a compiled-in timestamp, a
-  build hash, an embedded version line), that value is still observable: read it from
-  `./reference_executable` and hardcode it. Reproducing observed output is the task, not a
-  shortcut — do not leave it to a macro like `__DATE__`/`__TIME__` that will emit your own
-  build's value instead and never match.
-</checking-against-the-real-grader>
+<local-verification>
+Verify with available repository tests or your own checks. Finish with your best submission
+and report any unverified behavior. Hidden evaluation runs only after your process exits;
+you cannot request it or use its feedback to revise your answer.
+</local-verification>
 
 <rules>
 Your goal is to write original code from scratch that reproduces the executable's

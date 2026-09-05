@@ -14,6 +14,7 @@ Use only for dev/demo or trusted single-tenant hosts. For real isolation use the
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import signal
 import subprocess
@@ -56,6 +57,24 @@ class HostSandbox(Sandbox):
                 return f"{process.pid}:{start}:{os.getpgid(process.pid)}"
         return None
 
+    @staticmethod
+    def _group_alive(group: int) -> Optional[bool]:
+        """Zombies cannot serve requests, even when their parent has not reaped them."""
+        try:
+            for name in os.listdir("/proc"):
+                if not name.isdecimal():
+                    continue
+                try:
+                    with open(f"/proc/{name}/stat", encoding="utf-8") as handle:
+                        fields = handle.read().rsplit(") ", 1)[1].split()
+                    if int(fields[2]) == group and fields[0] not in {"Z", "X"}:
+                        return True
+                except FileNotFoundError:
+                    continue  # Process exited while enumerating.
+            return False
+        except (OSError, ValueError, IndexError):
+            return None  # Cannot verify; fail closed.
+
     @classmethod
     async def destroy_resource(cls, resource_id: str) -> bool:
         """Stop a persisted host group only while its leader identity still matches."""
@@ -77,11 +96,13 @@ class HostSandbox(Sandbox):
         deadline = asyncio.get_running_loop().time() + 3.0
         while asyncio.get_running_loop().time() < deadline:
             try:
-                waited, _status = os.waitpid(pid, os.WNOHANG)
-                if waited == pid:
-                    return True
+                os.waitpid(pid, os.WNOHANG)
             except ChildProcessError:
                 pass
+            if cls._group_alive(group) is False:
+                with contextlib.suppress(ChildProcessError):
+                    os.waitpid(pid, os.WNOHANG)
+                return True
             try:
                 os.killpg(group, 0)
             except ProcessLookupError:
@@ -96,14 +117,15 @@ class HostSandbox(Sandbox):
         deadline = asyncio.get_running_loop().time() + 1.0
         while asyncio.get_running_loop().time() < deadline:
             try:
-                waited, _status = os.waitpid(pid, os.WNOHANG)
-                if waited == pid:
-                    return True
+                os.waitpid(pid, os.WNOHANG)
             except ChildProcessError:
-                if not os.path.exists(f"/proc/{pid}"):
-                    return True
+                pass
+            if cls._group_alive(group) is False:
+                with contextlib.suppress(ChildProcessError):
+                    os.waitpid(pid, os.WNOHANG)
+                return True
             await asyncio.sleep(0.05)
-        return not os.path.exists(f"/proc/{pid}")
+        return cls._group_alive(group) is False
 
     # ------------------------------------------------------------- lifecycle
     async def start(self) -> None:

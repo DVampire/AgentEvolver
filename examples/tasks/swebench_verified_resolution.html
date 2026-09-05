@@ -59,26 +59,11 @@ the issue and does not break existing behaviour.
   not ask about — a change that breaks a previously-passing test costs you.
 </how-to-work>
 
-<checking-with-the-real-grader>
-`swebench_verified_eval_tool` runs the hidden suite against your CURRENT edits and returns a
-COUNTS-ONLY progress report:
-- `fail_to_pass resolved: X/N` — how many of the hidden target tests your patch now passes.
-- `pass_to_pass preserved: Y/M` — how many previously-passing tests still pass (a drop means
-  your change broke something — find and undo the regression).
-- `fully resolved: yes/no`.
-
-You get NO test names, NO test bodies, NO expected outputs — only these counts. It is a
-progress signal to tell you whether your last batch of changes helped and whether it broke
-anything; it is not a to-do list and it cannot hand you the answer.
-
-It is heavy and rate-limited (a handful of calls per run). So: make a real batch of changes,
-check them against the repo's own tests yourself (free), THEN spend one grader eval to see
-whether `fail_to_pass` moved. Do not call it after a trivial edit, and make sure the repo
-actually imports (no syntax errors) before calling.
-
-Finish (`done_tool`) when the grader reports `fully resolved: yes`, or when your eval budget
-is spent and you have made your best, locally-verified change.
-</checking-with-the-real-grader>
+<local-verification>
+Verify with available repository tests or your own checks. Finish with your best submission
+and report any unverified behavior. Hidden evaluation runs only after your process exits;
+you cannot request it or use its feedback to revise your answer.
+</local-verification>
 
 </div>
 </body>

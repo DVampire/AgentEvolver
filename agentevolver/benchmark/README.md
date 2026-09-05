@@ -42,7 +42,7 @@ adding selection logic to the server.
 
 "in-process" means the benchmark yields tasks and the framework's own runtime answers
 them. The three with launchers need per-instance Docker containers and a host-side grader,
-which is orchestration a `Benchmark` class deliberately does not do.
+with scheduling owned by the launcher and final grading owned by the Benchmark implementation.
 
 Every maintained launcher publishes the same `visual.BenchmarkMonitor` state and deploys
 its read-only dashboard through `deployment_manager` by default. Use `--no-monitor` for
@@ -123,9 +123,16 @@ places is how that index once named three HuggingFace repos no benchmark had eve
 
 ## Scoring caveats worth carrying
 
-SWE-bench Verified and ProgramBench expose the grader as a progress signal. Iterating against a signal a single-shot run does
-not have means such a score is **not comparable to a public leaderboard**; the launchers
-record how many times the tool was called so the caveat travels with the number.
+All three coding launchers call `benchmark_manager.eval(name, task)` after the solver
+container has stopped and its submission has been frozen. The Benchmark owns the grader,
+result parsing and evidence. There are no model-facing benchmark evaluation tools, request
+bridges, hidden-test feedback loops, or grading budgets. Local checks remain agent tools.
+Historical feedback-assisted scores remain preserved and are not strict pass@1.
+
+`Task.evaluation` carries a structured `EvaluationResult` (`passed`, `failed`, or `error`).
+An evaluation error has `score=None`, never an implicit zero. Batch evaluation raises on
+unscored errors rather than silently averaging them as wrong answers. Registry/lifecycle
+management remains in context/server; benchmark-specific grading stays in its implementation.
 
 SWE Pro defaults to `--grader-profile official`: upstream run scripts and parsers are
 uploaded unchanged, and entry-script generation is regression-tested against the local
@@ -134,19 +141,29 @@ grader asset fingerprint and profile are recorded and checked on resume. This is
 compatibility, not a claim that the entire custom launcher has been certified by a leaderboard.
 
 `--grader-profile diagnostic` explicitly enables bounded test-worker parallelism,
-fail-fast setup, selector/parser repairs and optional missing Go test-data restoration.
+fail-fast setup, selector/parser repairs and Go test-data revision matching.
 All diagnostic results are marked `leaderboard_comparable=false`, even without restored
-files. Complete logs and parser output are retained in `eval_bridge/grader-*.{log,json}`
-(a historical directory name, no longer a live solver bridge). A compiler warning alone,
+files. New logs and parser output are retained in `evaluation/grader-*.{log,json}`;
+historical `eval_bridge/` evidence remains untouched. A compiler warning alone,
 or an expected missing-file error in an executed test, is not a harness failure.
 
-For Go tests, the grader can restore newly added non-code data files under the selected
-tests' sibling `testdata/` directories from the test revision. It never overwrites existing
-files or restores production code. Restored paths stay in the grader evidence; the result
+For Go tests, the diagnostic grader restores added/modified non-code data files under the
+selected tests' sibling `testdata/` directories from the injected tests' revision. This can
+replace existing test fixtures, but never restores production code, executable files or
+symlinks. Restored paths stay in the grader evidence; the result
 contains only `fixture_files_restored` and `leaderboard_comparable=false`. This repair
 changes the grading setup and must not be presented as an unmodified official evaluation.
 Already-running launchers keep their loaded protocol until restarted; editing code does
 not silently rewrite previous results.
+
+Host-only controls are available with `python -m others.swe_grader_audit --help`.
+The audit evaluates either the dataset reference or an existing frozen submission in a
+separate grading namespace; it never calls an LLM, feeds test evidence back to a solver,
+or changes benchmark scores. `--without-reference-fixtures` isolates test-data dependence
+while retaining the reference production code. A passing reference alone does not prove
+fairness: hidden tests can still depend on undocumented private implementation details.
+Keep official grades and corrected diagnostic grades distinguishable, and retry grading
+the same frozen patch for infrastructure failures rather than generating a new answer.
 
 SWE Pro now uses `swe-pro-final-only-v2`: both configurations expose only local verification
 to the solver, with no hidden-grader tool, watcher or bridge environment. After the Agent

@@ -9,11 +9,6 @@ from .coordination import (
     SendMessageTool,
 )
 from .deployment import DeployTool
-from .evaluation import (
-    ProgramBenchEvalTool,
-    SWEBenchProEvalTool,
-    SWEBenchVerifiedEvalTool,
-)
 from .execution import BatchCallTool
 from .adoption import AdoptionTool
 from .lifecycle import (
@@ -74,9 +69,6 @@ __all__ = [
     "JournalTool",
     "EscalateTool",
     "GrantTool",
-    "ProgramBenchEvalTool",
-    "SWEBenchProEvalTool",
-    "SWEBenchVerifiedEvalTool",
     "MediaSearchTool",
     "SendMessageTool",
     "PublishEventTool",

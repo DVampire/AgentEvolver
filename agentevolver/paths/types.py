@@ -50,7 +50,7 @@ class P(str, Enum):
     PROJECT_PATCH = "project_patch"
     PROJECT_SUBMISSION = "project_submission"
     PROJECT_SUBMISSION_VIEW = "project_submission_view"
-    PROJECT_EVAL_BRIDGE = "project_eval_bridge"
+    PROJECT_EVALUATION = "project_evaluation"
     PROJECT_RESULT_RUN = "project_result_run"
 
     # --- the two buckets -------------------------------------------------
@@ -160,7 +160,7 @@ RELATIVE: frozenset = frozenset({
     P.PROJECT_WORKSPACE, P.PROJECT_LOG,
     P.PROJECT_EXTENSION, P.PROJECT_MANIFEST, P.PROJECT_RESULT,
     P.PROJECT_PATCH, P.PROJECT_SUBMISSION, P.PROJECT_SUBMISSION_VIEW,
-    P.PROJECT_EVAL_BRIDGE,
+    P.PROJECT_EVALUATION,
     P.PROJECT_RESULT_RUN,
 })
 
@@ -213,7 +213,7 @@ LAYOUT: Dict[P, str] = {
     P.PROJECT_PATCH: "agent.patch",
     P.PROJECT_SUBMISSION: "submission.tar.gz",
     P.PROJECT_SUBMISSION_VIEW: "submission",
-    P.PROJECT_EVAL_BRIDGE: "eval_bridge",
+    P.PROJECT_EVALUATION: "evaluation",
     P.PROJECT_RESULT_RUN: "results/{run_id}",
 
     P.OUTPUT: "output",

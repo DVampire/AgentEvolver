@@ -19,7 +19,7 @@ introspected into native function-calling schemas and routed through `tool_manag
 | `checkpoint.py` | Reversible pre-effect snapshots for file mutations |
 | `context.py` | Registration, dynamic loading, versions, and instances |
 | `server.py` | Public schemas and the only supported execution entry point |
-| `default/` | Built-ins grouped by workspace, execution, lifecycle, coordination, observability, evaluation, web, and deployment |
+| `default/` | Built-ins grouped by workspace, execution, lifecycle, coordination, observability, web, and deployment |
 
 `inspect_tool` is one tool for all seven capability types rather than one per
 type: the six it replaced asked different managers and printed a few different lines, and

@@ -1,36 +1,7 @@
-"""Config for examples/run_swebench_verified.py — the self-evolution (agent) arm.
+"""SWE-bench Verified configuration.
 
-Structured exactly like `configs/programbench_agent.py`, because a SWE-bench Verified
-run is the same shape as a ProgramBench run: a single MetaAgent works a task
-inside an offline task container and produces one artifact (here a git patch that
-resolves the issue, not a reconstructed program). Only the task and the grader
-differ; the roster is identical.
-
-The roster, deliberately minimal:
-- **Only `bash_tool` + `done_tool`.** The agent reads, edits and diffs the repo
-  through the shell; that is the whole toolset the reference SWE agents
-  (SWE-agent / mini-SWE-agent) use, and the score comes from the model reasoning
-  over the codebase, not from a wide tool surface.
-- **`swebench_verified_eval_tool`** — the GT-safe iterative grader bridge. The agent
-  may ask the real hidden suite to score its current patch; what comes back is
-  ONLY the names and pass/fail counts of the `fail_to_pass` / `pass_to_pass`
-  tests — never the gold patch, the `test_patch`, an expected value, or any test
-  body. Present in BOTH arms, so it does not affect the evolution-only difference.
-- **The self-evolution roster** — `generate_agent` / `optimize_agent` /
-  `evaluate_agent`, `adoption_tool`, `self_evolving_skill`. This is the ONLY
-  thing that differs from `swebench_verified_agent_baseline.py`; keep every other value
-  in sync between the two arms or the comparison is meaningless (see
-  test_shipped_configs).
-
-Absent by design (same reasons as ProgramBench): no web/browser tools (network
-isolation is the anti-cheat — it stops the agent fetching the upstream fix
-commit), no monitor_agent (it escapes the sandbox), no environment/connector/
-memory evolution (a bug-fix task has none to evolve).
-
-GT-SAFETY (critical): the HuggingFace row carries the answer key —
-`patch`, `test_patch`, `fail_to_pass`, `pass_to_pass`. The launcher hands the
-agent ONLY `problem_statement` / `requirements` / `interface`; the oracle fields
-never enter the container. See run_swebench_verified.py.
+Agents verify locally; the host evaluates their frozen patch only after exit.
+The agent and baseline arms differ in the self-evolution roster, not grading access.
 """
 from mmengine.config import read_base
 
@@ -72,7 +43,6 @@ tool_names = [
     # Ask the real hidden suite to score the current patch and return which tests still
     # fail (NAMES + counts only, never a test body or expected output). Host-mediated,
     # rate-limited. Present in both arms, so it does not affect the evolution difference.
-    "swebench_verified_eval_tool",
     "adoption_tool",
 ]
 skill_names = [

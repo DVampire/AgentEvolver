@@ -1,21 +1,7 @@
-"""Config for examples/run_swebench_verified.py — the NO-evolution (baseline) arm.
+"""SWE-bench Verified configuration.
 
-Identical to `configs/swebench_verified_agent.py` except the self-evolution roster is
-removed. This is the control the evolution arm is measured against, so every other
-value MUST stay in sync (see test_shipped_configs):
-
-| field         | agent arm                                  | this baseline        |
-| `agent_names` | meta_agent + generate/optimize/evaluate    | meta_agent           |
-| `tool_names`  | bash + done + swebench_pro_eval + evolution| bash + done + eval   |
-| `skill_names` | self_evolving_skill                        | none                 |
-
-The comparison is only meaningful while the two arms run the same model, the same
-memory settings, and the same grader tool. The grader (`swebench_verified_eval_tool`) is
-in BOTH arms on purpose — it is the task's iterative signal, not part of evolution.
-
-GT-SAFETY (critical): the launcher hands the agent ONLY
-`problem_statement` / `requirements` / `interface`; the oracle fields
-(`patch`, `test_patch`, `fail_to_pass`, `pass_to_pass`) never enter the container.
+Agents verify locally; the host evaluates their frozen patch only after exit.
+The agent and baseline arms differ in the self-evolution roster, not grading access.
 """
 from mmengine.config import read_base
 
@@ -43,7 +29,6 @@ tool_names = [
     "bash_tool",
     "done_tool",
     # Same GT-safe grader bridge as the evolution arm (names + counts only).
-    "swebench_verified_eval_tool",
 ]
 # No self_evolving_skill here — that is the evolution arm's alone.
 skill_names = []

@@ -1,15 +1,18 @@
 import os
+import asyncio
+import contextlib
+import hashlib
+import json
+import signal
+import tempfile
 import shutil
-import subprocess
 import sys
-import tarfile
 from typing import Optional, List, Dict, Any
 
 from pydantic import Field, ConfigDict, PrivateAttr
 
-from agentevolver.benchmark.types import Benchmark, Task, Stats
+from agentevolver.benchmark.types import Benchmark, Task, Stats, EvaluationResult
 from agentevolver.registry import BENCHMARK
-from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
 from agentevolver.utils import dedent
 
@@ -119,38 +122,30 @@ class ProgramBenchmark(Benchmark):
             extra=extra,
         )
 
-    def _prepare_submission(self, task_id: str, result: Any) -> Optional[str]:
-        """Lay out a `programbench eval` run directory holding <task_id>/submission.tar.gz.
+    def instances(self) -> List[Dict]:
+        return list(self._data_records)
 
-        `result` may be the path to a `.tar.gz` archive or to a source-tree directory.
-        Returns the run directory path, or None if no usable submission was provided.
-        """
-        if not result:
-            return None
-        src_path = str(result).strip()
-        if not src_path or not os.path.exists(src_path):
-            logger.warning(f"[{self.name}] submission path does not exist for task {task_id}: {src_path!r}")
-            return None
-
-        eval_runs = path_manager.resolve_under(self.base_dir, "eval_runs")
-        log_root = path_manager.resolve_under(eval_runs, task_id)
+    def _prepare_submission(self, task_id: str, result: Any) -> str:
+        """Copy an immutable, host-frozen archive into an independent grading attempt."""
+        if not isinstance(result, dict) or not result.get("path") or not result.get("sha256"):
+            raise ValueError("a frozen archive and its SHA-256 are required")
+        if result.get("instance_id", task_id) != task_id:
+            raise ValueError("submission task mismatch")
+        src_path = result["path"]
+        def digest(path):
+            with open(path, "rb") as handle:
+                return hashlib.file_digest(handle, "sha256").hexdigest()
+        if digest(src_path) != result["sha256"]:
+            raise ValueError("submission digest mismatch")
+        runs = path_manager.resolve_under(self.base_dir, "eval_runs")
+        os.makedirs(runs, exist_ok=True)
+        log_root = tempfile.mkdtemp(prefix="grade-", dir=runs)
         inst_dir = path_manager.resolve_under(log_root, task_id)
-        os.makedirs(inst_dir, exist_ok=True)
+        os.makedirs(inst_dir)
         submission = path_manager.under(inst_dir, P.PROJECT_SUBMISSION)
-
-        if os.path.isdir(src_path):
-            # Tar the source tree (members relative to the tree root).
-            if os.path.exists(submission):
-                os.remove(submission)
-            with tarfile.open(submission, "w:gz") as tar:
-                for entry in sorted(os.listdir(src_path)):
-                    tar.add(os.path.join(src_path, entry), arcname=entry)
-        elif src_path.endswith((".tar.gz", ".tgz")):
-            shutil.copyfile(src_path, submission)
-        else:
-            logger.warning(f"[{self.name}] unsupported submission for task {task_id}: {src_path!r}")
-            return None
-
+        shutil.copyfile(src_path, submission)
+        if digest(submission) != result["sha256"]:
+            raise ValueError("submission changed during collection")
         return log_root
 
     def _programbench_cli(self) -> Optional[str]:
@@ -159,78 +154,69 @@ class ProgramBenchmark(Benchmark):
             return exe
         return shutil.which("programbench")
 
-    async def eval(self, task: Task) -> Optional[Task]:
-        task_id = task.task_id
-        instance = self._instances.get(task_id)
-        task.score = 0.0
-
-        if instance is None:
-            logger.error(f"[{self.name}] unknown instance: {task_id}")
-            self._tasks.append(task)
-            return task
-
-        log_root = self._prepare_submission(task_id, task.result)
-        if log_root is None:
-            self._tasks.append(task)
-            return task
-
-        cli = self._programbench_cli()
-        if cli is None:
-            logger.error(f"[{self.name}] `programbench` CLI not found; cannot evaluate {task_id}.")
-            self._tasks.append(task)
-            return task
-
-        cmd = [
-            cli, "eval", log_root,
-            "--filter", f"^{task_id}$",
-            "--branch-workers", str(self.branch_workers),
-            "--docker-cpus", str(self.docker_cpus),
-            "--force",
-        ]
+    async def eval(self, task: Task) -> Task:
+        """One final host-side evaluation. Errors remain unscored and never reach a solver."""
+        report = {}
+        score = None
         try:
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=self.eval_timeout
+            instance = self._instances.get(task.task_id)
+            if instance is None:
+                raise ValueError("unknown benchmark task")
+            log_root = self._prepare_submission(task.task_id, task.result)
+            cli = self._programbench_cli()
+            if not cli:
+                raise RuntimeError("programbench CLI not found")
+            import re
+            process = await asyncio.create_subprocess_exec(
+                cli, "eval", log_root, "--filter", f"^{re.escape(task.task_id)}$",
+                "--branch-workers", str(self.branch_workers),
+                "--docker-cpus", str(self.docker_cpus), "--force",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
             )
-            if proc.returncode != 0:
-                logger.warning(f"[{self.name}] `programbench eval` returned {proc.returncode} for {task_id}: {proc.stderr[-500:]}")
-        except subprocess.TimeoutExpired:
-            logger.error(f"[{self.name}] `programbench eval` timed out for {task_id}.")
-            self._tasks.append(task)
-            return task
-        except Exception as e:
-            logger.error(f"[{self.name}] `programbench eval` failed for {task_id}: {e}")
-            self._tasks.append(task)
-            return task
-
-        # Score the produced eval.json with the same ignore-aware logic as `programbench info`.
-        from programbench.submission import score_instance, test_results_map
-        inst_dir = path_manager.resolve_under(log_root, task_id)
-        eval_json = path_manager.resolve_under(inst_dir, f"{task_id}.eval.json")
-        if not eval_json.exists():
-            logger.warning(f"[{self.name}] no eval.json produced for {task_id}.")
-            self._tasks.append(task)
-            return task
-
-        try:
-            task.score = score_instance(eval_json, instance)
-            tests = test_results_map(eval_json, instance)
-            passed = sum(1 for v in tests.values() if v)
-            total = len(tests)
-            task.extra = task.extra or {}
-            task.extra.update({"passed_tests": passed, "total_tests": total, "eval_json": str(eval_json)})
-        except Exception as e:
-            logger.error(f"[{self.name}] failed to score {task_id}: {e}")
-            task.score = 0.0
-
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), self.eval_timeout)
+            except BaseException:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+                await process.wait()
+                raise
+            for name, data in (("stdout.log", stdout), ("stderr.log", stderr)):
+                with open(path_manager.resolve_under(log_root, name), "wb") as handle:
+                    handle.write(data)
+            inst_dir = path_manager.resolve_under(log_root, task.task_id)
+            eval_json = path_manager.resolve_under(inst_dir, f"{task.task_id}.eval.json")
+            if process.returncode != 0:
+                raise RuntimeError(f"programbench exited {process.returncode}; evidence: {log_root}")
+            with open(eval_json, encoding="utf-8") as handle:
+                raw = json.load(handle)
+            if raw.get("error_code"):
+                report = {"error_code": raw["error_code"], "error_details": raw.get("error_details"),
+                          "eval_json": str(eval_json)}
+            else:
+                from programbench.submission import score_instance, test_results_map
+                tests = test_results_map(eval_json, instance)
+                if not tests:
+                    raise RuntimeError("the grader produced no scored test results")
+                score = score_instance(eval_json, instance)
+                passed = sum(bool(value) for value in tests.values())
+                report = {"resolved": score >= 1.0, "passed_tests": passed,
+                          "total_tests": len(tests), "eval_json": str(eval_json)}
+        except Exception as error:
+            report = {"error_code": "evaluation_failed", "error_details": str(error)}
+        task.evaluation = EvaluationResult.from_report(report, score=score)
+        task.score = task.evaluation.score
+        self._tasks = [previous for previous in self._tasks if previous.task_id != task.task_id]
         self._tasks.append(task)
         return task
 
     async def stats(self) -> Optional[Stats]:
         total = len(self._data_records)
-        attempted = len(self._tasks)
+        scored = [task for task in self._tasks if task.score is not None]
+        attempted = len(scored)
         # A task is "resolved" only when all (non-ignored) tests pass.
         resolved = sum(1 for r in self._tasks if r.score and r.score >= 1.0)
-        mean_score = sum(r.score or 0.0 for r in self._tasks) / attempted if attempted > 0 else 0.0
+        mean_score = sum(r.score or 0.0 for r in scored) / attempted if attempted > 0 else 0.0
 
         task_times = {r.task_id: r.time for r in self._tasks if r.time is not None}
         avg_time = sum(task_times.values()) / len(task_times) if task_times else 0.0
@@ -243,6 +229,7 @@ class ProgramBenchmark(Benchmark):
             times=task_times,
             average_time=avg_time,
             extra={
+                "evaluation_errors": len(self._tasks) - attempted,
                 "resolved": resolved,
                 "resolved_rate": resolved / attempted if attempted > 0 else 0.0,
                 "mean_test_pass_rate": mean_score,

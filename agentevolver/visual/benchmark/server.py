@@ -238,6 +238,7 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
     state = _read_json(state_path, {})
     results_path = Path(state.get("results_path") or state_path.with_name("results.json"))
     current = _records(_read_json(results_path, []))
+    current_ids = {record.get("instance_id") or record.get("task_id") for record in current}
     # Display-only aggregation stays outside the launcher's resumable score ledger.
     # A sidecar also lets a running experiment adopt history without restarting workers.
     aggregate = _read_json(state_path.with_name("aggregate.json"), {})
@@ -276,6 +277,7 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
             issues[failure["kind"]] = issues.get(failure["kind"], 0) + 1
         recent.append({
             "task_id": record.get("instance_id") or record.get("task_id") or "unknown",
+            "attempt_source": "current" if (record.get("instance_id") or record.get("task_id")) in current_ids else "history",
             "outcome": outcome,
             "time_seconds": record.get("time_seconds", record.get("time")),
             "calls": int(_number(spend.get("n_llm_calls"), int)),
@@ -286,6 +288,10 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
     owner = Path(state["owner_dir"]) if state.get("owner_dir") else None
     active = [_activity(owner, task) for task in (state.get("active") or {}).values()]
     active.sort(key=lambda item: (item.get("position", 0), item.get("task_id", "")))
+    active_phases = {item["task_id"]: item.get("phase") for item in active}
+    for item in recent:
+        if item["attempt_source"] == "history":
+            item["retry_phase"] = active_phases.get(item["task_id"])
     completed_ids = {
         str(record.get("instance_id") or record.get("task_id"))
         for record in current
@@ -324,6 +330,7 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
         "results_path": str(results_path),
         "result_sources": sources + [str(results_path)],
         "score_mode": "cumulative_retry" if sources else "single_run",
+        "current_attempt": {"completed": len(current), "total": int(state.get("total") or 0)},
         # Keep errors visible in the headline denominator rather than making a run look
         # better when a test package could not compile. 'scored' remains a separate fact.
         "pass_rate": {

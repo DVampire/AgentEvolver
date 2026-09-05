@@ -14,18 +14,22 @@ from unittest.mock import AsyncMock
 import pytest
 
 import examples.run_swebench_pro as swebench_pro
-from examples.run_swebench_pro import (
-    EVALUATION_PROTOCOL,
+import agentevolver.benchmark.default.swebench as grading
+from agentevolver.benchmark.types import EvaluationResult
+from agentevolver.benchmark.default.swebench import (
     _argv_safe_run_script,
     _as_list,
     _build_entryscript,
     _grade_report,
     _parser_with_fail_boundaries,
     _restore_test_fixtures,
+    grader_fingerprint,
+)
+from examples.run_swebench_pro import (
+    EVALUATION_PROTOCOL,
     atomic_write_json,
     collect_patch,
     freeze_submission,
-    grader_fingerprint,
     has_resumable_workspace,
     load_run_results,
     load_submission,
@@ -153,6 +157,18 @@ def test_grader_setup_failure_overrides_parser_output():
     assert report["resolved"] is False
 
 
+@pytest.mark.parametrize(("entry", "code"), [
+    ("error: patch failed: source.go:12\nerror: source.go: patch does not apply", "patch_apply_failed"),
+    ("fatal: reference is not a tree: abc", "checkout_failed"),
+    ("error: pathspec 'missing_test.go' did not match any file(s) known to git", "checkout_failed"),
+])
+def test_official_setup_failure_cannot_be_hidden_by_passing_parser(entry, code):
+    report = _grade_report({"tests": [{"name": "target", "status": "PASSED"}]},
+                          {"fail_to_pass": ["target"]}, {"entry.log": entry}, profile="official")
+    assert report["error_code"] == code
+    assert report["resolved"] is False
+
+
 def test_test_build_failure_requires_compatibility_review_not_host_blame():
     report = _grade_report(
         {"tests": [{"name": "other", "status": "PASSED"}]},
@@ -163,6 +179,17 @@ def test_test_build_failure_requires_compatibility_review_not_host_blame():
     assert report["error_code"] == "test_build_failed"
     assert report["failure_kind"] == "test_compatibility"
     assert not report["resolved"]
+
+
+def test_timeout_cannot_publish_partial_tests_as_a_valid_score():
+    report = _grade_report(
+        {"tests": [{"name": "target", "status": "PASSED"}]},
+        {"fail_to_pass": ["target"]},
+        {"execution.json": json.dumps({"success": False, "error": "command timed out"})},
+        profile="official",
+    )
+    assert report["resolved"] is False
+    assert report["error_code"] == "grader_execution_failed"
 
 
 def test_missing_fixture_hint_does_not_reclassify_assertion_or_passing_negative_test():
@@ -284,6 +311,36 @@ def test_fixture_restore_excludes_reference_code_and_existing_files(tmp_path):
     assert not (repo / "pkg/a_test.go").exists()
     assert not (repo / "pkg/testdata/link.json").is_symlink()
 
+    restored = _restore_test_fixtures(
+        str(repo), base, f"git checkout {revision} -- pkg/a_test.go", match_revision=True)
+    assert restored == ["pkg/testdata/existing.json"]
+    assert (repo / "pkg/testdata/existing.json").read_text() == "reference"
+    assert (repo / "impl.go").read_text() == "baseline"
+    assert not (repo / "pkg/testdata/helper.go").exists()
+    assert _restore_test_fixtures(
+        str(repo), base, f"git checkout {revision} -- pkg/a_test.go", match_revision=True) == []
+
+
+def test_diagnostic_fixture_revision_includes_modified_data(tmp_path):
+    repo = tmp_path
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test")
+    fixture = repo / "pkg/testdata/config.yml"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text("old: true")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    fixture.write_text("enabled: true")
+    _git(repo, "commit", "-qam", "test revision")
+    revision = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", base)
+    command = f"git checkout {revision} -- pkg/config_test.go"
+    assert _restore_test_fixtures(str(repo), base, command) == []
+    assert _restore_test_fixtures(str(repo), base, command, match_revision=True) == ["pkg/testdata/config.yml"]
+    assert fixture.read_text() == "enabled: true"
+
 
 def test_ansible_worker_limit_preserves_explicit_configuration():
     script = "python bin/ansible-test units -v\npython bin/ansible-test units --num-workers 1 -v"
@@ -342,7 +399,7 @@ def test_entryscript_stops_on_setup_errors_and_records_stage(tmp_path, failure_s
 async def test_grader_evidence_keeps_full_json_and_numeric_sequence(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    bridge = tmp_path / "eval_bridge"
+    bridge = tmp_path / "evaluation"
     bridge.mkdir()
     (bridge / "grader-9.entry.log").write_text("old")
     (bridge / "grader-10.entry.log").write_text("latest")
@@ -354,7 +411,7 @@ async def test_grader_evidence_keeps_full_json_and_numeric_sequence(tmp_path):
                 return payload
             return ""
 
-    evidence = await swebench_pro._save_grader_evidence(
+    evidence = await grading._save_grader_evidence(
         Sandbox(), str(workspace), types.SimpleNamespace(stdout="first cause", stderr=""))
     assert evidence["output.json"] == payload
     assert json.loads((bridge / "grader-11.output.json").read_text()) == json.loads(payload)
@@ -420,7 +477,7 @@ def test_legacy_and_existing_results_cannot_be_overwritten():
 
 @pytest.mark.asyncio
 async def test_empty_submission_is_a_failure_not_a_retryable_harness_error():
-    report = await swebench_pro._grade_once(
+    report = await grading._grade_pro(
         "unused", {"fail_to_pass": ["target"], "instance_id": "empty"}, "unused", patch="")
     assert report["resolved"] is False
     assert "error_code" not in report
@@ -505,7 +562,13 @@ async def test_launcher_grades_after_exit_and_resume_never_restarts_submitted_ag
     monkeypatch.setattr(swebench_pro, "seed_workspace_async", AsyncMock())
     monkeypatch.setattr(swebench_pro, "run_inner_process", solve)
     monkeypatch.setattr(swebench_pro, "collect_patch", collect)
-    monkeypatch.setattr(swebench_pro, "_grade_once", grade)
+    async def evaluate(name, task):
+        assert name == "swebench_pro"
+        report = await grade(patch=task.result["patch"], profile=task.extra["grader_profile"])
+        task.evaluation = EvaluationResult.from_report(report)
+        task.score = task.evaluation.score
+        return task
+    monkeypatch.setattr(swebench_pro.benchmark_manager, "eval", evaluate)
 
     assert await swebench_pro.run_launcher(args) == 1  # grader failure, artifact survives
     args.resume = True
@@ -543,13 +606,20 @@ async def test_grader_profile_controls_uploaded_scripts(tmp_path, monkeypatch, p
 
     monkeypatch.setattr(sandbox_module, "sandbox_manager", types.SimpleNamespace(
         acquire=AsyncMock(return_value=Sandbox()), release=AsyncMock()))
-    monkeypatch.setattr(swebench_pro, "image_ref", lambda _: "unused")
-    monkeypatch.setattr(swebench_pro, "_load_script", lambda repo, iid, name: scripts[name])
-    report = await swebench_pro._grade_once(
+    monkeypatch.setattr(grading, "pro_image_ref", lambda _: "unused")
+    monkeypatch.setattr(grading, "_load_script", lambda repo, iid, name: scripts[name])
+    report = await grading._grade_pro(
         str(tmp_path / "workspace"), {"instance_id": "sample", "base_commit": "base", "fail_to_pass": ["target"]},
         str(tmp_path), patch="test-patch", profile=profile)
     assert report["resolved"] is True
     assert report["grader_profile"] == profile
+    first_key = sandbox_module.sandbox_manager.acquire.call_args.kwargs["reuse_key"]
+    assert sandbox_module.sandbox_manager.release.call_args.kwargs["reuse_key"] == first_key
+    await grading._grade_pro(
+        str(tmp_path / "audit" / "workspace"),
+        {"instance_id": "sample", "base_commit": "base", "fail_to_pass": ["target"]},
+        str(tmp_path), patch="test-patch", profile=profile)
+    assert sandbox_module.sandbox_manager.acquire.call_args.kwargs["reuse_key"] != first_key
     if profile == "official":
         assert writes["/workspace/run_script.sh"] == scripts["run_script.sh"]
         assert writes["/workspace/parser.py"] == scripts["parser.py"]

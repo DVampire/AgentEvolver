@@ -1,5 +1,5 @@
-from typing import Dict, Any, Optional, List, Tuple, Type
-from pydantic import BaseModel, Field, PrivateAttr, ConfigDict
+from typing import Dict, Any, Optional, Type, Literal
+from pydantic import BaseModel, Field, ConfigDict
 import inflection
 
 from agentevolver.logger import logger
@@ -13,6 +13,21 @@ class JudgeResult(BaseModel):
     """Structured output for the LLM-based answer judge."""
     consistent: bool = Field(description="True if the predicted answer is consistent with the ground-truth answer.")
     reason: str = Field(default="", description="A brief justification for the judgement.")
+
+
+class EvaluationResult(BaseModel):
+    """Host-side final evaluation. An execution error is not an incorrect answer."""
+
+    status: Literal["passed", "failed", "error"]
+    score: Optional[float] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def from_report(cls, report: Dict[str, Any], score: Optional[float] = None):
+        if report.get("error_code"):
+            return cls(status="error", details=report)
+        value = float(bool(report.get("resolved"))) if score is None else score
+        return cls(status="passed" if value >= 1.0 else "failed", score=value, details=report)
 
 class Task(BaseModel):
     """Data model for a single benchmark task"""
@@ -29,6 +44,7 @@ class Task(BaseModel):
     result: Optional[Any] = Field(default=None, description="The final answer")
     time: Optional[float] = Field(default=0.0, description="The time taken to complete the task in seconds")
     score: Optional[float] = Field(default=0.0, description="The score of the task")
+    evaluation: Optional[EvaluationResult] = None
     
     extra: Optional[Dict[str, Any]] = Field(default=None, description="Additional task-specific metadata")
 

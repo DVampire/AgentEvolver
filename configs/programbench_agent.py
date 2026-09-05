@@ -101,7 +101,6 @@ tool_names = [
     # (names only, no expected outputs) — a heavy, host-mediated, rate-limited oracle the
     # agent chooses when to spend. Present in both arms, so it does not affect the
     # evolution-only difference between them.
-    "programbench_eval_tool",
     "adoption_tool",
 ]
 

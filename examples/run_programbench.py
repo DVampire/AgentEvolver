@@ -1,6 +1,7 @@
 """Run MetaAgent on selected ProgramBench tasks.
 
-Runs tasks only — no scoring. See agentevolver/benchmark/default/programbench.py for
+Runs tasks and submits frozen archives to BenchmarkManager. See
+agentevolver/benchmark/default/programbench.py for
 the `programbench eval`-based scorer, which can be pointed at this script's output
 (submission.tar.gz per task) separately.
 
@@ -59,7 +60,6 @@ Usage
 
 import argparse
 import asyncio
-import contextlib
 import json
 import os
 import re
@@ -124,21 +124,6 @@ _LANDING_MARGIN_SECONDS = 1800
 #: Paths inside the task container.
 CONTAINER_REPO = "/AgentEvolver"
 CONTAINER_WORKSPACE = "/workspace"
-
-#: The in-sandbox mount point of the eval bridge, and how many grader evals one run may
-#: request through it. The agent can ask the real hidden suite to score its current build
-#: (via `programbench_eval_tool`) — but only through this host-mediated bridge, because the
-#: tests and the Docker they run in are deliberately outside the offline container. Each
-#: eval is a full build + suite (minutes), so the budget is small: it is a blind-spot
-#: finder to punctuate long stretches of free `./reference_executable` differential work,
-#: not a per-step check. A run that spends any of these is iterating against information the
-#: single-shot leaderboard runs never had, so its score is not leaderboard-comparable — the
-#: launcher records the count so that caveat is visible.
-CONTAINER_EVAL_BRIDGE = "/run/eval-bridge"
-# The eval loop is now mandatory (eval → fix → re-eval until the failing set stops
-# shrinking), so give it enough calls to converge on a large failing set — 4 was too few
-# once every done must be preceded by a fresh eval.
-_EVAL_BUDGET = 6
 
 #: The identity the task images are built around (uid/gid 1000), and the reason the run
 #: uses it instead of root. The reference binary is mode `---x--x--x` owned by root:
@@ -293,7 +278,7 @@ def parse_args():
         "--concurrency", type=int, default=1,
         help="How many instances to run at once (each in its own container). Default 1 "
              "(sequential). Every instance is independent — its own container, session, "
-             "workspace and eval bridge — so raising this just runs more in parallel; size "
+             "workspace and final evaluation — so raising this just runs more in parallel; size "
              "it to the host's CPU/RAM and to the extra grader containers each eval spawns.",
     )
     parser.add_argument(
@@ -427,133 +412,11 @@ def collect_submission(workspace: str, dest_dir: str) -> dict:
     # without untarring it by hand. The scorer still consumes submission.tar.gz.
     extract_dir = str(path_manager.under(dest_dir, P.PROJECT_SUBMISSION_VIEW))
     with tarfile.open(tarball, "r:gz") as handle:
-        handle.extractall(extract_dir)
+        handle.extractall(extract_dir, filter="data")
 
     info["tarball"] = tarball
     info["files"] = len(os.listdir(extract_dir))
     return info
-
-
-#: How long the host gives one grade before giving up, kept under the in-sandbox tool's own
-#: poll timeout (see programbench_eval.py) so the agent always gets a response rather than
-#: waiting out its own deadline on a grade that already failed.
-_GRADE_TIMEOUT_SECONDS = 1200
-
-
-def _grade_once(workspace_dir: str, instance_id: str, scoring_root: str) -> dict:
-    """Blocking: package the current workspace and score it with the real hidden suite.
-
-    Returns only what the agent is allowed to see — pass/fail counts and the NAMES of the
-    failing tests, plus an ``error_code`` when the build could not be scored at all. It
-    cannot return an expected output because the grader's ``*.eval.json`` does not contain
-    one: each entry is ``name`` + ``status``, so there is no answer key here to leak. This
-    is the property that makes the whole bridge legitimate.
-    """
-    import glob
-
-    inst_dir = os.path.join(scoring_root, instance_id)
-    os.makedirs(inst_dir, exist_ok=True)
-    try:
-        collect_submission(workspace_dir, inst_dir)
-    except Exception as e:  # noqa: BLE001
-        return {"error_code": "package_failed", "error_details": str(e)}
-
-    eval_out = os.path.join(scoring_root, "eval_out")
-    os.makedirs(eval_out, exist_ok=True)
-    cmd = [
-        "programbench", "eval", scoring_root,
-        "--filter", f"^{re.escape(instance_id)}$", "--force",
-        "--branch-workers", "4", "-o", eval_out,
-    ]
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=_GRADE_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        return {"error_code": "grade_timeout", "error_details": f"grader exceeded {_GRADE_TIMEOUT_SECONDS}s"}
-    except Exception as e:  # noqa: BLE001
-        return {"error_code": "grade_failed", "error_details": str(e)}
-
-    hits = (glob.glob(os.path.join(eval_out, "**", "*.eval.json"), recursive=True)
-            or glob.glob(os.path.join(scoring_root, "**", "*.eval.json"), recursive=True))
-    if not hits:
-        tail = (proc.stderr or proc.stdout or "").strip()
-        return {"error_code": "no_eval_json", "error_details": tail or "grader produced no eval.json"}
-
-    try:
-        with open(hits[0], encoding="utf-8") as handle:
-            data = json.load(handle)
-    except Exception as e:  # noqa: BLE001
-        return {"error_code": "eval_json_unreadable", "error_details": str(e)}
-
-    results = data.get("test_results") or []
-    passed = sum(1 for t in results if t.get("status") == "passed")
-    total = len(results)
-    fail_names = [t.get("name") for t in results if t.get("status") != "passed" and t.get("name")]
-    return {
-        "pass": passed,
-        "fail": total - passed,
-        "total": total,
-        "fail_names": fail_names,
-        # A non-null top-level error_code means the whole build failed to compile/run; the
-        # per-test list is then empty and this is what tells the agent to fix the build.
-        "error_code": data.get("error_code"),
-        "error_details": (data.get("error_details") or None) if data.get("error_code") else None,
-    }
-
-
-async def eval_bridge_watcher(bridge_dir: str, workspace_dir: str, instance_id: str,
-                              budget: int, counter: dict) -> None:
-    """Serve ``programbench_eval_tool`` requests from inside the sandbox, host-side.
-
-    The tool cannot run the grader itself — the hidden suite and the Docker it needs are
-    outside the offline container — so it drops ``request-<n>.json`` on the bind-mounted
-    bridge and blocks. This watcher, running concurrently with the inner agent run, grades
-    once per request (capped at ``budget``) and writes back ``response-<n>.json`` carrying
-    only the narrow report. Cancelled when the inner run finishes.
-    """
-    import asyncio
-
-    os.makedirs(bridge_dir, exist_ok=True)
-    served: set = set()
-    loop = asyncio.get_event_loop()
-    try:
-        while True:
-            for name in sorted(os.listdir(bridge_dir)):
-                if not (name.startswith("request-") and name.endswith(".json")):
-                    continue
-                seq = name[len("request-"):-len(".json")]
-                response_path = os.path.join(bridge_dir, f"response-{seq}.json")
-                if seq in served or os.path.isfile(response_path):
-                    continue
-                served.add(seq)
-                try:
-                    seq_n = int(seq)
-                except ValueError:
-                    continue
-                if seq_n >= budget:
-                    report = {"error_code": "budget_exhausted",
-                              "error_details": f"{seq_n} requested, budget {budget}"}
-                else:
-                    logger.info(f"| 🧪 [{instance_id}] grading eval #{seq_n} for the agent…")
-                    scoring_root = os.path.join(bridge_dir, f"score-{seq_n}")
-                    report = await loop.run_in_executor(
-                        None, _grade_once, workspace_dir, instance_id, scoring_root)
-                    counter["count"] = counter.get("count", 0) + 1
-                    logger.info(
-                        f"| 🧪 [{instance_id}] eval #{seq_n}: pass={report.get('pass')}/"
-                        f"{report.get('total')} error={report.get('error_code')}")
-                tmp = response_path + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as handle:
-                    json.dump(report, handle)
-                # The container runs as a different uid — the response must be world-readable
-                # for the tool to read it back.
-                os.chmod(tmp, 0o644)
-                os.replace(tmp, response_path)
-            await asyncio.sleep(2.0)
-    except asyncio.CancelledError:
-        pass
-    except Exception as e:  # noqa: BLE001
-        # A watcher crash must never take the run down — the eval tool degrades to a timeout.
-        logger.error(f"| ❌ [{instance_id}] eval bridge watcher stopped: {e}")
 
 
 def _summarise_spend(session_root: str, instance_id: str) -> dict:
@@ -821,7 +684,6 @@ def bind_task_workspace(ctx, fs_sandbox, task_workspace: str = CONTAINER_WORKSPA
                 f"AGENTEVOLVER_HOME={CONTAINER_REPO} for the inner run so the framework's "
                 f"own files land in the checkout's output tree instead of the submission"
             )
-
 
 
 async def run_inner(args) -> int:
@@ -1202,20 +1064,34 @@ def check_shared_roots_readable() -> None:
 
 
 async def run_launcher(args) -> int:
-    from agentevolver.data.programbench import ProgramBenchDataset
+    from agentevolver.benchmark import benchmark_manager
+    from agentevolver.benchmark.default.programbench import ProgramBenchmark
+    from agentevolver.benchmark.types import Task
     from agentevolver.visual import BenchmarkMonitor
+    from examples.run_swebench_pro import atomic_write_json
 
     await sandbox_manager.initialize()
     check_shared_roots_readable()
 
-    dataset = ProgramBenchDataset()
+    overrides = dict(getattr(args, "user_cfg_options", None) or {})
+    if not overrides.get("output_owner"):
+        if getattr(args, "resume", False):
+            raise ValueError("--resume requires the original output_owner")
+        overrides["output_owner"] = f"programbench_{time.strftime('%Y%m%d_%H%M%S')}"
+        args.user_cfg_options = overrides
+        config.output_owner = overrides["output_owner"]
+
+    benchmark = ProgramBenchmark(base_dir=str(path_manager.resolve_under(config.project_root, "benchmark")))
+    await benchmark.initialize()
+    await benchmark_manager.register(benchmark, override=True)
+    instances = benchmark.instances()
     task_ids = [t.strip() for t in args.task_ids.split(",") if t.strip()] if args.task_ids else None
     selected, warnings = select_instances(
-        dataset.data, task_ids=task_ids, start=args.start, end=args.end,
+        instances, task_ids=task_ids, start=args.start, end=args.end,
     )
     for warning in warnings:
         logger.warning(f"| ⚠️ {warning}")
-    logger.info(f"| 📋 ProgramBench: {len(selected)}/{len(dataset.data)} instance(s) selected")
+    logger.info(f"| 📋 ProgramBench: {len(selected)}/{len(instances)} instance(s) selected")
     if not selected:
         logger.warning("| ⚠️ No instances selected — nothing to run.")
         return 0
@@ -1278,8 +1154,9 @@ async def run_launcher(args) -> int:
         started = time.time()
         record: dict = {"instance_id": instance_id, "status": "failed", "error": None}
         sandbox = None
-        watcher_task = None
-        eval_counter = {"count": 0}
+        workspace_dir = None
+        session_path = None
+        submission = None
         try:
             # Seed the session's workspace from the image, then mount it back in as
             # /workspace. The agent's files are then visible *while it works* rather than
@@ -1295,115 +1172,125 @@ async def run_launcher(args) -> int:
                 owner=str(config.get("output_owner") or config.tag),
                 session_id=instance_id,
             ))
-            resuming = bool(getattr(args, "resume", False)) and has_resumable_work(workspace_dir)
-            if resuming:
-                logger.info(
-                    f"| ⏩ [{instance_id}] Resuming from the existing workspace "
-                    f"(re-seed skipped): {workspace_dir}"
-                )
-            elif getattr(args, "resume", False):
-                logger.info(
-                    f"| ⏩ [{instance_id}] --resume set but no resumable work found; "
-                    f"seeding fresh instead"
-                )
-                seed_workspace(image_ref, workspace_dir)
+            frozen_dir = path_manager.resolve_under(session_path, "frozen")
+            submission_path = path_manager.resolve_under(frozen_dir, "submission.json")
+            if submission_path.is_file():
+                with open(submission_path, encoding="utf-8") as handle:
+                    submission = json.load(handle)
+                if submission.get("instance_id") != instance_id:
+                    raise ValueError("frozen submission identity mismatch")
+                record.update(submission.get("agent_result") or {})
             else:
-                seed_workspace(image_ref, workspace_dir)
-            # The eval bridge: a directory shared host<->container that carries the agent's
-            # grader-eval requests out and the narrow reports back (see eval_bridge_watcher
-            # and agentevolver/tool/default/programbench_eval.py). Created BEFORE the grant
-            # below, which chowns the whole session tree to the container uid: 0o777 survives
-            # that chown (chown does not touch the mode), so both the container (owner) and
-            # this host launcher (other) can still write — the container drops requests, the
-            # host writes responses.
-            bridge_dir = str(path_manager.under(session_path, P.PROJECT_EVAL_BRIDGE))
-            grant_to_container_user(session_path, bridge_dir)
-            logger.info(
-                f"| {'⏩' if resuming else '🌱'} [{instance_id}] Workspace "
-                f"{'reused' if resuming else 'seeded'} and mounted: {workspace_dir} "
-                f"(owned by {CONTAINER_USER})"
-            )
-
-            sandbox = await sandbox_manager.acquire(
-                "docker",
-                reuse_key=instance_id,
-                image=image_ref,
-                # No interface at all; the allow/deny lists come from the config and are
-                # served by a relay outside the container. See the module docstring.
-                network=False,
-                user=CONTAINER_USER,
-                workdir=CONTAINER_WORKSPACE,
-                mounts={**mounts, workspace_dir: CONTAINER_WORKSPACE,
-                        bridge_dir: CONTAINER_EVAL_BRIDGE},
-                env={
-                    "PYTHONPATH": CONTAINER_REPO,
-                    # Where the eval tool drops requests, and how many it may spend.
-                    "AGENTEVOLVER_EVAL_BRIDGE": CONTAINER_EVAL_BRIDGE,
-                    "AGENTEVOLVER_EVAL_BUDGET": str(_EVAL_BUDGET),
-                    # The path tree hangs off the current directory, and the agent works in
-                    # /workspace — so without this the framework's own bookkeeping lands
-                    # inside the deliverable, and `git add -A` commits it. Pointed at the
-                    # mounted repo, the inner run's logs join the outer run's output tree
-                    # instead, where they are also readable while the task is running.
-                    "AGENTEVOLVER_HOME": CONTAINER_REPO,
-                    # Stop litellm fetching its model-price map at import time. It falls
-                    # back to a bundled copy anyway, and the attempt would otherwise
-                    # appear in the egress audit as a denial the agent never made.
-                    "LITELLM_LOCAL_MODEL_COST_MAP": "True",
-                    **forwarded,
-                },
-                timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
-            )
-            command = inner_command(instance, args, resume=resuming)
-            monitor.task(instance_id, "solving", position=index)
-            logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
-            # Serve the agent's grader-eval requests for as long as it runs. Started here and
-            # cancelled in the finally so a scoring pass in flight cannot outlive the run.
-            watcher_task = asyncio.create_task(
-                eval_bridge_watcher(bridge_dir, workspace_dir, instance_id, _EVAL_BUDGET, eval_counter))
-            # Outlast the agent's own wall clock by the landing margin — the same margin the
-            # container timeout above uses, so the command is never the tighter of the two
-            # and a run that used its full budget still gets to build, package, and write its
-            # result before either fires. See `_LANDING_MARGIN_SECONDS`.
-            execution = await sandbox.run_command(
-                command, workspace_root=CONTAINER_REPO, timeout=wall_clock + _LANDING_MARGIN_SECONDS,
-            )
-            if execution.stdout:
-                print(execution.stdout)
-            if execution.stderr:
-                print(execution.stderr, file=sys.stderr)
-
-            inner_session = path_manager.get(
-                P.SESSION,
-                owner=str(config.get("output_owner") or config.tag),
-                session_id=instance_id,
-            )
-            inner_result = str(path_manager.under(inner_session, P.PROJECT_RESULT))
-            if os.path.isfile(inner_result):
-                with open(inner_result, encoding="utf-8") as handle:
-                    record.update(json.load(handle))
-            else:
-                record["error"] = (
-                    f"the inner run left no result.json (container exit {execution.exit_code}); "
-                    f"see the container output above"
+                resuming = bool(getattr(args, "resume", False)) and has_resumable_work(workspace_dir)
+                if resuming:
+                    logger.info(
+                        f"| ⏩ [{instance_id}] Resuming from the existing workspace "
+                        f"(re-seed skipped): {workspace_dir}"
+                    )
+                elif getattr(args, "resume", False):
+                    logger.info(
+                        f"| ⏩ [{instance_id}] --resume set but no resumable work found; "
+                        f"seeding fresh instead"
+                    )
+                    seed_workspace(image_ref, workspace_dir)
+                else:
+                    seed_workspace(image_ref, workspace_dir)
+                grant_to_container_user(session_path)
+                logger.info(
+                    f"| {'⏩' if resuming else '🌱'} [{instance_id}] Workspace "
+                    f"{'reused' if resuming else 'seeded'} and mounted: {workspace_dir} "
+                    f"(owned by {CONTAINER_USER})"
                 )
-            record["egress_audit"] = sandbox_manager.egress_audit(sandbox)
+
+                sandbox = await sandbox_manager.acquire(
+                    "docker",
+                    reuse_key=instance_id,
+                    image=image_ref,
+                    # No interface at all; the allow/deny lists come from the config and are
+                    # served by a relay outside the container. See the module docstring.
+                    network=False,
+                    user=CONTAINER_USER,
+                    workdir=CONTAINER_WORKSPACE,
+                    mounts={**mounts, workspace_dir: CONTAINER_WORKSPACE},
+                    env={
+                        "PYTHONPATH": CONTAINER_REPO,
+                            # The path tree hangs off the current directory, and the agent works in
+                        # /workspace — so without this the framework's own bookkeeping lands
+                        # inside the deliverable, and `git add -A` commits it. Pointed at the
+                        # mounted repo, the inner run's logs join the outer run's output tree
+                        # instead, where they are also readable while the task is running.
+                        "AGENTEVOLVER_HOME": CONTAINER_REPO,
+                        # Stop litellm fetching its model-price map at import time. It falls
+                        # back to a bundled copy anyway, and the attempt would otherwise
+                        # appear in the egress audit as a denial the agent never made.
+                        "LITELLM_LOCAL_MODEL_COST_MAP": "True",
+                        **forwarded,
+                    },
+                    timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
+                )
+                command = inner_command(instance, args, resume=resuming)
+                monitor.task(instance_id, "solving", position=index)
+                logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
+                # Outlast the agent's own wall clock by the landing margin — the same margin the
+                # container timeout above uses, so the command is never the tighter of the two
+                # and a run that used its full budget still gets to build, package, and write its
+                # result before either fires. See `_LANDING_MARGIN_SECONDS`.
+                execution = await sandbox.run_command(
+                    command, workspace_root=CONTAINER_REPO, timeout=wall_clock + _LANDING_MARGIN_SECONDS,
+                )
+                if execution.stdout:
+                    print(execution.stdout)
+                if execution.stderr:
+                    print(execution.stderr, file=sys.stderr)
+
+                inner_session = path_manager.get(
+                    P.SESSION,
+                    owner=str(config.get("output_owner") or config.tag),
+                    session_id=instance_id,
+                )
+                inner_result = str(path_manager.under(inner_session, P.PROJECT_RESULT))
+                if os.path.isfile(inner_result):
+                    with open(inner_result, encoding="utf-8") as handle:
+                        record.update(json.load(handle))
+                else:
+                    record["error"] = (
+                        f"the inner run left no result.json (container exit {execution.exit_code}); "
+                        f"see the container output above"
+                    )
+                record["egress_audit"] = sandbox_manager.egress_audit(sandbox)
         except Exception as e:  # noqa: BLE001
             logger.error(f"| ❌ [{instance_id}] launcher failure: {e}", exc_info=True)
             record["error"] = str(e)
         finally:
-            if watcher_task is not None:
-                watcher_task.cancel()
-                with contextlib.suppress(Exception):
-                    await watcher_task
-            # How many times the agent used the real grader as an oracle. Any non-zero count
-            # means this run saw information the single-shot leaderboard runs did not, so its
-            # score is not directly comparable — recorded here so that caveat is not lost.
-            record["grader_evals"] = eval_counter["count"]
-            if eval_counter["count"]:
-                record["leaderboard_comparable"] = False
             if sandbox is not None:
                 await sandbox_manager.release("docker", reuse_key=instance_id)
+
+        # The task container is gone. Freeze once; retries use the stored digest and artifact.
+        try:
+            frozen_dir = path_manager.resolve_under(session_path, "frozen")
+            frozen_file = path_manager.under(frozen_dir, P.PROJECT_SUBMISSION)
+            submission_path = path_manager.resolve_under(frozen_dir, "submission.json")
+            if submission is None:
+                if submission_path.exists():
+                    raise ValueError("invalid existing submission; refusing to replace it")
+                await asyncio.to_thread(collect_submission, workspace_dir, str(frozen_dir))
+                import hashlib
+                with open(frozen_file, "rb") as handle:
+                    digest = hashlib.file_digest(handle, "sha256").hexdigest()
+                submission = {"instance_id": instance_id, "path": str(frozen_file),
+                              "sha256": digest, "agent_result": dict(record)}
+                atomic_write_json(str(submission_path), submission)
+            monitor.task(instance_id, "grading", position=index)
+            evaluated = await benchmark_manager.eval("programbench", Task(
+                task_id=instance_id, result=submission))
+            record.update(final_grade=evaluated.evaluation.details,
+                          resolved=evaluated.evaluation.status == "passed",
+                          grader_evals=0, evaluation_protocol="programbench-final-only-v1",
+                          submission_sha256=submission["sha256"])
+            if evaluated.evaluation.status == "error":
+                record["error"] = evaluated.evaluation.details.get("error_code")
+        except Exception as error:
+            record["error"] = f"final evaluation failed: {error}"
 
         record.setdefault("time_seconds", round(time.time() - started, 1))
         logger.info(

@@ -18,7 +18,6 @@ than growing one flat directory:
 | `lifecycle/` | Human questions, goals, plan exit, reminders, and completion |
 | `coordination/` | Thin adapters over Protocol/Runtime delivery |
 | `observability/` | Capability, journal, and prior-session inspection |
-| `evaluation/` | Benchmark-specific host-evaluator bridges |
 | `deployment/` | Thin adapter over the provider-neutral deployment backend |
 | `web/` | Retrieval, media, HTTP, and conversion |
 | `execution/` | Programmatic multi-tool calling support |

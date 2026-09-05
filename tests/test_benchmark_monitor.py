@@ -182,6 +182,11 @@ def test_cumulative_scores_replace_history_but_keep_attempt_costs(tmp_path, monk
     assert snapshot["score_mode"] == "cumulative_retry"
     assert snapshot["eta_seconds"] == 150
     assert [row["task_id"] for row in snapshot["recent"]] == ["new", "retry", "error", "passed"]
+    assert snapshot["current_attempt"] == {"completed": 2, "total": 5}
+    assert snapshot["recent"][0]["attempt_source"] == "current"
+    assert snapshot["recent"][2]["attempt_source"] == "history"
+    assert snapshot["recent"][2]["retry_phase"] == "solving"
+    assert snapshot["recent"][3]["retry_phase"] is None
     assert len(json.loads(old.read_text())) == 3
     assert len(json.loads(results.read_text())) == 2
 

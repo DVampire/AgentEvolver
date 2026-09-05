@@ -1,5 +1,4 @@
 """Benchmark Manager implementation"""
-import os
 from typing import Any, Dict, List, Optional, Union, Type
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -7,7 +6,7 @@ from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.utils import assemble_workspace_path
 from agentevolver.logger import logger
-from agentevolver.benchmark.types import BenchmarkConfig, Benchmark, Task, Stats
+from agentevolver.benchmark.types import BenchmarkConfig, Benchmark, Task, Stats, EvaluationResult
 from agentevolver.benchmark.context import BenchmarkContextManager
 
 class BenchmarkManager(BaseModel):
@@ -89,7 +88,14 @@ class BenchmarkManager(BaseModel):
 
     async def eval(self, name: str, task: Task) -> Optional[Task]:
         """Evaluate a benchmark task."""
-        return await self._ensure_context_manager().eval(name, task)
+        try:
+            return await self._ensure_context_manager().eval(name, task)
+        except Exception as error:
+            task.evaluation = EvaluationResult.from_report({
+                "error_code": "evaluation_failed", "error_details": str(error),
+            })
+            task.score = None
+            return task
 
     async def stats(self, name: str) -> Optional[Stats]:
         """Get benchmark statistics."""
@@ -118,7 +124,7 @@ class BenchmarkManager(BaseModel):
                 gt = res.get("ground_truth")
                 
                 if not t_id:
-                    return 0.0
+                    raise ValueError("task_id is required for evaluation")
                 
                 try:
                     # Create a Task object for evaluation
@@ -127,13 +133,16 @@ class BenchmarkManager(BaseModel):
                         result=pred,
                         ground_truth=gt
                     )
-                    evaluated_task = await benchmark.eval(task)
-                    score = evaluated_task.score if evaluated_task else 0.0
+                    evaluated_task = await self.eval(benchmark_name, task)
+                    if (evaluated_task is None or evaluated_task.score is None or
+                            (evaluated_task.evaluation and evaluated_task.evaluation.status == "error")):
+                        raise RuntimeError(f"Evaluation failed for {t_id}; no valid score")
+                    score = evaluated_task.score
                     _record_reward(t_id, res, score, evaluator=benchmark_name)
                     return score
                 except Exception as e:
                     logger.error(f"| ❌ Eval failed for task {t_id}: {e}")
-                    return 0.0
+                    raise
 
         tasks = [_safe_eval(res) for res in results]
         logger.info(f"| 🚀 Starting batch evaluation for {len(tasks)} items in benchmark '{benchmark_name}'")

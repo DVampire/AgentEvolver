@@ -51,7 +51,8 @@ function renderResults(rows) {
     const mark = row.outcome === "passed" ? "✓" : row.outcome === "failed" ? "×" : row.outcome === "completed" ? "·" : "!";
     const markClass = row.outcome === "failed" ? "failed" : row.outcome === "error" ? "error" : "";
     const detail = row.failure ? `${row.failure.kind}: ${row.failure.code || "unknown"} — ${row.failure.details || "Review required"}` : row.outcome;
-    tr.innerHTML = `<td><span class="result-mark ${markClass}" title="${escapeHtml(detail)}">${mark}</span></td><td class="instance" title="${escapeHtml(row.task_id)}">${escapeHtml(shortName(row.task_id))}</td><td>${duration(row.time_seconds)}</td><td>${number.format(row.calls || 0)}</td><td>${money.format(row.cost_usd || 0)}</td>`;
+    const provenance = row.retry_phase ? `Previous result · Retrying: ${row.retry_phase}` : row.attempt_source === "history" ? "Previous result" : "Current attempt";
+    tr.innerHTML = `<td><span class="result-mark ${markClass}" title="${escapeHtml(detail)}">${mark}</span></td><td class="instance" title="${escapeHtml(row.task_id)}">${escapeHtml(shortName(row.task_id))}<div class="slot-time">${escapeHtml(provenance)}</div></td><td>${duration(row.time_seconds)}</td><td>${number.format(row.calls || 0)}</td><td>${money.format(row.cost_usd || 0)}</td>`;
     body.appendChild(tr);
   }
 }
@@ -65,7 +66,7 @@ function render(data) {
 
   document.title = `${data.title} · Live`;
   $("title").textContent = data.title;
-  $("run-name").textContent = data.run_id + (data.score_mode === "cumulative_retry" ? " · Cumulative retries (not pass@1)" : "");
+  $("run-name").textContent = data.run_id + (data.score_mode === "cumulative_retry" ? ` · Cumulative retries (not pass@1) · ${data.current_attempt?.completed || 0} completed in this attempt` : "");
   $("completed").textContent = number.format(progress.completed);
   $("total").textContent = `/ ${number.format(progress.total)}`;
   $("progress-fill").style.width = `${Math.max(0, Math.min(100, percent))}%`;

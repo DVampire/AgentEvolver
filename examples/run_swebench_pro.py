@@ -34,15 +34,12 @@ Modes: ``launcher`` (default, host) selects instances and owns final grading; ``
 from __future__ import annotations
 
 import argparse
-import ast
 import asyncio
 import contextlib
 import hashlib
-import inspect
 import json
 import os
 import random
-import re
 import shlex
 import shutil
 import signal
@@ -51,7 +48,9 @@ import sys
 import tempfile
 import time
 
-from agentevolver.benchmark.default.swebench import SWEBenchProBenchmark
+from agentevolver.benchmark.default.swebench import SWEBenchProBenchmark, grader_fingerprint
+from agentevolver.benchmark import benchmark_manager
+from agentevolver.benchmark.types import Task
 from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
@@ -94,8 +93,6 @@ DEFAULT_GRADER_REPO = os.path.join(root, "others", "SWE-bench_Pro")
 
 #: Hidden grading is never an agent tool in this protocol.
 EVALUATION_PROTOCOL = "swe-pro-final-only-v2"
-_GRADE_TIMEOUT_SECONDS = 1800
-_GRADER_WORKERS = 2
 
 #: Seeding copies a whole checkout out of the image and then garbage-collects its history.
 #: 900s was not enough for the largest repos in the set.
@@ -148,6 +145,7 @@ async def load_instances() -> list:
     """
     benchmark = _benchmark()
     await benchmark.initialize()
+    await benchmark_manager.register(benchmark, override=True)
     return benchmark.instances()
 
 
@@ -263,383 +261,6 @@ def collect_patch(workspace: str, base_commit: str) -> str:
         if diff.returncode != 0:
             raise RuntimeError(f"git diff failed while collecting patch: {diff.stderr.strip()}")
         return diff.stdout
-
-
-def strip_binary_hunks(patch: str) -> str:
-    """Drop binary diff sections from a git patch — verbatim from the official harness.
-
-    swe_bench_pro_eval.py:assemble_workspace_files runs this before ``git apply``, so the
-    benchmark grades text changes only. We do the same so a binary hunk the agent's ``git
-    diff`` picked up (notably these images' baked-in "deleted but present" test fixtures)
-    cannot fail the whole apply and zero out an otherwise-correct patch.
-    """
-    if not patch:
-        return patch
-    sections = re.split(r'(?=^diff --git )', patch, flags=re.MULTILINE)
-    kept: list = []
-    for section in sections:
-        if not section.strip():
-            continue
-        if re.search(r'^Binary files .* differ$', section, re.MULTILINE):
-            continue
-        if re.search(r'^GIT binary patch$', section, re.MULTILINE):
-            continue
-        kept.append(section)
-    return "".join(kept)
-
-
-def _as_list(row: dict, field: str) -> list:
-    v = row.get(field, "")
-    try:
-        if not isinstance(v, str):
-            return list(v or [])
-        if not v.strip():
-            return []
-        try:
-            parsed = json.loads(v)
-        except json.JSONDecodeError:
-            # SWE-bench Pro follows the official evaluator's Python-literal format for
-            # a few rows whose test names are not valid JSON strings.
-            parsed = ast.literal_eval(v)
-        return list(parsed or [])
-    except Exception:  # noqa: BLE001
-        return []
-
-
-def _load_script(grader_repo: str, instance_id: str, name: str) -> str:
-    with open(os.path.join(grader_repo, "run_scripts", instance_id, name), encoding="utf-8") as h:
-        return h.read()
-
-
-def _argv_safe_run_script(script: str) -> str:
-    """Make the common grader wrapper consume the argv we already parsed.
-
-    Some generated scripts also treat a comma in their *first argument* as a legacy list
-    separator. A real Go subtest name can itself contain a comma, so that heuristic changes
-    the test identity and silently executes nothing. The dataset field is already a list;
-    preserve its elements exactly.
-    """
-    legacy = '''if [[ "$1" == *","* ]]; then
-    IFS=',' read -r -a TEST_FILES <<< "$1"
-else
-    TEST_FILES=("$@")
-fi'''
-    script = script.replace(legacy, 'TEST_FILES=("$@")')
-    # ansible-test chooses its own xdist worker count, ignoring CPU quotas on some
-    # images. Bound that inner parallelism independently from benchmark concurrency.
-    return re.sub(r"(\bansible-test\s+units\b)(?![^\n]*--num-workers)",
-                  rf"\1 --num-workers {_GRADER_WORKERS}", script)
-
-
-def _restore_test_fixtures(repo: str, base: str, before: str) -> list[str]:
-    """Restore missing added Go test data in the grader only, never reference code.
-
-    Self-contained because this function also runs in the isolated grading image.
-    Existing files, executable files, symlinks and production directories are excluded.
-    """
-    import os
-    import re
-    import shlex
-    import subprocess
-    from pathlib import Path, PurePosixPath
-
-    command = shlex.split(before)
-    if len(command) < 5 or command[:2] != ["git", "checkout"] or command[3] != "--":
-        return []
-    revision = command[2]
-    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", revision):
-        return []
-    roots = sorted({str(PurePosixPath(p).parent / "testdata") for p in command[4:]
-                    if p.endswith("_test.go") and not PurePosixPath(p).is_absolute()
-                    and ".." not in PurePosixPath(p).parts})
-    if not roots:
-        return []
-
-    def git(*args):
-        return subprocess.check_output(["git", "-C", repo, *args])
-
-    paths = git("diff", "--name-only", "-z", "--diff-filter=A", base, revision, "--", *roots)
-    restored = []
-    allowed = {".json", ".yaml", ".yml", ".txt", ".csv", ".tsv", ".xml", ".golden"}
-    for raw in paths.split(b"\0"):
-        if not raw:
-            continue
-        path = raw.decode("utf-8")
-        relative = PurePosixPath(path)
-        target = Path(repo) / path
-        if relative.is_absolute() or ".." in relative.parts or relative.suffix not in allowed:
-            continue
-        if os.path.lexists(target) or any(p.is_symlink() for p in target.parents):
-            continue
-        entry = git("ls-tree", revision, "--", path)
-        if not entry.startswith(b"100644 blob "):
-            continue
-        git("restore", "--source", revision, "--worktree", "--", path)
-        restored.append(path)
-    return restored
-
-
-def _parser_with_fail_boundaries(script: str) -> str:
-    """Keep Jest FAIL sections from being attributed to the preceding PASS file.
-
-    A number of shipped parsers use PASS as the only file boundary. Jest prints a FAIL
-    header in the same position, and a failed suite may still contain hundreds of passing
-    tests. Parsing both headers preserves those passing results while the failed assertion
-    remains absent/failed as before.
-    """
-    script = script.replace(
-        'if line.startswith("PASS"):',
-        'if line.startswith(("PASS", "FAIL")):',
-    )
-    return script.replace(
-        'not lines[i].strip().startswith("PASS")',
-        'not lines[i].strip().startswith(("PASS", "FAIL"))',
-    )
-
-
-def _build_entryscript(row: dict, grader_repo: str, *, profile: str = "diagnostic") -> str:
-    """Mirror swe_bench_pro_eval.create_entryscript: ENV from the dockerfiles, then reset to
-    base, apply the agent's patch, run before_repo_set_cmd (which checks out the resolution
-    test files from the graded commit), run the selected tests, and parse to output.json.
-
-    The test files are injected here, INSIDE this throwaway grading sandbox — never in the
-    agent's sandbox — so the oracle stays out of the agent's reach.
-    """
-    iid = row["instance_id"]
-    env_cmds = []
-    for kind in ("base_dockerfile", "instance_dockerfile"):
-        p = os.path.join(grader_repo, "dockerfiles", kind, iid, "Dockerfile")
-        if os.path.isfile(p):
-            for line in open(p, encoding="utf-8"):
-                line = line.strip()
-                if line.startswith("ENV"):
-                    env_cmds.append(line.replace("ENV", "export", 1))
-    before = row.get("before_repo_set_cmd", "").strip().split("\n")[-1]
-    test_files = shlex.join(str(item) for item in _as_list(row, "selected_test_files_to_run"))
-    base = row.get("base_commit", "")
-    if profile == "official":
-        # Preserve upstream invocation semantics, including its comma-joined selector.
-        env = "\n".join(env_cmds)
-        selected = ",".join(str(item) for item in _as_list(row, "selected_test_files_to_run"))
-        return f"""
-{env}
-# apply patch
-cd /app
-git reset --hard {base}
-git checkout {base}
-git apply -v /workspace/patch.diff
-{before}
-# run test and save stdout and stderr to separate files
-bash /workspace/run_script.sh {selected} > /workspace/stdout.log 2> /workspace/stderr.log
-# run parsing script
-python /workspace/parser.py /workspace/stdout.log /workspace/stderr.log /workspace/output.json
-"""
-    return "\n".join(env_cmds) + f"""
-set -e
-stage=setup
-test_exit=0
-parser_exit=0
-write_status() {{
-    code=$?
-    printf '{{"stage":"%s","exit_code":%s,"test_exit":%s,"parser_exit":%s}}' "$stage" "$code" "$test_exit" "$parser_exit" > /workspace/status.json
-}}
-trap write_status EXIT
-export PYTEST_XDIST_AUTO_NUM_WORKERS={_GRADER_WORKERS}
-export GOMAXPROCS={_GRADER_WORKERS}
-export GOFLAGS="${{GOFLAGS:+$GOFLAGS }}-p={_GRADER_WORKERS}"
-cd /app
-git config --global --add safe.directory /app
-git reset --hard {shlex.quote(base)}
-git checkout {shlex.quote(base)}
-stage=patch
-git apply -v /workspace/patch.diff
-stage=tests_restore
-{before}
-stage=fixtures_restore
-python /workspace/restore_fixtures.py
-stage=tests
-bash /workspace/run_script.sh {test_files} > /workspace/stdout.log 2> /workspace/stderr.log || test_exit=$?
-stage=parser
-python /workspace/parser.py /workspace/stdout.log /workspace/stderr.log /workspace/output.json || parser_exit=$?
-stage=complete
-"""
-
-
-def _counts(results, fail_to_pass: list, pass_to_pass: list) -> dict:
-    """Per-test {name,status} → COUNTS ONLY (no names cross back to the agent)."""
-    status = {}
-    for t in (results if isinstance(results, list) else results.get("tests", [])):
-        n = t.get("name")
-        if n:
-            status[n] = str(t.get("status", "")).upper()
-    f2p = sum(1 for n in fail_to_pass if status.get(n) == "PASSED")
-    p2p = sum(1 for n in pass_to_pass if status.get(n) == "PASSED")
-    return {
-        "fail_to_pass_resolved": f2p, "fail_to_pass_total": len(fail_to_pass),
-        "pass_to_pass_preserved": p2p, "pass_to_pass_total": len(pass_to_pass),
-        "resolved": (f2p == len(fail_to_pass) and p2p == len(pass_to_pass) and len(fail_to_pass) > 0),
-    }
-
-
-#: Where a grading round leaves its own evidence, beside the bridge's request/response.
-_GRADER_EVIDENCE = ("stdout.log", "stderr.log", "output.json", "status.json", "fixtures.json")
-
-
-async def _save_grader_evidence(sbx, workspace_dir: str, run) -> dict:
-    """Copy the grading container's own logs out before it is destroyed.
-
-    The container is thrown away at the end of the round, so anything not copied here is
-    gone. Failures are swallowed: evidence is what explains a score, never what decides it.
-    """
-    evidence = {"entry.log": (getattr(run, "stdout", "") or "") + (getattr(run, "stderr", "") or "")}
-    for name in _GRADER_EVIDENCE:
-        with contextlib.suppress(Exception):
-            evidence[name] = await sbx.read_file(f"/workspace/{name}")
-    dest = os.path.join(workspace_dir, os.pardir, "eval_bridge")
-    with contextlib.suppress(Exception):
-        os.makedirs(dest, exist_ok=True)
-        numbers = [int(m.group(1)) for name in os.listdir(dest)
-                   if (m := re.fullmatch(r"grader-(\d+)\.entry\.log", name))]
-        seq = max(numbers, default=-1) + 1
-        for name, data in evidence.items():
-            with contextlib.suppress(Exception):
-                with open(os.path.join(dest, f"grader-{seq}.{name}"), "w", encoding="utf-8") as h:
-                    h.write(data if isinstance(data, str) else str(data))
-    return evidence
-
-
-def _grade_report(results, row: dict, evidence: dict, *, profile: str = "diagnostic") -> dict:
-    """Classify this invocation from its own evidence, not another round's log tail.
-
-    Failed assertions stay benchmark failures. A partial/empty parser result is not a
-    valid score when setup, dependencies or the test runner prevented target execution.
-    All messages crossing the bridge are generic: test identities stay in host logs.
-    """
-    counts = _counts(results, _as_list(row, "fail_to_pass"), _as_list(row, "pass_to_pass"))
-    tests = results if isinstance(results, list) else results.get("tests", [])
-    try:
-        status = json.loads(evidence.get("status.json", "{}"))
-        fixtures = json.loads(evidence.get("fixtures.json", "[]"))
-    except (TypeError, ValueError):
-        status, fixtures = {}, []
-    text = "\n".join(str(evidence.get(name, "")) for name in ("stdout.log", "stderr.log"))
-    error = None
-    if status.get("exit_code") and status.get("stage") != "complete":
-        error = (f"{status.get('stage', 'setup')}_failed", "the grader stopped before completing its test and parser stages")
-    elif status.get("parser_exit"):
-        error = ("parser_failed", "the test result parser exited unsuccessfully")
-    elif ("INTERNALERROR>" in text or (not tests and re.search(
-            r"Too many open files|can't start new thread|Resource temporarily unavailable", text))):
-        error = ("test_runner_failed", "the test runner failed internally or exhausted host resources")
-    elif not tests and re.search(r"(?:testdata|fixtures?)/[^\n]*[Nn]o such file or directory", text):
-        error = ("test_fixture_missing", "required test data is missing in the grading checkout")
-    elif ("[build failed]" in text or (not tests and re.search(
-            r"undefined[: ]|unknown field |cannot find package|ModuleNotFoundError:|ImportError:", text))):
-        error = ("test_build_failed", "test compilation or imports failed; patch correctness and test compatibility need separate review")
-    else:
-        executed = bool(tests) or bool(re.search(
-            r"^=== RUN\s|^--- (?:PASS|FAIL):|\b\d+ (?:passed|failed)\b|[✓✕✔✖]", text, re.M))
-        if not executed:
-            code = "test_selection_failed" if "no tests to run" in text else "no_tests_executed"
-            error = (code, "no test execution was observed in the grader output")
-        elif not tests:
-            error = ("test_results_missing", "tests ran but the parser produced no test results")
-    if error:
-        counts.update(error_code=error[0], error_details=error[1], resolved=False)
-        # A failed test build does not establish an infrastructure fault: the patch may
-        # omit an interface required by tests. Keep it unscored and explicitly uncertain.
-        counts["failure_kind"] = (
-            "test_compatibility" if error[0] == "test_build_failed" else
-            "grading_setup" if error[0] in {
-                "test_fixture_missing", "parser_failed", "test_selection_failed",
-                "no_tests_executed", "test_results_missing",
-            } else "evaluation"
-        )
-    elif not counts["resolved"]:
-        counts["failure_kind"] = "test_failure"
-    if not counts["resolved"] and re.search(
-            r"(?:testdata|fixtures?)/[^\n]*[Nn]o such file or directory", text):
-        # Negative tests can intentionally reference absent files. Preserve a diagnostic
-        # hint, not an automatic fixture repair or a change to the official score.
-        counts["diagnostic_notes"] = [
-            "Missing fixture paths appear in the test log; check whether expected by a "
-            "negative test or required by a failing test before attributing the failure."
-        ]
-    if fixtures:
-        counts.update(fixture_files_restored=len(fixtures), leaderboard_comparable=False)
-    counts.update(grader_protocol=f"swe-pro-{profile}-v1", grader_profile=profile)
-    if profile == "diagnostic":
-        counts["leaderboard_comparable"] = False
-    return counts
-
-
-async def _grade_once(workspace_dir: str, row: dict, grader_repo: str, *, patch: str,
-                      profile: str = "official") -> dict:
-    """Grade a frozen submission; never collect a mutable workspace or call an agent."""
-    from agentevolver.sandbox import sandbox_manager
-
-    instance_id = row["instance_id"]
-    patch = strip_binary_hunks(patch)
-    if not patch.strip():
-        return {**_counts([], _as_list(row, "fail_to_pass"), _as_list(row, "pass_to_pass")),
-                "resolved": False, "grader_note": "empty submission"}
-    try:
-        run_script = _load_script(grader_repo, instance_id, "run_script.sh")
-        parser_py = _load_script(grader_repo, instance_id, "parser.py")
-        if profile == "diagnostic":
-            run_script = _argv_safe_run_script(run_script)
-            parser_py = _parser_with_fail_boundaries(parser_py)
-        elif profile != "official":
-            raise ValueError(f"unknown grader profile: {profile}")
-        entryscript = _build_entryscript(row, grader_repo, profile=profile)
-        before = row.get("before_repo_set_cmd", "").strip().split("\n")[-1]
-        fixture_script = (
-            "from __future__ import annotations\n" + inspect.getsource(_restore_test_fixtures)
-            + "\nimport json\n"
-            + f"restored = _restore_test_fixtures('/app', {row.get('base_commit', '')!r}, {before!r})\n"
-            + "with open('/workspace/fixtures.json', 'w') as f:\n    json.dump(restored, f)\n"
-        ) if profile == "diagnostic" else ""
-    except Exception as e:  # noqa: BLE001
-        return {"error_code": "scripts_missing", "error_details": str(e)}
-
-    reuse = f"eval-{instance_id}"
-    sbx = None
-    try:
-        # A separate, throwaway container from the SAME image the agent used. Root + FULLY
-        # OPEN network (empty allow/deny) so the test setup (npm/pip/go install, redis) can
-        # run; a fully-open policy needs no egress relay/forwarder (and thus no framework
-        # mount). It is a grader, not the agent, so network here does not weaken the agent's
-        # anti-cheat isolation — the agent's own sandbox stays network=False.
-        sbx = await sandbox_manager.acquire(
-            "docker", reuse_key=reuse, image=image_ref(row), network=True,
-            allow_hosts=[], deny_hosts=[], user="0:0", workdir="/app")
-        for path, data in (("/workspace/patch.diff", patch),
-                           ("/workspace/run_script.sh", run_script),
-                           ("/workspace/parser.py", parser_py),
-                           ("/workspace/restore_fixtures.py", fixture_script),
-                           ("/workspace/entryscript.sh", entryscript)):
-            await sbx.write_file(path, data)
-        run = await sbx.run_command("bash /workspace/entryscript.sh",
-                                    timeout=_GRADE_TIMEOUT_SECONDS)
-        # Keep the grader's own evidence beside the counts. Without it a 0/N result cannot
-        # be told apart from a patch that never applied, a build that never compiled, and a
-        # test selector that matched nothing — three different failures that look identical
-        # from the counts alone. Setup is fail-fast; test failures still reach the parser.
-        evidence = await _save_grader_evidence(sbx, workspace_dir, run)
-        try:
-            results = json.loads(evidence.get("output.json", ""))
-        except (ValueError, TypeError):
-            report = _grade_report({"tests": []}, row, evidence, profile=profile)
-            if report.get("error_code") in {"no_tests_executed", "test_results_missing", None}:
-                report.update(error_code="no_output_json", error_details="the test run produced no valid output.json", resolved=False)
-            return report
-        return _grade_report(results, row, evidence, profile=profile)
-    except Exception as e:  # noqa: BLE001
-        return {"error_code": "grade_failed", "error_details": str(e)}
-    finally:
-        if sbx is not None:
-            with contextlib.suppress(Exception):
-                await sandbox_manager.release("docker", reuse_key=reuse)
 
 
 # --------------------------------------------------------------------------- #
@@ -880,23 +501,6 @@ def validate_run_protocol(prior_state: dict, *, resume: bool, existing: bool) ->
         raise ValueError("existing run is preserved; use --resume or a new --out directory")
     if existing and prior_state.get("evaluation_protocol") != EVALUATION_PROTOCOL:
         raise ValueError("legacy feedback-based run is preserved; use a new --out and output_owner")
-
-
-def grader_fingerprint(grader_repo: str) -> str:
-    """Bind resume to the actual local grader assets, including uncommitted changes."""
-    digest = hashlib.sha256()
-    for directory, dirs, files in os.walk(grader_repo):
-        dirs[:] = sorted(d for d in dirs if d not in {".git", "__pycache__"})
-        for name in sorted(files):
-            if name != "Dockerfile" and not name.endswith((".py", ".sh")):
-                continue
-            path = path_manager.resolve_under(directory, name)
-            digest.update(os.path.relpath(path, grader_repo).encode() + b"\0")
-            with open(path, "rb") as handle:
-                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                    digest.update(chunk)
-            digest.update(b"\0")
-    return digest.hexdigest()
 
 
 def isolated_extensions(owner: str, *, resume: bool) -> str:
@@ -1354,8 +958,11 @@ async def run_launcher(args) -> int:
                 record["leaderboard_comparable"] = False
             monitor.task(instance_id, "grading", position=index)
             logger.info(f"| ⚖️ [{instance_id}] final grade of frozen patch {submission['sha256']}")
-            final = await _grade_once(workspace_dir, row, grader_repo, patch=submission["patch"],
-                                      profile=run_state["grader_profile"])
+            evaluated = await benchmark_manager.eval("swebench_pro", Task(
+                task_id=instance_id, result=submission,
+                extra={"workspace_dir": workspace_dir, "grader_repo": grader_repo,
+                       "grader_profile": run_state["grader_profile"]}))
+            final = evaluated.evaluation.details
             record["final_grade"] = final
             record["resolved"] = bool(final.get("resolved"))
             if final.get("leaderboard_comparable") is False:
