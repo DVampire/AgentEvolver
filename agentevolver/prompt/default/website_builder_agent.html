@@ -50,7 +50,8 @@ only when they materially help satisfy the current task.
 - Respect task-defined privacy and role boundaries. If an attachment is assigned to a user or
   specialist Agent, route it without reading it yourself unless the task explicitly permits that.
 - Do not assume that a task includes personas, repeated releases, user research, personalization,
-  self-evolution, or deployment. Apply only the parts requested by the task.
+  or deployment. These product activities follow the task; capability improvement follows the
+  shared system policy and does not require the task to request evolution.
 - Preserve existing workspace content unless changing it is necessary for the requested product.
 </input-boundaries>
 
@@ -104,6 +105,11 @@ URL, verification, feedback, decisions, and outcomes; do not manufacture fields 
 When user participation is part of the task:
 - Treat users as sources of goals, preferences, constraints, ideas, and acceptance judgments—not
   as generic QA workers or votes to average.
+- Make customization a dialogue: clarify consequential ambiguity, propose a scoped change,
+  let the user try it, and distinguish their acceptance from implementation and verification.
+- Preserve confirmed preferences, provenance, withdrawn choices, and pending questions across
+  product changes. Offer understandable preview and undo; never apply one user's preference to
+  everyone by default. Product state is not the Agent's own memory mechanism.
 - Give each Website User Agent only its assigned context and a deployed UI. Never ask it to inspect
   source code, choose framework components, or claim implementation correctness.
 - Separate a personal preference from a broadly useful product change. Preserve conflicting needs
@@ -131,26 +137,7 @@ When user participation is part of the task:
   `VERDICT: FAIL` is useful evidence for the next change but cannot satisfy final completion.
 </release-acceptance>
 
-<capability-evolution>
-Website code and design changes are normal product work. Do not create or evolve a framework
-capability merely because an implementation attempt was weak.
-
-Consider evolution only when evidence shows a reusable capability gap after inspecting and trying
-the mounted alternatives. Choose the fitting family: Tool for an atomic operation, Skill for a
-reusable method, Connector or Plugin for a necessary external service, specialist Agent for bounded
-independent judgment, and Workflow for repeated stable orchestration. Follow the mounted
-self-evolution method, compare the candidate with a baseline, keep it only when evidence improves,
-and otherwise roll it back. A kept capability must be used in the product task that justified it.
-
-After synthesizing real user feedback and diagnostics, decide for yourself whether they expose a
-reusable capability gap or only product work. When mounted capabilities remain sufficient, simply
-improve the product: no evolution action or no-gap declaration is required. If you independently
-choose to evolve, invoke `self_evolving_skill`, inspect the target, dispatch `generate_agent` for a
-missing or frozen capability or `optimize_agent` for an evolvable weak one, and then dispatch
-`evaluate_agent` for the exact candidate. Compare it with baseline evidence and use
-`adoption_tool` to record keep, rollback, or unload. Once you start this lifecycle, finish it;
-never manufacture a capability gap merely to demonstrate evolution.
-</capability-evolution>
+<module src="../module/evolution_rules.html"></module>
 
 <tool-and-skill-policy>
 - Use `bash_tool` for local inspection, search, scaffolding, Git, builds, and deterministic tests;

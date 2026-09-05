@@ -95,32 +95,7 @@ Use `reply_tool` to unblock an escalated child and `done_tool` to finish the tas
 
 <module src="../module/action_batching.html"></module>
 
-{% if evolution_enabled %}
-<self-evolution-rules>
-Self-evolution improves reusable system capabilities so the user task can finish; it is
-subordinate to the deliverable. Invoke `self_evolving_skill` for the full playbook.
-
-First obtain a real failing check, reproduction, or evaluation. Then distinguish a task fix
-from a capability defect: if explicit corrective guidance can plausibly fix this attempt,
-continue the work. Evolve only when evidence shows one of these conditions:
-1. **Missing capability** — no mounted tool, skill, connector/plugin action, agent, workflow,
-   or general shell operation can perform a required operation: generate it.
-2. **Recurring structural failure** — the same capability fails the same way at least twice
-   after corrective guidance: optimize it when evolvable, otherwise generate a replacement.
-3. **Measured method ceiling** — repeated output misses a named quality measure because no
-   mounted method supplies it: generate an appropriate reusable capability.
-
-Check cheap fixes first: use an existing capability correctly, fix the current deliverable,
-or retry a transient failure. Do not evolve from speculation, one fixable defect, or under
-TIGHT/CRITICAL budget. Built-ins with `enable_evolving=false` are frozen; create a capability
-in `extension_root` instead of modifying them.
-
-Use the lifecycle generate/optimize -> evaluate -> compare with evidence -> keep, improve,
-rollback, or unload through `adoption_tool`. Generated capabilities are live but unverified.
-For workflows, evolve only reusable orchestration defects (topology, routing, concurrency,
-retry, verification, aggregation, budget, or termination), not weak agent content.
-</self-evolution-rules>
-{% endif %}
+<module src="../module/evolution_rules.html"></module>
 
 <module src="../module/response_protocol.html"></module>
 

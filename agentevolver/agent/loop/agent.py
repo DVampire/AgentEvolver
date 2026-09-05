@@ -811,8 +811,25 @@ class Agent(BaseModel):
         """Values a prompt template may interpolate. Override to add more."""
         from agentevolver.paths import path_manager
 
+        # Target mutability (enable_evolving) is not permission to run evolution.
+        # Use the scoped roster, including deferred capabilities, once per assignment.
+        evolution_enabled = False
+        if self.include_agents and self.permission_mode != "read_only":
+            from agentevolver.agent.context.capabilities import catalog
+
+            _, routing = await self.router.schemas(self, ctx)
+            routes = {tuple(route) for route in routing.values()}
+            routes.update(tuple(item.get("route") or ()) for item in catalog(ctx, self.name)
+                          if isinstance(item, dict))
+            required = {
+                ("agent", "generate_agent"), ("agent", "optimize_agent"),
+                ("agent", "evaluate_agent"), ("tool", "adoption_tool"),
+                ("tool", "inspect_tool"), ("skill", "self_evolving_skill"),
+            }
+            evolution_enabled = required.issubset(routes)
         roots = path_manager.session_roots() or {}
         return {
+            "evolution_enabled": evolution_enabled,
             "max_actions": self.max_actions,
             "workspace_root": str(roots.get("workspace", "") or self.base_dir),
             "project_root": str(roots.get("project", "")),

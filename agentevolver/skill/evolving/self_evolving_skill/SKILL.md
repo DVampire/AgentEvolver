@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
 description: When to evolve the framework's own components, and the loop that does it. Use whenever a task is blocked or degraded by a missing or weak capability, when a sub-agent repeatedly fails for a fixable reason, or when the user asks to create, improve or evaluate a component. Covers the decide → generate/optimize → evaluate → adopt-or-roll-back loop, the enable_evolving gate, and how to read an evaluation. The how-to for each of the eight component types lives in generate_skill, optimize_skill and evaluate_skill, which the three agents read. NOT for the user's own deliverable work.
-version: 2.0.1
+version: 2.1.0
 license: N/A
 type: [orchestrator]
 category: meta
@@ -19,11 +19,12 @@ the one agent that does that job.
 ## What this is
 
 - **Two directions, never confuse them.** *User work* — write the app, answer the question —
-  is done by `code_agent` / `general_agent`. *Self-evolution* changes the framework's own
+  is done directly by the responsible agent or a suitable bounded worker. *Self-evolution* changes the framework's own
   components and is done by `generate_agent` / `optimize_agent` / `evaluate_agent`. Evolution
   serves the task; it is never the deliverable unless the user asked for it.
 - **Register-is-live.** A generated or optimized component becomes the active version the
-  moment it registers — visible to the *next* sub-agent dispatched, not one already running.
+  moment it registers. Callable rosters refresh according to each consumer's scope; this
+  does not replace an already running Agent, Environment, or Memory instance.
   There is no candidate pool and no promotion step, so a change is provisional until you have
   evaluated it.
 - **The decision is yours.** Nothing scores a report and promotes or rolls back for you. You
@@ -37,11 +38,16 @@ as `target_name` — a generate run names what it is about to create.
 
 ## When to evolve
 
-**The question every defect forces: fix *this deliverable*, or evolve a *capability*?**
+The shared `evolution_rules` system-prompt module owns the detection policy. It applies to
+ordinary tasks without any task instruction to evolve. This skill explains how to investigate
+and close a detected opportunity; task wording or a component quota is not execution evidence.
+
+**The question at a meaningful feedback or verification boundary: fix this deliverable,
+recover infrastructure, reuse something available, or improve a reusable capability?**
 
 > *If I re-dispatch the same agent with "fix X", will it plausibly succeed with the
 > capabilities it already has?*
-> **Yes → continue** (redo the work — this is the default).
+> **Yes → continue**, unless measured repetition makes a reusable improvement worthwhile.
 > **No, it structurally lacks the means and will fail the same way → evolve.**
 
 Evolution targets a capability defect, never a one-off weak attempt, and needs a real
@@ -58,8 +64,9 @@ Evolution targets a capability defect, never a one-off weak attempt, and needs a
    reachable by them, and a script you can run yourself does not close their gap. Name the
    consumer before deciding; the answer changes with it.
 
-   The converse is the more common trap: if *you* are the consumer and you hold a shell, you
-   almost certainly have no missing capability — you have work to do. Write the script.
+   A shell usually closes an operation's availability gap for its holder. It does not
+   establish that repeatedly writing the same script is economical; assess that separately
+   under repeated cost, rather than calling a possible operation impossible.
 2. **Recurring structural failure** — the same fault appears **≥2×** despite corrective
    guidance, so it is in a prompt or a tool rather than in the attempt → **optimize** it, or
    **generate** a skill that encodes the fix.
@@ -79,16 +86,23 @@ Evolution targets a capability defect, never a one-off weak attempt, and needs a
    instruction will not close the gap → **generate** a skill carrying the methodology. If you
    cannot name the measurement, you have signal-gathering to do, not a ceiling.
 
-**First, get a signal at all.** Every rule above needs an observed defect, and on an autonomous
-task nobody hands you one. The absence of visible defects is not evidence the work is good — it
-is usually evidence you have not looked. Make the work observable first (a check that can fail,
-a reproduction, a reviewer pass); until one has run, the move is `continue`, never `evolve` and
-never `done`.
+4. **Repeated cost or inconsistency** — comparable work has actually repeated, with measured
+   time, token, correction, or error costs. Name upcoming consumers and compare direct work
+   with the smallest reusable alternative, including creation, evaluation, integration and
+   maintenance. Repetition alone is insufficient; the expected saving must justify the change.
+
+Use evidence already produced by normal actions, feedback and checks. Verify a suspected gap
+with a bounded check when necessary, not a separate model call or an elaborate mandatory
+audit every step. Keep only a concise signal, correction and decision note in the existing
+work record; preserve unresolved recurring signals through compaction. No qualifying signal
+means ordinary task work, not an obligation to invent a defect before finishing.
 
 **Check the cheap fixes first.** Most "missing capability" is really "not wired in":
 
 - Is a suitable component already registered but **not in the roster or allowlist**? Add it
-  rather than generating a duplicate.
+  rather than generating a duplicate, but only through authorized grants; isolation is not a
+  defect to remove. Missing credentials, permission denials and provider outages alone are
+  recovery or escalation issues, not capability defects.
 - Did the sub-agent **ignore a skill it should have used**? Re-dispatch telling it to invoke
   that skill. A listed-but-unused methodology skill is the single most common cause of weak
   output.
@@ -105,20 +119,23 @@ tries to overwrite a frozen component is **blocked at registration**.
 - **Built-ins are frozen.** Do not try to optimize one — the write is refused. If a built-in is
   inadequate, generate a new component in `extension/`.
 - **Generated components are evolvable**, so a later round can improve them.
-- **Always `inspect_<type>` first** to read `enable_evolving`, and whether the target is even
+- **Always `inspect_tool` first**, with `capability_type` and the target name, to read
+  `enable_evolving` and whether the target is even
   registered. Frozen means take the generate path, not the optimize path.
 
 ## The loop
 
-1. **Assess** — `inspect_<type>` the target: registered? evolvable? source path? Decide generate
+1. **Assess** — `inspect_tool` the target: registered? evolvable? source path? Decide generate
    (missing, or a frozen built-in) versus optimize (exists and evolvable).
 2. **Change** — dispatch `generate_agent` or `optimize_agent` with `target_type` and
    `target_name`. It authors the files under `extension/` and registers them.
-3. **Evaluate** — dispatch `evaluate_agent` for a scored, per-dimension report.
+3. **Evaluate** — dispatch `evaluate_agent` for the exact candidate version. Compare its
+   behavior against the observed baseline and an independent case; check regressions and cost.
+   Use a bounded consumer with only the necessary permissions, not unrelated live participants.
 4. **Check it helped** — read the scored report against the defect that justified the change.
    Does it say the thing that was wrong is now right? That is the bar.
-5. **Decide, and own it** — from the scored report, plus an independent `reviewer_agent` pass
-   for a substantial change:
+5. **Decide, and own it** — use the observed comparison, not the score alone. For a substantial
+   change, obtain proportionate independent verification through an available evaluator:
    - **Helped** → keep it (it is already live) and continue the user task using it.
    - **No better, or regressed** → you must not leave it live. Register-is-live means a bad
      change is already active, so rolling back is required rather than optional:
@@ -128,7 +145,11 @@ tries to overwrite a frozen component is **blocked at registration**.
    - **Never evaluated at all** → also roll back. Not because the change is presumed bad, but
      because nothing looked: an unexamined component is live in the run and in every run
      after it. Evaluating is one dispatch; do that instead of skipping to a decision.
-6. **Record** — state what you evolved, the score, the decision, and why.
+6. **Integrate and record** — use `adoption_tool` to record the decision and verify that the
+   intended consumer actually uses the adopted version on subsequent real work. If changing
+   Agent, Environment or Memory, use a supported handoff or a fresh bounded consumer; a registry
+   entry alone is not an instance migration. Record the evidence, version, decision, actual
+   consumer and outcome. Product preference storage is not framework Memory evolution.
 
 Typical shape: round N generate|optimize → round N+1 evaluate → round N+2 decide.
 

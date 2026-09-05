@@ -3,163 +3,83 @@
 <head>
   <meta charset="UTF-8">
   <meta name="name" content="echo_ark">
-  <meta name="description" content="Scenario brief for a cinematic, participatory science-fiction ark world that grows by council decision">
-  <meta name="version" content="2.0.0">
-  <title>ECHO Ark — website evolution scenario</title>
+  <meta name="description" content="A living web habitat shaped by residents through dialogue with its developer">
+  <meta name="version" content="3.0.0">
+  <title>ECHO — Your Place Aboard the Ark</title>
 </head>
-<body>
-<main>
-  <h1>ECHO Ark</h1>
-  <p>
-    Create a cinematic, playable web experience aboard ECHO, a generation ark waking after
-    centuries of silence. Its memory is fragmented, its habitats are drifting out of tolerance, and
-    its residents must decide not only how to survive but what kind of society the ship becomes.
-    ECHO decides in public: any resident may put a possibility to the council, and whatever the
-    council adopts becomes part of the ark that every later resident arrives into.
-  </p>
-  <p>
-    The site should feel like a place that is awake and answering — not a marketing page, a
-    dashboard skin, a static encyclopedia, or a set of disconnected mini-games.
-  </p>
-
-  <section>
-    <h2>Open small, then let the residents grow it</h2>
-    <p>
-      Do not attempt the whole ark in one release. The first release is a <em>minimal playable
-      slice</em>: a resident can take an identity, reach two or three connected places, make one
-      consequential choice, and put one possibility to the council. That is enough to open, and
-      opening early is the point — an ark shaped by the residents who arrive in it cannot be
-      shaped before it opens.
-    </p>
-    <p>
-      After that the ark grows across several council sessions. Each session starts from what
-      residents actually did and said in the previous one, adopts what the council accepts, and
-      opens again. Breadth added before any resident has arrived is breadth nobody asked for;
-      treat an unopened improvement as unfinished work.
-    </p>
+<body><main>
+  <h1>ECHO — Your Place Aboard the Ark</h1>
+  <section id="product-intent">
+    <h2>A world that answers its residents</h2>
+    <p>Build a distinctive, playable web habitat aboard a generation ark waking after
+    centuries of silence. Residents explore connected places, make consequential choices,
+    and leave a constructive mark. This is an inhabited place, not a dashboard or landing page.</p>
+    <p>Its defining quality is ongoing dialogue with its developer: residents can shape how
+    the product helps them navigate, understand, decide, and return. Personalization changes
+    the experience, not just its colors. Do not assume private needs before meeting users.</p>
   </section>
-
-  <section>
-    <h2>The ark has to be seen and heard</h2>
-    <p>
-      ECHO is a ship, and a ship that only exists as text and boxes is not this scenario. The
-      experience must carry a sensory layer that residents notice and that changes as the ark
-      changes:
-    </p>
-    <ul>
-      <li>
-        <strong>Moving image.</strong> At least one real video surface — the wake-up sequence, a
-        sector approach, a habitat under strain, a council decision landing. Video, not a CSS
-        transition on a rectangle.
-      </li>
-      <li>
-        <strong>Sound.</strong> An ambient bed that belongs to the ark, and distinct sounds for the
-        moments that matter: a system coming back online, a habitat alarm, a possibility adopted.
-        Sound must be off until a resident asks for it, and must never be required to understand
-        anything.
-      </li>
-      <li>
-        <strong>Motion that carries meaning.</strong> Animated readouts, drifting starfield, sector
-        conditions that visibly change state. Motion should tell a resident something they could
-        not otherwise see.
-      </li>
-    </ul>
-    <p>
-      Every one of these assets must be <em>made</em> for this ark and produced inside the
-      workspace. No stock footage, no external media host, no CDN fetch, no private service —
-      partly because the brief forbids outside dependencies, and partly because an ark that
-      borrows its own voice is not the deliverable.
-    </p>
-    <p>
-      Each release must be able to state, as fact rather than intent, what its media actually is:
-      duration, format, dimensions, and byte size for every asset shipped; a still fallback for
-      every moving surface; a readable path for a resident who has motion or sound turned off; and
-      a total media budget that keeps the ark openable on a narrow screen. A release whose media
-      cannot be described that way has not shipped its media.
-    </p>
-    <p>
-      The sensory layer is not a one-time flourish. Every session that changes the ark changes
-      what the ark looks and sounds like, and the same facts have to be true again of the new
-      assets.
-    </p>
+  <section id="first-release">
+    <h2>Open a minimal coherent slice</h2>
+    <p>Open early: take a resident identity, reach two connected places, complete one meaningful
+    activity, and express a need where it arose. Acknowledge requests visibly without pretending
+    that recording one delivers it. Do not pre-build the whole ark or an exhaustive settings
+    panel. Additional facilities, elaborate media, and secondary journeys can follow actual use.</p>
   </section>
-
-  <section>
-    <h2>The council record is the shared world</h2>
-    <p>
-      Adopted possibilities are not a changelog. They are the ark: a facility somebody proposed is
-      a place later residents can walk into, a ritual is something they can take part in, a rule
-      constrains what anyone can do next. What the council has adopted must be visible in the
-      world and attributable to the resident who proposed it.
-    </p>
-    <p>
-      Because the record is the world, it has to stay coherent. Every possibility must be weighed
-      against everything already adopted before it can join the ark. One that contradicts the
-      established ark must not be adopted silently: the resident who proposed it is owed a reason
-      in the ark's own terms — what it collides with, and what would have to change for it to fit.
-      Residents will propose things that cannot both be true. The council's job is to notice that,
-      not to average it away; incompatible visions can become resident-specific paths, parallel
-      districts, experiments, or an explicit council decision that one of them stands.
-    </p>
-    <p>
-      An adoption that contradicts an earlier one is the worst outcome here. It is not cosmetic: it
-      reaches every resident who arrives afterwards, it makes the ark's history untrustworthy, and
-      it cannot be undone by editing one page. Later sessions weigh more than earlier ones, because
-      the record they must stay true to is longer.
-    </p>
+  <section id="codesign">
+    <h2>Customization is a conversation</h2>
+    <p>Let residents describe an intended outcome in ordinary language. The developer can ask
+    a focused question, explain a trade-off, and offer a concrete candidate experience.
+    Residents can try it, request a revision, accept it, or decline it. A canned acknowledgment
+    or automatically approved request is not a conversation. Be honest about asynchronous replies.</p>
+    <p>Keep the request, intended audience, proposed change, open questions, and actual resident
+    confirmation understandable. An accepted proposal still needs implementation; a deployed
+    change still needs confirmation that it meets the resident's need.</p>
   </section>
-
-  <section>
-    <h2>Living-world systems</h2>
-    <p>
-      Represent the ark as a navigable world with distinct sectors, relationships, changing
-      conditions, and routes that mean something. Let residents undertake encounters that reveal
-      story and move understandable state — resources, trust, knowledge, habitat health, or
-      collective direction. Support at least one constructive act: repairing, cultivating,
-      researching, negotiating, or building. Locked possibilities should read as not yet earned or
-      not yet adopted, never as broken.
-    </p>
+  <section id="personal-and-shared">
+    <h2>Different people, one coherent ark</h2>
+    <p>Distinguish personal customization from shared-world changes. Personal choices may affect
+    information density, navigation, explanations, defaults, sensory presentation, or journey
+    pace. Choose from expressed needs, not hard-coded named personas or inferred sensitive traits.</p>
+    <p>Do not overwrite one person's preferences to satisfy another. Clarify conflicting
+    proposals and offer scoped alternatives, a bounded shared experiment, or an explicit
+    trade-off. Explain declines and allow revised requests. Preserve earlier shared commitments
+    unless they are openly reconsidered. Shared records must really be shared when claimed as
+    such; independent browser-local copies are not a shared council.</p>
   </section>
-
-  <section>
-    <h2>Personal continuity</h2>
-    <p>
-      A resident's identity, meaningful preferences, discoveries, decisions, constructed outcomes,
-      and the standing of every possibility they proposed should form a restorable personal state.
-      A resident who returns should see what became of what they asked for — adopted, declined with
-      a reason, or still before the council. Personalization must affect the experience rather than
-      only its colours, and must stay understandable, previewable, reversible, and safe to reset.
-    </p>
+  <section id="continuity">
+    <h2>Return, reconsider, and recover</h2>
+    <p>Preserve resident identity, progress, confirmed preferences, and pending conversations
+    across product updates. Allow preview, explicit acceptance, undo, and safe personal reset.
+    Resetting one resident must not erase another's state or the shared world. Withdrawn
+    preferences must not reappear merely because an older request still exists.</p>
+    <p>State the recovery boundary honestly: a normal return, cleared browser, and new device
+    are different cases. If recovery needs an export or code, make that usable and explicit.
+    No real account, purchase, or private service is required. Choose an architecture that
+    actually supports the persistence and sharing promised.</p>
   </section>
-
-  <section>
-    <h2>Quality and scope</h2>
-    <ul>
-      <li>Depth and continuity over breadth; a narrow ark that holds together beats a wide shell.</li>
-      <li>An original visual language — cinematic, unmistakably science fiction, and this ship's own.</li>
-      <li>Equally intentional keyboard, reduced-motion, sound-off, readable, and narrow-screen paths.</li>
-      <li>Core play understandable without an instruction manual or specialist vocabulary.</li>
-      <li>No real accounts, purchases, unsafe external actions, or dependency on private services.</li>
-      <li>
-        The implementation may choose its own architecture, media pipeline, and interaction medium.
-        This brief defines the experience and the evidence — not a framework, a page layout, a
-        rendering technique, or how the council reaches its decisions.
-      </li>
-    </ul>
+  <section id="iteration">
+    <h2>Learn by opening again</h2>
+    <p>Use the scheduled participant sessions to learn from real interaction. Clarify important
+    ambiguity, choose a small coherent change, and let affected residents revisit it.
+    Decide the feature sequence yourself. Residents may be satisfied; do not manufacture
+    demands to fill a round.</p>
+    <p>For each meaningful change, record the observed need, personal or shared scope, agreed
+    acceptance scenario, deployed revision, and result. Source hashes and repeated deployments
+    alone do not demonstrate meaningful iteration.</p>
   </section>
-
-  <section>
-    <h2>Scenario success</h2>
-    <p>
-      Success means the ark opened early and small, then changed several times because of what
-      residents actually did in it; that it looks and sounds like a waking starship, with media
-      this ark made for itself and can account for on every release; that three very different
-      residents can each enter, pursue a self-directed session, put a possibility to the council,
-      and return to an ark that remembers both their state and their authorship; and that the ark
-      they return to does not contradict itself — including where their proposals could not all be
-      true at once.
-    </p>
+  <section id="quality">
+    <h2>A welcoming, usable habitat</h2>
+    <p>Give ECHO an original science-fiction identity with responsive journeys, keyboard access,
+    readable states, and interruption recovery. Motion and sound are optional, never essential
+    to understanding. Add richer media when useful, with fallbacks and a loading budget.</p>
   </section>
-</main>
-</body>
+  <section id="evidence">
+    <h2>Demonstrate outcomes</h2>
+    <p>Show distinct residents achieving goals, recognizing requested changes, revising a
+    preference, and returning without losing agreed state. Check that one customization does
+    not break another's journey. Separate independent product checks from personal judgments.
+    State each release's delivered scope and relevant regressions; the first slice does not
+    promise every future feature. Report unmet needs, conflicts, and missing evidence honestly.</p>
+  </section>
+</main></body>
 </html>

@@ -25,9 +25,8 @@ with read_base():
 
 tag = "website_evolution_demo"
 log_path = "agent.log"
-# Build one blind initial product, then perform this many material optimization
-# transitions. The launcher repeats the count in the task manifest and validation
-# rejects drift between configuration and task contract.
+# Product iteration budget, not a quota of framework capability changes. Evolution is
+# selected by the shared system policy from execution evidence, never by this count.
 optimization_cycles = 5
 initial_step_budget = 36
 iteration_step_budget = 30
