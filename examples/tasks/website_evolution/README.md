@@ -5,9 +5,10 @@ Each subdirectory is one self-contained scenario. The launcher reads these conve
 - `scenario.html` — requirements visible to the Website Builder;
 - `persona_01.html` through `persona_03.html` — private contexts routed one-to-one to Website User Agents.
 
-`echo_ark/` is the default complete scenario. `community_learning/` is the earlier complete
-example. `dream_museum/` and `pulse_city/` currently provide scenario briefs only; supply three
-persona files before selecting either directory for a run.
+`echo_ark/` is the default complete scenario. `community_learning/` is a second complete example
+applying the same brief and persona structure to a practical utility product rather than a game.
+`dream_museum/` and `pulse_city/` currently provide scenario briefs only; supply three persona
+files before selecting either directory for a run.
 
 Run a complete scenario with:
 

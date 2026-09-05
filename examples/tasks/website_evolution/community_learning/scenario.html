@@ -1,30 +1,126 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>Community learning — website evolution scenario</title></head>
-<body>
-<main>
-  <h1>Community learning finder</h1>
-  <p>Create a trustworthy website that helps residents discover and register interest in
-  affordable local classes, workshops, and clubs.</p>
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="community_learning">
+  <meta name="description" content="A warm, original neighbourhood guide to affordable local classes, workshops and clubs — discover, judge, commit">
+  <meta name="version" content="2.0.0">
+  <title>Kindling — Community learning finder</title>
+</head>
+<body><main>
+  <h1>Kindling — Community learning finder</h1>
 
-  <h2>Core user journey</h2>
-  <p>Visitors should be able to browse realistic offerings, narrow them by useful criteria,
-  understand key details, select an offering, and complete a lightweight registration-interest
-  flow with a clear confirmation. No real payment or account is required.</p>
+  <section id="product-intent">
+    <h2>A neighbourhood you can actually join</h2>
+    <p>Build a genuinely useful, genuinely attractive website that helps a resident find an
+    affordable local class, workshop or club and register interest with confidence. The
+    pleasure is in recognising something worth doing, trusting what the page tells you about
+    it, and finishing the enquiry without friction or doubt.</p>
+    <p>Aim for the feeling of a well-made neighbourhood guide, not a municipal database with a
+    search box. This is a real product for real residents, so trustworthiness and beauty are
+    the same goal rather than competing ones. No developer chat, feedback portal, request
+    tracker or experiment controls belongs in the product; co-design happens through the
+    Agent conversation outside the site.</p>
+  </section>
 
-  <h2>Product expectations</h2>
-  <ul>
-    <li>Use realistic, internally consistent content rather than lorem ipsum.</li>
-    <li>Make schedule, venue, price, availability, prerequisites, and accessibility information
-    easy to understand where relevant.</li>
-    <li>Support mobile and desktop layouts, keyboard use, clear validation, and recovery from
-    invalid or empty states.</li>
-    <li>Provide the shared in-product feedback and receipt flow required by the demo task.</li>
-  </ul>
+  <section id="core-journey">
+    <h2>Finding and committing is the essential experience</h2>
+    <p>A visitor must be able to browse realistic offerings, narrow them by criteria that
+    actually matter, understand an offering deeply enough to judge it, and complete a
+    lightweight registration-interest flow ending in a clear confirmation. No real payment
+    and no account creation.</p>
+    <p>Support the comparison that precedes commitment: a visitor rarely wants the first
+    result, they want to decide between two or three plausible ones. Make schedule, total
+    cost, venue, age suitability, prerequisites, availability and accessibility legible at
+    the moment the decision is being made, not buried one click deeper. Returning from a
+    detail view to results must preserve position, filters and scroll.</p>
+    <p>Treat the enquiry form as part of the experience, not an afterthought bolted on the
+    end. Validate helpfully rather than punitively, keep entered data on error, explain what
+    happens after submission and by when, and make the confirmation something a person would
+    trust enough to close the tab on.</p>
+  </section>
 
-  <h2>Creative latitude</h2>
-  <p>Choose the visual identity, information architecture, technical stack, and exact content.
-  Prefer a coherent, polished small product over a broad but unfinished portal.</p>
-</main>
-</body>
+  <section id="substance">
+    <h2>Content is the product, not filler</h2>
+    <p>Write realistic, internally consistent offerings with specific names, venues, times,
+    prices and instructors. A ceramics evening class, a Saturday coding club for teenagers
+    and a conversational-language meetup should read as though someone in that neighbourhood
+    wrote them. Lorem ipsum, repeated placeholder cards and obviously generated filler defeat
+    the entire scenario, because a visitor cannot judge a decision they cannot believe.</p>
+    <p>Keep the catalogue internally coherent: prices consistent with their format, sessions
+    that do not collide, capacity that matches the availability shown, venues that recur
+    plausibly across offerings. Contradictory data reads as a broken product even when every
+    control works.</p>
+    <p>Make empty, partial and error states first-class content. No results for a filter
+    combination is a normal outcome that deserves a useful next step, not a blank panel.</p>
+  </section>
+
+  <section id="scope">
+    <h2>A polished small guide, not an unfinished portal</h2>
+    <p>First deliver one complete discover-compare-enquire loop over a bounded catalogue of a
+    few dozen believable offerings. Getting from landing to a confident enquiry should be
+    quick and obvious, with short contextual help rather than a manual.</p>
+    <p>Saved favourites, provider accounts, reviews, maps, calendar export, waiting lists,
+    payment and multi-city coverage could be later directions if visitors want them. They are
+    not an initial checklist. Do not spend the first release building an empty administrative
+    shell around a catalogue nobody has enjoyed using yet.</p>
+  </section>
+
+  <section id="craft">
+    <h2>A page that looks like someone cared</h2>
+    <p>Give the site a distinct visual identity — considered type, a coherent palette, real
+    spacing rhythm, a recognisable voice — rather than default framework styling with the
+    colours changed. The look should suit affordable community learning: warm, human and
+    unpretentious, not corporate SaaS and not a government form. Choose the identity, the
+    information architecture and the stack yourself; originality here is the point.</p>
+    <p>Design the listing as something worth scanning: clear hierarchy inside each card, one
+    strong entry point per screen, images or original graphic treatment that carry meaning
+    instead of decorating. Let whitespace and typographic contrast do the work before adding
+    ornament. Every element should survive the question of what it helps a visitor decide.</p>
+    <p>Motion, hover states and transitions should confirm what happened and where the visitor
+    now is. Keep them quick and purposeful; animation that delays a decision is a cost, not
+    polish. Respect reduced-motion preferences without removing orientation feedback.</p>
+    <p>Make the narrow-screen layout a designed experience rather than a collapsed desktop.
+    Thumb reach, tap target size, sticky filter access and readable density on a phone in one
+    hand are part of the visual quality, not a separate responsiveness chore.</p>
+  </section>
+
+  <section id="inclusive-by-default">
+    <h2>Reach is part of the craft</h2>
+    <p>Keyboard operation, visible focus, readable contrast, descriptive controls and sensible
+    heading structure must work in the delivered product, not appear as an accessibility page.
+    The layout should stay understandable under browser zoom and without precise pointer use.
+    Treat these as design constraints that improve the product for everyone, in the same way
+    a good palette does.</p>
+    <p>The catalogue serves a mixed neighbourhood. Consider how the interface behaves for a
+    visitor who reads another language or a right-to-left script, and how dates, times, prices
+    and form input read for them. Decide yourself how far to take this and be honest about
+    what is and is not supported; a clear limitation is better than a half-translated page.</p>
+  </section>
+
+  <section id="visitor-continuity">
+    <h2>Respect what the visitor has already done</h2>
+    <p>Preserve in-progress work within a visit: filters, comparison, partially completed
+    enquiries and scroll position. Where same-browser persistence is offered, resume in an
+    understandable state, handle unavailable storage honestly and offer a confirmed reset.
+    Local storage does not promise accounts, cross-device continuity or a saved server record.</p>
+    <p>Different visitors want different things: speed, depth, reassurance, browsing for
+    pleasure. Let real conversation and observed use guide those choices. Do not prebuild a
+    large preferences panel or named persona modes before learning what actually helps.</p>
+  </section>
+
+  <section id="quality-evidence">
+    <h2>Complete the journey, do not just inspect the markup</h2>
+    <p>Verify the exact deployed version through real interaction: land, filter, compare two
+    offerings, open and leave a detail view, return to results with state intact, submit an
+    enquiry with a deliberate mistake, recover, and read the confirmation. Exercise the
+    keyboard path and the narrow-screen layout. Do not populate a form through the console
+    and call that a successful test.</p>
+    <p>A technical PASS establishes working interactions, not trust or visual quality.
+    Separately show what made the catalogue believable, what made a decision feel confident,
+    and why the page is worth looking at. Compare like-for-like screenshots when revising.
+    Label a validation fix as a validation fix, not a redesign. Record observed limitations
+    and untested claims honestly.</p>
+  </section>
+</main></body>
 </html>
