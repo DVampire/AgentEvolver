@@ -358,6 +358,8 @@ class CapabilityRouter(ToolRouter):
         keep = {"plugin_allowlist", "workflow_allowlist", "trace_integrity_profile",
                 "source_workspace", "child_reasoning_effort"}
         extra = {key: value for key, value in inherited.items() if key in keep}
+        # History sharing is a grant for this dispatch, never inherited transitively.
+        extra["fork"] = brief.get("fork") is True
         # What the parent chose FOR THIS DISPATCH, as opposed to what it inherited. The
         # evolution roles read their target from the context, because a generate run's
         # target does not exist yet and so cannot be looked up by name. The dispatch

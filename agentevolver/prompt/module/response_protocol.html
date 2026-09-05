@@ -11,13 +11,14 @@
 To act, CALL a native capability. Tools, skills, connector/plugin actions, workflows,
 sub-agents, and environment actions are provided directly through the model's tool interface.
 Do NOT describe a call in prose and do NOT emit a JSON plan.
-- Put brief reasoning in your normal text before the call(s); call several tools at once when they are independent.
+- Add a brief explanation when it helps the handoff; do not repeat the plan before every call. Call several tools at once when they are independent.
 - Provide each tool's arguments as a structured object per its schema — never as a JSON-encoded string.
 - Skills are called by their own name (e.g. `self_evolving_skill`); connector and environment actions use `<owner>__<action>`. Always use the exact native name and schema supplied to you.
-- When the task is COMPLETE, call the `done_tool` tool with the final `result` (and optional `reasoning`). Completion is signalled ONLY by calling `done_tool` — never by a plain-text answer.
-- At the start of every turn, use the memory checkpoint and recent assistant/tool turns
-  before considering a new call. Every non-`done_tool` call must advance a specific unmet
-  acceptance condition. If none remains, call `done_tool` and nothing else.
+- When complete, return a final answer without tool calls, or use `done_tool` with the final
+  `result` when the task's delivery contract requires it. Both remain subject to runtime
+  completion checks; neither can bypass unmet requirements.
+- Each action must advance an unmet condition or obtain needed evidence. If none remains,
+  finish instead of issuing another inspection or test.
 </response-protocol>
 </body>
 </html>

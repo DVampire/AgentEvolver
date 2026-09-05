@@ -113,7 +113,11 @@ class Conversation:
             return classes[value["role"]].model_validate(value)
         result = cls(system=[parse(m) for m in document["system"]], task=document["task"])
         if document.get("checkpoint") is not None:
-            result.checkpoint = CompactionMessage.model_validate(document["checkpoint"])
+            checkpoint = dict(document["checkpoint"])
+            # Conversation snapshots predate the explicit scope field, but their
+            # checkpoints have always been made from foldable history, not fixed.
+            checkpoint.setdefault("compaction_scope", "history")
+            result.checkpoint = CompactionMessage.model_validate(checkpoint)
         result.items = [parse(m) for m in document["items"]]
         if not result.complete:
             raise ValueError("Saved conversation has unanswered tool calls")
@@ -224,6 +228,7 @@ class Conversation:
         self.checkpoint = CompactionMessage(
             content=f"<memory-checkpoint>\n{body}\n</memory-checkpoint>",
             provider_state=dict(provider_state or {}),
+            compaction_scope="history",
         )
         self.items = self.items[len(folded):]
         return len(folded)

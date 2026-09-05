@@ -389,6 +389,24 @@ class AnthropicChatSerializer:
         """
         system_message = None
         anthropic_messages: List[dict[str, Any]] = []
+
+        # Anthropic ignores message history before a native compaction block.
+        # A history-only fold did not include fixed user references, so replay those
+        # after the block. This wire ordering must not change the logical envelope.
+        for index, message in enumerate(messages):
+            if (isinstance(message, CompactionMessage)
+                    and message.compaction_scope == "history"
+                    and (message.provider_state.get("anthropic") or {}).get("compaction_blocks")):
+                prefix = messages[:index]
+                if any(not isinstance(item, (SystemMessage, HumanMessage)) for item in prefix):
+                    raise ValueError("History checkpoint must follow only fixed references")
+                messages = [
+                    *[item for item in prefix if isinstance(item, SystemMessage)],
+                    message,
+                    *[item for item in prefix if not isinstance(item, SystemMessage)],
+                    *messages[index + 1:],
+                ]
+                break
         
         for message in messages:
             if isinstance(message, SystemMessage):

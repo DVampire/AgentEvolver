@@ -700,12 +700,14 @@ class Agent(BaseModel):
         return "\n\n".join(blocks)
 
     def _parent_turns(self) -> str:
-        """The dispatching agent's recent turns, bounded from the tail.
+        """Explicitly forked parent context, bounded from the tail.
 
         Read from the parent process rather than projected from a log: the parent is in
         the process table, holding the conversation itself, so there is nothing to
         reconstruct and nothing that can disagree.
         """
+        if (getattr(self.ctx, "extra", None) or {}).get("fork") is not True:
+            return ""
         parent_pid = str(getattr(self.proc, "parent_pid", "") or "")
         if not parent_pid:
             return ""

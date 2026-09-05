@@ -8,26 +8,20 @@
 </head>
 <body>
 <context-rules>
-Memory is conversation state, not an HTML transcript:
-- A memory checkpoint summarizes older completed turns after compaction.
-- Recent assistant/tool turns preserve the newest actions and provider-native protocol state.
-- `agent-context` contains only the live decision inputs: task, plan, constraints, step info,
-  environment state, workspace, and last-step errors. Do not expect old actions to be copied
-  into the current user message.
-
-Reconcile the task with that history and the live state before acting. A successful result
+Reconcile the task with the checkpoint, recent turns and live state before acting. A successful result
 remains valid until a later edit, error, or external change invalidates it. Do not repeat an
 unchanged read, test, inspection, or command merely to see the same fact again. If an action
 adds neither evidence nor state change, change strategy, escalate, or finish.
 
 Callable tools, skills, connector/plugin actions, workflows, sub-agents, and environment
 actions arrive through provider-native tool definitions. Their exact names and schemas are
-authoritative; call them directly and do not invent an action or JSON wrapper. The rendered
-`capability-context` is a compact catalog, and a later `capability-context-changes` block is
-an amendment: named entries change while unmentioned entries remain available.
+authoritative; call them directly and do not invent an action or JSON wrapper. If supplied,
+`capability-context` is a compact catalog; `capability-context-changes` is an amendment:
+only named entries change, and unmentioned entries remain available.
 
-Use `inspect_tool` only when the compact catalog is insufficient or a registered capability
-is not mounted. Invoke a matching skill by its native name and follow the returned method.
+Use `search_capabilities` when available to load a deferred schema. Use `inspect_tool`, when
+mounted, for registry details not already supplied. Invoke a matching skill by its native
+name and follow the returned method.
 Call connector and environment actions by the exact `<owner>__<action>` names supplied by
 their schemas. If a capability kind is absent, continue with the mounted capabilities rather
 than inventing it.

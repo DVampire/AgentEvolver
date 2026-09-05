@@ -65,6 +65,11 @@ an observation, not a passing acceptance test.
 
 ContextAssembler remains the sole active-history compaction policy. Complete tool
 cycles and a user request with its recent answer stay together. Native checkpoints
+from the Agent loop have `compaction_scope="history"`: fixed tasks and references
+were not submitted to the compactor and must survive serialization. Legacy standalone
+whole-conversation checkpoints retain their replacement semantics. Thread snapshots
+persist this distinction, including on resume.
+Native checkpoints
 must have a readable companion before old history is replaced; failed summarization
 leaves history untouched and spends a bounded attempt. Cross-route opaque-state
 conversion is not implemented: explicit thread resume rejects a different model route.
@@ -73,3 +78,7 @@ No note body is injected automatically or sliced to a character limit. The index
 omit complete entries with a notice and directory locator. FileSystemMemory is a bounded
 recent display projection backed by Trace, not a second model context. Existing backend
 registration APIs remain intact; background LLM-based memory consolidation is not enabled.
+
+Parent execution history is shared only when the current delegation explicitly sets
+`fork=true`. A parent's own fork grant does not pass to its children. Independent users
+and browser acceptance workers therefore start without implicit Builder history.

@@ -171,6 +171,7 @@ async def test_a_child_inherits_what_its_parent_had_already_established():
 
     child = Agent(name="child")
     child.proc = SimpleNamespace(parent_pid="parent-pid")
+    child.ctx = _ctx(fork=True)
 
     from agentevolver.runtime import kernel
 
@@ -199,6 +200,7 @@ def test_the_parents_history_is_bounded_by_whole_messages():
         )
     child = Agent(name="child")
     child.proc = SimpleNamespace(parent_pid="parent-pid")
+    child.ctx = _ctx(fork=True)
 
     from agentevolver.runtime import kernel
 
@@ -244,6 +246,39 @@ def test_a_child_context_carries_lineage_and_scope_but_not_the_parents_run():
     assert child_ctx.extra["task_files"] == ["spec.md"]
     assert child_ctx.extra["plugin_allowlist"] == ["arxiv"]
     assert "loaded_capabilities" not in child_ctx.extra
+
+
+@pytest.mark.parametrize("fork", [None, False, True])
+def test_parent_history_requires_this_dispatch_to_opt_in(monkeypatch, fork):
+    from agentevolver.runtime import kernel
+
+    parent = Agent(name="parent")
+    parent.conversation.append(AssistantMessage(content="private parent findings"))
+    brief = {"task": "independent work"}
+    if fork is not None:
+        brief["fork"] = fork
+    child = Agent(name="child")
+    # A parent having opted in must not automatically opt its own children in.
+    child.ctx = CapabilityRouter._child_context(brief, parent, _ctx(fork=True))
+    child.proc = SimpleNamespace(parent_pid="parent-pid")
+    reads = []
+
+    def get(pid):
+        reads.append(pid)
+        return SimpleNamespace(agent=parent)
+
+    monkeypatch.setattr(kernel, "get", get)
+    assert child.ctx.extra["fork"] is (fork is True)
+    assert ("private parent findings" in child._parent_turns()) is (fork is True)
+    assert bool(reads) is (fork is True)
+
+
+@pytest.mark.parametrize("value", ["false", "true", 1, None])
+def test_dispatch_rejects_non_boolean_fork(value):
+    from agentevolver.agent.server import validate_dispatch_input
+
+    with pytest.raises(ValueError, match="fork must be a boolean"):
+        validate_dispatch_input({"task": "independent work", "fork": value})
 
 
 # ---------------------------------------------------------------------------

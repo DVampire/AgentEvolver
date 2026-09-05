@@ -588,6 +588,93 @@ def test_native_compaction_replaces_user_history_but_keeps_system_instructions()
     ]
 
 
+@pytest.mark.parametrize("cache", [False, True])
+def test_history_compaction_preserves_fixed_references_and_native_tail(tmp_path, cache):
+    from agentevolver.agent.context.assembler import ContextAssembler
+    from agentevolver.agent.context.conversation import Conversation
+
+    opaque = {"type": "compaction", "encrypted_content": "unchanged-opaque"}
+    conversation = Conversation(system=[
+        SystemMessage(content="rules"),
+        HumanMessage(content="project reference"),
+        HumanMessage(content="memory index /absolute/notes"),
+    ], task="original task")
+    recent = {"type": "function_call", "call_id": "recent-call", "name": "inspect",
+              "arguments": "{}"}
+    for call_id in ("old-call", "recent-call"):
+        conversation.add_turn(AssistantMessage(
+            content="", tool_calls=[ToolCall(id=call_id, function=Function(name="inspect", arguments="{}"))],
+            provider_state={"responses": {"output_items": [recent]}} if call_id == "recent-call" else {},
+        ), [ToolMessage(content=call_id + " result", tool_call_id=call_id)])
+    state = {"responses": {"compaction_items": [opaque]}}
+    conversation.fold("summary", 1, provider_state=state)
+    assert conversation.checkpoint.compaction_scope == "history"
+    path = tmp_path / "thread.json"
+    conversation.save(path, model="test-route", agent="test-agent")
+    restored = Conversation.load(path, model="test-route", agent="test-agent")
+    for current in (conversation, restored):
+        messages = ContextAssembler().build(current, live=["current environment"])
+        before = [m.model_dump() for m in messages]
+        wire = serialize_input(messages, cache=cache)
+        text = json.dumps(wire)
+        for marker in ("project reference", "memory index /absolute/notes", "original task"):
+            assert text.count(marker) == 1
+        assert "old-call" not in text
+        assert wire[4] == opaque
+        assert wire[5] == recent
+        assert wire[6]["call_id"] == "recent-call"
+        assert wire[-1] == {"role": "user", "content": "current environment"}
+        assert [m.model_dump() for m in messages] == before
+
+
+def test_legacy_thread_snapshot_recovers_history_scope(tmp_path):
+    from agentevolver.agent.context.conversation import Conversation
+
+    conversation = Conversation(task="keep this task")
+    conversation.checkpoint = CompactionMessage(content="old checkpoint")
+    path = tmp_path / "thread.json"
+    conversation.save(path, model="route", agent="agent")
+    data = json.loads(path.read_text())
+    del data["checkpoint"]["compaction_scope"]
+    path.write_text(json.dumps(data))
+    assert Conversation.load(path, model="route", agent="agent").checkpoint.compaction_scope == "history"
+
+
+def test_claude_history_checkpoint_keeps_fixed_references_after_native_boundary():
+    from agentevolver.model.anthropic.serializer import AnthropicChatSerializer
+
+    block = {"type": "compaction", "content": "canonical summary"}
+    messages = [
+        SystemMessage(content="rules"),
+        HumanMessage(content="memory reference"),
+        HumanMessage(content="original task"),
+        CompactionMessage(content="portable summary", compaction_scope="history",
+                          provider_state={"anthropic": {"compaction_blocks": [block]}}),
+        AssistantMessage(content="next action"),
+        HumanMessage(content="live state"),
+    ]
+    before = [m.model_dump() for m in messages]
+    system, wire = AnthropicChatSerializer.serialize_messages(messages)
+    assert system[0]["text"] == "rules"
+    assert wire[0] == {"role": "assistant", "content": [block]}
+    assert "memory reference" in json.dumps(wire[1])
+    assert "original task" in json.dumps(wire[1])
+    assert wire[2]["role"] == "assistant"
+    assert "next action" in json.dumps(wire[2])
+    assert [m.model_dump() for m in messages] == before
+
+
+def test_history_checkpoint_portable_fallback_keeps_fixed_inputs():
+    from agentevolver.model.anthropic.serializer import AnthropicChatSerializer
+
+    messages = [SystemMessage(content="rules"), HumanMessage(content="original task"),
+                CompactionMessage(content="portable summary", compaction_scope="history"),
+                HumanMessage(content="live state")]
+    for wire in (serialize_input(messages), AnthropicChatSerializer.serialize_messages(messages)[1]):
+        text = json.dumps(wire)
+        assert text.index("original task") < text.index("portable summary") < text.index("live state")
+
+
 @pytest.mark.asyncio
 async def test_native_compaction_keeps_the_canonical_output_verbatim():
     async def compact(**kwargs):

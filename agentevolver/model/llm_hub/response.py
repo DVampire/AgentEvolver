@@ -162,15 +162,13 @@ def serialize_input(messages: List[Message], *, cache: bool = False) -> List[Dic
             state = (message.provider_state or {}).get("responses") or {}
             native = state.get("compaction_items") or []
             if native:
-                # /responses/compact returns all user messages plus one compaction item,
-                # but not the current system/developer instructions. Keep only those
-                # stable instruction items from the logical fixed layer, then install the
-                # provider output verbatim. Keeping the user task as well would duplicate
-                # it; dropping system would silently remove the agent contract.
-                instructions = [
-                    item for item in items if item.get("role") in ("system", "developer")
-                ]
-                items = [*instructions, *[dict(item) for item in native]]
+                # History-only compaction never saw the fixed task/references. Keep
+                # that prefix. Legacy whole-conversation compaction already contains
+                # its user inputs, so only system instructions survive replacement.
+                if message.compaction_scope == "conversation":
+                    items = [item for item in items
+                             if item.get("role") in ("system", "developer")]
+                items.extend(deepcopy(native))
                 tool_outputs = []
                 continue
         role = getattr(message, "role", "user")
@@ -533,9 +531,8 @@ class ResponseLLMHub(BaseModel):
     ) -> Dict[str, Any]:
         """Compact canonical history with the native Responses endpoint.
 
-        Its output is a canonical replacement input. It must be replayed as-is; the
-        provider serializer retains stable system/developer instructions, replaces the
-        older conversation with this output, and then appends only newer turns.
+        Its output replaces exactly the input supplied here. The caller records that
+        scope on CompactionMessage; history-only folds retain their fixed prefix.
         """
         # The Responses compact endpoint returns an opaque provider item and does not
         # expose an output-token control. Accept the provider-neutral limit so callers

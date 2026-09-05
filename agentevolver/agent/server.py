@@ -28,6 +28,8 @@ MAX_DELEGATION_CONTRACT_ITEM_CHARS = 1_000
 def validate_dispatch_input(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Validate the bounded, structured agent-to-agent handoff contract."""
     value = dict(raw or {})
+    if "fork" in value and not isinstance(value["fork"], bool):
+        raise ValueError("sub-agent fork must be a boolean")
     task = value.get("task")
     if not isinstance(task, str) or not task.strip():
         raise ValueError("sub-agent delegation requires a non-empty task")

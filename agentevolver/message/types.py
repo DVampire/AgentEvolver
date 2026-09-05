@@ -210,6 +210,9 @@ class CompactionMessage(HumanMessage):
     """
 
     provider_state: Dict[str, Any] = Field(default_factory=dict)
+    # Legacy checkpoints replace the whole conversation. The Agent loop folds only
+    # closed history; its fixed task and references were never sent to the compactor.
+    compaction_scope: Literal['conversation', 'history'] = 'conversation'
     
     
 class SystemMessage(Message):
