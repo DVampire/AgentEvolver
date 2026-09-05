@@ -154,4 +154,116 @@ class ProjectMemoryStore:
         return learned
 
 
-__all__ = ["ProjectMemoryStore", "project_memory_path"]
+_FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n?(.*)\Z", re.S)
+
+
+class ProjectNotes:
+    """Named memory files: one fact per file, an index in context, full text on demand.
+
+    Read-side only, deliberately. The layout is Claude Code's — a directory of markdown
+    files, each with ``name``/``description``/``type`` frontmatter over a body that may
+    cite siblings as ``[[name]]`` — and an agent writes one with the ordinary file tools
+    it already has. Wrapping ``cat`` and ``>`` in a bespoke tool would buy nothing and
+    cost a schema in every agent's context; what an agent genuinely cannot derive is
+    where the directory *is*, since the project key is a digest, so :meth:`index` states
+    the resolved path and the format instead.
+
+    Stored under the owner's durable state rather than the checkout: a memory written
+    mid-run must never turn up in the user's ``git status``.
+    """
+
+    def __init__(self, workspace_root: str, source_workspace: Optional[str] = None):
+        self.workspace_root = str(workspace_root or "")
+        self.source_workspace = str(source_workspace or "") or None
+        self.dir: Optional[Path] = None
+        bound = path_manager.session
+        if bound is not None and self.workspace_root:
+            owner, _ = bound
+            self.dir = path_manager.get(
+                P.OWNER_PROJECT_NOTES,
+                owner=owner,
+                project_key=_identity(self.workspace_root, self.source_workspace),
+            )
+
+    @staticmethod
+    def _parse(text: str) -> Dict[str, Any]:
+        match = _FRONTMATTER.match(text or "")
+        if not match:
+            return {"description": "", "type": "project", "seen": 1}
+        meta: Dict[str, Any] = {"seen": 1}
+        for line in match.group(1).splitlines():
+            key, separator, value = line.partition(":")
+            if separator:
+                meta[key.strip()] = value.strip()
+        try:
+            meta["seen"] = int(str(meta.get("seen") or 1))
+        except ValueError:
+            meta["seen"] = 1
+        return meta
+
+    def entries(self) -> list:
+        """Every memory's frontmatter, newest first, without loading the bodies."""
+        if self.dir is None or not self.dir.is_dir():
+            return []
+        found = []
+        for path in sorted(self.dir.glob("*.md")):
+            try:
+                meta = self._parse(path.read_text(encoding="utf-8"))
+            except OSError:
+                continue
+            meta.setdefault("name", path.stem)
+            meta["file"] = str(path)
+            found.append(meta)
+        found.sort(key=lambda item: str(item.get("updated") or ""), reverse=True)
+        return found
+
+    def index(self, *, max_chars: int = 4_000) -> str:
+        """One line per memory, plus where to read and write the full ones.
+
+        Only this index rides in context. A body costs nothing until a description
+        earns the read, so remembering more does not make every later step dearer.
+        """
+        if self.dir is None:
+            return ""
+        found = self.entries()
+        lines = [
+            f"Durable project memories live in `{self.dir}` (outside the working tree).",
+            "",
+            "Read one in full with the ordinary file tools when its description below looks "
+            "relevant. To remember something a later session would otherwise rediscover, write "
+            "`<name>.md` there — a short kebab-case slug — with this frontmatter:",
+            "",
+            "    ---",
+            "    name: <slug>",
+            "    description: <one line: what it is and when it matters>",
+            "    type: user | feedback | project | reference",
+            "    source: trace:<session>:<seq>",
+            "    updated: <ISO-8601>",
+            "    seen: 1",
+            "    ---",
+            "",
+            "Then the fact itself; link related memories as `[[other-name]]`. Recording a fact "
+            "that already has a file means updating that file and incrementing `seen`, never "
+            "adding a second one — the count is how repetition is evidenced later. Keep out "
+            "what the repository already states, anything that only matters to the current "
+            "step, and credentials.",
+        ]
+        if not found:
+            lines.append("\nNothing remembered yet.")
+            return "\n".join(lines)
+        lines.append("")
+        omitted = 0
+        for item in found:
+            seen = int(item.get("seen") or 1)
+            repeat = f" (seen {seen}x)" if seen > 1 else ""
+            line = f"- {item.get('name')} — {item.get('description', '')}{repeat}"
+            if sum(len(value) + 1 for value in [*lines, line]) > max_chars:
+                omitted += 1
+                continue
+            lines.append(line)
+        if omitted:
+            lines.append(f"\n[{omitted} more memories in that directory, not listed here]")
+        return "\n".join(lines)
+
+
+__all__ = ["ProjectMemoryStore", "ProjectNotes", "project_memory_path"]

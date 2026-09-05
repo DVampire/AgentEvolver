@@ -96,13 +96,18 @@ def load_project_context(
     append(root, "CLAUDE.md")
     append(root, "MEMORY.md")
     try:
-        from agentevolver.memory.project import ProjectMemoryStore
+        from agentevolver.memory.project import ProjectMemoryStore, ProjectNotes
 
         automatic = ProjectMemoryStore(
             str(root), source_workspace=source_workspace,
         ).render()
         if automatic:
             append(root, "AUTO_MEMORY.md", automatic)
+        # Only the index rides in context. A memory's body is fetched by name when its
+        # description earns it, so remembering more does not cost more every step.
+        notes = ProjectNotes(str(root), source_workspace=source_workspace).index()
+        if notes:
+            append(root, "MEMORY_INDEX.md", notes)
     except Exception:
         pass
     for directory in _scoped_directories(root, active_paths):

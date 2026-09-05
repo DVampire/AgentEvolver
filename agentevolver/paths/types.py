@@ -86,6 +86,7 @@ class P(str, Enum):
     OWNER_STATE = "owner_state"
     OWNER_FILES = "owner_files"
     OWNER_PROJECT_MEMORY = "owner_project_memory"
+    OWNER_PROJECT_NOTES = "owner_project_notes"
     IDE_EXTENSIONS = "ide_extensions"
     IDE_HOME = "ide_home"
 
@@ -236,6 +237,7 @@ LAYOUT: Dict[P, str] = {
     P.OWNER_STATE: "output/{owner}/state",
     P.OWNER_FILES: "output/{owner}/state/files",
     P.OWNER_PROJECT_MEMORY: "output/{owner}/state/projects/{project_key}/memory.json",
+    P.OWNER_PROJECT_NOTES: "output/{owner}/state/projects/{project_key}/memory",
     P.IDE_EXTENSIONS: "output/{owner}/state/ide/extensions",
     P.IDE_HOME: "output/{owner}/state/ide/home",
 
