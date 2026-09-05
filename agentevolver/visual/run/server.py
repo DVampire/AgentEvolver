@@ -167,13 +167,15 @@ class RunView:
                 belongs = source and Path(source).resolve().is_relative_to(Path(state["workspace"]).resolve())
                 if site_id not in sites and not belongs:
                     continue
-                base = state.get("gateway_base")
-                public = f"{base}/s/{quote(site_id, safe='')}/" if base and record.get("url") else record.get("url")
+                # Browser-facing links use this monitor's gateway origin. Never fall
+                # back to a backend port when an older launcher republishes its state.
+                route = f"/s/{quote(site_id, safe='')}"
+                public = route + "/" if record.get("url") else None
                 versions = [{"number": v.get("number"), "deployed_at": v.get("deployed_at"),
                              "source_revision": v.get("source_revision"),
-                             "url": safe_url(f"{base}/s/{quote(site_id, safe='')}--r{int(v['number'])}/") if base else None}
+                             "url": f"{route}--r{int(v['number'])}/"}
                             for v in record.get("versions", []) if isinstance(v.get("number"), int)]
-                deployments.append({**{k: record.get(k) for k in ("site_id", "status", "release_number", "source_revision", "created_at", "deployed_at", "updated_at")}, "url": safe_url(public), "versions": versions})
+                deployments.append({**{k: record.get(k) for k in ("site_id", "status", "release_number", "source_revision", "created_at", "deployed_at", "updated_at")}, "url": public, "versions": versions})
             manifest = read_json(state.get("extension_manifest", ""), {})
             components = [{k: c.get(k) for k in ("module", "name", "version")} for c in manifest.get("components", [])]
             requests = sorted((log / "model_requests").glob("*/*.html"), key=lambda p: p.stat().st_mtime, reverse=True)[:30]
@@ -256,10 +258,14 @@ class RunMonitor:
 
     async def start(self, port=8766):
         """Deploy outside the agent's cleanup scope, so finished runs stay viewable."""
+        from agentevolver.paths import path_manager
+
         worker = await asyncio.create_subprocess_exec(
             sys.executable, "-m", "agentevolver.visual.run.server", "deploy",
             "--state", str(self.path), "--port", str(port),
-            env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, (
+                str(path_manager.package_resource().parent), os.environ.get("PYTHONPATH"),
+            )))},
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
         )
         try:

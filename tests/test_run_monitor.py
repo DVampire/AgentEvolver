@@ -94,6 +94,32 @@ def test_deployment_scope_and_safe_links(monitor, tmp_path):
     assert safe_url("http://user:password@example.com/") is None
 
 
+@pytest.mark.parametrize("gateway_base", [None, "http://localhost:8766", "https://stale.example"])
+def test_product_and_history_links_always_use_monitor_origin(monitor, tmp_path, gateway_base):
+    sites = tmp_path / "sites.json"
+    sites.write_text(json.dumps({
+        "echo": {"site_id": "echo", "url": "http://localhost:44901",
+                 "versions": [{"number": 1}, {"number": 2}],
+                 "request": {"source_dir": monitor.state["workspace"]}},
+        "preview": {"site_id": "preview", "url": None,
+                    "versions": [{"number": 1}],
+                    "request": {"source_dir": monitor.state["workspace"]}},
+    }))
+    monitor.state.update(deploy_registry=str(sites), gateway_base=gateway_base)
+    monitor.publish()
+    view = RunView(monitor.path)
+    for _ in range(2):
+        rows = view.snapshot()["deployments"]
+        assert rows[0]["url"] == "/s/echo/"
+        assert [v["url"] for v in rows[0]["versions"]] == ["/s/echo--r1/", "/s/echo--r2/"]
+        assert rows[1]["url"] is None
+        assert rows[1]["versions"][0]["url"] == "/s/preview--r1/"
+        assert "44901" not in json.dumps(rows)
+        # An already-running launcher does not know fields added by a repair worker.
+        monitor.state.pop("gateway_base", None)
+        monitor.publish()
+
+
 def test_request_allowlist_and_symlinks(monitor, tmp_path):
     root = Path(monitor.state["log_root"]) / "model_requests" / "agent"
     root.mkdir(parents=True)
