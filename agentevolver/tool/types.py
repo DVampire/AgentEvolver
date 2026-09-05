@@ -9,48 +9,12 @@ from agentevolver.session import BaseContext
 from agentevolver.response.types import Response
 
 
-#: Cap on how much of one command's output reaches the agent, in characters.
-#: ~8k tokens: generous for reading a build log or a diff, and small enough that a
-#: single result cannot dominate a turn.
+#: Archive threshold, not permission to shorten a tool result.
 OUTPUT_LIMIT = 32_000
 
-#: Split of that budget between the start and the end of the output. The head carries what
-#: the command set out to do, the tail carries how it ended — the error, the summary line,
-#: the exit status. The middle of an oversized dump is the least informative part.
-_HEAD_SHARE = 0.75
-
-
 def clip_output(text: str, limit: int = OUTPUT_LIMIT) -> str:
-    """Bound one command's output, keeping its beginning and its end.
-
-    Unbounded output is not a cosmetic problem. A single `strings` call against a 31KB
-    binary returned 14,419,441 characters; that one result was handed to the agent whole
-    and then stored in its memory, so every subsequent turn sent a prompt of about 4.3
-    million tokens against a 1,048,576-token limit. The run died of consecutive 400s
-    having produced nothing since, and the reported cause named neither the command nor
-    the size. The agent could not have read 14MB either — the output was useless at that
-    length to everyone involved.
-
-    What is dropped is stated in place, so the agent knows it is looking at an excerpt and
-    can narrow the command rather than wonder why the text stops.
-
-    This builds the excerpt and nothing else. Whether the dropped middle is still
-    reachable is the caller's business: the tool pipeline saves the full text to the
-    spill store before calling this and appends the locator, so in normal operation
-    the middle is one `read_file_tool` away rather than gone.
-    """
-    if len(text) <= limit:
-        return text
-    head = int(limit * _HEAD_SHARE)
-    tail = limit - head
-    dropped = len(text) - limit
-    return (
-        f"{text[:head]}\n"
-        f"\n[... {dropped:,} characters elided of {len(text):,} total. This is an excerpt: "
-        f"the beginning and the end. Narrow the command — grep, head, a smaller range — if "
-        f"you need what is in between ...]\n\n"
-        f"{text[-tail:]}"
-    )
+    """Legacy compatibility entry point: output is now always preserved in full."""
+    return text
 
 
 class ToolContext(BaseContext):

@@ -91,9 +91,9 @@ Outcomes are distinguished rather than collapsed into one "compaction failed" li
 A chunk is summarised before the next is taken, and a chunk whose summary does not arrive is
 put back, so an interrupted run leaves history shorter but never holed.
 
-## The size backstop keeps both ends
+## Preserve evidence before compaction
 
-`_append_recent` bounds one entry at `_RECORD_DETAIL_MAX`, keeping a head **and** a tail.
-Head-only truncation drops whatever a producer appended last, and what the tool pipeline
-appends last is the spill locator — so a spilled result would reach memory as an excerpt
-announcing that text was dropped while no longer saying where it went.
+`_append_recent` keeps each detail intact, including retrieval locators. The legacy
+`record_detail_max` setting no longer shortens records. Portable summary input must fit
+its configured budget in full: if it cannot, compaction fails without replacing history.
+It must not skip oversized items and then commit a checkpoint as though it saw them.

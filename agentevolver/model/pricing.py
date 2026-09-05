@@ -100,6 +100,9 @@ DIRECT_MODEL_PRICING: Dict[str, Dict[str, Any]] = {
     # LLM Hub stable upstream/list-price estimates.  Hub channel discounts are
     # deliberately not baked in because routing can change between requests.
     "llm_hub/claude-opus-5": per_million(5.00, 25.00, 0.50, 6.25),
+    # Official Fable 5.1 rates, checked 2026-09-05. Hub channel discounts vary;
+    # its cache-read rate is NOT Fable 5's $1/MTok.
+    "llm_hub/claude-fable-5-1": per_million(10.00, 50.00, 0.25, 12.50),
     # GPT-6 Astra official Standard rates, checked 2026-09-05; relay invoice may differ.
     "llm_hub/gpt-6-astra": per_million(
         10.00, 50.00, 1.00, 12.50,
@@ -114,6 +117,8 @@ DIRECT_MODEL_PRICING: Dict[str, Dict[str, Any]] = {
         long_cache_write=0.50,
     ),
     "llm_hub/deepseek-v4-flash": per_million(0.14, 0.28, 0.0028),
+    # Relay /me/pricing verified 2026-09-05, multiplier 1; not upstream pricing.
+    "llm_hub/deepseek-v4-flash-vision-exp": per_million(0.14, 0.28, 0.0028),
     "llm_hub/gpt-5.6-sol": per_million(
         4.00, 20.00, 0.40, 5.00,
         long_context_threshold=272_000,

@@ -45,15 +45,12 @@ model_roles = dict(
     summarize=model_name,
 )
 agent_model_policy = "per_agent"
-# Three model families, so the panel is not one model agreeing with itself — but every
-# one of them has to accept images, because a participant only ever sees the product
-# through a browser screenshot. `deepseek-v4-flash` sat here and is text-only: the relay
-# answered 400 "Model do not support image input" on every call, three retries a step,
-# and that participant contributed nothing to any round.
+# Every participant needs vision for browser screenshots. DeepSeek's experimental
+# visual route is distinct from the text-only Flash 0731 alias.
 website_user_models = [
-    "llm_hub/claude-opus-5",
-    "llm_hub/gpt-5.6-sol",
-    "llm_hub/gpt-5.6-luna",
+    "llm_hub/gpt-6-astra",
+    "llm_hub/claude-fable-5-1",
+    "llm_hub/deepseek-v4-flash-vision-exp",
 ]
 
 memory_names = ["file_system_memory"]
@@ -150,8 +147,8 @@ MAX_TOKEN = 10000000
 # Every role uses the same cache-aware context policy as the SWE-bench MetaAgent.  Native
 # compaction is selected by the configured memory model when supported and otherwise falls
 # back to a portable text checkpoint, so a heterogeneous user panel is not a reason to turn
-# compaction off globally. The Builder and evolution workers use Opus 5, while the co-design
-# panel spans three model families.
+# compaction off globally. The Builder uses GPT-6; support workers retain Opus 5,
+# while the co-design panel spans three model families.
 _AGENT_CORE = dict(
     memory_name=memory_names[0],
     enable_evolving=False,
@@ -181,6 +178,7 @@ evaluate_agent.update(**_EVOLUTION_WORKER)
 
 _USER = {
     **_AGENT_CORE,
+    "model_name": website_user_models[0],
     "prompt_name": "website_user_agent",
     "env_name": "browser_environment",
     # Continuable participants live across the initial co-design turn and later iterations.
@@ -224,7 +222,7 @@ browser_agent.update(
 website_builder_agent.update(
     **{
         **_AGENT_CORE,
-        "model_name": "llm_hub/claude-opus-5",
+        "model_name": "llm_hub/gpt-6-astra",
         "prompt_name": "website_builder_agent",
         "enable_evolving": True,
         "max_step": BUILDER_MAX_STEP,

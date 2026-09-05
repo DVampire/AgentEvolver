@@ -24,7 +24,7 @@ from agentevolver.tool.execution import (
 )
 from agentevolver.tool.spill import SpillSource
 from agentevolver.tool.spill import save_text as spill_text
-from agentevolver.tool.types import OUTPUT_LIMIT, Tool, ToolConfig, ToolContext, clip_output
+from agentevolver.tool.types import OUTPUT_LIMIT, Tool, ToolConfig, ToolContext
 from agentevolver.utils import (
     assemble_workspace_path,
     gather_with_concurrency,
@@ -1152,18 +1152,7 @@ class ToolContextManager(BaseModel):
         self, response: Response, *, name: str, ctx: ToolContext,
         checkpoint: Optional[Dict[str, Any]] = None,
     ) -> Response:
-        """Keep an oversized result out of the prompt without destroying it.
-
-        Every tool call funnels through here, so the size policy is stated once
-        instead of in each tool — and a tool added later inherits it without
-        knowing it exists.
-
-        The full text is written to the spill store first, then the message is
-        replaced by an excerpt that carries the locator. If the store cannot save
-        it, the excerpt goes out alone: a command that ran is still a command that
-        ran, and reporting it as failed because its transcript could not be filed
-        would lose more than the transcript did.
-        """
+        """Archive large results without replacing or shortening the observation."""
         if checkpoint:
             response = response.model_copy(deep=True)
             response.extra = {
@@ -1180,14 +1169,8 @@ class ToolContextManager(BaseModel):
             session_key=str((getattr(ctx, "extra", {}) or {}).get("project_root") or ""),
             suggested_name=f"{name}.txt",
         )
-        if ref is None:
-            # Storage failure is the sole degraded case: keep a bounded observation
-            # rather than allowing one unbounded command to make every later request
-            # unsendable. Normal operation below never slices the original string.
-            response.message = clip_output(message)
-        else:
-            response.message = (
-                f"[Tool result omitted inline as one complete unit: "
-                f"original_chars={len(message):,}. {ref.retrieval_hint}]"
-            )
+        if ref is not None:
+            response = response.model_copy(update={
+                "message": f"{message}\n\n{ref.retrieval_hint}",
+            })
         return response

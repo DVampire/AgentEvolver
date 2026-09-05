@@ -38,7 +38,7 @@ from agentevolver.message.types import AssistantMessage, HumanMessage, Message
 #: tried; more defeats the point of folding at all.
 DEFAULT_RETAIN_TURNS = 4
 
-#: Held turns past which history is folded on cost grounds, whatever the capacity says.
+#: Check for worthwhile history compaction after this many complete turns.
 DEFAULT_COMPACT_AFTER_TURNS = 24
 
 #: Tokens of live body — everything after the checkpoint — past which history is folded.
@@ -246,10 +246,10 @@ class ContextAssembler:
     ) -> str:
         """Why history should be folded now, or "" for not yet.
 
-        Three signals, as before. Turn count and body size are *cost* signals — a long
-        session is worth folding before it becomes a capacity problem — and pressure is
-        the capacity signal. Checking only pressure leaves a long, cheap-per-turn run
-        paying for its whole history on every step and never folding.
+        A turn-count trigger also needs enough removable history to justify a summary
+        call and rewriting the cached prefix. The 4x summary budget is a conservative
+        size heuristic, not a provider pricing/break-even calculation. Body and capacity
+        limits remain independent safety triggers, regardless of cache reuse.
         """
         if not conversation.complete:
             # Mid-turn: folding across an unanswered tool call would sever the call from
@@ -262,7 +262,11 @@ class ContextAssembler:
 
         reasons: List[str] = []
         if self.compact_after_turns and conversation.turns >= self.compact_after_turns:
-            reasons.append(f"history={conversation.turns} turns")
+            from agentevolver.model.pressure import estimate_tokens
+
+            source_tokens = estimate_tokens(self.summarize_source(conversation))
+            if source_tokens >= 4 * max(1, self.compact_output_tokens):
+                reasons.append(f"history={conversation.turns} turns, removable≈{source_tokens:,} tokens")
         if self.compact_body_tokens:
             body = self.body_tokens(conversation)
             if body >= self.compact_body_tokens:

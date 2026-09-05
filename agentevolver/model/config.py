@@ -174,11 +174,25 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
     catalog at both would mean every entry's id depending on which base URL happened to
     be configured. A separate provider keeps each catalog true to one endpoint.
 
-    Only the two models actually exercised here are registered. Adding an entry means
+    Only models actually exercised here are registered. Adding an entry means
     checking that the relay serves it under that id — it answers an unknown one with
     "没有可用渠道服务模型", not with a fallback.
     """
     chat_models = [
+        {
+            "model_name": "llm_hub/claude-fable-5-1",
+            "model_id": "claude-fable-5-1",
+            # Verified relay Messages route; do not alias this to Fable 5 or silently
+            # enable sibling models' beta features. Native compaction is not yet probed.
+            "model_type": "anthropic/messages",
+            "native_compaction": False,
+            "persisted_reasoning": True,
+            "context_window": 1_000_000,
+            "reasoning": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            "max_completion_tokens": min(max_tokens, 128_000),
+            "timeout": default_timeout,
+            "fallback_model": "llm_hub/claude-opus-5",
+        },
         {
             "model_name": "llm_hub/claude-opus-5",
             "model_id": "claude-opus-5",
@@ -217,6 +231,19 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # No `temperature`: Opus 4.7 and later removed the sampling parameters, and
             # the relay answers a request carrying one with "`temperature` is deprecated
             # for this model".
+            "max_completion_tokens": max_tokens,
+            "timeout": default_timeout,
+        },
+        {
+            "model_name": "llm_hub/deepseek-v4-flash-vision-exp",
+            "model_id": "deepseek-v4-flash-vision-exp",
+            "model_type": "chat/completions",
+            # Separate visual route, not the text-only 0731 alias. Verified image +
+            # tool-result replay; unverified native features retain portable fallbacks.
+            "supports_vision": True,
+            "persisted_reasoning": True,
+            "reasoning": {"thinking": {"type": "enabled"}, "reasoning_effort": "high"},
+            "context_window": 1_000_000,
             "max_completion_tokens": max_tokens,
             "timeout": default_timeout,
         },

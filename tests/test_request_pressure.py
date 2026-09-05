@@ -1,4 +1,4 @@
-"""Provider-bound pruning is deterministic, narrow, and recorded."""
+"""Provider-bound accounting preserves messages, including on overflow."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def test_pressure_below_the_threshold_leaves_messages_byte_for_byte_unchanged():
     assert prepared.pressure["pruned_message_indices"] == []
 
 
-def test_pressure_prunes_oldest_tool_results_without_mutating_the_history():
+def test_pressure_preserves_even_oversized_tool_results():
     old_result = "HEAD-" + ("x" * 18_000) + "-TAIL"
     recent_result = "recent observation"
     messages = [
@@ -66,16 +66,17 @@ def test_pressure_prunes_oldest_tool_results_without_mutating_the_history():
     assert first.messages == second.messages
     assert first.pressure == second.pressure
     assert first.pressure["estimate_method"] == ESTIMATE_METHOD
-    assert first.pressure["pruned_message_indices"] == [2]
+    assert first.pressure["pruned_message_indices"] == []
+    assert first.pressure["removed_chars"] == 0
+    assert first.pressure["over_capacity"] is True
     assert first.messages[0] == messages[0]
     assert first.messages[3].content == recent_result
-    assert "HEAD-" not in first.messages[2].content and "-TAIL" not in first.messages[2].content
-    assert "complete, unmodified tool result remains in Trace" in first.messages[2].content
+    assert first.messages[2].content == old_result
     assert messages[2].content == old_result  # append-only history was not changed
 
 
 @pytest.mark.asyncio
-async def test_model_dispatch_and_snapshot_receive_the_same_pruned_request():
+async def test_model_dispatch_and_snapshot_receive_the_same_complete_request():
     dispatched = []
     recorded = []
 
@@ -97,7 +98,7 @@ async def test_model_dispatch_and_snapshot_receive_the_same_pruned_request():
         model_id="provider/model",
         provider="provider",
         max_completion_tokens=500,
-        context_window=2_500,
+        context_window=6_000,
     )
     manager.model_clients["main"] = Client()
     original = ToolMessage(
@@ -115,8 +116,8 @@ async def test_model_dispatch_and_snapshot_receive_the_same_pruned_request():
 
     assert result.success
     assert dispatched[0] == recorded[0]["messages"]
-    assert recorded[0]["pressure"]["triggered"] is True
-    assert len(dispatched[0][1].content) < len(original.content)
+    assert recorded[0]["pressure"]["text_policy"] == "preserve"
+    assert dispatched[0][1].content == original.content
     assert len(original.content) == 18_010
 
 
@@ -158,6 +159,63 @@ def test_pressure_records_validated_four_layer_token_accounting():
 
 def test_unknown_provider_uses_documented_deterministic_fallback():
     assert resolve_request_token_estimator(provider="anthropic", model="claude") is None
+
+
+def test_image_estimate_depends_on_pixels_not_png_compression():
+    import base64
+    import io
+    from PIL import Image
+    from agentevolver.message.types import ContentPartImage, ImageURL
+
+    messages = []
+    for compression in (0, 9):
+        buffer = io.BytesIO()
+        Image.new("RGB", (1280, 900), "green").save(buffer, format="PNG", compress_level=compression)
+        url = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+        messages.append(HumanMessage(content=[ContentPartImage(image_url=ImageURL(url=url))]))
+    original = [message.model_dump() for message in messages]
+    assert estimate_tokens(messages[0]) == estimate_tokens(messages[1])
+    assert 2000 < estimate_tokens(messages[0]) < 5000
+    assert [message.model_dump() for message in messages] == original
+    # A data URI inside actual text is still text. Do not censor arbitrary strings.
+    assert estimate_tokens(HumanMessage(content=messages[0].content[0].image_url.url)) > 100_000
+
+
+@pytest.mark.parametrize("part", [
+    {"type": "image_url", "image_url": {"url": "https://example.invalid/image.png"}},
+    {"type": "input_image", "image_url": "data:image/png;base64,bad"},
+    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "bad"}},
+])
+def test_visual_budget_is_explicit_even_with_a_text_tokenizer(part):
+    counted = []
+    estimator = RequestTokenEstimator(
+        count_text=lambda value: counted.append(value) or 100,
+        method="test", tokenizer_exact=True, provider_wire_exact=True,
+    )
+    prepared = prepare_messages([{"role": "user", "content": [part]}], token_estimator=estimator)
+    assert prepared.pressure["image_count"] == 1
+    assert prepared.pressure["image_tokens_estimated"] == 4096
+    assert prepared.pressure["estimated_tokens_after"] == 4196
+    assert prepared.pressure["provider_wire_exact"] is False
+    assert "base64" not in counted[0] and "example.invalid" not in counted[0]
+    assert prepared.messages[0]["content"][0] == part
+
+
+def test_registered_visual_counter_overrides_portable_budget():
+    estimator = RequestTokenEstimator(lambda text: 100, "test", True, count_image=lambda part: 300)
+    prepared = prepare_messages(
+        [{"role": "user", "content": [{"type": "input_image", "file_id": "file-1"}]}],
+        token_estimator=estimator,
+    )
+    assert prepared.pressure["estimated_tokens_after"] == 400
+    assert prepared.pressure["image_estimate_method"] == "registered"
+
+
+def test_visual_accounting_accepts_union_types_in_tool_schemas():
+    tool = {"type": "function", "parameters": {"type": ["object", "null"]}}
+    prepared = prepare_messages([HumanMessage(content="complete text")], tools=[tool])
+    assert prepared.pressure["image_count"] == 0
+    assert prepared.messages[0].content == "complete text"
 
 
 def test_deployment_can_register_exact_or_provider_wide_token_estimator():
@@ -388,4 +446,4 @@ async def test_the_refusal_says_what_has_to_happen_next():
 
     assert result.success is False
     assert "does not fit main" in result.message
-    assert "compacted" in result.message
+    assert "compact complete conversation turns" in result.message

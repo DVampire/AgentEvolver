@@ -122,6 +122,22 @@ def test_only_verified_llm_hub_routes_declare_native_compaction():
     assert declared["llm_hub/gpt-5.6-sol"] is True
     assert declared["llm_hub/gpt-5.6-luna"] is False
     assert declared["llm_hub/deepseek-v4-flash"] is False
+    assert declared["llm_hub/claude-fable-5-1"] is False
+
+
+def test_fable_51_uses_verified_native_messages_route_and_high_effort():
+    spec = next(s for s in _specs() if s["model_name"] == "llm_hub/claude-fable-5-1")
+    assert spec["model_id"] == "claude-fable-5-1"
+    assert spec["model_type"] == "anthropic/messages"
+    assert spec["persisted_reasoning"] is True
+    assert spec["context_window"] == 1_000_000
+    assert spec["reasoning"] == {
+        "thinking": {"type": "adaptive"}, "output_config": {"effort": "high"},
+    }
+    assert "temperature" not in spec
+    assert spec["fallback_model"] == "llm_hub/claude-opus-5"
+    assert spec["cost"]["input"] == 10 / 1_000_000
+    assert spec["cost"]["cache_read"] == 0.25 / 1_000_000
 
 
 def test_the_default_is_not_below_what_the_configured_models_accept():

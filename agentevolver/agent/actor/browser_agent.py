@@ -10,7 +10,8 @@ It used to carry its own copy of the whole loop, because the previous base class
 environment step and no attachment hook. Both exist now, so the copy is gone.
 """
 
-from typing import Any, Dict, List
+from hashlib import sha256
+from typing import Any, Dict, List, Literal
 
 from pydantic import ConfigDict, Field
 
@@ -46,10 +47,10 @@ class BrowserAgent(Agent):
     max_step: int = Field(default=40)
     enable_evolving: bool = Field(default=False)
     env_names: List[str] = Field(default=["browser_environment"])
-    #: Screenshots attached per request: the previous annotated action and the current
-    #: page. More does not help a model that plans one action at a time, and each is
-    #: expensive.
-    max_screenshots: int = Field(default=2)
+    #: Current page normally suffices; include the previous action on a failure.
+    #: Visual-comparison workloads can explicitly request both every step.
+    max_screenshots: int = Field(default=2, ge=0)
+    screenshot_history: Literal["on_error", "always"] = "on_error"
     #: The minimal contract a browser worker runs under: it acts through environment
     #: actions, so the only tool it needs is the one that ends the run.
     capability_allowlists: Dict[str, List[str]] = Field(default={
@@ -83,6 +84,7 @@ class BrowserAgent(Agent):
         self._observed: Dict[str, Any] = {}
         self._failures: Dict[str, int] = {}
         self._samples: Dict[str, str] = {}
+        self._action_failed = False
 
     # ------------------------------------------------------------------
     # Observation
@@ -109,23 +111,30 @@ class BrowserAgent(Agent):
     def attachments(self) -> List[Message]:
         """The screenshots from this step's observation, so a vision model can ground.
 
-        Deduplicated by path: the previous annotated action and the current page often
-        come back as the same file, and sending it twice pays twice for one image.
+        Select whole images, never crop/downsample them. Originals remain in the browser
+        artifacts. Content identity avoids losing different pathless/overwritten images.
         """
         extra = (self._observed or {}).get("extra") or {}
         shots = extra.get("screenshots") or []
         unique, seen = [], set()
-        for shot in shots:
-            path = getattr(shot, "screenshot_path", None)
-            if path in seen:
+        for shot in reversed(shots):
+            encoded = getattr(shot, "screenshot", None)
+            if not encoded:
                 continue
-            seen.add(path)
+            digest = sha256(encoded.encode("ascii")).digest()
+            if digest in seen:
+                continue
+            seen.add(digest)
             unique.append(shot)
-        if not unique:
+        unique.reverse()
+        limit = self.max_screenshots
+        if self.screenshot_history == "on_error" and not self._action_failed:
+            limit = min(limit, 1)
+        if not unique or limit == 0:
             return []
 
         parts: List[Any] = []
-        for shot in unique[-self.max_screenshots:]:
+        for shot in unique[-limit:]:
             encoded = getattr(shot, "screenshot", None)
             if not encoded:
                 continue
@@ -149,6 +158,7 @@ class BrowserAgent(Agent):
         ordinary action error.
         """
         results = await super().act(decision)
+        self._action_failed = any(result.error for result in results)
         for result in results:
             if not result.error:
                 continue
@@ -194,6 +204,7 @@ class BrowserAgent(Agent):
                 f"add it to this config's `env_names`"
             )
         self._failures, self._samples, self._observed = {}, {}, {}
+        self._action_failed = False
         await self._close_session()
 
     async def on_exit(self, status: Any) -> None:

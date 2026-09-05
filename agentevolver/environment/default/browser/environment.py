@@ -488,6 +488,9 @@ class BrowserEnvironment(Environment):
             state_text = "\n\n".join(sections)
 
             screenshots = []
+            previous = rec["previous"] or rec["screenshot"]
+            # An annotated action belongs to one observation, not every later page.
+            rec["previous"] = None
             rec["screenshot"] = None
             if state_data.get("screenshot"):
                 step = rec["step"]
@@ -500,9 +503,7 @@ class BrowserEnvironment(Environment):
                 rec["screenshot"] = self._make_screenshot_info(
                     encode_file_base64(file_path=path), path, description
                 )
-                if not rec["previous"]:
-                    rec["previous"] = rec["screenshot"]
-                screenshots = [rec["previous"], rec["screenshot"]]
+                screenshots = ([previous] if previous else []) + [rec["screenshot"]]
 
             # One observation round done — next round's actions number from act01
             rec["step"] += 1

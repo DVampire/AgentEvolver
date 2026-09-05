@@ -183,7 +183,7 @@ def test_a_compaction_message_outside_the_checkpoint_layer_is_refused():
 # ---------------------------------------------------------------------------
 
 
-def test_each_fold_signal_fires_on_its_own():
+def test_turn_trigger_requires_useful_savings_but_safety_triggers_are_independent():
     by_turns = ContextAssembler(retain_turns=2, compact_after_turns=5,
                                 compact_body_tokens=0, fold_at_pressure=0)
     by_body = ContextAssembler(retain_turns=2, compact_after_turns=0,
@@ -193,7 +193,8 @@ def test_each_fold_signal_fires_on_its_own():
                                    context_window=2_000)
     small, large = conversation(turns=6, bulk=1), conversation(turns=6, bulk=200)
 
-    assert "turns" in by_turns.fold_reason(small)
+    assert by_turns.fold_reason(small) == ""
+    assert "turns" in by_turns.fold_reason(conversation(turns=6, bulk=3000))
     assert by_body.fold_reason(small) == ""
     assert "body" in by_body.fold_reason(large)
     assert "capacity" in by_pressure.fold_reason(large)
@@ -202,7 +203,7 @@ def test_each_fold_signal_fires_on_its_own():
 def test_folding_waits_for_a_complete_turn():
     """Cutting across an unanswered call would sever it from its result."""
     assembler = ContextAssembler(retain_turns=2, compact_after_turns=2)
-    held = conversation(turns=6)
+    held = conversation(turns=6, bulk=3000)
     assert assembler.fold_reason(held) != ""
     held.append(AssistantMessage(content="pending", tool_calls=[ToolCall(
         id="dangling", function=Function(name="read_file", arguments="{}"),

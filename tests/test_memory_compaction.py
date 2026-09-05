@@ -310,7 +310,7 @@ def test_an_emptied_history_still_reports_its_open_bracket():
 # --------------------------------------------------------------------------- #
 # The size backstop keeps the tail
 # --------------------------------------------------------------------------- #
-def test_memory_references_an_oversized_detail_without_splicing_it():
+def test_memory_preserves_oversized_detail_and_its_locator():
     memory, state = _memory(), _state()
     locator = "[The full output is saved at `/output/.runtime/spill/s/abc-bash_tool.txt`.]"
     detail = ("X" * 30_000) + "\n\n" + locator
@@ -320,11 +320,7 @@ def test_memory_references_an_oversized_detail_without_splicing_it():
     )
 
     stored = state.recent[0].detail
-    assert "saved at" not in stored
-    assert not stored.startswith("XXX")
-    assert "Exact detail omitted inline as one complete unit" in stored
-    assert "source_seq=" in stored
-    assert len(stored) < _RECORD_DETAIL_MAX + 200
+    assert stored == detail
 
 
 # --------------------------------------------------------------------------- #

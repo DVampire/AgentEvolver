@@ -14,7 +14,7 @@ from agentevolver.paths import P, path_manager
 from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
-from agentevolver.tool.types import OUTPUT_LIMIT, Tool
+from agentevolver.tool.types import Tool
 from agentevolver.utils.terminal import (
     PTY_COLS,
     PTY_DEFAULT_TERM,
@@ -36,8 +36,8 @@ _GUIDANCE = """
   intended.
 - Every command's COMPLETE output is archived to a `.txt` under the session's
   `log/bash/` directory, and the tool result tells you the path. What you are shown
-  inline may be an excerpt for a very long command; when you need the full transcript,
-  read that file (`cat`/`grep` it) rather than re-running the command. A background job's
+  inline is preserved in full. Use bounded queries when inspecting large files so the
+  result fits the model context; archives can be searched without re-running a command. A background job's
   archive is named by its job id, so it pairs with `job__output(job_id=...)`.
 - One call can carry several known execution steps, and doing so costs one model round-trip
   instead of several: `make && ./run-tests`, `a; b; echo $?`, or a pipeline. Use
@@ -138,8 +138,8 @@ def _write_bash_archive(command: str, text: str, path: Optional[str] = None) -> 
     Archiving never fails the command: a command that ran is a command that ran, and
     losing the ability to file its transcript must not be reported as the command
     breaking (same rule the oversized-result spill follows). The tool result the model
-    reads is still bounded by the universal output policy; this is the durable, complete
-    copy beside it — written here for a foreground call, appended live by the background
+    reads is preserved; this is the durable, complete copy beside it — written here
+    for a foreground call, appended live by the background
     drain — so nothing a command printed is lost, including the head a long-running job's
     bounded in-memory buffer would otherwise drop.
     """
@@ -205,7 +205,6 @@ def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
     os.close(slave)
 
     chunks: list = []
-    total = 0
     timed_out = False
     started = time.monotonic()
     deadline = started + timeout
@@ -230,12 +229,7 @@ def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
                 break            # EIO: the child closed the terminal, i.e. it exited
             if not data:
                 break
-            # Bounded here as well as at the end: a program that redraws a screen can
-            # produce megabytes per second, and holding all of it to clip later is how a
-            # 777MB capture file happened.
-            total += len(data)
-            if total <= OUTPUT_LIMIT * 4:
-                chunks.append(data)
+            chunks.append(data)
     finally:
         if process.poll() is None:
             try:
@@ -250,8 +244,9 @@ def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
         output = render_terminal(raw)
     except Exception as error:  # an emulator that chokes must not lose the observation
         output = raw.decode("utf-8", errors="replace") + f"\n[terminal not rendered: {error}]"
-    if total > len(raw):
-        output += f"\n[... {total - len(raw):,} further bytes were produced and not shown ...]"
+    # A rendered terminal frame is a view, not a transcript: scrollback and screen clears
+    # can hide earlier output. Keep the full captured text alongside it, including on timeout.
+    output += "\n\n[Complete PTY transcript]\n" + raw.decode("utf-8", errors="replace")
     return output, process.returncode, timed_out
 
 

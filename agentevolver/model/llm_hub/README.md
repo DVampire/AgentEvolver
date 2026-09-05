@@ -80,6 +80,48 @@ Messages represents calls as `tool_use` blocks and results as user-side `tool_re
 blocks. Provider serializers own those differences. `ContextEnvelope` validates the one
 provider-neutral assistant/tool relationship before any of them sees it.
 
+## DeepSeek Flash Vision
+
+`llm_hub/deepseek-v4-flash-vision-exp` is a separate experimental visual model,
+not an alias for text-only Flash 0731. The chat route enables thinking at `high`
+and preserves `reasoning_content` through the existing provider-state serializer.
+Native compaction and other unverified native features remain disabled; the shared
+portable mechanisms still apply.
+
+A two-request relay probe on 2026-09-05 passed image recognition plus an `add`
+tool/result round trip: 3.07 s and 0.93 s, ending with `42, red`. The second request
+reported 512 cached input tokens out of 620. This small probe is not a browser
+quality benchmark. `/me/pricing` reported USD 0.14 input, 0.28 output and 0.0028
+cached input per million tokens at multiplier 1; these are relay estimates.
+
+## Claude Fable 5.1
+
+`llm_hub/claude-fable-5-1` uses the relay's native Anthropic Messages endpoint and
+the existing `LLM_HUB` credentials. It defaults to adaptive thinking with `high` effort,
+omits temperature, and falls back to `llm_hub/claude-opus-5` through the model manager.
+It does not change any website-role or global model defaults.
+
+Bounded live probes on 2026-09-05 (five generation requests, no retries):
+
+| Probe | Result |
+|---|---|
+| Hub catalog | Exact ID `claude-fable-5-1` listed |
+| Image + tool round-trip | `add(19, 23)` followed by `42, red`; 2.69s / 2.29s |
+| Framework adapter | Modular arithmetic answer `6106`, checked locally; signed thinking returned |
+| Framework signed-state replay + SSE | Preserved the prior thinking blocks and returned remainder `3`; replay 1.99s |
+
+These are connectivity/protocol checks, not quality or throughput benchmarks. No cache
+hits occurred in these short calls. Native compaction, PTC, native async tools and hosted
+multi-agent features remain unverified and disabled; portable checkpoints and local
+orchestration continue to apply. A response's model ID is the relay's assertion, not
+independent verification of its underlying model weights.
+
+The [official model page](https://platform.claude.com/docs/en/models/fable-5-1/overview)
+lists 1M context, 128K maximum output and $10/$50 per MTok input/output. Cache reads
+are $0.25/MTok and five-minute writes $12.50/MTok. The pricing catalog uses those list
+rates; Hub's authenticated pricing endpoint advertised discounted channels at 0.60x and
+0.77x during the probe, not a guaranteed price for every subsequent request.
+
 ## GPT-6 and route fallbacks
 
 `llm_hub/gpt-6-astra` uses Responses, with GPT-5.6 Sol as its configured fallback.

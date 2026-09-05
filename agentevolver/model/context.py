@@ -158,11 +158,8 @@ def _prepare_request_messages(
             f"The request does not fit {model_name or 'this model'}: about "
             f"{pressure['estimated_tokens_after']} tokens against an input capacity of "
             f"{pressure['input_capacity_tokens']}"
-            + (f", after excerpting {len(pressure['pruned_message_indices'])} tool "
-               f"result(s)" if pressure["pruned_message_indices"] else
-               ", and no tool result was large enough to excerpt")
-            + ". Only tool results may be reduced at this boundary, so what remains is "
-              "instructions and reasoning; the conversation itself has to be compacted.",
+            + ". All messages were preserved; compact complete conversation turns "
+              "before retrying. The provider boundary does not truncate text.",
             pressure=pressure,
         )
     return prepared

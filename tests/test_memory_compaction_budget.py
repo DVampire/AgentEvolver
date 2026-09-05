@@ -5,15 +5,21 @@ budgets separators and records together instead of applying a per-record minimum
 silently expands the request beyond the configured ceiling.
 """
 
+import pytest
+
 from agentevolver.memory.default.tiered import TieredMemory
 
 
-def test_summary_item_packing_obeys_the_total_budget_for_many_records():
+def test_summary_refuses_to_omit_records_to_fit_the_budget():
     memory = TieredMemory(compact_input_tokens=128)
     items = [f"[source_seq={index}] " + ("x" * 300) for index in range(500)]
 
-    packed = memory._pack_summary_items(items)
+    with pytest.raises(ValueError, match="No history was omitted"):
+        memory._pack_summary_items(items)
+    assert len(items) == 500
 
-    assert len(packed) < len(items)
-    assert "complete unmodified sources remain in Trace" in packed[0]
-    assert len("\n".join(packed)) <= 128 * 4
+
+def test_summary_preserves_every_character_when_source_fits():
+    memory = TieredMemory(compact_input_tokens=128)
+    items = ["first\n完整内容", "second\nimportant middle\nlast"]
+    assert memory._pack_summary_items(items) == items

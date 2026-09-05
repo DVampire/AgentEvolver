@@ -47,18 +47,8 @@ from agentevolver.utils.file_utils import atomic_write_text
 
 _FLOW_LABEL_MAX = 80
 
-#: Cap on one remembered entry's detail. Smaller than a tool's own output limit, because
-#: memory holds a window of these and every one of them is rendered into every subsequent
-#: prompt — what a turn can afford to read once, a prompt cannot afford to carry forever.
+#: Legacy configuration default; exact recent records are no longer clipped.
 _RECORD_DETAIL_MAX = 8_000
-
-#: Share of that cap given to the head when an entry has to be cut.
-#:
-#: Head-only truncation loses whatever a producer appended last, and what the tool
-#: pipeline appends last is the spill locator — the path to the full output. Cutting it
-#: off leaves the agent holding an excerpt that says text was dropped and no longer says
-#: where it went, which is the exact failure the spill store exists to prevent.
-_RECORD_HEAD_SHARE = 0.8
 
 # MetaAgent subtask lifecycle event name → display status.
 _SUBTASK_STATUS_MAP: Dict[str, str] = {
@@ -230,10 +220,9 @@ class TieredMemory(Memory):
     recent_max: int = Field(default=30, description="Retention floor for direct/legacy compaction.")
     recent_fetch: int = Field(default=10, description="Recent records injected by get().")
     working_max: int = Field(default=10, description="Max working-memory summaries kept.")
-    #: Per-entry inline detail cap. Oversized exact details remain in Trace and memory stores
-    #: a source reference as a whole unit; it never splices a head and tail into a new fact.
+    #: Accepted for older configs; no longer clips or replaces exact recent details.
     record_detail_max: int = Field(default=_RECORD_DETAIL_MAX,
-                                   description="Max characters kept for one recent entry's detail.")
+                                   description="Legacy field; complete recent details are preserved.")
     working_fetch: int = Field(default=5, description="Working summaries injected by get().")
     compact_input_tokens: int = Field(
         default=60_000,
@@ -490,32 +479,7 @@ class TieredMemory(Memory):
     # ------------------------------------------------------------------
 
     def _append_recent(self, state: _SessionState, record: MemoryRecord) -> None:
-        # Bound the entry before it is stored. The window that holds these is small, but a
-        # single entry has no natural size, and a recorded tool result *is* whatever the
-        # tool returned: one `strings` call against a binary put 14,419,441 characters into
-        # this deque, and the whole window is rendered into every prompt afterwards, so the
-        # run then asked for 4.3 million tokens against a limit of 1,048,576 and died of
-        # consecutive 400s.
-        #
-        # The tools clip their own output too, which is where it matters most for what the
-        # agent reads. This is the backstop, so that no future tool — or a tool whose limit
-        # is raised — can make the prompt unsendable.
-        #
-        # Never manufacture a head+tail hybrid and then let later turns mistake it for
-        # the result. Trace is the exact source of truth; memory carries its locator.
-        if (
-            self.record_detail_max > 0
-            and record.detail
-            and len(record.detail) > self.record_detail_max
-        ):
-            record = record.model_copy(update={
-                "detail": (
-                    f"[Exact detail omitted inline as one complete unit: "
-                    f"original_chars={len(record.detail):,}; "
-                    f"source_seq={record.seq if record.seq is not None else 'unknown'}. "
-                    "Retrieve the corresponding Trace event before relying on it.]"
-                ),
-            })
+        # Only a validated checkpoint may replace old complete records.
         state.recent.append(record)
 
     async def compact(self, session_id: str, *, keep_steps: Optional[int] = None) -> bool:
@@ -757,7 +721,7 @@ class TieredMemory(Memory):
             )
 
     def _pack_summary_items(self, items: List[str]) -> List[str]:
-        """Bound a summary request without cutting through any source string."""
+        """Refuse an oversized summary source rather than silently skipping evidence."""
         if not items:
             return []
         # Four characters/token is intentionally conservative for code-heavy traces.
@@ -765,26 +729,10 @@ class TieredMemory(Memory):
         joined = "\n".join(items)
         if len(joined) <= budget:
             return items
-        notice = (
-            f"[{len(items)} source items exceed this compaction input budget; complete "
-            "unmodified sources remain in Trace. Recent whole items follow.]"
+        raise ValueError(
+            f"Complete summary source needs {len(joined)} characters; budget={budget}. "
+            "No history was omitted. Use a smaller complete-turn batch or a larger budget."
         )
-        packed: List[str] = []
-        used = len(notice)
-        # Recent evidence is most likely to describe the current state. Retain only
-        # complete items that fit; an individual oversized item is omitted as a whole.
-        for item in reversed(items):
-            cost = len(item) + 1
-            if used + cost > budget:
-                continue
-            packed.append(item)
-            used += cost
-        packed.reverse()
-        packed.insert(0, notice)
-        # Keep the invariant local: callers cannot accidentally add an oversized
-        # summarizer request if the allocation logic changes later.
-        assert len("\n".join(packed)) <= budget
-        return packed
 
     def _valid_checkpoint(
         self, text: str, source_items: List[str], existing: str,

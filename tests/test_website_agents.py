@@ -649,6 +649,31 @@ def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
     ]
 
 
+def test_website_demo_model_roster_matches_launcher_and_vision_catalog():
+    from mmengine import Config
+    from examples.run_website_evolution_demo import DEFAULT_USER_MODELS, DEFAULT_ACCEPTANCE_MODEL
+    from agentevolver.model.config import llm_hub_models
+
+    cfg = Config.fromfile(str(Path(__file__).resolve().parents[1] / "configs/website_evolution_demo.py"))
+    assert cfg.website_user_models == DEFAULT_USER_MODELS == [
+        "llm_hub/gpt-6-astra",
+        "llm_hub/claude-fable-5-1",
+        "llm_hub/deepseek-v4-flash-vision-exp",
+    ]
+    assert cfg.website_builder_agent.model_name == DEFAULT_USER_MODELS[0]
+    assert cfg.website_user_agent.model_name == DEFAULT_USER_MODELS[0]
+    assert cfg.browser_agent.model_name == DEFAULT_ACCEPTANCE_MODEL == "llm_hub/gpt-5.6-sol"
+    assert cfg.model_name == cfg.generate_agent.model_name == "llm_hub/claude-opus-5"
+    catalog = llm_hub_models(max_tokens=2048, default_temperature=0.0, default_timeout=30.0)
+    specs = {entry["model_name"]: entry for group in catalog.values() for entry in group}
+    assert all(specs[name].get("supports_vision", True) for name in DEFAULT_USER_MODELS)
+    vision = specs[DEFAULT_USER_MODELS[2]]
+    assert vision["reasoning"] == {"thinking": {"type": "enabled"}, "reasoning_effort": "high"}
+    assert vision["persisted_reasoning"]
+    assert not vision.get("native_compaction", False)
+    assert not specs["llm_hub/deepseek-v4-flash"]["supports_vision"]
+
+
 def test_website_builder_owns_product_engineering_directly():
     prompt = (
         Path(__file__).resolve().parents[1]

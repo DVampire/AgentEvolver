@@ -45,9 +45,9 @@ OPTIMIZATION_CYCLES = 5
 INITIAL_STEP_BUDGET = 36
 ITERATION_STEP_BUDGET = 30
 DEFAULT_USER_MODELS = [
-    "llm_hub/claude-opus-5",
-    "llm_hub/gpt-5.6-sol",
-    "llm_hub/gpt-5.6-luna",
+    "llm_hub/gpt-6-astra",
+    "llm_hub/claude-fable-5-1",
+    "llm_hub/deepseek-v4-flash-vision-exp",
 ]
 DEFAULT_ACCEPTANCE_MODEL = "llm_hub/gpt-5.6-sol"
 
@@ -443,9 +443,9 @@ def validate_local_artifacts(
     check_browser_only(acceptance, "browser_agent acceptance")
 
     expected_models = {
-        "website_builder_agent": "llm_hub/claude-opus-5",
+        "website_builder_agent": "llm_hub/gpt-6-astra",
         "browser_agent": DEFAULT_ACCEPTANCE_MODEL,
-        "website_user_agent": "llm_hub/claude-opus-5",
+        "website_user_agent": DEFAULT_USER_MODELS[0],
     }
     actual_models = {key: str(getattr(config, key).get("model_name")) for key in expected_models}
     if actual_models != expected_models:

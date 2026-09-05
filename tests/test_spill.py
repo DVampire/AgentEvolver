@@ -136,7 +136,7 @@ def test_small_results_are_untouched(spill_root, tmp_path):
 
 
 def test_an_oversized_result_is_referenced_without_splicing_its_text(spill_root, tmp_path):
-    """The exact result is stored once; the model receives its durable locator."""
+    """The model receives the exact result as well as its durable locator."""
     import re
     from pathlib import Path
 
@@ -144,9 +144,8 @@ def test_an_oversized_result_is_referenced_without_splicing_its_text(spill_root,
     resp = asyncio.run(manager(name="loud_tool", input={}, ctx=SimpleNamespace(id="c", extra={})))
 
     assert resp.success is True
-    assert len(resp.message) < OUTPUT_LIMIT * 2
-    assert "HEAD-MARKER" not in resp.message and "TAIL-MARKER" not in resp.message
-    assert "omitted inline as one complete unit" in resp.message
+    assert "HEAD-MARKER" in resp.message and "TAIL-MARKER" in resp.message
+    assert "omitted inline" not in resp.message
 
     # The locator is in the message, and what it points at is the whole thing.
     match = re.search(r"saved at `([^`]+)`", resp.message)
@@ -154,9 +153,10 @@ def test_an_oversized_result_is_referenced_without_splicing_its_text(spill_root,
     saved = Path(match.group(1)).read_text()
     assert len(saved) == OUTPUT_LIMIT * 3 + len("HEAD-MARKER") + len("TAIL-MARKER")
     assert "HEAD-MARKER" in saved and "TAIL-MARKER" in saved
+    assert resp.message.startswith(saved)
 
 
-def test_a_failed_spill_still_returns_the_excerpt(spill_root, tmp_path):
+def test_a_failed_spill_still_returns_the_complete_result(spill_root, tmp_path):
     """Filing the transcript failing is not the command failing."""
 
     class _Broken(LocalSpillStore):
@@ -173,5 +173,6 @@ def test_a_failed_spill_still_returns_the_excerpt(spill_root, tmp_path):
         spill.use_store(None)  # back to the default on the next call
 
     assert resp.success is True  # the tool did its job
-    assert "characters elided" in resp.message  # still bounded
+    assert len(resp.message) == OUTPUT_LIMIT * 3 + len("HEAD-MARKER") + len("TAIL-MARKER")
+    assert "characters elided" not in resp.message
     assert "saved at `" not in resp.message  # honest about having no locator

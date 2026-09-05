@@ -636,10 +636,8 @@ def test_clip_output_leaves_short_output_alone():
     assert clip_output("short") == "short"
 
 
-def test_clip_output_keeps_the_beginning_and_the_end():
-    """The head says what the command set out to do, the tail says how it ended — the
-    error, the summary, the exit status. The middle of an oversized dump is the least
-    informative part."""
+def test_legacy_clip_output_preserves_the_middle_too():
+    """Existing callers must no longer lose any part of a command result."""
     from agentevolver.tool.types import clip_output
 
     text = "HEAD-MARKER" + ("x" * 200_000) + "TAIL-MARKER"
@@ -647,21 +645,11 @@ def test_clip_output_keeps_the_beginning_and_the_end():
 
     assert clipped.startswith("HEAD-MARKER")
     assert clipped.endswith("TAIL-MARKER")
-    assert len(clipped) < 1_500
-    # And it says what is missing, so the agent narrows the command instead of wondering
-    # why the text stops.
-    assert "characters elided" in clipped
-    assert "Narrow the command" in clipped
+    assert clipped == text
 
 
-def test_bash_flood_is_clipped_by_the_pipeline(tmp_path):
-    """The bound is applied once, in the dispatch funnel, not in each tool.
-
-    The tool returns what it captured; ``ToolContextManager`` is what decides the
-    result is too large to show, spills it, and hands back the excerpt. Asserted
-    through the manager for that reason — a tool called directly is *expected* to
-    return its full output now.
-    """
+def test_bash_flood_is_preserved_by_the_pipeline(tmp_path):
+    """Archiving a result must not replace the model-visible observation."""
     from agentevolver.tool.types import OUTPUT_LIMIT
 
     config.workspace_root = str(tmp_path)
@@ -675,8 +663,7 @@ def test_bash_flood_is_clipped_by_the_pipeline(tmp_path):
     )
 
     assert resp.success is True
-    assert len(resp.message) < OUTPUT_LIMIT * 2
-    assert "omitted inline as one complete unit" in resp.message
+    assert "A" * 3_000_000 in resp.message
 
 
 def test_bash_clips_each_stream_separately(tmp_path):
@@ -691,10 +678,8 @@ def test_bash_clips_each_stream_separately(tmp_path):
     assert "THE REASON" in resp.message
 
 
-def test_memory_caps_one_entry_even_if_a_tool_does_not():
-    """The backstop. Memory holds a window of these and renders all of it into every
-    later prompt, so what a turn can afford to read once, a prompt cannot afford to
-    carry forever."""
+def test_memory_preserves_oversized_entries_until_explicit_compaction():
+    """The memory projection must not silently replace complete evidence."""
     from agentevolver.memory.default.tiered import _RECORD_DETAIL_MAX, MemoryRecord, TieredMemory
 
     class _State:
@@ -714,9 +699,7 @@ def test_memory_caps_one_entry_even_if_a_tool_does_not():
     )
 
     stored = state.recent[0].detail
-    assert len(stored) < _RECORD_DETAIL_MAX + 200
-    assert "Exact detail omitted inline as one complete unit" in stored
-    assert _RECORD_DETAIL_MAX < 32_000, "must be tighter than a single tool's own limit"
+    assert stored == "Z" * 14_419_441
 
 
 # --------------------------------------------------------------------------- #
@@ -899,6 +882,20 @@ def test_a_tty_command_reports_the_screen(tmp_path):
     )
     assert "a\nb" in resp.message
     assert "terminal 80x24" in resp.message
+
+
+def test_pty_capture_preserves_output_beyond_the_old_byte_limit(tmp_path):
+    import os
+    from agentevolver.tool.default.workspace.bash import _run_under_pty
+
+    output, code, timed_out = _run_under_pty(
+        "python3 -c \"print('A' * 140000); print('TAIL-IMPORTANT')\"",
+        str(tmp_path), dict(os.environ), 10, "",
+    )
+    assert code == 0 and not timed_out
+    transcript = output.split("[Complete PTY transcript]\n", 1)[1]
+    assert "A" * 140000 in transcript
+    assert "TAIL-IMPORTANT" in transcript
 
 
 def test_a_program_that_clears_on_exit_still_reports_what_it_drew():

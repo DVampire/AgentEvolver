@@ -1,6 +1,6 @@
 ---
 name: spill
-description: "Parks an oversized tool result on disk and hands the agent a locator plus a retrieval hint, so output too large to show is bounded rather than lost."
+description: "Archives a complete tool result and returns a retrieval locator."
 version: 1.0.0
 type: module
 category: infrastructure
@@ -9,7 +9,7 @@ metadata: {}
 ---
 # Spill
 
-Parks an oversized tool result on disk and hands the agent a locator plus a retrieval hint, so output too large to show is bounded rather than lost.
+Archives a complete tool result and returns a retrieval locator. Tool dispatch preserves the inline result, too.
 
 | Path | Responsibility |
 |---|---|
@@ -19,16 +19,10 @@ Parks an oversized tool result on disk and hands the agent a locator plus a retr
 
 ## Why it exists
 
-Bounding a huge result to an excerpt is necessary — a single `strings` call once
-returned 14.4 million characters, and every later turn then carried it — but an
-excerpt on its own **destroys** the part it drops. The agent is told the middle is
-missing and given no way to get it, so its only recourse is to re-run the command
-and be truncated again the same way.
-
-Spill separates the two decisions that were previously one. The excerpt still
-bounds what enters the prompt; the full text is written to a file first, and the
-excerpt carries its path. The agent narrows with `grep`/`read_file` against a file
-it already has instead of paying for the command twice.
+Large command results need a durable archive for audit and retrieval without rerunning
+the command. Archiving does not authorize clipping the inline result. Request pressure
+is handled by explicit conversation compaction, or a clear overflow failure when the
+complete input cannot fit. Prefer appropriately scoped queries before executing them.
 
 ## The contract
 
@@ -40,7 +34,7 @@ back. It raises on a genuine storage failure.
 logs and returns `None`. That asymmetry is deliberate. The caller is already
 holding a result the tool produced successfully, and a full disk is a reason to
 lose the transcript, not a reason to report the command as failed. The tool
-pipeline keeps its inline excerpt when the save returns `None`.
+pipeline keeps its complete inline result when the save returns `None`.
 
 The store owns storage only — not retention, not the decision about when a result
 is too big, and not the rewriting of the result. Those live with the caller, which

@@ -1,29 +1,18 @@
-"""Deterministic request-pressure accounting and tool-result pruning.
-
-This is a last-mile guard at the provider boundary, not conversation compaction.  The
-append-only Trace retains the complete tool observation; only an old ``ToolMessage`` in
-the effective model request may be replaced with a head/tail excerpt.  User, system and
-assistant messages are never rewritten here because doing so would change instructions
-or sever tool-call structure rather than merely reducing an already-recorded result.
-"""
+"""Read-only request accounting. Only conversation compaction may replace history."""
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 import math
 from dataclasses import dataclass
 from threading import RLock
 from typing import Any, Callable, Iterable, Optional
 
-from agentevolver.message.types import ToolMessage
-
-
-#: 2 adds ``over_capacity`` — whether the prepared request still exceeds what the model
-#: can accept, as opposed to ``unresolved``, which only says pruning did not reach the
-#: trigger. A reader of version 1 records cannot infer it: a request may sit above the
-#: trigger and still fit.
-REQUEST_PRESSURE_VERSION = 2
-ESTIMATE_METHOD = "canonical_json_utf8_bytes_div_4"
+#: Version 3 never omits text and accounts for visual inputs separately from base64.
+REQUEST_PRESSURE_VERSION = 3
+ESTIMATE_METHOD = "canonical_json_utf8_bytes_div_4+visual_budget"
 #: What a model is assumed to accept when its spec does not say. Every frontier model
 #: this repository calls is at or above 1M, and the cost of the two mistakes is not
 #: symmetric: too low is a wall we invented — the request never leaves, and history is
@@ -33,7 +22,6 @@ ESTIMATE_METHOD = "canonical_json_utf8_bytes_div_4"
 DEFAULT_CONTEXT_WINDOW = 1_000_000
 DEFAULT_PRUNE_RATIO = 0.85
 DEFAULT_TARGET_RATIO = 0.75
-MIN_TOOL_RESULT_CHARS = 512
 
 
 class ContextOverflowError(RuntimeError):
@@ -71,6 +59,57 @@ def _canonical_json(value: Any) -> str:
     )
 
 
+def _image_budget(part: dict[str, Any]) -> int:
+    """Portable estimate, NOT a provider's billed image count.
+
+    Use unresized 32px patches with a safety allowance. Providers differ in resizing,
+    multipliers and detail handling; actual usage remains authoritative. No URL fetches
+    or image transformations occur here. A route can register its own image counter.
+    """
+    image = part.get("image_url", part.get("source", {}))
+    url = image.get("url", "") if isinstance(image, dict) else image
+    data = image.get("data", "") if isinstance(image, dict) else ""
+    if isinstance(url, str) and url.startswith("data:image/") and ";base64," in url:
+        data = url.split(",", 1)[1]
+    if data:
+        try:
+            from PIL import Image
+        except ImportError:
+            return 4096
+        try:
+            with Image.open(io.BytesIO(base64.b64decode(data, validate=True))) as image_file:
+                width, height = image_file.size
+            return 256 + 2 * math.ceil(width / 32) * math.ceil(height / 32)
+        except (TypeError, ValueError, OSError, Image.DecompressionBombError):
+            pass
+    # Remote/opaque/malformed images have unknown dimensions. Never charge their URL
+    # or binary encoding as language tokens, nor pretend they cost zero.
+    return 4096
+
+
+def _accounting(value: Any, count_image: Callable[[dict[str, Any]], int] = _image_budget):
+    """Build an accounting copy; never alter the real messages or text strings."""
+    image_tokens, image_count = 0, 0
+
+    def visit(item: Any) -> Any:
+        nonlocal image_tokens, image_count
+        if isinstance(item, dict):
+            kind = item.get("type")
+            if isinstance(kind, str) and kind in {"image_url", "input_image", "image"} and any(
+                key in item for key in ("image_url", "source", "file_id")
+            ):
+                image_count += 1
+                image_tokens += max(1, int(count_image(item)))
+                return {"type": item["type"]}
+            return {key: visit(entry) for key, entry in item.items()}
+        if isinstance(item, list):
+            return [visit(entry) for entry in item]
+        return item
+
+    text = _canonical_json(visit(_jsonable(value)))
+    return text, image_tokens, image_count
+
+
 @dataclass(frozen=True)
 class RequestTokenEstimator:
     """Tokenizer-backed counter plus an explicit accuracy statement."""
@@ -79,9 +118,11 @@ class RequestTokenEstimator:
     method: str
     tokenizer_exact: bool
     provider_wire_exact: bool = False
+    count_image: Optional[Callable[[dict[str, Any]], int]] = None
 
     def count(self, value: Any) -> int:
-        return max(1, int(self.count_text(_canonical_json(value))))
+        text, image_tokens, _ = _accounting(value, self.count_image or _image_budget)
+        return max(1, int(self.count_text(text)) + image_tokens)
 
 
 class RequestTokenEstimatorRegistrationError(RuntimeError):
@@ -158,42 +199,13 @@ def resolve_request_token_estimator(
 
 
 def estimate_tokens(value: Any) -> int:
-    """Stable conservative approximation used when no provider tokenizer is available."""
-    encoded = _canonical_json(value).encode("utf-8")
-    return max(1, math.ceil(len(encoded) / 4))
+    """Approximate text plus visual tokens, independent of image encoding size."""
+    text, image_tokens, _ = _accounting(value)
+    return max(1, math.ceil(len(text.encode("utf-8")) / 4) + image_tokens)
 
 
 def _count(value: Any, estimator: Optional[RequestTokenEstimator]) -> int:
     return estimator.count(value) if estimator is not None else estimate_tokens(value)
-
-
-def _tool_content(message: Any) -> Optional[str]:
-    if isinstance(message, ToolMessage):
-        return message.content
-    if isinstance(message, dict) and message.get("role") == "tool":
-        content = message.get("content")
-        return content if isinstance(content, str) else None
-    return None
-
-
-def _replace_tool_content(message: Any, content: str) -> Any:
-    if isinstance(message, ToolMessage):
-        return message.model_copy(update={"content": content}, deep=True)
-    copied = dict(message)
-    copied["content"] = content
-    return copied
-
-
-def _excerpt(content: str, keep_chars: int) -> str:
-    """Replace a pressured result with a whole-result reference, never a text slice."""
-    keep_chars = max(MIN_TOOL_RESULT_CHARS, int(keep_chars))
-    if len(content) <= keep_chars:
-        return content
-    return (
-        f"[AgentEvolver request-pressure omission: original_chars={len(content)}; "
-        "the complete, unmodified tool result remains in Trace. Retrieve that result "
-        "or run a narrower query before relying on its contents.]"
-    )
 
 
 #: What each provider says when the request exceeded *its* window. Matched as lowercase
@@ -216,7 +228,7 @@ _LENGTH_REJECTION_MARKERS = (
 def provider_rejected_for_length(error: BaseException) -> bool:
     """Whether ``error`` is a provider saying the request exceeded its context window.
 
-    The window we configure is a guess used to decide when to excerpt tool results early.
+    The window we configure is a guess used to detect excessive request pressure.
     The provider's own limit is the only authority, and it states it in a rejection. Read
     here, that rejection becomes the same recoverable condition as a locally-detected
     overflow: the run folds history and rebuilds, rather than retrying an identical
@@ -248,47 +260,25 @@ def prepare_messages(
     target_ratio: float = DEFAULT_TARGET_RATIO,
     token_estimator: Optional[RequestTokenEstimator] = None,
 ) -> PreparedRequest:
-    """Prepare one provider request, pruning oldest tool results only when pressured."""
-    original = list(messages)
-    prepared = list(original)
+    """Measure one request without omitting anything, even when over capacity.
+
+    Legacy pruning arguments/metrics remain readable for snapshot compatibility;
+    callers recover an overflow by explicitly compacting closed conversation turns.
+    """
+    prepared = list(messages)
     tool_list = list(tools or [])
     context_window = max(1, int(context_window))
     reserved = max(0, min(int(reserved_output_tokens), context_window - 1))
     input_capacity = max(1, context_window - reserved)
     trigger = max(1, int(input_capacity * float(prune_ratio)))
-    target = max(1, int(input_capacity * min(float(target_ratio), float(prune_ratio))))
 
     envelope = {"messages": prepared, "tools": tool_list,
                 "response_format": response_format}
     before = _count(envelope, token_estimator)
-    pruned_indices: list[int] = []
-    removed_chars = 0
-
-    if before > trigger:
-        # Oldest first: recent observations are normally the ones the pending decision
-        # depends on.  Re-estimation after every replacement keeps the algorithm simple,
-        # deterministic, and correct for multibyte content.
-        for index, message in enumerate(original):
-            content = _tool_content(message)
-            if content is None or len(content) <= MIN_TOOL_RESULT_CHARS:
-                continue
-            current = _count({"messages": prepared, "tools": tool_list,
-                              "response_format": response_format}, token_estimator)
-            if current <= target:
-                break
-            # Token-to-character conversion is only a proposal for the excerpt size.
-            # The loop always re-counts the resulting request with the selected meter.
-            excess_chars = max(0, (current - target) * 4)
-            keep = max(MIN_TOOL_RESULT_CHARS, len(content) - excess_chars)
-            replacement = _excerpt(content, keep)
-            if replacement == content:
-                continue
-            prepared[index] = _replace_tool_content(message, replacement)
-            pruned_indices.append(index)
-            removed_chars += len(content) - len(replacement)
-
-    after = _count({"messages": prepared, "tools": tool_list,
-                    "response_format": response_format}, token_estimator)
+    after = before
+    _, image_tokens, image_count = _accounting(
+        envelope, (token_estimator.count_image if token_estimator else None) or _image_budget,
+    )
     context_layers: dict[str, dict[str, int]] = {}
     for layer in ("fixed", "checkpoint", "recent", "live"):
         layer_messages = [
@@ -303,7 +293,13 @@ def prepare_messages(
         "schema_version": REQUEST_PRESSURE_VERSION,
         "estimate_method": token_estimator.method if token_estimator else ESTIMATE_METHOD,
         "tokenizer_exact": bool(token_estimator and token_estimator.tokenizer_exact),
-        "provider_wire_exact": bool(token_estimator and token_estimator.provider_wire_exact),
+        "provider_wire_exact": bool(token_estimator and token_estimator.provider_wire_exact
+                                    and (not image_count or token_estimator.count_image)),
+        "image_count": image_count,
+        "image_tokens_estimated": image_tokens,
+        "image_estimate_method": "registered" if token_estimator and token_estimator.count_image
+                                 else "unresized_32px_patches_x2_plus_256;unknown=4096",
+        "text_policy": "preserve",
         "context_window": context_window,
         "reserved_output_tokens": reserved,
         "input_capacity_tokens": input_capacity,
@@ -314,18 +310,12 @@ def prepare_messages(
         "pressure_ratio_before": before / input_capacity,
         "pressure_ratio_after": after / input_capacity,
         "triggered": before > trigger,
-        "pruned_message_indices": pruned_indices,
-        "removed_chars": removed_chars,
+        "pruned_message_indices": [],
+        "removed_chars": 0,
         "context_layers": context_layers,
-        # Pruning ran and did not get back under the trigger. Observability, not a
-        # verdict: a request between the trigger and the capacity is large but valid.
+        # Above the warning threshold may still fit. No text is rewritten here.
         "unresolved": after > trigger,
-        # The verdict. Only tool results may be reduced here — rewriting user, system or
-        # assistant messages would change instructions or sever tool-call structure — so a
-        # history that is mostly reasoning and instructions can exceed the window with
-        # nothing left that this layer is allowed to shrink. Reducing *that* is
-        # conversation compaction's job, one level up, and this flag is how the boundary
-        # says it could not do the job alone.
+        # Explicit history compaction belongs to the conversation layer.
         "over_capacity": after > input_capacity,
     }
     return PreparedRequest(messages=prepared, pressure=pressure)
