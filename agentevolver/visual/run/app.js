@@ -41,20 +41,23 @@ function render(data) {
   const metrics = [['Uncached input', number(u.input_tokens)], ['Cache reads', number(u.cache_read_tokens)], ['Cache writes', number(u.cache_write_tokens)], ['Output tokens', number(u.output_tokens)], ['Cache hit ratio', u.cache_hit_ratio == null ? '—' : (u.cache_hit_ratio * 100).toFixed(1) + '%']];
   $('usage').replaceChildren(...metrics.map(([k, v]) => { const el = node('div', null, 'metric'); el.append(node('span', k), node('strong', v)); return el; }));
   $('deployments').replaceChildren(...data.deployments.map(d => {
-    const el = node('article', null, 'slot'); el.append(node('h3', d.site_id, 'agent-name'), node('p', (d.status || 'unknown') + ' · release ' + (d.release_number || '—'), 'muted'));
+    const buildLabel = stage => stage === 'preview' ? 'Preview build' : stage === 'published' ? 'Published build' : 'Deployment build';
+    const el = node('article', null, 'slot'); el.append(node('h3', d.site_id, 'agent-name'), node('p', (d.status || 'unknown') + (d.release_number ? ' · ' + buildLabel(d.stage) + ' ' + d.release_number : ''), 'muted'));
     if (d.url) el.append(link('Open website ↗', d.url), node('p', d.url, 'muted'));
     const deployed = d.deployed_at ? new Date(d.deployed_at) : null;
     el.append(node('p', 'Deployed · ' + (deployed && !Number.isNaN(deployed.getTime()) ? dateFormat.format(deployed) : 'Not recorded'), 'muted'));
     if (d.source_revision) el.append(node('small', 'Revision ' + d.source_revision.slice(0, 12), 'muted'));
     if (d.versions?.length) {
-      const history = node('details'); history.append(node('summary', 'Version history · ' + d.versions.length));
+      const history = node('details'); history.append(node('summary', 'This run’s version history · ' + d.versions.length));
       [...d.versions].reverse().forEach(v => {
         const row = node('p', null, 'entry');
-        row.append(v.url ? link('r' + v.number + ' ↗', v.url) : node('span', 'r' + v.number));
+        const label = buildLabel(v.stage) + ' ' + v.number;
+        row.append(v.url ? link(label + ' ↗', v.url) : node('span', label));
         row.append(node('small', v.deployed_at || 'Time not recorded', 'muted'));
         history.append(row);
       });
       el.append(history);
+      el.append(node('small', 'Build numbers are deployment versions, not feedback rounds.', 'muted'));
     }
     return el;
   }));

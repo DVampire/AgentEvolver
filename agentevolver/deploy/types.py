@@ -98,6 +98,8 @@ class DeployRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     site_id: str = Field(description="Stable id for this site; also the sandbox reuse key.")
+    owner_session_id: Optional[str] = Field(default=None, description="Originating run; supplied by the caller, not inferred from the site name.")
+    stage: str = Field(default="published", description="Deployment stage: preview or published; independent of product iteration numbers.")
     runtime: str = Field(default="static", description="Deployer profile: static | node | python | custom | llm.")
     source_dir: Optional[str] = Field(default=None, description="Host directory uploaded into the container.")
     git_url: Optional[str] = Field(default=None, description="Git repo cloned inside the container (needs network).")

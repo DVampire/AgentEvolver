@@ -254,7 +254,10 @@ async def bootstrap_subscribers(
                 "For every "
                 "deployment.ready event, open only its exact URL, pursue your own "
                 "personal goals through the visible UI, and return concise grounded "
-                "needs, preferences, successful outcomes, and blockers.\n\n"
+                "needs, preferences, successful outcomes, and blockers. In co-design, "
+                "express a personally meaningful desired experience, not only defect reports. "
+                "On later visits, try prior requested changes and state what is still unmet; "
+                "distinguish observations from new aspirations.\n\n"
                 "--- private user context (assigned only to you) ---\n"
                 f"{private_context}"
             ),
@@ -281,10 +284,19 @@ async def bootstrap_subscribers(
         task=(
             "Act as the independent release acceptance browser. For every "
             "deployment.ready event, test only the exact deployed URL against the "
-            "release requirements below and event acceptance scope. Verify visible user "
-            "journeys and native browser diagnostics. The first non-empty line of your "
+            "release requirements below. Use a bounded, risk-based scope: public entry, "
+            "one representative complete primary journey, and regressions suggested by "
+            "the release changes or native browser diagnostics. Use prior verified evidence "
+            "for unchanged behavior only when its source identity and scope are known; "
+            "otherwise verify it. The brief defines product obligations, not an instruction "
+            "to exhaust every optional route, setting or performance experiment on every visit. "
+            "State your scope, executed checks and untested limitations. Stop when that scope "
+            "has a verdict or a reproducible blocker; do not use the whole budget on extra polish. "
+            "The first non-empty line of your "
             "final result must be exactly `VERDICT: PASS` only when every required journey "
-            "passes, otherwise `VERDICT: FAIL`; follow it with grounded evidence.\n\n"
+            "in that scope passes, otherwise `VERDICT: FAIL`; follow it with grounded evidence. "
+            "A known failure of a product requirement cannot be excluded to obtain PASS, "
+            "and this technical verdict is not user satisfaction or exhaustive certification.\n\n"
             "--- release requirements ---\n"
             f"{acceptance_requirements}"
         ),
@@ -555,10 +567,12 @@ class WebsiteBuilderAgent(MetaAgent):
                 + ", ".join(failed)
             )
         acceptance_id = str(contract.get("acceptance_job_id") or "")
+        acceptance_records = DeployTool._release_acceptance(contract, release_turn)
         if acceptance_id:
             acceptance = kernel.get(acceptance_id)
+            verdict_turn = int((acceptance_records.get(acceptance_id) or {}).get("turn") or 0)
             acceptance_result = (
-                acceptance.turn_results.get(release_turn, "")
+                acceptance.turn_results.get(verdict_turn, "")
                 if acceptance is not None
                 else ""
             )
@@ -575,7 +589,9 @@ class WebsiteBuilderAgent(MetaAgent):
         uncollected = [
             str(job_id)
             for job_id in contract.get("subscriber_job_ids") or []
-            if int(collected.get(str(job_id)) or 0) < len(history)
+            if int(collected.get(str(job_id)) or 0) < int(
+                (acceptance_records.get(str(job_id)) or {}).get("turn") or 1
+            )
         ]
         if uncollected:
             return f"release {len(history)} feedback has not been collected from: " + ", ".join(

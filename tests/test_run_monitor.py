@@ -99,10 +99,10 @@ def test_product_and_history_links_always_use_monitor_origin(monitor, tmp_path, 
     sites = tmp_path / "sites.json"
     sites.write_text(json.dumps({
         "echo": {"site_id": "echo", "url": "http://localhost:44901",
-                 "versions": [{"number": 1}, {"number": 2}],
+                 "versions": [{"number": 1, "owner_session_id": "s"}, {"number": 2, "owner_session_id": "s"}],
                  "request": {"source_dir": monitor.state["workspace"]}},
         "preview": {"site_id": "preview", "url": None,
-                    "versions": [{"number": 1}],
+                    "versions": [{"number": 1, "owner_session_id": "s"}],
                     "request": {"source_dir": monitor.state["workspace"]}},
     }))
     monitor.state.update(deploy_registry=str(sites), gateway_base=gateway_base)
@@ -118,6 +118,60 @@ def test_product_and_history_links_always_use_monitor_origin(monitor, tmp_path, 
         # An already-running launcher does not know fields added by a repair worker.
         monitor.state.pop("gateway_base", None)
         monitor.publish()
+
+
+def test_status_lookup_does_not_claim_another_runs_site(monitor, tmp_path):
+    sites = tmp_path / "sites.json"
+    sites.write_text(json.dumps({"echo": {
+        "site_id": "echo", "request": {"source_dir": str(tmp_path / "previous")},
+        "url": "http://localhost:3000", "versions": [{"number": 1}],
+    }}))
+    monitor.state["deploy_registry"] = str(sites)
+    monitor.publish()
+    append(monitor, [dict(event_type="tool_start", action_name="deploy_tool",
+                         input={"action": "get", "site_id": "echo"})])
+    assert RunView(monitor.path).snapshot()["deployments"] == []
+
+
+def test_reused_site_preserves_only_this_runs_pinned_history(monitor, tmp_path):
+    sites = tmp_path / "sites.json"
+    sites.write_text(json.dumps({"echo": {
+        "site_id": "echo", "status": "running", "url": "http://localhost:3000",
+        "release_number": 3,
+        "request": {"owner_session_id": "next-run", "source_dir": monitor.state["workspace"]},
+        "versions": [
+            {"number": 1, "owner_session_id": "older-run"},
+            {"number": 2, "owner_session_id": "s", "stage": "published"},
+            {"number": 3, "owner_session_id": "next-run"},
+        ],
+    }}))
+    monitor.state["deploy_registry"] = str(sites)
+    monitor.publish()
+    row, = RunView(monitor.path).snapshot()["deployments"]
+    assert row["status"] == "archived"
+    assert row["url"] is None
+    assert "release_number" not in row
+    assert [v["number"] for v in row["versions"]] == [2]
+    assert row["versions"][0]["url"] == "/s/echo--r2/"
+
+
+def test_inline_preview_ownership_and_legacy_version_filter(monitor, tmp_path):
+    sites = tmp_path / "sites.json"
+    sites.write_text(json.dumps({"preview--r4": {
+        "site_id": "preview--r4", "request": {"owner_session_id": "s"},
+    }, "preview": {
+        "site_id": "preview", "request": {"owner_session_id": "s", "stage": "preview"},
+        "versions": [{"number": 1, "deployed_at": "2000-01-01T00:00:00+00:00"},
+                     {"number": 2},
+                     {"number": 3, "deployed_at": monitor.state["started_at"]},
+                     {"number": 4, "owner_session_id": "s", "stage": "preview"}],
+    }}))
+    monitor.state["deploy_registry"] = str(sites)
+    monitor.publish()
+    row, = RunView(monitor.path).snapshot()["deployments"]
+    assert row["stage"] == "preview"
+    assert [v["number"] for v in row["versions"]] == [3, 4]
+    assert all(v["stage"] == "preview" for v in row["versions"])
 
 
 def test_request_allowlist_and_symlinks(monitor, tmp_path):

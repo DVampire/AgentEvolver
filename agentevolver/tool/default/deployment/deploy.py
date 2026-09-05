@@ -205,7 +205,7 @@ class DeployTool(Tool):
         collected = dict(contract.get("collected_turns") or {})
         unread = [
             job_id for job_id in subscribers
-            if int(collected.get(job_id) or 0) < 1
+            if int(collected.get(job_id) or 0) < int((acceptance.get(job_id) or {}).get("turn") or 1)
         ]
         if unread:
             return (
@@ -250,6 +250,10 @@ class DeployTool(Tool):
         release_number = len(history)
         acceptance = DeployTool._release_acceptance(contract, release_number)
         previous = acceptance.get(str(job_id)) or {}
+        floor = (contract.get("release_turn_floor", {}).get(str(release_number)) or {}).get(str(job_id), 0)
+        # Re-reading an older result cannot acknowledge a newer release or undo a retry.
+        if int(turn) <= int(floor) or int(turn) <= int(previous.get("turn") or 0):
+            return str(previous.get("status") or "pending")
         acceptance[str(job_id)] = {
             "status": "accepted" if success else "failed",
             "attempts": int(previous.get("attempts") or 0) + 1,
@@ -305,6 +309,10 @@ class DeployTool(Tool):
             history = []
             extra["deployment_release_history"] = history
         release_number = len(history) + 1
+        contract.setdefault("release_turn_floor", {})[str(release_number)] = {
+            str(job_id): int(getattr(kernel.get(str(job_id)), "turns", 0))
+            for job_id in contract.get("subscriber_job_ids") or []
+        }
         # A task's feedback round is not the persistent site's artifact version.
         payload = {
             "release_number": release_number,
@@ -389,8 +397,12 @@ class DeployTool(Tool):
                         message=f"Deployment blocked: {blocker}",
                     )
                 requested_site_id = site_id
+                ctx = kwargs.get("ctx")
+                extra = getattr(ctx, "extra", None) or {}
                 req = DeployRequest(
                     site_id=site_id,
+                    owner_session_id=extra.get("root_session_id") or getattr(ctx, "id", None),
+                    stage="preview" if action == "preview" else "published",
                     runtime=runtime,
                     source_dir=source_dir,
                     git_url=git_url,
@@ -403,7 +415,6 @@ class DeployTool(Tool):
                     overrides=overrides or {},
                 )
                 revision = deployment_manager.source_revision(req)
-                ctx = kwargs.get("ctx")
                 if action == "preview":
                     req.site_id = self._preview_site_id(site_id, ctx)
                 else:

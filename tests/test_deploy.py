@@ -638,6 +638,29 @@ def test_the_registry_survives_a_restart(manager, tmp_path):
     assert reloaded._sites["a"].deployed_at == "2026-09-05T02:00:00+00:00"
 
 
+def test_archived_version_keeps_run_and_stage(manager, tmp_path):
+    from pathlib import Path
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "index.html").write_text("<p>Original</p>")
+    request = DeployRequest(site_id="a", source_dir=str(source),
+                            owner_session_id="run-one", stage="preview")
+    revision = manager.source_revision(request)
+    manager._archive_release("a", 1, str(source))
+    record = SiteRecord(site_id="a", runtime="static", release_number=1,
+                        source_revision=revision, request=request.model_dump())
+    manager._record_version(record)
+    assert record.versions[0]["owner_session_id"] == "run-one"
+    assert record.versions[0]["stage"] == "preview"
+    request.owner_session_id = "run-two"
+    request.stage = "published"
+    assert manager.source_revision(request) == revision
+    assert record.versions[0]["owner_session_id"] == "run-one"
+    import json
+    metadata = json.loads(Path(manager._version_metadata("a", 1)).read_text())
+    assert metadata["owner_session_id"] == "run-one"
+
+
 def test_a_corrupt_registry_degrades_to_empty_rather_than_crashing(manager, tmp_path):
     """A bad registry must not stop the framework from starting.
 

@@ -68,7 +68,7 @@ class TraceReader:
             stat = path.stat()
             item = self.files.get(path)
             if not item or item["inode"] != stat.st_ino or stat.st_size < item["offset"]:
-                item = dict(inode=stat.st_ino, offset=0, agents={}, events=deque(maxlen=100), sites=set())
+                item = dict(inode=stat.st_ino, offset=0, agents={}, events=deque(maxlen=100))
                 self.files[path] = item
             with path.open("rb") as stream:
                 stream.seek(item["offset"])
@@ -110,10 +110,6 @@ class TraceReader:
         # Only names and outcomes, never tool arguments, prompts, or provider state.
         item["events"].append(dict(timestamp=event.get("timestamp"), agent=name, type=typ,
                                    action=event.get("action_name"), success=event.get("success")))
-        if typ == "tool_start" and event.get("action_name") == "deploy_tool":
-            site = (event.get("input") or {}).get("site_id")
-            if isinstance(site, str):
-                item["sites"].add(site)
 
 
 class RunView:
@@ -131,10 +127,8 @@ class RunView:
             chunks = self.reader.update(log / "trace")
             agents = {}
             events = []
-            sites = set()
             for chunk in chunks:
                 events.extend(chunk["events"])
-                sites.update(chunk["sites"])
                 for key, row in chunk["agents"].items():
                     if key not in agents:
                         agents[key] = {**row, "usage": dict(row["usage"])}
@@ -163,19 +157,40 @@ class RunView:
             registry = read_json(state.get("deploy_registry", ""), {})
             deployments = []
             for site_id, record in registry.items():
-                source = (record.get("request") or {}).get("source_dir")
-                belongs = source and Path(source).resolve().is_relative_to(Path(state["workspace"]).resolve())
-                if site_id not in sites and not belongs:
-                    continue
+                if re.search(r"--r\d+$", site_id):
+                    continue  # On-demand archive servers are listed under their parent.
+                request = record.get("request") or {}
+                source = request.get("source_dir")
+                owner = request.get("owner_session_id")
+                belongs = (owner == state.get("session_id") if owner else
+                           bool(source and Path(source).resolve().is_relative_to(Path(state["workspace"]).resolve())))
+                # A status lookup is not ownership. Pin run identity into new archives;
+                # legacy history is attributable only with source AND timestamp evidence.
+                def owns_version(version):
+                    owner = version.get("owner_session_id")
+                    if owner:
+                        return owner == state.get("session_id")
+                    try:
+                        return bool(belongs and datetime.fromisoformat(version["deployed_at"]) >=
+                                    datetime.fromisoformat(state["started_at"]))
+                    except (KeyError, ValueError, TypeError):
+                        return False
                 # Browser-facing links use this monitor's gateway origin. Never fall
                 # back to a backend port when an older launcher republishes its state.
                 route = f"/s/{quote(site_id, safe='')}"
-                public = route + "/" if record.get("url") else None
+                public = route + "/" if belongs and record.get("url") else None
                 versions = [{"number": v.get("number"), "deployed_at": v.get("deployed_at"),
                              "source_revision": v.get("source_revision"),
+                             "stage": v.get("stage") or request.get("stage") or ("preview" if "--preview-" in site_id else "published"),
                              "url": f"{route}--r{int(v['number'])}/"}
-                            for v in record.get("versions", []) if isinstance(v.get("number"), int)]
-                deployments.append({**{k: record.get(k) for k in ("site_id", "status", "release_number", "source_revision", "created_at", "deployed_at", "updated_at")}, "url": public, "versions": versions})
+                            for v in record.get("versions", []) if isinstance(v.get("number"), int) and owns_version(v)]
+                if not belongs and not versions:
+                    continue
+                row = {k: record.get(k) for k in ("site_id", "status", "release_number", "source_revision", "created_at", "deployed_at", "updated_at")}
+                if not belongs:
+                    row = dict(site_id=site_id, status="archived")
+                deployments.append({**row, "url": public, "versions": versions,
+                                    "stage": request.get("stage") if belongs else None})
             manifest = read_json(state.get("extension_manifest", ""), {})
             components = [{k: c.get(k) for k in ("module", "name", "version")} for c in manifest.get("components", [])]
             requests = sorted((log / "model_requests").glob("*/*.html"), key=lambda p: p.stat().st_mtime, reverse=True)[:30]

@@ -41,6 +41,8 @@ def _ctx(*, subscribers=("sub-a", "sub-b"), releases=1, contract_extra=None):
 
 
 def _accept(ctx, job_id, *, success, turn):
+    # The real caller records a complete output read before recording its verdict.
+    ctx.extra["website_runtime_contract"]["collected_turns"][job_id] = turn
     return DeployTool.record_acceptance(ctx, job_id, success=success, turn=turn)
 
 
@@ -113,6 +115,15 @@ def test_no_release_yet_blocks_nothing():
     assert DeployTool._previous_release_blocker(ctx) == ""
 
 
+def test_old_result_cannot_acknowledge_new_release_or_overwrite_retry():
+    ctx = _ctx(contract_extra={"release_turn_floor": {"1": {"sub-a": 2}}})
+    assert _accept(ctx, "sub-a", success=True, turn=2) == "pending"
+    assert DeployTool._acceptance_state(ctx.extra["website_runtime_contract"], 1, "sub-a") == "pending"
+    assert _accept(ctx, "sub-a", success=True, turn=4) == "accepted"
+    assert _accept(ctx, "sub-a", success=False, turn=3) == "accepted"
+    assert ctx.extra["website_runtime_contract"]["release_acceptance"]["1"]["sub-a"]["turn"] == 4
+
+
 @pytest.mark.asyncio
 async def test_feedback_round_does_not_overwrite_artifact_version(monkeypatch):
     from agentevolver.deploy.types import SiteRecord
@@ -122,8 +133,11 @@ async def test_feedback_round_does_not_overwrite_artifact_version(monkeypatch):
         return 3, "deployment.ready", SimpleNamespace(id="event-1")
 
     monkeypatch.setattr(kernel, "publish_scoped", publish)
+    monkeypatch.setattr(kernel, "get", lambda pid: SimpleNamespace(turns=3))
     monkeypatch.setattr(DeployTool, "_access_urls", staticmethod(lambda rec: {}))
     record = SiteRecord(site_id="echo-ark", runtime="static", release_number=7)
-    receipt = await DeployTool._publish_ready(record, action="deploy", ctx=_ctx(releases=0))
+    ctx = _ctx(releases=0)
+    receipt = await DeployTool._publish_ready(record, action="deploy", ctx=ctx)
     assert receipt["release_number"] == 1
     assert receipt["version_number"] == record.release_number == 7
+    assert ctx.extra["website_runtime_contract"]["release_turn_floor"]["1"] == {"sub-a": 3, "sub-b": 3}

@@ -153,6 +153,9 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
         )
         assert kwargs.get("files") is None
     assert "Public product requirement." in calls[3][1]["task"]
+    assert "bounded, risk-based scope" in calls[3][1]["task"]
+    assert "cannot be excluded to obtain PASS" in calls[3][1]["task"]
+    assert all("prior requested changes" in kwargs["task"] for _, kwargs in calls[:3])
     assert "Private user" not in calls[3][1]["task"]
     assert contract["subscriber_job_ids"] == ["job-1", "job-2", "job-3", "job-4"]
     assert contract["collected_turns"] == {}
@@ -532,6 +535,12 @@ async def test_builder_completion_requires_release_feedback_collection(monkeypat
 
     acceptance.turn_results[1] = "VERDICT: FAIL\nCheckout is broken."
     assert "did not pass" in await builder.completion_blocker(ctx)
+    # Turn 3 is a retry about release 1, not release 3.
+    acceptance.turn_results[3] = "VERDICT: PASS\nScoped retry passed."
+    contract["release_acceptance"]["1"]["acceptance"]["turn"] = 3
+    assert "not been collected" in await builder.completion_blocker(ctx)
+    contract["collected_turns"]["acceptance"] = 3
+    assert await builder.completion_blocker(ctx) is None
 
 
 @pytest.mark.asyncio
@@ -775,3 +784,16 @@ def test_website_prompts_do_not_encode_one_demo_protocol():
         "preference_ledger.json",
     ):
         assert fixed_demo_term not in text
+
+
+def test_codesign_closes_commitments_without_forcing_innovation():
+    prompts = Path(__file__).resolve().parents[1] / "agentevolver/prompt/default"
+    builder = (prompts / "website_builder_agent.html").read_text()
+    user = (prompts / "website_user_agent.html").read_text()
+    assert '"Accepted" means selected for this iteration' in builder
+    assert "a condition for reconsideration" in builder
+    assert "Reduce implementation breadth, not the idea's essential value" in builder
+    assert "implemented, technically verified and user-confirmed as separate states" in builder
+    assert "Do not implement every suggestion" in builder
+    assert "new version number or a cosmetic substitute" in user
+    assert "Missing required evidence remains unverified" in builder

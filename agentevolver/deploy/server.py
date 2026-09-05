@@ -259,6 +259,8 @@ class DeploymentManagerServer(BaseModel):
             return
         entry = dict(number=record.release_number, source_revision=record.source_revision,
                      deployed_at=record.deployed_at, runtime=record.runtime,
+                     owner_session_id=record.request.get("owner_session_id"),
+                     stage=record.request.get("stage", "published"),
                      url=f"/s/{quote(record.site_id, safe='')}--r{record.release_number}/")
         atomic_json_update(self._version_metadata(record.site_id, record.release_number),
                            lambda existing: existing or {**entry, "request": record.request})
