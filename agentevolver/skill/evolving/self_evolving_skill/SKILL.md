@@ -50,6 +50,10 @@ recover infrastructure, reuse something available, or improve a reusable capabil
 > **Yes → continue**, unless measured repetition makes a reusable improvement worthwhile.
 > **No, it structurally lacks the means and will fail the same way → evolve.**
 
+"Measured repetition" is not a recollection: it is something you recorded in durable project
+memory and have now hit again. Your conversation starts empty every turn, so a second occurrence
+is only citable if the first one was written down.
+
 Evolution targets a capability defect, never a one-off weak attempt, and needs a real
 **observed** signal — one of:
 
