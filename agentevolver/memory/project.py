@@ -229,9 +229,11 @@ class ProjectNotes:
         lines = [
             f"Durable project memories live in `{self.dir}` (outside the working tree).",
             "",
+            "Your conversation does not survive into your next turn, and this directory does. "
             "Read one in full with the ordinary file tools when its description below looks "
-            "relevant. To remember something a later session would otherwise rediscover, write "
-            "`<name>.md` there — a short kebab-case slug — with this frontmatter:",
+            "relevant. To record something a later turn or session would otherwise have to "
+            "rediscover, write `<name>.md` there — a short kebab-case slug — with this "
+            "frontmatter:",
             "",
             "    ---",
             "    name: <slug>",

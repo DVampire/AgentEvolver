@@ -616,9 +616,6 @@ class Agent(BaseModel):
         project = self.project_context(ctx)
         if project:
             messages.append(SystemMessage(content=project))
-        working = await self.working_memory(ctx)
-        if working:
-            messages.append(SystemMessage(content=working))
         convention = await self.code_mode_section()
         if convention:
             messages.append(SystemMessage(content=convention))
@@ -699,39 +696,6 @@ class Agent(BaseModel):
         if omitted > 0:
             body = f"[{omitted} earlier message(s) omitted]\n\n{body}"
         return body
-
-    async def working_memory(self, ctx: Any) -> str:
-        """The durable half of memory, placed in the cached prefix.
-
-        Memory has two tiers and they belong in different layers. Working memory is
-        append-only and byte-stable between compactions, so it caches; recent steps are
-        the sliding window, and in this design the conversation already *is* that window,
-        so fetching them again would send the same turns twice.
-        """
-        if not (self.use_memory and self.memory_name):
-            return ""
-        session = str(getattr(ctx, "id", "") or "")
-        if not session:
-            return ""
-        try:
-            from agentevolver.memory import memory_manager
-
-            info = await memory_manager.get_info(self.memory_name)
-            instance = getattr(info, "instance", None)
-            if instance is None:
-                logger.warning(
-                    f"| ⚠️ [{self.name}] memory {self.memory_name!r} is configured but "
-                    "not registered; this run keeps no history"
-                )
-                return ""
-            text = await instance.get(session_id=session, section="stable")
-        except TypeError:
-            # A backend that predates the tier split renders one combined block.
-            text = ""
-        except Exception as error:  # noqa: BLE001 - a step must run without memory
-            logger.warning(f"| ⚠️ [{self.name}] could not read memory: {error}")
-            return ""
-        return f"<working-memory>\n{text}\n</working-memory>" if text else ""
 
     async def environment_state(self, ctx: Any) -> str:
         """What the environments this agent acts in look like right now.
