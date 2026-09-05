@@ -58,7 +58,7 @@ HOST_OWNER="$(stat -c '%u:%g' "${REPO_ROOT}" 2>/dev/null || echo '')"
 if [[ -n "${HOST_OWNER}" && "${HOST_OWNER}" != "0:0" ]]; then
   ( while true; do
       sleep 20
-      find "${REPO_ROOT}/output" -uid 0 -exec chown "${HOST_OWNER}" {} + 2>/dev/null || true
+      find "${REPO_ROOT}/output" "${REPO_ROOT}/memory" -uid 0 -exec chown "${HOST_OWNER}" {} + 2>/dev/null || true
     done ) &
   CHOWN_PID=$!
 fi

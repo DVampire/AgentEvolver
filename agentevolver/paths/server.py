@@ -111,14 +111,17 @@ class PathManagerServer:
             raise ValueError(f"package resource escapes package root: {parts!r}")
         return path
 
-    def writable_roots(self) -> Tuple[Path, Path]:
-        """The only two directories the framework may write to.
+    def writable_roots(self) -> Tuple[Path, ...]:
+        """Declared storage roots, not a grant of agent filesystem permissions."""
+        return self.get(P.OUTPUT), self.get(P.EXTENSION), self.get(P.MEMORY)
 
-        Exposed so tests can assert the rule rather than trusting convention: ``output/``
-        for generated, machine- and user-specific state, and ``extension/`` for shared,
-        durable components.
-        """
-        return self.get(P.OUTPUT), self.get(P.EXTENSION)
+    @staticmethod
+    def memory_dir() -> Path:
+        """Durable notes survive output cleanup; an override can use a persistent volume."""
+        path = Path(os.environ.get("AGENTEVOLVER_MEMORY_ROOT") or LAYOUT[P.MEMORY]).expanduser()
+        if not path.is_absolute():
+            path = PathManagerServer.project_dir() / path
+        return path.resolve()
 
     # ================================================================== #
     # 2. The bound session — whose run the session keys mean
@@ -456,6 +459,11 @@ class PathManagerServer:
         relocating that root moves the whole subtree with it; everything else hangs off
         the project directory.
         """
+        memory = LAYOUT[P.MEMORY]
+        if template == memory:
+            return cls.memory_dir(), ""
+        if template.startswith(f"{memory}/"):
+            return cls.memory_dir(), template[len(memory) + 1:]
         prefix = LAYOUT[P.EXTENSION]
         if template == prefix:
             return cls.extension_dir(), ""

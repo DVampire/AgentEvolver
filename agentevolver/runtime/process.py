@@ -62,6 +62,8 @@ class Process:
         resident: bool = False,
         brief: str = "",
         mode: Optional[InteractionMode] = None,
+        thread_id: str = "",
+        resume: bool = False,
     ) -> None:
         # -- identity
         self.pid = pid
@@ -71,6 +73,10 @@ class Process:
         self.session_id = session_id or str(getattr(ctx, "id", "") or "")
         self.parent_pid = parent_pid
         self.resident = resident
+        # A thread survives process replacement only when explicitly resumed. Agent
+        # names are templates, never identities for three concurrent participants.
+        self.thread_id = thread_id or self.session_id or pid
+        self.resume_thread = resume
         #: The endpoint role this process was started as. Recorded rather than derived,
         #: so a listing and a log line can say "subscriber" instead of leaving a reader
         #: to reconstruct it from two flags.
@@ -394,6 +400,7 @@ class Process:
         return {
             "deliveries": {key: dict(value) for key, value in self.deliveries.items()},
             "pid": self.pid,
+            "thread_id": self.thread_id,
             "name": self.name,
             "state": self.state.value,
             "exit_status": self.exit_status.value if self.exit_status else None,

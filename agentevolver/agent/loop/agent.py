@@ -261,6 +261,8 @@ class Agent(BaseModel):
         #: alternating deploy and done against a gate whose input could not change.
         self._blocker_repeats = 0
         self._last_blocker = ""
+        self._thread_process: str = ""
+        self._thread_path: Any = None
 
     async def initialize(self) -> None:
         """Called once by the registry after construction."""
@@ -295,7 +297,10 @@ class Agent(BaseModel):
         **kwargs: Any,
     ) -> Response:
         """Run one assignment to completion and return its result."""
-        return await self.finalize(await self._run(task, files, ctx, **kwargs))
+        try:
+            return await self.finalize(await self._run(task, files, ctx, **kwargs))
+        finally:
+            self.save_thread()
 
     async def finalize(self, response: Response) -> Response:
         """Last look at the run's own result, before the caller gets it.
@@ -317,8 +322,41 @@ class Agent(BaseModel):
         task, files = await self.prepare_task(task, list(files or ()), ctx)
         self.task = self._task_text(task, files)
         self._started_at = time.time()
-        self.conversation = Conversation(task=self.task)
-        self.conversation.set_system(await self.system_messages(ctx))
+        proc = self.proc
+        continuing = bool(proc is not None and proc.resident
+                          and self._thread_process == proc.pid)
+        if not continuing:
+            self._thread_path = None
+            self._thread_process = ""
+            if proc is not None:
+                from agentevolver.paths import P, path_manager
+                if path_manager.session is not None:
+                    self._thread_path = path_manager.get(
+                        P.SESSION_AGENT_CONTEXT, thread_id=proc.thread_id,
+                    )
+            if proc is not None and proc.resume_thread:
+                if self._thread_path is None:
+                    raise ValueError("Thread resume requires a bound session")
+                self.conversation = Conversation.load(
+                    self._thread_path, model=self.model_name, agent=self.name,
+                )
+                # Rules may have changed since the host restarted. Refresh once,
+                # never on each ordinary subscriber wake.
+                self.conversation.set_system(await self.system_messages(ctx))
+                continuing = True
+                proc.resume_thread = False
+            else:
+                self.conversation = Conversation(task=self.task)
+                self.conversation.set_system(await self.system_messages(ctx))
+            self._thread_process = proc.pid if proc is not None else ""
+        if continuing:
+            # Runtime repeats a subscriber's identity for stateless agents. The
+            # identity already lives in this thread's task anchor.
+            incoming = self.task
+            brief = str(getattr(proc, "brief", "") or "")
+            if brief and incoming.startswith(brief + "\n\n"):
+                incoming = incoming[len(brief) + 2:]
+            self.conversation.note(incoming)
         self._notes = []
         self._model_failures = 0
         self._truncated_turns = 0
@@ -614,14 +652,23 @@ class Agent(BaseModel):
         if not messages and self.system:
             messages.append(SystemMessage(content=self.system))
         project = self.project_context(ctx)
-        if project:
-            messages.append(SystemMessage(content=project))
+        try:
+            notes = await self.memory_context(ctx)
+        except (OSError, ValueError) as error:
+            logger.warning(f"| ⚠️ [{self.name}] durable notes unavailable: {error}")
+            notes = ""
         convention = await self.code_mode_section()
         if convention:
             messages.append(SystemMessage(content=convention))
         inherited = self.inherited_context(ctx)
         if inherited:
             messages.append(SystemMessage(content=inherited))
+        # Fixed references are cacheable but fallible: all system rules precede
+        # them, as required by ContextEnvelope and strict provider serializers.
+        if project:
+            messages.append(HumanMessage(content="Project reference (subordinate to system rules):\n" + project))
+        if notes:
+            messages.append(HumanMessage(content=notes))
         parent = self._parent_turns()
         if parent:
             messages.append(HumanMessage(content=(
@@ -727,16 +774,16 @@ class Agent(BaseModel):
         return "\n\n".join(blocks)
 
     def project_context(self, ctx: Any) -> str:
-        """CLAUDE.md, MEMORY.md and the nearest AGENTS.md files.
-
-        The project speaking to the agent, so it belongs beside the system prompt rather
-        than in the volatile tail: it does not change during a run, and anywhere later
-        would cost the cache.
-        """
+        """Project references, captured in the fixed user context at thread start."""
         from agentevolver.agent.context import load_project_context
         from agentevolver.paths import path_manager
 
         extra = getattr(ctx, "extra", None) or {}
+        allowed = self.capability_allowlists.get("tool")
+        if allowed is not None and "bash_tool" not in allowed:
+            # Browser-only participants must not learn the product's source files
+            # or another actor's notes through an otherwise hidden prompt path.
+            return ""
         roots = path_manager.session_roots() or {}
         workspace = str(roots.get("workspace", "") or self.base_dir)
         if not workspace:
@@ -746,10 +793,42 @@ class Agent(BaseModel):
                 workspace,
                 active_paths=extra.get("task_files") or (),
                 source_workspace=extra.get("source_workspace"),
+                include_memory=self.use_memory,
             )
         except Exception as error:  # noqa: BLE001 - a missing AGENTS.md is not a failure
             logger.debug(f"| ⚙️ [{self.name}] project context unavailable: {error}")
             return ""
+
+    async def memory_context(self, ctx: Any) -> str:
+        """An actor's stable notes index; file bodies are read with existing Bash."""
+        import os
+        from agentevolver.config import config
+        from agentevolver.memory.project import ProjectNotes
+        from agentevolver.memory import memory_manager
+        from agentevolver.paths import path_manager
+
+        allowed = self.capability_allowlists.get("tool")
+        if not self.use_memory or (allowed is not None and "bash_tool" not in allowed):
+            return ""
+        # A host path is not a container path. Benchmark shells currently mount only
+        # the task checkout; do not advertise unreachable host memory or share cases.
+        if os.environ.get("AGENTEVOLVER_EXEC_CONTAINER"):
+            return ""
+        extra = getattr(ctx, "extra", None) or {}
+        roots = path_manager.session_roots()
+        workspace = str(roots.get("workspace") or self.base_dir)
+        actor = str(extra.get("memory_actor_id") or (
+            getattr(ctx, "id", "") if getattr(ctx, "parent_session_id", "") else self.name
+        ) or self.name)
+        notes = ProjectNotes(
+            workspace, source_workspace=extra.get("source_workspace"),
+            project_id=str(extra.get("memory_project_id") or config.get("memory_project_id", "")),
+            actor_id=actor,
+        )
+        if notes.dir is None:
+            return ""
+        notes.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        return await memory_manager.index(self.memory_name, notes)
 
     async def _render_prompt(self, ctx: Any) -> List[Message]:
         """Render the named prompt template and keep its system half."""
@@ -1005,6 +1084,7 @@ class Agent(BaseModel):
         """
         from agentevolver.hook.types import HookEvent
 
+        self.save_thread()
         await self._events.emit(
             HookEvent.POST_STEP,
             {
@@ -1025,6 +1105,16 @@ class Agent(BaseModel):
             },
             ctx=self.ctx,
         )
+
+    def save_thread(self) -> None:
+        """Keep the last complete boundary; disk failure must be visible, not fatal."""
+        if (self._thread_path is None or not self.conversation.complete
+                or self._thread_process != getattr(self.proc, "pid", "")):
+            return
+        try:
+            self.conversation.save(self._thread_path, model=self.model_name, agent=self.name)
+        except (OSError, ValueError, TypeError) as error:
+            logger.warning(f"| ⚠️ [{self.name}] thread checkpoint not saved: {error}")
 
     async def _emit_stop(self, response: Response) -> None:
         from agentevolver.hook.types import HookEvent
@@ -1091,7 +1181,7 @@ class Agent(BaseModel):
     async def _fold_if_needed(self, live: Sequence[str]) -> None:
         """Fold history before cost or capacity becomes a problem."""
         reason = self.assembler.fold_reason(
-            self.conversation, live=live, folds=self._folds
+            self.conversation, live=live, folds=self._folds, attachments=self.attachments()
         )
         if not reason:
             return
@@ -1155,6 +1245,8 @@ class Agent(BaseModel):
             logger.warning(f"| 🗜️ [{self.name}] nothing left to fold")
             return False, "nothing left to fold"
 
+        self._folds += 1  # Failed attempts cost tokens too; never retry without a bound.
+
         # Native first, and its own summary counts as the readable checkpoint. Asking
         # the summariser as well would spend a second model call on text the provider
         # already wrote — the portable path exists for routes that produced none.
@@ -1163,13 +1255,14 @@ class Agent(BaseModel):
         summary = str((native or {}).get("summary") or "").strip()
         if not summary:
             summary = await self.text_checkpoint(source)
-        if not summary and not provider_state:
-            return False, "no checkpoint was produced"
+        if not summary:
+            # Do not discard the only readable evidence in favour of an opaque item:
+            # the next call may need a provider-neutral fallback.
+            return False, "no portable checkpoint was produced; history retained"
         folded = self.assembler.fold(
             self.conversation, summary, provider_state=provider_state
         )
         if folded:
-            self._folds += 1
             return True, "native" if provider_state else "text"
         return False, "checkpoint was rejected as no improvement"
 
@@ -1228,6 +1321,11 @@ class Agent(BaseModel):
         from agentevolver.hook.types import HookEvent
 
         existing = self.conversation.checkpoint.text if self.conversation.checkpoint else ""
+        if self.conversation.checkpoint and self.conversation.checkpoint.provider_state:
+            readable = existing.replace("<memory-checkpoint>", "").replace("</memory-checkpoint>", "").strip()
+            if not readable:
+                logger.warning(f"| ⚠️ [{self.name}] opaque-only legacy checkpoint cannot be summarized as text")
+                return ""
         try:
             result = await hook_manager(
                 name="compact",

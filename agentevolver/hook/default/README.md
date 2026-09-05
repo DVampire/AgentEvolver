@@ -11,8 +11,9 @@ metadata: {}
 
 Registers the built-in lifecycle adapters. Session memory consumes the exact numbered
 TraceEvent emitted by `TraceHook`; it is not a second hook because rebuilding a look-alike
-event would break trace identity. `ProjectMemoryHook` is distinct: after successful task
-completion it projects verified evidence into durable cross-session project memory.
+event would break trace identity. `ProjectMemoryHook` keeps a legacy observed-command
+and failure archive after task completion. It is not injected as verified knowledge;
+named Markdown notes are the current durable-memory interface.
 
 Files use responsibility names (`trace.py`, `trajectory.py`, `project_memory.py`); the
 classes carry the `Hook` suffix and registered runtime names use `_hook`, except `compact`,

@@ -1,6 +1,6 @@
 ---
 name: paths
-description: "Single source of truth for the on-disk layout: one table declaring every path the framework writes, resolved through path_manager. Two roots only — output/ for generated state, extension/ for shared components."
+description: "Single source of truth for generated output, shared components, and durable memory paths."
 version: 1.0.0
 type: module
 category: infrastructure
@@ -23,22 +23,24 @@ path_manager.get(P.SESSION_WORKSPACE)          # anywhere after that, no argumen
 path_manager.get(P.PORTS)                      # machine-level, never needed a session
 ```
 
-## Two roots, and only two
+## Storage roots
 
 | Root | Holds | Lifetime |
 |---|---|---|
 | `output/` | generated, machine- and user-specific state | disposable |
 | `extension/` | shared, durable components (skills, tools, workflows, canvas) | versioned with the project |
+| `memory/` | owner/project/actor-scoped Markdown notes | survives output cleanup; not versioned |
 
 `writable_roots()` returns exactly these, so the rule is testable rather than a
 convention people remember — see `tests/test_paths.py`.
 
 | Variable | Moves |
 |---|---|
-| `AGENTEVOLVER_HOME` | the whole tree — both roots |
+| `AGENTEVOLVER_HOME` | the whole tree |
 | `AGENTEVOLVER_EXTENSION_ROOT` | `extension/` alone (a shared component library on another volume) |
+| `AGENTEVOLVER_MEMORY_ROOT` | `memory/` alone (a persistent, host-owned volume) |
 
-Both are resolved here and nowhere else. `extension/` used to have three
+All are resolved here and nowhere else. `extension/` used to have three
 answers — `extension_root()` resolved it against `cwd`, skill and connector
 joined `"extension/skill"` themselves, and the layout put it under
 `AGENTEVOLVER_HOME` — so setting that variable relocated generated state and
@@ -52,6 +54,11 @@ the sandbox ledger, deploy workspaces and extension staging. The container
 created it as **root**, and `scripts/serve-ui.sh`'s chown loop only walks
 `output/`, so the host user could neither edit nor delete it. Those all live
 under `output/.runtime/` now.
+
+`memory/` is a deliberate separate lifetime, not another runtime scratch directory.
+Container ownership cleanup covers the default root; an external memory volume must
+be provisioned with the host user's ownership. Declaring a storage root does not grant
+agents unrestricted access to it. Browser-only agents receive no filesystem memory index.
 
 ## The tree
 

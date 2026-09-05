@@ -173,6 +173,20 @@ class MemoryManagerServer(BaseModel):
         """
         return await self._ensure_context_manager().get(memory_name)
     
+    async def index(self, memory_name: str, notes: Any) -> str:
+        """Use the configured/evolved backend, with plain file indexing as fallback."""
+        if memory_name:
+            try:
+                info = await self.get_info(memory_name)
+                if info and info.instance is not None:
+                    result = info.instance.index(notes)
+                    if not isinstance(result, str):
+                        raise TypeError("Memory.index must return text")
+                    return result
+            except Exception as error:
+                logger.warning(f"| ⚠️ Memory index {memory_name!r} failed; using file index: {error}")
+        return notes.index()
+
     async def cleanup(self):
         """Cleanup all memory systems using context manager."""
         if hasattr(self, 'memory_context_manager'):

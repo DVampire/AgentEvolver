@@ -27,7 +27,7 @@ Built-in hooks (`default/`):
 |---|---|
 | `trace_hook` | Emits structured TraceEvents for every agent lifecycle event |
 | `trajectory_hook` | Builds step-level training trajectories from lifecycle events |
-| `project_memory_hook` | Learns verified cross-session project facts after task completion |
+| `project_memory_hook` | Legacy observed-command/failure archive; not injected as verified knowledge |
 | `constraint_hook` | Enforces per-step resource budgets |
 | `plan_mode_hook` | Refuses actions not declared free of effects until a person approves the plan |
 | `compact` | Portable text-checkpoint fallback for compaction |

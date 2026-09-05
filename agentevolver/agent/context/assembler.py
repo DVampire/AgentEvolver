@@ -209,12 +209,13 @@ class ContextAssembler:
             "fold_at_pressure": self.fold_at_pressure,
         }
 
-    def estimate(self, conversation: Conversation, *, live: Sequence[str] = ()) -> int:
+    def estimate(self, conversation: Conversation, *, live: Sequence[str] = (),
+                 attachments: Sequence[Message] = ()) -> int:
         """Rough token count for the request as it would be sent."""
         from agentevolver.model.pressure import estimate_tokens
 
         try:
-            return int(estimate_tokens(list(self.build(conversation, live=live))))
+            return int(estimate_tokens(list(self.build(conversation, live=live, attachments=attachments))))
         except Exception as error:  # noqa: BLE001 - accounting must not break a step
             logger.debug(f"| ⚙️ context estimate unavailable: {error}")
             return 0
@@ -235,14 +236,16 @@ class ContextAssembler:
             logger.debug(f"| ⚙️ body estimate unavailable: {error}")
             return 0
 
-    def pressure(self, conversation: Conversation, *, live: Sequence[str] = ()) -> float:
+    def pressure(self, conversation: Conversation, *, live: Sequence[str] = (),
+                 attachments: Sequence[Message] = ()) -> float:
         """Estimated fraction of the context window this request would occupy."""
         if self.context_window <= 0:
             return 0.0
-        return self.estimate(conversation, live=live) / self.context_window
+        return self.estimate(conversation, live=live, attachments=attachments) / self.context_window
 
     def fold_reason(
-        self, conversation: Conversation, *, live: Sequence[str] = (), folds: int = 0
+        self, conversation: Conversation, *, live: Sequence[str] = (), folds: int = 0,
+        attachments: Sequence[Message] = (),
     ) -> str:
         """Why history should be folded now, or "" for not yet.
 
@@ -272,7 +275,7 @@ class ContextAssembler:
             if body >= self.compact_body_tokens:
                 reasons.append(f"body≈{body:,} tokens")
         if self.fold_at_pressure:
-            ratio = self.pressure(conversation, live=live)
+            ratio = self.pressure(conversation, live=live, attachments=attachments)
             if ratio >= self.fold_at_pressure:
                 reasons.append(f"capacity={ratio:.0%}")
         return ", ".join(reasons)

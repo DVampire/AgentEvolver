@@ -5,8 +5,8 @@
     path_manager.bind_session(owner, session_id)   # once, when the run's session opens
     path_manager.get(P.SESSION_WORKSPACE)          # anywhere after that, no arguments
 
-Two roots only: ``output/`` for generated, machine- and user-specific state, and
-``extension/`` for shared, durable components.
+Storage roots: ``output/`` for generated, machine- and user-specific state, and
+``extension/`` for shared components, and ``memory/`` for durable Markdown notes.
 
 Session-scoped keys resolve against the bound run, so a caller does not have to have been
 handed a path to know where it may write. Passing ``owner`` / ``session_id`` explicitly

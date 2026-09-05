@@ -1,4 +1,4 @@
-"""The layout table is the only place a path is decided, and it has exactly two roots.
+"""The layout table is the only place a path is decided, with explicit storage roots.
 
 Everything the framework writes goes under ``output/`` (generated, disposable
 state) or ``extension/`` (shared, durable components), and both move as one unit
@@ -88,16 +88,11 @@ def test_every_resolver_agrees_on_where_extension_lives(monkeypatch, tmp_path: P
     assert Path(config.extension_root) == expected
 
 
-def test_every_declared_path_stays_inside_the_two_roots(monkeypatch, tmp_path: Path) -> None:
-    """The layout table is the disk contract — nothing may escape output/ or extension/.
-
-    Asserted rather than left to convention: a third location is exactly how
-    .agentevolver/ appeared, root-owned and outside the chown loop that hands
-    output/ back to the host user.
-    """
+def test_every_declared_path_stays_inside_declared_roots(monkeypatch, tmp_path: Path) -> None:
+    """Run output, shared components, and durable notes have explicit lifetimes."""
     monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
     monkeypatch.delenv("AGENTEVOLVER_EXTENSION_ROOT", raising=False)
-    output, extension = path_manager.writable_roots()
+    roots = path_manager.writable_roots()
     sample = {
         "owner": "someone",
         "session_id": "sid",
@@ -106,6 +101,8 @@ def test_every_declared_path_stays_inside_the_two_roots(monkeypatch, tmp_path: P
         "module": "skill",
         "conversation_id": "cid",
         "digest": "digest",
+        "actor_id": "actor",
+        "thread_id": "thread",
     }
 
     for key in P:
@@ -114,8 +111,8 @@ def test_every_declared_path_stays_inside_the_two_roots(monkeypatch, tmp_path: P
             # that root. Checked below instead: the fragment must stay a fragment.
             continue
         resolved = path_manager.get(key, **{p: sample[p] for p in path_manager.params_for(key)})
-        assert resolved.is_relative_to(output) or resolved.is_relative_to(extension), (
-            f"{key.value} -> {resolved} escapes both writable roots"
+        assert any(resolved.is_relative_to(root) for root in roots), (
+            f"{key.value} -> {resolved} escapes declared writable roots"
         )
 
 

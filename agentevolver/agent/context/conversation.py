@@ -19,6 +19,8 @@ state, and storing it would be storing something already stale.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from agentevolver.message.types import (
@@ -83,6 +85,45 @@ class Conversation:
             for message in messages
         ]
 
+    def save(self, path: Path, *, model: str, agent: str) -> None:
+        """Persist a closed boundary, including opaque provider items, without an LLM."""
+        from agentevolver.utils.file_utils import atomic_write_text
+
+        if not self.complete:
+            raise ValueError("Cannot save a conversation with unanswered tool calls")
+        document = {
+            "version": 1, "model": model, "agent": agent, "task": self.task,
+            "system": [m.model_dump(mode="json") for m in self.system],
+            "checkpoint": self.checkpoint.model_dump(mode="json") if self.checkpoint else None,
+            "items": [m.model_dump(mode="json") for m in self.items],
+        }
+        atomic_write_text(path, json.dumps(document, ensure_ascii=False))
+
+    @classmethod
+    def load(cls, path: Path, *, model: str, agent: str) -> "Conversation":
+        """Explicit same-route resume. Never silently replay state on another model."""
+        document = json.loads(path.read_text(encoding="utf-8"))
+        if document.get("version") != 1 or document.get("agent") != agent:
+            raise ValueError("Conversation schema or agent identity does not match")
+        if document.get("model") != model:
+            raise ValueError("Resume requires the original model route; native state is not portable")
+        classes = {"user": HumanMessage, "system": SystemMessage,
+                   "assistant": AssistantMessage, "tool": ToolMessage}
+        def parse(value: Dict[str, Any]) -> Message:
+            return classes[value["role"]].model_validate(value)
+        result = cls(system=[parse(m) for m in document["system"]], task=document["task"])
+        if document.get("checkpoint") is not None:
+            result.checkpoint = CompactionMessage.model_validate(document["checkpoint"])
+        result.items = [parse(m) for m in document["items"]]
+        if not result.complete:
+            raise ValueError("Saved conversation has unanswered tool calls")
+        from agentevolver.agent.context.envelope import ContextEnvelope
+        ContextEnvelope(
+            fixed=tuple(result.system), recent=tuple(result.items),
+            checkpoint=(result.checkpoint,) if result.checkpoint is not None else (),
+        ).validate()
+        return result
+
     # ------------------------------------------------------------------
     # Reading
     # ------------------------------------------------------------------
@@ -144,6 +185,11 @@ class Conversation:
         if len(starts) <= keep_turns:
             return []
         cut = starts[-keep_turns] if keep_turns > 0 else len(self.items)
+        # A delivered user request belongs with the assistant that answers it, not
+        # with the older turn being removed. Keep that boundary intact after a wake.
+        if keep_turns > 0:
+            while cut > 0 and isinstance(self.items[cut - 1], HumanMessage):
+                cut -= 1
         return list(self.items[:cut])
 
     def fold(

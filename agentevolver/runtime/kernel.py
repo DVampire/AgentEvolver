@@ -87,6 +87,8 @@ class Kernel:
         topics: Sequence[str] = (),
         name: str = "",
         start_idle: Optional[bool] = None,
+        thread_id: str = "",
+        resume: bool = False,
         **kwargs: Any,
     ) -> Process:
         """Create a process for ``agent`` and start driving it.
@@ -100,6 +102,9 @@ class Kernel:
                 because a subscriber's work arrives later by definition.
             start_idle: Override that inference. ``False`` runs ``task`` immediately even
                 for a subscriber.
+            thread_id: Stable dialogue identity; defaults to the agent context id.
+            resume: Explicitly restore a saved Agent dialogue under the same bound
+                session and model route. Does not restore external processes or pages.
 
         Returns:
             The live :class:`Process`. It is already running; nothing needs to be awaited
@@ -130,6 +135,8 @@ class Kernel:
             resident=resident,
             brief=task if start_idle else "",
             mode=mode,
+            thread_id=thread_id,
+            resume=resume,
         )
         self._procs[pid] = proc
         if topics:

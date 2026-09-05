@@ -13,7 +13,7 @@ from typing import Dict, List
 
 from pydantic import Field
 
-from agentevolver.memory.default.tiered import TieredMemory, FlowStep, _SessionState
+from agentevolver.memory.default.tiered import TieredMemory, FlowStep, MemoryRecord, _SessionState
 from agentevolver.registry import MEMORY_SYSTEM
 from agentevolver.visual import asset_path
 
@@ -54,6 +54,16 @@ class FileSystemMemory(TieredMemory):
     description: str = Field(default="Todos, flowchart, recent/working memory and result persisted as HTML.")
     file_ext: str = Field(default="memory.html")
     prompt_readable: bool = Field(default=False)
+
+    def _append_recent(self, state: _SessionState, record: MemoryRecord) -> None:
+        super()._append_recent(state, record)
+        # This is a display projection, not the Conversation. Numbered records
+        # already live in Trace; do not retain another unbounded copy in RAM. Leave
+        # direct/legacy records without Trace evidence intact.
+        if not self.prompt_readable and record.seq is not None:
+            limit = max(1, self.recent_max, self.recent_fetch)
+            while len(state.recent) > limit and state.recent[0].seq is not None:
+                state.recent.popleft()
 
     # ------------------------------------------------------------------
     # Rendering
@@ -159,6 +169,7 @@ class FileSystemMemory(TieredMemory):
     def _render_history(self, state: _SessionState) -> str:
         """Execution History: Working Memory (compacted summaries) + Recent Steps timeline."""
         lines = ['<div class="mem-section">', "<h2>Execution History</h2>"]
+        lines.append('<p class="mem-empty">Recent display window only. Full numbered events remain in Trace; this view is not the agent conversation.</p>')
         recent = list(state.recent)[-self.recent_fetch:]
 
         # Above the empty-history return, not below it. A compaction that died after

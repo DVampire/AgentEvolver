@@ -118,6 +118,14 @@ class Memory(BaseModel):
         if not self.description and self.__class__.__doc__:
             self.description = self.__class__.__doc__.strip().split('\n')[0]
     
+    def index(self, notes: Any) -> str:
+        """Render the scoped notes index, not the execution-history HTML.
+
+        Backends may customize retrieval/ranking here. The caller supplies an
+        actor-scoped store; no new file tool or duplicate conversation is required.
+        """
+        return notes.index()
+
     async def compact(self, session_id: str, *, keep_steps: Optional[int] = None) -> bool:
         """Fold the oldest history now, ahead of whatever this memory's own trigger is.
 

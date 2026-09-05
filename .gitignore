@@ -229,7 +229,7 @@ datasets/*
 !datasets/load.py
 !datasets/README.md
 output/
+/memory/
 
 # User-level AgentEvolver home (config, staging, deploy registry, caches)
 .agentevolver/
-

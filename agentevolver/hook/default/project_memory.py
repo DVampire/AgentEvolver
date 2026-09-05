@@ -1,4 +1,4 @@
-"""Learn durable project facts from successful, already-settled runtime evidence."""
+"""Legacy Trace evidence projection; not automatically injected as learned facts."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ class ProjectMemoryHook(Hook):
     """Project Trace outcomes into cross-session memory without an LLM summarizer."""
 
     name: str = "project_memory_hook"
-    description: str = "Learns verified commands and recurring failures across sessions."
+    description: str = "Archives observed commands and recurring failures, not acceptance verdicts."
     priority: int = 190
     events: list = [HookEvent.TASK_COMPLETED]
 

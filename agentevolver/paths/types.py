@@ -54,9 +54,10 @@ class P(str, Enum):
     PROJECT_EVALUATION = "project_evaluation"
     PROJECT_RESULT_RUN = "project_result_run"
 
-    # --- the two buckets -------------------------------------------------
+    # --- storage roots --------------------------------------------------
     OUTPUT = "output"
     EXTENSION = "extension"
+    MEMORY = "memory"
     #: One module's shared components — ``extension/skill``, ``extension/tool``,
     #: ``extension/canvas``, … Parameterised rather than one key per module,
     #: because the extension manager promotes any module type through the same
@@ -87,6 +88,8 @@ class P(str, Enum):
     OWNER_FILES = "owner_files"
     OWNER_PROJECT_MEMORY = "owner_project_memory"
     OWNER_PROJECT_NOTES = "owner_project_notes"
+    OWNER_PRIVATE_NOTES = "owner_private_notes"
+    SESSION_AGENT_CONTEXT = "session_agent_context"
     IDE_EXTENSIONS = "ide_extensions"
     IDE_HOME = "ide_home"
 
@@ -142,9 +145,9 @@ class P(str, Enum):
     SESSION_NOTEBOOKS = "session_notebooks"
 
 
-#: The complete tree, relative to the project directory. Two roots only:
-#: ``output/`` for generated, machine- and user-specific state, and
-#: ``extension/`` for shared, durable components. Everything the framework
+#: The complete tree, relative to the project directory: ``output/`` for run
+#: artifacts, ``extension/`` for shared components, ``memory/`` for durable notes
+#: that must survive output cleanup. Everything the framework
 #: writes is declared here — this table *is* the disk contract.
 #: Keys resolved against a root the caller supplies, through
 #: :meth:`PathManagerServer.under` rather than :meth:`get`. They are fragments — a
@@ -179,7 +182,7 @@ FILES: frozenset = frozenset({
     P.PORTS, P.LEDGER, P.SSH_HOSTS, P.CHECKPOINT, P.STAGING_MANIFEST,
     P.CONVERSATION_EVENTS, P.CONVERSATION_META, P.SESSION_LEGACY_EVENTS,
     P.SESSION_GOALS, P.SESSION_PLAN,
-    P.OWNER_PROJECT_MEMORY,
+    P.OWNER_PROJECT_MEMORY, P.SESSION_AGENT_CONTEXT,
 })
 
 LAYOUT: Dict[P, str] = {
@@ -221,6 +224,7 @@ LAYOUT: Dict[P, str] = {
 
     P.OUTPUT: "output",
     P.EXTENSION: "extension",
+    P.MEMORY: "memory",
     P.EXTENSION_MODULE: "extension/{module}",
 
     P.RUNTIME: "output/.runtime",
@@ -237,7 +241,9 @@ LAYOUT: Dict[P, str] = {
     P.OWNER_STATE: "output/{owner}/state",
     P.OWNER_FILES: "output/{owner}/state/files",
     P.OWNER_PROJECT_MEMORY: "output/{owner}/state/projects/{project_key}/memory.json",
-    P.OWNER_PROJECT_NOTES: "output/{owner}/state/projects/{project_key}/memory",
+    P.OWNER_PROJECT_NOTES: "memory/{owner}/{project_key}/shared",
+    P.OWNER_PRIVATE_NOTES: "memory/{owner}/{project_key}/actors/{actor_id}",
+    P.SESSION_AGENT_CONTEXT: "output/{owner}/sessions/{session_id}/log/threads/{thread_id}.json",
     P.IDE_EXTENSIONS: "output/{owner}/state/ide/extensions",
     P.IDE_HOME: "output/{owner}/state/ide/home",
 

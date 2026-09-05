@@ -1,8 +1,8 @@
 """Project-owned instructions that ride in the fixed layer.
 
-CLAUDE.md, MEMORY.md and the nearest AGENTS.md files are the project speaking to the
-agent, so they belong with the system prompt rather than in the volatile tail: they do
-not change during a run, and putting them anywhere later would cost the cache.
+CLAUDE.md, MEMORY.md and the nearest AGENTS.md files are project references. The Agent
+places this snapshot in fixed user context, below system instructions; learned notes
+are loaded separately under the actor's own identity.
 
 Reads are deliberately paranoid - direct children only, no symlink following, regular
 files only. This content is injected into a prompt verbatim, so a swapped-in link is a
@@ -77,6 +77,7 @@ def load_project_context(
     active_paths: Optional[Iterable[str]] = None,
     *,
     source_workspace: Optional[str] = None,
+    include_memory: bool = True,
 ) -> str:
     """Load durable memory and root-to-leaf project instructions into fixed context."""
     if not workspace_root:
@@ -94,22 +95,10 @@ def load_project_context(
             blocks.append(_ContextBlock(directory, filename, text, len(blocks)))
 
     append(root, "CLAUDE.md")
-    append(root, "MEMORY.md")
-    try:
-        from agentevolver.memory.project import ProjectMemoryStore, ProjectNotes
-
-        automatic = ProjectMemoryStore(
-            str(root), source_workspace=source_workspace,
-        ).render()
-        if automatic:
-            append(root, "AUTO_MEMORY.md", automatic)
-        # Only the index rides in context. A memory's body is fetched by name when its
-        # description earns it, so remembering more does not cost more every step.
-        notes = ProjectNotes(str(root), source_workspace=source_workspace).index()
-        if notes:
-            append(root, "MEMORY_INDEX.md", notes)
-    except Exception:
-        pass
+    if include_memory:
+        append(root, "MEMORY.md")
+    # Learned notes have a separate, actor-scoped reference message. Legacy automatic
+    # JSON remains readable through its API but is no longer injected as instructions.
     for directory in _scoped_directories(root, active_paths):
         override = _read_direct_file(
             directory, "AGENTS.override.md", MAX_PROJECT_CONTEXT_CHARS,
