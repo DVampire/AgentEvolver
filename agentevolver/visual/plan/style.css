@@ -1,23 +1,24 @@
 :root {
-  --ground:      #0E1210;
-  --surface:     #141B12;
-  --surface-2:   #1B2418;
-  --surface-3:   #222C1E;
-  --text:        #C8DDB8;
-  --text-mid:    #6A8E5C;
-  --text-faint:  #2E4428;
-  --green:       #5BAD78;
-  --amber:       #CFA040;
-  --red:         #D45E3E;
-  --blue:        #5E93C0;
-  --border:      #243220;
-  --border-hi:   #384F2E;
+  color-scheme: dark;
+  --ground:      #07100e;
+  --surface:     #0e1c19;
+  --surface-2:   #142521;
+  --surface-3:   #1c302a;
+  --text:        #ecf7f2;
+  --text-mid:    #8da69c;
+  --text-faint:  #6b857a;
+  --green:       #63e6b5;
+  --amber:       #f3bd71;
+  --red:         #ff7f87;
+  --blue:        #82b8d9;
+  --border:      rgba(194, 241, 224, 0.12);
+  --border-hi:   rgba(194, 241, 224, 0.24);
 
-  --green-bg:  rgba(91,173,120,0.10);
-  --amber-bg:  rgba(207,160,64,0.10);
-  --red-bg:    rgba(212,94,62,0.10);
-  --blue-bg:   rgba(94,147,192,0.10);
-  --gray-bg:   rgba(46,68,40,0.35);
+  --green-bg:  rgba(99, 230, 181,0.10);
+  --amber-bg:  rgba(243, 189, 113,0.10);
+  --red-bg:    rgba(255, 127, 135,0.10);
+  --blue-bg:   rgba(130, 184, 217,0.10);
+  --gray-bg:   rgba(107, 133, 122,0.35);
 
   --mono: 'Courier New', Courier, monospace;
 }
@@ -199,10 +200,10 @@ body {
   text-transform: uppercase;
 }
 
-.status-done      { background: var(--green-bg); color: var(--green);    border: 1px solid rgba(91,173,120,0.25); }
-.status-pending   { background: var(--amber-bg); color: var(--amber);    border: 1px solid rgba(207,160,64,0.25); }
-.status-running   { background: var(--blue-bg);  color: var(--blue);     border: 1px solid rgba(94,147,192,0.25); }
-.status-failed    { background: var(--red-bg);   color: var(--red);      border: 1px solid rgba(212,94,62,0.25); }
+.status-done      { background: var(--green-bg); color: var(--green);    border: 1px solid rgba(99, 230, 181,0.25); }
+.status-pending   { background: var(--amber-bg); color: var(--amber);    border: 1px solid rgba(243, 189, 113,0.25); }
+.status-running   { background: var(--blue-bg);  color: var(--blue);     border: 1px solid rgba(130, 184, 217,0.25); }
+.status-failed    { background: var(--red-bg);   color: var(--red);      border: 1px solid rgba(255, 127, 135,0.25); }
 .status-cancelled { background: var(--gray-bg);  color: var(--text-mid); border: 1px solid var(--border); }
 
 .status-dot {
@@ -213,7 +214,7 @@ body {
   flex-shrink: 0;
 }
 
-.status-done      .status-dot { background: var(--green); box-shadow: 0 0 4px rgba(91,173,120,0.5); }
+.status-done      .status-dot { background: var(--green); box-shadow: 0 0 4px rgba(99, 230, 181,0.5); }
 .status-pending   .status-dot { background: var(--amber); }
 .status-running   .status-dot { background: var(--blue);  }
 .status-failed    .status-dot { background: var(--red);   }
@@ -375,7 +376,7 @@ body {
 
 .plan-step.hot .step-badge {
   background: var(--amber-bg);
-  border-color: rgba(207,160,64,0.4);
+  border-color: rgba(243, 189, 113,0.4);
   color: var(--amber);
 }
 

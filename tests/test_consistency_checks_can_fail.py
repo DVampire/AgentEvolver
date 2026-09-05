@@ -83,14 +83,14 @@ MUTATIONS = [
     ),
     (
         "the renderer stops knowing the container",
-        "agentevolver/visual/js/prompt.js",
+        "agentevolver/visual/prompt/app.js",
         "'agent-context', 'capability-context'",
         "'agent-context'",
         RENDERER,
     ),
     (
         "the stylesheet reverts to a direct-child selector",
-        "agentevolver/visual/css/prompt.css",
+        "agentevolver/visual/prompt/style.css",
         "div.user capability-context > tool-context",
         "div.user > tool-context",
         STYLESHEET,

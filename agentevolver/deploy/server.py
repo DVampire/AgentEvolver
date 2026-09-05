@@ -31,6 +31,7 @@ import shlex
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 import httpx
 from pydantic import BaseModel, ConfigDict
@@ -87,6 +88,8 @@ class DeploymentManagerServer(BaseModel):
         self._owned_sites: set[str] = set()
         self._registry_path: Optional[str] = None
         self._initialized = False
+        self._saved_sites = {}
+        self._registry_stamp = None
 
     # --------------------------------------------------------------- lifecycle
     async def initialize(self, workspace_root: Optional[str] = None) -> None:
@@ -287,6 +290,7 @@ class DeploymentManagerServer(BaseModel):
                 with open(self._registry_path) as f:
                     raw = json.load(f)
                 self._sites = {sid: SiteRecord(**rec) for sid, rec in raw.items()}
+                self._saved_sites = raw
             except Exception as e:
                 logger.warning(f"| ⚠️ Could not load deploy registry: {e}")
                 self._sites = {}
@@ -296,15 +300,50 @@ class DeploymentManagerServer(BaseModel):
             return
         try:
             payload = {sid: rec.model_dump() for sid, rec in self._sites.items()}
+            changed = {sid: value for sid, value in payload.items()
+                       if value != self._saved_sites.get(sid)}
             atomic_json_update(
                 self._registry_path,
-                lambda _current: payload,
+                lambda current: {**current, **changed},
                 default={},
             )
+            self._saved_sites = payload
         except Exception as e:
             logger.warning(f"| ⚠️ Could not persist deploy registry: {e}")
 
     # --------------------------------------------------------------- spec resolution
+    def refresh(self) -> None:
+        """Read other deployers' changes without overwriting local in-flight edits."""
+        if not self._registry_path:
+            self._registry_path = str(path_manager.resolve_under(path_manager.get(P.DEPLOY), "sites.json"))
+        try:
+            stat = os.stat(self._registry_path)
+            stamp = (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+            if stamp == self._registry_stamp:
+                return
+            with open(self._registry_path) as stream:
+                raw = json.load(stream)
+            for sid, value in raw.items():
+                local = self._sites.get(sid)
+                if local is None or local.model_dump() == self._saved_sites.get(sid):
+                    self._sites[sid] = SiteRecord(**value)
+                    self._saved_sites[sid] = value
+            self._registry_stamp = stamp
+        except (OSError, ValueError):
+            return
+
+    @staticmethod
+    def public_urls(record: SiteRecord) -> Dict[str, str]:
+        """One authority for public links; `record.url` remains the backend URL."""
+        base = os.environ.get("GATEWAY_PUBLIC_BASE", "").strip().rstrip("/")
+        if not base:
+            return {}
+        name = quote(record.site_id, safe="")
+        urls = {"site_url": f"{base}/s/{name}/"}
+        if record.release_number:
+            urls["release_url"] = f"{base}/s/{name}--r{record.release_number}/"
+        return urls
+
     def _resolve_spec(self, request: DeployRequest) -> DeploymentSpec:
         """Profile → base spec, then overlay request.port / request.env / request.overrides."""
         spec = self._profile(request.runtime).make_spec(request)
@@ -414,6 +453,7 @@ class DeploymentManagerServer(BaseModel):
         # ``site_id`` is documented as a stable reuse key. Re-deploying that key must
         # replace the old process; starting a second server beside it either leaks the
         # first process or reports the old artifact healthy on the reused port.
+        self.refresh()
         previous = self._sites.get(request.site_id)
         if previous is not None and previous.status not in {
             SiteStatus.STOPPED,
@@ -457,7 +497,8 @@ class DeploymentManagerServer(BaseModel):
 
         # Expose the chosen port as $PORT so start commands using it (e.g. custom
         # `... --port $PORT`) resolve, regardless of backend.
-        spec.env = {**spec.env, "PORT": str(spec.port)}
+        spec.env = {**spec.env, "PORT": str(spec.port),
+                    "BASE_PATH": f"/s/{quote(request.site_id, safe='')}/"}
 
         # A release is what this site published, so the count belongs to the site and
         # advances only when its source actually changed. Redeploying identical bytes is
@@ -568,7 +609,7 @@ class DeploymentManagerServer(BaseModel):
             rec.url = url
             rec.status = SiteStatus.RUNNING
             rec.error = None
-            rec.updated_at = _now()
+            rec.deployed_at = rec.updated_at = _now()
             self._save()
             logger.info(f"| 🌐 Site '{request.site_id}' ({spec.runtime}) deployed at {url}")
             return rec
@@ -652,10 +693,12 @@ class DeploymentManagerServer(BaseModel):
     # --------------------------------------------------------------- queries / ops
     async def list_sites(self) -> List[SiteRecord]:
         await self._ensure_initialized()
+        self.refresh()
         return list(self._sites.values())
 
     async def get_site(self, site_id: str) -> Optional[SiteRecord]:
         await self._ensure_initialized()
+        self.refresh()
         return self._sites.get(site_id)
 
     # -- name-addressed sites -------------------------------------------------
@@ -698,6 +741,16 @@ class DeploymentManagerServer(BaseModel):
         if not base or not suffix.isdigit():
             return None
         return base, int(suffix)
+
+    def resolve_url(self, name: str) -> Optional[str]:
+        """The registered backend address, including container exposure/mapping."""
+        if not self.resolve_port(name):
+            return None
+        record = self._sites.get(name)
+        if record is None:
+            split = self._split_release(name)
+            record = self._sites.get(split[0]) if split else None
+        return record.url if record else None
 
     async def ensure_release(self, name: str) -> Optional[int]:
         """The port serving one pinned release, starting it from its archive if needed.
@@ -786,6 +839,16 @@ class DeploymentManagerServer(BaseModel):
             name for name, rec in self._sites.items()
             if rec.status is SiteStatus.RUNNING and rec.port
         )
+
+    def public_pages(self) -> List[Dict[str, Any]]:
+        """Read-only page index: no deployment requests, source files, or secrets."""
+        self.refresh()
+        return [{"name": record.site_id, "title": record.request.get("title") or record.site_id,
+                 "kind": record.request.get("kind") or "website", "status": record.status.value,
+                 "url": f"/s/{quote(record.site_id, safe='')}/",
+                 "created_at": record.created_at, "deployed_at": record.deployed_at,
+                 "updated_at": record.updated_at}
+                for record in self._sites.values()]
 
     async def stop_site(self, site_id: str) -> SiteRecord:
         await self._ensure_initialized()

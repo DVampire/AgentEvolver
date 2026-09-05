@@ -175,7 +175,7 @@ def test_the_compiler_refuses_what_it_cannot_bound_or_trust():
         )
     with pytest.raises(WorkflowCompileError, match="Remote"):
         workflow_compiler.compile("""
-          <html><body><script src="https://evil.example/visual/js/workflow.js"></script>
+          <html><body><script src="https://evil.example/visual/workflow/app.js"></script>
           <workflow name="bad"><flow><checkpoint /></flow></workflow></body></html>
         """)
     with pytest.raises(WorkflowCompileError, match="conflicts"):

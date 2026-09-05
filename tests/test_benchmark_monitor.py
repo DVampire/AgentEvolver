@@ -15,8 +15,8 @@ def test_dashboard_preserves_the_original_live_layout():
     visual = root / "agentevolver/visual/benchmark"
     assert (visual / "style.css").read_text() == (root / "others/swe_dashboard.css").read_text()
     original = (root / "others/swe_dashboard.html").read_text()
-    expected = original.replace("/swe_dashboard.css", "/benchmark.css").replace(
-        "/swe_dashboard.js", "/benchmark.js"
+    expected = original.replace("/swe_dashboard.css", "./benchmark.css").replace(
+        "/swe_dashboard.js", "./benchmark.js"
     ).replace("<title>SWE-bench Pro · Live</title>", "<title>Benchmark · Live</title>").replace(
         "<h1>SWE-bench Pro</h1>", '<h1 id="title">Benchmark</h1>'
     )
@@ -129,6 +129,12 @@ def test_resumed_monitor_uses_current_results_as_eta_baseline(tmp_path):
 async def test_monitor_deploys_through_deployment_manager(monkeypatch, tmp_path):
     captured = {}
 
+    async def gateway():
+        monkeypatch.setenv("GATEWAY_PUBLIC_BASE", "http://localhost:9876")
+        return "http://localhost:9876"
+
+    monkeypatch.setattr("agentevolver.gateway.sites.ensure_site_gateway", gateway)
+
     async def deploy(request):
         captured["request"] = request
         return SiteRecord(
@@ -141,12 +147,12 @@ async def test_monitor_deploys_through_deployment_manager(monkeypatch, tmp_path)
     monkeypatch.setattr("agentevolver.deploy.deployment_manager.deploy", deploy)
     monitor = BenchmarkMonitor(str(tmp_path / "run"), "demo", 1, 1)
 
-    assert await monitor.deploy(9000) == "http://localhost:9000"
+    assert (await monitor.deploy(9000)).startswith("http://localhost:9876/s/benchmark-")
     request = captured["request"]
     assert request.backend == "host"
     assert request.runtime == "custom"
     assert {"benchmark.py", "index.html", "benchmark.css", "benchmark.js"} == set(request.files)
-    assert json.loads(Path(monitor.path).read_text())["monitor_url"] == "http://localhost:9000"
+    assert json.loads(Path(monitor.path).read_text())["monitor_url"].startswith("http://localhost:9876/s/benchmark-")
 
 
 def test_cumulative_scores_replace_history_but_keep_attempt_costs(tmp_path, monkeypatch):

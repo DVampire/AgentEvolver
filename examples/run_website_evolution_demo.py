@@ -57,6 +57,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         description="Run a three-persona, participatory website self-evolution demo."
     )
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Demo config path.")
+    parser.add_argument("--no-monitor", action="store_true", help="Disable the generic run dashboard.")
+    parser.add_argument("--monitor-port", type=int, default=8766, help="Internal monitor port; public pages share gateway port 9876.")
     parser.add_argument(
         "--scenario-dir",
         default=str(DEFAULT_SCENARIO_DIR),
@@ -531,6 +533,9 @@ def launch(args: argparse.Namespace) -> None:
         *(str(path) for path in personas),
     ]
     cfg_options = list(args.cfg_options)
+    forwarded.extend(["--monitor-port", str(args.monitor_port)])
+    if args.no_monitor:
+        forwarded.append("--no-monitor")
     if args.model:
         cfg_options[:0] = [
             f"model_name={args.model}",

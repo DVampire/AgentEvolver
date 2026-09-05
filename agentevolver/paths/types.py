@@ -32,6 +32,7 @@ class P(str, Enum):
     LOG_GATEWAY_TASKS = "log_gateway_tasks"
     LOG_TASK_VIEW = "log_task_view"
     LOG_BENCHMARK = "log_benchmark"
+    LOG_RUN_MONITOR = "log_run_monitor"
     LOG_BENCHMARK_RESULTS = "log_benchmark_results"
     LOG_BENCHMARK_RESULT = "log_benchmark_result"
     TRACE_EVENT_LOG = "trace_event_log"
@@ -151,7 +152,7 @@ class P(str, Enum):
 #: root they are joined to, not on them.
 RELATIVE: frozenset = frozenset({
     P.LOG_MODULE, P.LOG_TASKS, P.LOG_TASKS_ARCHIVE, P.LOG_TRACE_INDEX,
-    P.LOG_INPUTS, P.LOG_MODEL_REQUEST,
+    P.LOG_INPUTS, P.LOG_MODEL_REQUEST, P.LOG_RUN_MONITOR,
     P.LOG_COMMAND_CHECKPOINTS, P.LOG_COMMAND_CHECKPOINT,
     P.LOG_WORKSPACE_CHECKPOINT, P.LOG_GATEWAY_TASKS,
     P.LOG_TASK_VIEW, P.LOG_BENCHMARK, P.LOG_BENCHMARK_RESULTS,
@@ -168,7 +169,7 @@ RELATIVE: frozenset = frozenset({
 #: declaration, not a suffix heuristic: a directory can contain a dot and a file can
 #: intentionally have no suffix.
 FILES: frozenset = frozenset({
-    P.LOG_TASKS, P.LOG_TASKS_ARCHIVE, P.LOG_TRACE_INDEX,
+    P.LOG_TASKS, P.LOG_TASKS_ARCHIVE, P.LOG_TRACE_INDEX, P.LOG_RUN_MONITOR,
     P.LOG_MODEL_REQUEST, P.LOG_COMMAND_CHECKPOINT, P.LOG_WORKSPACE_CHECKPOINT,
     P.LOG_TASK_VIEW, P.LOG_BENCHMARK_RESULT,
     P.TRACE_EVENT_LOG, P.TRACE_SQLITE, P.TRACE_INTEGRITY,
@@ -198,6 +199,7 @@ LAYOUT: Dict[P, str] = {
     P.LOG_GATEWAY_TASKS: "gateway/tasks",
     P.LOG_TASK_VIEW: "{filename}",
     P.LOG_BENCHMARK: "benchmark/{benchmark}",
+    P.LOG_RUN_MONITOR: "run_monitor.json",
     P.LOG_BENCHMARK_RESULTS: "results/{benchmark}",
     P.LOG_BENCHMARK_RESULT: "results/{benchmark}/{filename}",
     P.TRACE_EVENT_LOG: "{session_id}.jsonl",

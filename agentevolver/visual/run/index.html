@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentEvolver · Live Run</title>
+  <link rel="stylesheet" href="./base.css">
+  <link rel="stylesheet" href="./run.css">
+  <script defer src="./run.js"></script>
+</head>
+<body>
+<div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+<main class="shell">
+  <header class="masthead">
+    <div><p class="eyebrow">AgentEvolver · Live Run</p><h1 id="title">Agent run</h1><p class="run-name" id="identity">Connecting…</p></div>
+    <div class="health"><span class="health-dot" id="health-dot"></span><div><strong id="health">Connecting</strong><small id="freshness">Waiting for telemetry</small></div></div>
+  </header>
+  <section class="hero-grid">
+    <article class="card"><div class="card-label">Run status</div><div class="runtime-value" id="status">—</div><p class="muted" id="runtime"></p></article>
+    <article class="card"><div class="card-label">Model calls completed</div><div class="progress-value" id="calls">—</div><p class="muted" id="requests"></p></article>
+    <article class="card"><div class="card-label">Recorded cost</div><div class="score-value" id="cost">—</div><p class="muted" id="cost-note"></p></article>
+  </section>
+  <section class="section-grid">
+    <article class="panel"><div class="panel-head"><div><p class="eyebrow">Execution</p><h2>Agents</h2></div><span class="pill" id="agent-count">0 observed</span></div><div class="slots" id="agents"></div><p class="note" id="observation"></p></article>
+    <article class="panel"><div class="panel-head"><div><p class="eyebrow">Telemetry</p><h2>Model usage</h2></div></div><div id="usage"></div><p class="note">Usage comes from completed trace calls. In-flight calls are not yet billed here.</p></article>
+  </section>
+  <section class="panel full"><div class="panel-head"><div><p class="eyebrow">Live products</p><h2>Deployments</h2></div></div><div class="deployments" id="deployments"></div><p class="note">Websites share the gateway port with this monitor. Status is the deployment registry's last observation, not a browser acceptance verdict.</p></section>
+  <section class="section-grid">
+    <article class="panel"><div class="panel-head"><div><p class="eyebrow">Capability library</p><h2>Extension inventory</h2></div></div><div id="components"></div><p class="note">Registered versions in the configured extension library. Registration alone does not prove creation, adoption, or successful use during this run.</p></article>
+    <article class="panel"><div class="panel-head"><div><p class="eyebrow">Request inspector</p><h2>Recent model requests</h2></div></div><div class="scroll" id="requests-list"></div><p class="note">The exact saved request HTML, isolated from this dashboard.</p></article>
+  </section>
+  <section class="panel full"><div class="panel-head"><div><p class="eyebrow">Activity</p><h2>Recent events</h2></div><span class="pill muted">Read-only · refreshes every 5s</span></div><div class="scroll" id="events"></div></section>
+  <footer class="note">No task-specific quotas, inferred completion percentages, or automatic agent actions.</footer>
+</main>
+</body>
+</html>

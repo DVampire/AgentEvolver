@@ -8,29 +8,24 @@ from agentevolver.paths import path_manager
 from .benchmark import BenchmarkMonitor, build_snapshot
 
 
-def css_path(filename: str) -> str:
-    """Return the absolute path to a CSS file in agentevolver/visual/css/."""
-    return str(path_manager.package_resource("visual", "css", filename))
-
-
-def js_path(filename: str) -> str:
-    """Return the absolute path to a JS file in agentevolver/visual/js/."""
-    return str(path_manager.package_resource("visual", "js", filename))
+def asset_path(view: str, filename: str) -> str:
+    """Resolve a view's resource through PathManager, independent of the cwd."""
+    return str(path_manager.package_resource("visual", view, filename))
 
 
 def render_task_page(html_body: str, out_path: str, title: str = "Task") -> str:
     """Render a task document body into a standalone, styled HTML page.
 
     Mirrors the prompt's page shell (meta_agent.html): metadata as ``<meta>``
-    tags in ``<head>``, ``task.css`` + ``task.js`` linked there, and the body
+    tags in ``<head>``, ``task/style.css`` + ``task/app.js`` linked there, and the body
     inserted directly (the body already carries its ``<div class="task">``
-    wrapper, or a ``<div class="task-doc">`` for Markdown tasks). ``task.js``
+    wrapper, or a ``<div class="task-doc">`` for Markdown tasks). ``task/app.js``
     renders the Markdown inside the section tags client-side. Returns ``out_path``.
     """
     out_dir = os.path.dirname(os.path.abspath(out_path))
     os.makedirs(out_dir, exist_ok=True)
-    css_rel = os.path.relpath(css_path("task.css"), start=out_dir)
-    js_rel = os.path.relpath(js_path("task.js"), start=out_dir)
+    css_rel = os.path.relpath(asset_path("task", "style.css"), start=out_dir)
+    js_rel = os.path.relpath(asset_path("task", "app.js"), start=out_dir)
     page = "\n".join([
         "<!DOCTYPE html>",
         '<html lang="en">',
@@ -53,7 +48,6 @@ def render_task_page(html_body: str, out_path: str, title: str = "Task") -> str:
 __all__ = [
     "BenchmarkMonitor",
     "build_snapshot",
-    "css_path",
-    "js_path",
+    "asset_path",
     "render_task_page",
 ]

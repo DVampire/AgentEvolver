@@ -1845,26 +1845,33 @@ class AgentGateway:
         so the Gateway embeds the trusted CSS and renderer without changing the stored
         executable HTML.
         """
-        visual_dir = Path(__file__).resolve().parents[1] / "visual"
+        from agentevolver.visual import asset_path
+
         assets = {
-            "prompt.css": (visual_dir / "css" / "prompt.css").read_text(encoding="utf-8"),
-            "workflow.css": (visual_dir / "css" / "workflow.css").read_text(encoding="utf-8"),
-            "workflow.js": (visual_dir / "js" / "workflow.js").read_text(encoding="utf-8"),
+            "prompt/style.css": Path(asset_path("prompt", "style.css")).read_text(encoding="utf-8"),
+            "workflow/style.css": Path(asset_path("workflow", "style.css")).read_text(encoding="utf-8"),
+            "workflow/app.js": Path(asset_path("workflow", "app.js")).read_text(encoding="utf-8"),
         }
+        legacy = {"prompt.css": "prompt/style.css", "workflow.css": "workflow/style.css", "workflow.js": "workflow/app.js"}
+
+        def asset_key(reference):
+            return next((key for key in assets if reference.endswith("visual/" + key)),
+                        legacy.get(Path(reference).name))
+
         document = lxml_html.document_fromstring(source)
         for link in document.xpath("//link[@rel='stylesheet']"):
-            filename = Path(link.get("href", "")).name
-            if filename not in assets:
+            key = asset_key(link.get("href", ""))
+            if key not in {"prompt/style.css", "workflow/style.css"}:
                 continue
             link.tag = "style"
             link.attrib.clear()
-            link.text = assets[filename]
+            link.text = assets[key]
         for script in document.xpath("//script[@src]"):
-            filename = Path(script.get("src", "")).name
-            if filename != "workflow.js":
+            key = asset_key(script.get("src", ""))
+            if key != "workflow/app.js":
                 continue
             script.attrib.clear()
-            script.text = assets[filename]
+            script.text = assets[key]
         rendered = etree.tostring(document, encoding="unicode", method="html")
         return "<!DOCTYPE html>\n" + rendered
 

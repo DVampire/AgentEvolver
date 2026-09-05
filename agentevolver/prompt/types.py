@@ -114,7 +114,7 @@ def expand_modules(section_html: str, base_dir: str, _depth: int = 0) -> str:
     """Inline every ``<module src="...">`` slot with the referenced module's <body> content.
 
     This is the server-side half of the pluggable-module mechanism. In the browser
-    ``visual/js/prompt.js`` fetches the same ``<module>`` slot and injects the module's body
+    ``visual/prompt/app.js`` fetches the same ``<module>`` slot and injects the module's body
     inline so prompt.css/js styles it as a native block; here we splice the body text in
     place of the slot so the model never sees a literal tag.
 

@@ -31,6 +31,8 @@ _DESCRIPTION = "Deploy and manage web apps — from a one-call inline HTML page 
 _GUIDANCE = """
 Deploy a web app and bind it to a reachable URL, then manage deployed sites. Each site is keyed by `site_id`; deploy many and each gets its own URL. Spans lightweight (a single inline HTML page served locally, instantly) to heavy (a full frontend build or backend service in an isolated container).
 
+When available, share `site_url` / `release_url` through the single gateway port, not the internal `url`. The app still serves routes at its internal root. Deploy supplies `BASE_PATH=/s/<site_id>/` during build/start and the gateway supplies `X-Forwarded-Prefix` per request (also for pinned releases). Generate browser resource, API and WebSocket URLs under that prefix; root-absolute `/api/...` or `/assets/...` URLs bypass the site's route. A relative URL must also account for nested client routes. Verify navigation and API calls at the public site_url, not only the internal port. The gateway does not rewrite arbitrary application JavaScript.
+
 ### Actions (pass `action`)
 - `preview`: start the current source without publishing a release event. Under a website
   iteration contract, test this exact URL before `deploy`; the source hash must still match.
@@ -140,24 +142,7 @@ class DeployTool(Tool):
 
     @staticmethod
     def _named_urls(rec) -> Dict[str, str]:
-        """The address that outlives this deployment, when a gateway can serve it.
-
-        `site_url` follows the site across releases; `release_url` pins this one. Both go
-        through the gateway rather than at a port, because the port is chosen fresh on
-        every redeploy — an address built from one names a deployment, not a site, and
-        every link handed out with it stops working at the next release.
-
-        Absent a gateway base, nothing is added: a caller then sees only the port-based
-        URLs it always saw, rather than an address that resolves nowhere.
-        """
-        base = (os.environ.get("GATEWAY_PUBLIC_BASE") or "").strip().rstrip("/")
-        if not base or not rec.site_id:
-            return {}
-        named = {"site_url": f"{base}/s/{rec.site_id}/"}
-        release = int(getattr(rec, "release_number", 0) or 0)
-        if release:
-            named["release_url"] = f"{base}/s/{rec.site_id}--r{release}/"
-        return named
+        return deployment_manager.public_urls(rec)
 
     @staticmethod
     def _previous_release_blocker(ctx: Any) -> str:

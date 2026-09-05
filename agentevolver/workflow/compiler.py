@@ -346,7 +346,7 @@ class WorkflowCompiler:
                         raise WorkflowCompileError("Remote or executable preview URLs are forbidden")
             if tag == "script":
                 src = element.get("src", "")
-                if (element.text or "").strip() or not src.endswith("visual/js/workflow.js"):
+                if (element.text or "").strip() or not src.endswith(("visual/workflow/app.js", "visual/js/workflow.js")):
                     raise WorkflowCompileError("Only the shared external Workflow renderer script is allowed")
 
     @staticmethod

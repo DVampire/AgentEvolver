@@ -8,7 +8,7 @@ Two consumers, two forms:
   * the **agent** gets clean text (``content``) — never raw HTML markup, which
     would just waste tokens and confuse the model;
   * the **visual layer** gets renderable HTML (``html_body``) styled by
-    ``agentevolver/visual/css/task.css``.
+    ``agentevolver/visual/task/style.css``.
 
 For ``.md`` the agent text is the raw markdown (already clean) and the view is
 ``markdown`` rendered to HTML. For ``.html`` the agent text is the tag-stripped

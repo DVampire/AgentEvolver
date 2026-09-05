@@ -74,8 +74,8 @@ workflow { display: none; }
 
 .wf-tag {
   color: var(--green);
-  border-color: rgba(91, 173, 120, 0.2);
-  background: rgba(91, 173, 120, 0.04);
+  border-color: rgba(99, 230, 181, 0.2);
+  background: rgba(99, 230, 181, 0.04);
 }
 
 .wf-grid {
@@ -142,11 +142,11 @@ workflow { display: none; }
 .wf-step[data-kind="agent"] { border-left-color: var(--green); }
 .wf-step[data-kind="verify"] {
   border-left-color: var(--amber);
-  background: rgba(207, 160, 64, 0.04);
+  background: rgba(243, 189, 113, 0.04);
 }
 .wf-step[data-kind="reduce"] {
   border-left-color: var(--green);
-  background: rgba(91, 173, 120, 0.04);
+  background: rgba(99, 230, 181, 0.04);
 }
 .wf-step[data-kind="branch"],
 .wf-step[data-kind="loop"] { border-left-color: var(--red); }

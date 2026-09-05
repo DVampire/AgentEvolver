@@ -15,7 +15,7 @@ from pydantic import Field
 
 from agentevolver.memory.default.tiered import TieredMemory, FlowStep, _SessionState
 from agentevolver.registry import MEMORY_SYSTEM
-from agentevolver.visual import css_path
+from agentevolver.visual import asset_path
 
 
 def _he(text: str) -> str:
@@ -60,7 +60,7 @@ class FileSystemMemory(TieredMemory):
     # ------------------------------------------------------------------
 
     def _render(self, state: _SessionState) -> str:
-        css_rel = os.path.relpath(css_path("memory.css"), start=os.path.dirname(state.file_path))
+        css_rel = os.path.relpath(asset_path("memory", "style.css"), start=os.path.dirname(state.file_path))
         parts = [
             "<!DOCTYPE html>",
             '<html lang="en">',

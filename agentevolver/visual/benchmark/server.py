@@ -350,7 +350,7 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
         "telemetry": telemetry,
         "eta_seconds": eta,
         "recent": list(reversed(recent[-10:])),
-        "monitor_url": aggregate.get("monitor_url") or state.get("monitor_url"),
+        "monitor_url": state.get("monitor_url") or aggregate.get("monitor_url"),
     }
 
 
@@ -422,7 +422,9 @@ class BenchmarkMonitor:
     async def deploy(self, port: int = 8765) -> str | None:
         """Deploy this view through the framework's normal service lifecycle."""
         from agentevolver.deploy import DeployRequest, deployment_manager
+        from agentevolver.gateway.sites import ensure_site_gateway
 
+        await ensure_site_gateway()
         slug = _SAFE_ID.sub("-", self.state["benchmark"].lower()).strip("-") or "benchmark"
         digest = hashlib.sha256(str(self.run_dir).encode()).hexdigest()[:10]
         aggregate = _read_json(self.path.with_name("aggregate.json"), {})
@@ -436,13 +438,15 @@ class BenchmarkMonitor:
         }
         request = DeployRequest(
             site_id=site_id,
+            title=self.state["title"],
+            kind="benchmark",
             runtime="custom",
             backend="host",
             port=port,
             files=files,
             overrides={
                 "start": f"python3 benchmark.py serve --state {shlex.quote(str(self.path))} "
-                "--host 0.0.0.0 --port $PORT",
+                "--host 127.0.0.1 --port $PORT",
                 "health": {"type": "http", "path": "/api/status", "timeout_s": 20},
             },
         )
@@ -451,9 +455,10 @@ class BenchmarkMonitor:
         if status != "running":
             return None
         self.state["monitor_site_id"] = site_id
-        self.state["monitor_url"] = record.url
+        self.state["monitor_url"] = deployment_manager.public_urls(record)["site_url"]
+        self.state["monitor_backend_url"] = record.url
         self.publish()
-        return record.url
+        return self.state["monitor_url"]
 
 
 def _handler(state_path: Path, asset_dir: Path) -> type[BaseHTTPRequestHandler]:

@@ -8,9 +8,9 @@
   <meta name="version" content="1.0.0">
   <meta name="workflow-schema-version" content="1.1.0">
   <title>Ralph · Dynamic Workflow</title>
-  <link rel="stylesheet" href="../../visual/css/prompt.css">
-  <link rel="stylesheet" href="../../visual/css/workflow.css">
-  <script defer src="../../visual/js/workflow.js"></script>
+  <link rel="stylesheet" href="../../visual/prompt/style.css">
+  <link rel="stylesheet" href="../../visual/workflow/style.css">
+  <script defer src="../../visual/workflow/app.js"></script>
 </head>
 <body>
 <main class="workflow-preview" data-workflow-preview>
@@ -19,7 +19,7 @@
 
 <!--
   The element below is executable Workflow source. WorkflowCompiler reads it directly;
-  visual/js/workflow.js renders a separate preview without modifying the source tree.
+  visual/workflow/app.js renders a separate preview without modifying the source tree.
 
   Why a loop of single agent steps and not a long-lived agent: every round calls
   agent_manager afresh, so round N+1 starts with no messages from round N. The

@@ -60,70 +60,8 @@ async def serve_stdio(gateway: AgentGateway) -> None:
 _TASK_SHUTDOWN_SECONDS = 2.0
 
 
-# --------------------------------------------------------------------------- site relay
-# One definition, mounted by every server that answers for deployed sites. The gateway
-# serves it for interactive sessions; a headless run mounts the same router so a script
-# that deploys can hand out names too. Two servings of one address would be two chances
-# to disagree about what it means.
-site_relay = APIRouter()
-
-
-@site_relay.api_route(
-    "/s/{name}/{path:path}",
-    methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-)
-async def deployed_site(request: Request, name: str, path: str = ""):
-    """Serve a deployed site by NAME, from the gateway's own origin.
-
-    The address a visitor is given must outlive the release that produced it. A
-    deployer asks for a free port each time it runs, so `http://host:PORT` names one
-    deployment rather than one site: every redeploy hands out a different URL and
-    every link anyone was given stops working. In the website scenario that broke
-    the premise directly — three participants are asked to return to an ark they
-    visited before, and each round addressed a different port.
-
-    `/s/<site>/` follows the site; `/s/<site>--r<n>/` pins one release, which is what
-    an independent verdict has to be about.
-    """
-    from agentevolver.deploy import deployment_manager
-
-    port = deployment_manager.resolve_port(name)
-    if not port:
-        # A pinned older release is archived rather than running: bring it back for
-        # whoever asked. Only reached when the plain lookup found nothing, so the
-        # current site keeps costing one dict read per request.
-        port = await deployment_manager.ensure_release(name)
-    if not port:
-        known = deployment_manager.public_names()
-        return Response(
-            status_code=404,
-            content=(f"No site named {name!r} is running."
-                     + (f" Running: {', '.join(known)}" if known else "")),
-        )
-
-    import aiohttp
-
-    target = f"http://127.0.0.1:{port}/{path}"
-    if request.url.query:
-        target = f"{target}?{request.url.query}"
-    body = await request.body()
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.request(
-                request.method, target, data=body or None,
-                headers={k: v for k, v in request.headers.items()
-                         if k.lower() not in {"host", "connection", "content-length"}},
-                allow_redirects=False,
-            ) as upstream:
-                payload = await upstream.read()
-                headers = {k: v for k, v in upstream.headers.items()
-                           if k.lower() not in {"content-encoding", "content-length",
-                                                "transfer-encoding", "connection"}}
-                return Response(content=payload, status_code=upstream.status,
-                                headers=headers,
-                                media_type=upstream.headers.get("content-type"))
-        except Exception:
-            return Response(status_code=502, content=f"Site {name!r} is unreachable")
+# The same relay serves the full gateway and the detached sites-only entry point.
+from agentevolver.gateway.sites import site_relay, deployed_site
 
 
 def create_websocket_app(

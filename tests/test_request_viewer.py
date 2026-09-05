@@ -173,8 +173,8 @@ def test_request_page_is_written_atomically_and_links_shared_assets(tmp_path):
     assert "<script defer>" not in page
     css_href = re.search(r'<link rel="stylesheet" href="([^"]+)"', page).group(1)
     js_src = re.search(r'<script defer src="([^"]+)"', page).group(1)
-    assert (Path(path).parent / css_href).resolve().name == "request.css"
-    assert (Path(path).parent / js_src).resolve().name == "request.js"
+    assert (Path(path).parent / css_href).resolve().parts[-2:] == ("request", "style.css")
+    assert (Path(path).parent / js_src).resolve().parts[-2:] == ("request", "app.js")
     assert (Path(path).parent / css_href).is_file()
     assert (Path(path).parent / js_src).is_file()
     assert not list(tmp_path.rglob("*.tmp"))
@@ -196,8 +196,8 @@ async def test_background_request_page_can_be_flushed_before_shutdown(tmp_path):
 
 
 def test_visual_pages_share_one_palette_and_type_system():
-    css_dir = Path(__file__).resolve().parents[1] / "agentevolver" / "visual" / "css"
-    pages = ["memory.css", "plan.css", "prompt.css", "request.css", "task.css"]
+    visual = Path(__file__).resolve().parents[1] / "agentevolver" / "visual"
+    pages = ["memory", "plan", "prompt", "request", "task"]
     tokens = (
         "ground",
         "surface",
@@ -217,14 +217,20 @@ def test_visual_pages_share_one_palette_and_type_system():
 
     values = {}
     for name in pages:
-        source = (css_dir / name).read_text(encoding="utf-8")
+        source = (visual / name / "style.css").read_text(encoding="utf-8")
         values[name] = {
             token: re.search(rf"--{re.escape(token)}:\s*([^;]+);", source).group(1).strip()
             for token in tokens
         }
 
-    expected = values["prompt.css"]
+    expected = values["prompt"]
     assert all(palette == expected for palette in values.values()), values
+    dashboard = (visual / "benchmark" / "style.css").read_text(encoding="utf-8")
+    for token, dashboard_token in {"ground": "bg", "surface": "panel-solid", "text": "text",
+                                   "text-mid": "muted", "green": "mint", "amber": "amber",
+                                   "red": "red", "border": "border"}.items():
+        value = re.search(rf"--{dashboard_token}:\s*([^;]+);", dashboard).group(1).strip()
+        assert expected[token] == value, token
 
 
 @pytest.mark.asyncio

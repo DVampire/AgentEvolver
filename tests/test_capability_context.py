@@ -117,7 +117,7 @@ def test_the_script_cardifies_every_catalog_the_prompt_emits():
     sub-agents, plugins, environments — are catalogs a reader most needs to scan, and
     the failure is silent: the text is all there, just unreadable.
     """
-    script = (VISUAL / "js" / "prompt.js").read_text(encoding="utf-8")
+    script = (VISUAL / "prompt" / "app.js").read_text(encoding="utf-8")
     listed = set(re.findall(r"'(\w+-context)'", script))
     missing = _rendered_leaf_tags() - listed
     assert not missing, (
@@ -131,7 +131,7 @@ def test_the_stylesheet_labels_every_catalog_the_prompt_emits():
     The label carries the live count, which is the only thing separating "no plugins
     are mounted" from "the plugin roster did not render".
     """
-    css = (VISUAL / "css" / "prompt.css").read_text(encoding="utf-8")
+    css = (VISUAL / "prompt" / "style.css").read_text(encoding="utf-8")
     labelled = set(re.findall(r"(\w+-context)::before", css))
     missing = _rendered_leaf_tags() - labelled
     assert not missing, f"these catalogs render without a label: {sorted(missing)}"
@@ -222,7 +222,7 @@ def test_every_block_a_prompt_opens_in_the_system_turn_is_styled():
     — three blocks in *every* prompt — went unlabelled while a check on the same rule
     passed.
     """
-    css = (VISUAL / "css" / "prompt.css").read_text(encoding="utf-8")
+    css = (VISUAL / "prompt" / "style.css").read_text(encoding="utf-8")
     styled = set(re.findall(r"div\.system > ([\w-]+)", css))
 
     def resolve(text: str, base: pathlib.Path) -> str:

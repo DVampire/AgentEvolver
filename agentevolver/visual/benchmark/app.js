@@ -110,7 +110,7 @@ function render(data) {
 
 async function refresh() {
   try {
-    const response = await fetch("/api/status", { cache: "no-store" });
+    const response = await fetch(new URL("api/status", location.href), { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     render(await response.json());
   } catch (error) {

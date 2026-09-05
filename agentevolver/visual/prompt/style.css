@@ -1,18 +1,19 @@
 :root {
-  --ground:      #0E1210;
-  --surface:     #141B12;
-  --surface-2:   #1B2418;
-  --surface-3:   #222C1E;
-  --text:        #C8DDB8;
-  --text-mid:    #6A8E5C;
-  --text-faint:  #2E4428;
-  --green:       #5BAD78;
-  --amber:       #CFA040;
-  --red:         #D45E3E;
-  --blue:        #5E93C0;
-  --purple:      #9B7EC8;
-  --border:      #243220;
-  --border-hi:   #384F2E;
+  color-scheme: dark;
+  --ground:      #07100e;
+  --surface:     #0e1c19;
+  --surface-2:   #142521;
+  --surface-3:   #1c302a;
+  --text:        #ecf7f2;
+  --text-mid:    #8da69c;
+  --text-faint:  #6b857a;
+  --green:       #63e6b5;
+  --amber:       #f3bd71;
+  --red:         #ff7f87;
+  --blue:        #82b8d9;
+  --purple:      #b2a4dd;
+  --border:      rgba(194, 241, 224, 0.12);
+  --border-hi:   rgba(194, 241, 224, 0.24);
 
   --mono: 'Courier New', Courier, monospace;
 }
@@ -173,35 +174,35 @@ div.user > *::before {
 /* ── GREEN — Identity / Profile ── */
 div.system > profile {
   border-left-color: var(--green);
-  background: rgba(91,173,120,0.04);
+  background: rgba(99, 230, 181,0.04);
   font-size: 14px;
 }
 div.system > profile::before {
   content: counter(section, decimal-leading-zero) "  ·  profile";
   color: var(--green);
-  border-bottom-color: rgba(91,173,120,0.2);
+  border-bottom-color: rgba(99, 230, 181,0.2);
 }
 
 /* ── AMBER — Constraints / Caution ── */
 div.system > constraint-rules {
   border-left-color: var(--amber);
-  background: rgba(207,160,64,0.04);
+  background: rgba(243, 189, 113,0.04);
 }
 div.system > constraint-rules::before {
   content: counter(section, decimal-leading-zero) "  ·  constraint-rules";
   color: var(--amber);
-  border-bottom-color: rgba(207,160,64,0.2);
+  border-bottom-color: rgba(243, 189, 113,0.2);
 }
 
 /* ── RED — Highest Priority Instructions ── */
 div.system > task-rules {
   border-left-color: var(--red);
-  background: rgba(212,94,62,0.04);
+  background: rgba(255, 127, 135,0.04);
 }
 div.system > task-rules::before {
   content: counter(section, decimal-leading-zero) "  ·  task-rules";
   color: var(--red);
-  border-bottom-color: rgba(212,94,62,0.2);
+  border-bottom-color: rgba(255, 127, 135,0.2);
 }
 
 /* ── BLUE — Informational / Environmental Context ── */
@@ -214,27 +215,27 @@ div.system > project           { border-left-color: var(--blue); }
 
 div.system > input-rules::before {
   content: counter(section, decimal-leading-zero) "  ·  input-rules";
-  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+  color: var(--blue); border-bottom-color: rgba(130, 184, 217,0.2);
 }
 div.system > context-rules::before {
   content: counter(section, decimal-leading-zero) "  ·  context-rules";
-  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+  color: var(--blue); border-bottom-color: rgba(130, 184, 217,0.2);
 }
 div.system > situation-rules::before {
   content: counter(section, decimal-leading-zero) "  ·  situation-rules";
-  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+  color: var(--blue); border-bottom-color: rgba(130, 184, 217,0.2);
 }
 div.system > execution-state-rules::before {
   content: counter(section, decimal-leading-zero) "  ·  execution-state-rules";
-  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+  color: var(--blue); border-bottom-color: rgba(130, 184, 217,0.2);
 }
 div.system > environment-state-rules::before {
   content: counter(section, decimal-leading-zero) "  ·  environment-state-rules";
-  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+  color: var(--blue); border-bottom-color: rgba(130, 184, 217,0.2);
 }
 div.system > project::before {
   content: counter(section, decimal-leading-zero) "  ·  project";
-  color: var(--blue); border-bottom-color: rgba(94,147,192,0.2);
+  color: var(--blue); border-bottom-color: rgba(130, 184, 217,0.2);
 }
 
 /* ── FAINT — Low-Priority Environment Setup ── */
@@ -669,7 +670,7 @@ div.user > agent-context > environment-state         { border-left-color: var(--
 /* ── constraints sub-module — amber, hosts budget rings ── */
 div.user > agent-context > constraints {
   border-left-color: var(--amber);
-  background: rgba(207,160,64,0.04);
+  background: rgba(243, 189, 113,0.04);
 }
 div.user > agent-context > constraints::before { content: "constraints"; color: var(--amber); }
 
@@ -698,8 +699,8 @@ div.user > agent-context > constraints::before { content: "constraints"; color: 
   --pct: 0;
   /* Brighter, cleaner accents than the muted base palette so the rings
      read crisply against the dark ground. */
-  --ring: #63C487;
-  --track: #2F3E29;
+  --ring: #63e6b5;
+  --track: #1c302a;
   position: relative;
   width: 66px;
   height: 66px;
@@ -735,8 +736,8 @@ div.user > agent-context > constraints::before { content: "constraints"; color: 
   letter-spacing: 0.1em;
   color: var(--text-mid);
 }
-.budget-ring.tier-tight    { --ring: #E6B84F; }
-.budget-ring.tier-critical { --ring: #EC6E4C; }
+.budget-ring.tier-tight    { --ring: #f3bd71; }
+.budget-ring.tier-critical { --ring: #ff7f87; }
 
 .budget-tier {
   display: inline-block;
@@ -748,9 +749,9 @@ div.user > agent-context > constraints::before { content: "constraints"; color: 
   text-transform: uppercase;
   border: 1px solid var(--border-hi);
 }
-.budget-tier.tier-normal   { color: #63C487; border-color: rgba(99,196,135,0.45); background: rgba(99,196,135,0.08); }
-.budget-tier.tier-tight    { color: #E6B84F; border-color: rgba(230,184,79,0.45); background: rgba(230,184,79,0.08); }
-.budget-tier.tier-critical { color: #EC6E4C; border-color: rgba(236,110,76,0.45); background: rgba(236,110,76,0.08); }
+.budget-tier.tier-normal   { color: #63e6b5; border-color: rgba(99, 230, 181,0.45); background: rgba(99, 230, 181,0.08); }
+.budget-tier.tier-tight    { color: #f3bd71; border-color: rgba(243, 189, 113,0.45); background: rgba(243, 189, 113,0.08); }
+.budget-tier.tier-critical { color: #ff7f87; border-color: rgba(255, 127, 135,0.45); background: rgba(255, 127, 135,0.08); }
 
 /* =====================================================
    INLINE ELEMENTS & TYPOGRAPHY

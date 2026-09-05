@@ -1,6 +1,6 @@
 ---
 name: workflow_default
-description: "Each `.html` file is a complete standalone HTML document and an independently versioned, active Workflow definition loaded by `WorkflowManager.initialize()`. It links the shared `visual/css/workflow.css` and `visual/js/workflow.js` preview assets while keeping the executable `<workflow>` element intact. Keep examples generic and parameterized; project-specific or automatically distilled Workflows belong in `extension/workflow/`."
+description: "Each `.html` file is a complete standalone HTML document and an independently versioned, active Workflow definition loaded by `WorkflowManager.initialize()`. It links the shared `visual/workflow/style.css` and `visual/workflow/app.js` preview assets while keeping the executable `<workflow>` element intact. Keep examples generic and parameterized; project-specific or automatically distilled Workflows belong in `extension/workflow/`."
 version: 1.0.0
 type: collection
 category: workflow
@@ -12,7 +12,7 @@ metadata:
 
 Each `.html` file is a complete standalone HTML document and an independently versioned,
 active Workflow definition loaded by `WorkflowManager.initialize()`. It links the shared
-`visual/css/workflow.css` and `visual/js/workflow.js` preview assets while keeping the
+`visual/workflow/style.css` and `visual/workflow/app.js` preview assets while keeping the
 executable `<workflow>` element intact. Keep examples generic and parameterized; project-specific
 or automatically distilled Workflows belong in `extension/workflow/`.
 

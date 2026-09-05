@@ -59,6 +59,8 @@ from agentevolver.utils import make_id
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run MetaAgent on a task")
+    parser.add_argument("--no-monitor", action="store_true", help="Disable the read-only run dashboard.")
+    parser.add_argument("--monitor-port", type=int, default=8766, help="Internal monitor port; public pages share gateway port 9876.")
     parser.add_argument(
         "--config",
         default=os.path.join(root, "configs", "meta_agent.py"),
@@ -201,76 +203,12 @@ async def teardown() -> None:
         logger.warning(f"| ⚠️ trace cleanup: {error}")
 
 
-# How long the deployed-site server gets to finish in-flight requests at shutdown.
-_TASK_STOP_SECONDS = 5.0
-
-
 async def serve_deployed_site_names():
-    """Answer `/s/<name>/` for this run's deployed sites, if nobody else is.
+    """The deployment entry point outlives any one agent run."""
+    from agentevolver.gateway.sites import ensure_site_gateway
 
-    A deployer asks for a free port each time it runs, so `http://host:PORT` names one
-    deployment rather than one site: every redeploy hands out a different address and
-    every link already given out stops working. `/s/<site>/` is the fix, and
-    `/s/<site>--r<n>` reaches an older release from its archive — but both are routes on
-    the gateway's app, and a headless run starts no gateway. So the addresses existed only
-    for interactive sessions, and a run whose whole premise is asking people to return to
-    a site they visited before handed each of them a different port every round.
-
-    This serves the gateway's own app rather than a second copy of the route, because two
-    servings of one address are two chances to disagree about it. If the port is already
-    taken, a gateway is answering there and this run has nothing to add.
-    """
-    import socket
-
-    from agentevolver.port import GATEWAY as GATEWAY_PORT
-
-    host = "127.0.0.1"
-    probe = socket.socket()
-    try:
-        probe.bind((host, GATEWAY_PORT))
-    except OSError:
-        # Something already listens there. Whatever it is owns the address, so leave
-        # GATEWAY_PUBLIC_BASE to it rather than claiming an address this run cannot serve.
-        logger.info(f"| 🌐 port {GATEWAY_PORT} is taken; leaving deployed-site names to it")
-        return None
-    finally:
-        probe.close()
-
-    try:
-        import uvicorn
-        from fastapi import FastAPI
-
-        from agentevolver.gateway.transport import site_relay
-    except Exception as exc:
-        logger.warning(f"| 🌐 deployed sites stay port-addressed: {exc}")
-        return None
-
-    # Only the site relay, and the gateway's own definition of it. Serving the whole
-    # gateway app would put an AgentGateway behind routes nobody started, and a second
-    # copy of the route would be a second chance to disagree about what `/s/<name>/`
-    # means. This run answers for deployed sites and nothing else.
-    app = FastAPI(title="AgentEvolver deployed sites", version="1.0.0")
-    app.include_router(site_relay)
-    server = uvicorn.Server(uvicorn.Config(app, host=host, port=GATEWAY_PORT, log_level="warning"))
-    task = asyncio.create_task(server.serve(), name="deployed-site-names")
-    os.environ.setdefault("GATEWAY_PUBLIC_BASE", f"http://{host}:{GATEWAY_PORT}")
-    logger.info(f"| 🌐 deployed sites are addressable at http://{host}:{GATEWAY_PORT}/s/<site>/")
-
-    async def stop() -> None:
-        """Ask the server to finish, rather than cancelling it mid-request.
-
-        Cancelling uvicorn's `serve()` unwinds the ASGI lifespan through a
-        CancelledError and prints a traceback at the end of every run that used this —
-        an alarming way to report an ordinary shutdown.
-        """
-        server.should_exit = True
-        try:
-            await asyncio.wait_for(task, timeout=_TASK_STOP_SECONDS)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-
-    return stop
+    address = await ensure_site_gateway()
+    logger.info(f"| 🌐 Unified site entry: {address}/s/<site>/ (forward port 9876 once)")
 
 
 async def run_with_lifecycle() -> None:
@@ -291,7 +229,7 @@ async def run_with_lifecycle() -> None:
         except (NotImplementedError, RuntimeError):
             pass
 
-    stop_names = await serve_deployed_site_names()
+    await serve_deployed_site_names()
     run_task = asyncio.create_task(main(), name="agent-launcher")
     signal_task = asyncio.create_task(stop_requested.wait(), name="launcher-stop-signal")
     try:
@@ -311,8 +249,6 @@ async def run_with_lifecycle() -> None:
             run_task.cancel()
             await asyncio.gather(run_task, return_exceptions=True)
         await teardown()
-        if stop_names is not None:
-            await stop_names()
         for sig in installed:
             loop.remove_signal_handler(sig)
 
@@ -451,18 +387,45 @@ async def main():
         answer_from_the_terminal(session_id, answering_stop), name="terminal-answers")
 
     # --- Wait for completion ---
+    from agentevolver.runtime import kernel
+    from agentevolver.visual.run import RunMonitor
+
+    monitor = None
+    outcome = "interrupted"
     try:
+        if not args.no_monitor:
+            try:
+                monitor = RunMonitor(config.log_root, session_id=session_id,
+                                     title=args.agent_name.replace("_", " ").title(),
+                                     extension_root=config.extension_root)
+                url = await monitor.start(args.monitor_port)
+                logger.info(f"| 🌐 Run dashboard: {url} (read-only; forward its port for remote access)")
+            except Exception as error:
+                logger.warning(f"| ⚠️ Run dashboard unavailable: {error}; agent execution continues")
+        tick = 0
         while True:
             record = await task_manager.get(task_id)
+            if monitor and tick % 5 == 0:
+                try:
+                    monitor.publish(kernel.snapshot())
+                except OSError as error:
+                    logger.warning(f"| ⚠️ Run dashboard update: {error}")
+            tick += 1
             if record and record.task.status in (
                 TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED
             ):
+                outcome = record.task.status.value
                 break
             await asyncio.sleep(1)
     finally:
         answering_stop.set()
         answering.cancel()
         await asyncio.gather(answering, return_exceptions=True)
+        if monitor:
+            try:
+                monitor.publish(kernel.snapshot(), status=outcome)
+            except OSError as error:
+                logger.warning(f"| ⚠️ Run dashboard final update: {error}")
 
     record = await task_manager.get(task_id)
     if record.task.status == TaskStatus.DONE:

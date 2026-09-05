@@ -18,7 +18,7 @@ from typing import Any, Optional
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
 from agentevolver.trace.types import TraceEvent, TraceEventType
-from agentevolver.visual import css_path, js_path
+from agentevolver.visual import asset_path
 
 
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
@@ -193,8 +193,8 @@ def _render_sequence(messages: list[Any]) -> str:
 def _asset_refs(file_path: str) -> tuple[str, str]:
     """Return browser-relative links to the PathManager-owned viewer assets."""
     output_dir = os.path.dirname(os.path.abspath(file_path))
-    css = os.path.relpath(css_path("request.css"), start=output_dir)
-    javascript = os.path.relpath(js_path("request.js"), start=output_dir)
+    css = os.path.relpath(asset_path("request", "style.css"), start=output_dir)
+    javascript = os.path.relpath(asset_path("request", "app.js"), start=output_dir)
     return css, javascript
 
 

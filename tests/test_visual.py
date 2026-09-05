@@ -11,34 +11,35 @@ the title is a task's own text and lands inside an HTML attribute.
 
 import os
 import re
+from pathlib import Path
 
 import pytest
 
-from agentevolver.visual import css_path, js_path, render_task_page
+from agentevolver.visual import asset_path, render_task_page
 
 
 # --------------------------------------------------------------------------- #
 # The assets the page expects to find
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(
-    "filename",
-    ["task.css", "prompt.css", "workflow.css", "memory.css", "plan.css", "request.css"],
+    "view",
+    ["task", "prompt", "workflow", "memory", "plan", "request"],
 )
-def test_the_referenced_stylesheets_exist(filename):
+def test_the_referenced_stylesheets_exist(view):
     """Every stylesheet a renderer names is a bare filename joined onto a directory.
 
     Nothing resolves it at import time, so a renamed or moved file produces a
     404 in the reader's browser and no error anywhere near the code that named
     it. This is the only place the two ends are checked against each other.
     """
-    assert os.path.isfile(css_path(filename))
+    assert os.path.isfile(asset_path(view, "style.css"))
 
 
-@pytest.mark.parametrize("filename", ["task.js", "prompt.js", "workflow.js", "request.js"])
-def test_the_referenced_scripts_exist(filename):
+@pytest.mark.parametrize("view", ["task", "prompt", "workflow", "request"])
+def test_the_referenced_scripts_exist(view):
     """``task.js`` renders the Markdown inside the section tags client-side, so a
     missing script is not a missing flourish — the page shows its raw source."""
-    assert os.path.isfile(js_path(filename))
+    assert os.path.isfile(asset_path(view, "app.js"))
 
 
 def test_asset_paths_are_absolute():
@@ -49,8 +50,32 @@ def test_asset_paths_are_absolute():
     happened to start, that difference would be meaningless and would still be a
     plausible-looking string.
     """
-    assert os.path.isabs(css_path("task.css"))
-    assert os.path.isabs(js_path("task.js"))
+    assert os.path.isabs(asset_path("task", "style.css"))
+    assert os.path.isabs(asset_path("task", "app.js"))
+
+
+def test_shipped_html_assets_resolve_after_regrouping():
+    root = Path(__file__).resolve().parents[1]
+    folders = [root / "agentevolver/prompt", root / "agentevolver/workflow/default", root / "examples/tasks"]
+    for folder in folders:
+        for page in folder.rglob("*.html"):
+            for reference in re.findall(r'(?:href|src)="([^"]+)"', page.read_text()):
+                if "visual/" in reference and reference.endswith((".css", ".js")):
+                    assert (page.parent / reference).resolve().is_file(), (page, reference)
+    visual = root / "agentevolver/visual"
+    assert not (visual / "css").exists()
+    assert not (visual / "js").exists()
+
+
+def test_workflow_iframe_embeds_regrouped_assets():
+    from agentevolver.gateway.service import AgentGateway
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "agentevolver/workflow/default/parallel_review.html").read_text()
+    preview = AgentGateway._workflow_preview_document(source)
+    assert len(re.findall(r"<style", preview)) == 2
+    assert "<script src=" not in preview and '<script defer src=' not in preview
+    assert "workflow-preview" in preview
 
 
 # --------------------------------------------------------------------------- #

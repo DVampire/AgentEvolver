@@ -40,11 +40,11 @@ TEMPLATES = (
 # the stylesheet mutated, collection cached it, the repair restored the file, and the
 # check still failed against its stale in-memory copy.
 def _css() -> str:
-    return (ROOT / "agentevolver" / "visual" / "css" / "prompt.css").read_text(encoding="utf-8")
+    return (ROOT / "agentevolver" / "visual" / "prompt" / "style.css").read_text(encoding="utf-8")
 
 
 def _js() -> str:
-    return (ROOT / "agentevolver" / "visual" / "js" / "prompt.js").read_text(encoding="utf-8")
+    return (ROOT / "agentevolver" / "visual" / "prompt" / "app.js").read_text(encoding="utf-8")
 
 
 def _splitter() -> str:

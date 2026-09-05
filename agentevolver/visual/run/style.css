@@ -1,0 +1,22 @@
+/* Palette, typography and panels come from the shared benchmark stylesheet. */
+.full { margin-top: 16px; }
+.muted, .note { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.note { margin-top: 18px; }
+.runtime-value { text-transform: capitalize; font-size: clamp(24px, 3vw, 40px); }
+a { color: var(--mint); text-decoration: none; overflow-wrap: anywhere; }
+a:hover { text-decoration: underline; }
+a:focus-visible { outline: 2px solid var(--mint); outline-offset: 4px; }
+.agent-name { font-size: 15px; margin: 12px 0; overflow-wrap: anywhere; }
+.entry { padding: 12px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.entry:last-child { border-bottom: 0; }
+.entry small { display: block; margin-top: 5px; color: var(--muted); }
+.metric { display: flex; justify-content: space-between; gap: 15px; padding: 14px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+.metric span { color: var(--muted); }
+.scroll { max-height: 340px; overflow-y: auto; }
+.deployments { display: grid; grid-template-columns: repeat(auto-fit,minmax(250px,1fr)); gap: 12px; }
+.event { display: grid; grid-template-columns: 90px 1fr 1fr; gap: 12px; font-size: 12px; }
+.families { display: flex; flex-wrap: wrap; gap: 8px; }
+.state { color: var(--mint); font-size: 11px; }
+.state.error { color: var(--red); }
+@media (max-width: 650px) { .event { grid-template-columns: 65px 1fr; } .event span:last-child { grid-column: 2; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

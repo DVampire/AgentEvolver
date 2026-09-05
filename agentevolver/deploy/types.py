@@ -156,6 +156,7 @@ class SiteRecord(BaseModel):
         ),
     )
     created_at: str = ""
+    deployed_at: str = Field(default="", description="When this deployment passed health checks; unchanged on stop.")
     updated_at: str = ""
     error: Optional[str] = None
     log_path: str = Field(default="/tmp/deploy_site.log", description="In-container path of the server's stdout/stderr log.")

@@ -625,6 +625,7 @@ def test_the_registry_survives_a_restart(manager, tmp_path):
         url="http://x",
         port=8000,
         resource_id="123:456:123",
+        deployed_at="2026-09-05T02:00:00+00:00",
     )
     manager._save()
 
@@ -634,6 +635,7 @@ def test_the_registry_survives_a_restart(manager, tmp_path):
     assert reloaded._sites["a"].url == "http://x"
     assert reloaded._sites["a"].runtime == "static"
     assert reloaded._sites["a"].resource_id == "123:456:123"
+    assert reloaded._sites["a"].deployed_at == "2026-09-05T02:00:00+00:00"
 
 
 def test_a_corrupt_registry_degrades_to_empty_rather_than_crashing(manager, tmp_path):
@@ -721,6 +723,7 @@ async def test_stop_uses_the_persisted_resource_identity_after_handle_loss(
         status=SiteStatus.RUNNING,
         url="http://example.test",
         resource_id="123:456:123",
+        deployed_at="2026-09-05T02:00:00+00:00",
     )
     captured = {}
 
@@ -739,6 +742,8 @@ async def test_stop_uses_the_persisted_resource_identity_after_handle_loss(
     }
     assert record.status is SiteStatus.STOPPED
     assert record.url is None
+    assert record.deployed_at == "2026-09-05T02:00:00+00:00"
+    assert record.updated_at != record.deployed_at
     assert record.resource_id is None
 
 
