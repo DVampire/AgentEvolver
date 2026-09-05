@@ -236,7 +236,10 @@ class Kernel:
         if proc is None or not proc.alive:
             return False
         try:
+            if envelope.id in proc.deliveries:
+                return proc.deliveries[envelope.id]["status"] in {"queued", "received", "delivered"}
             proc.mailbox.put(envelope)
+            proc.record_delivery(envelope, "queued")
         except MailboxClosed:
             return False
         return True
@@ -525,7 +528,17 @@ class Kernel:
         files = list(getattr(envelope, "files", ()) or ())
         kwargs = dict(getattr(envelope, "kwargs", {}) or {})
         logger.info(f"| ▶️ [{proc.name}:{proc.pid[:8]}] turn {proc.turns + 1}")
-        return await proc.agent(task=task, files=files, ctx=proc.ctx, **kwargs)
+        proc.record_delivery(envelope, "received")
+        try:
+            result = await proc.agent(task=task, files=files, ctx=proc.ctx, **kwargs)
+        except (Stopped, Killed, asyncio.CancelledError):
+            proc.record_delivery(envelope, "interrupted")
+            raise
+        except Exception:
+            proc.record_delivery(envelope, "failed")
+            raise
+        proc.record_delivery(envelope, "delivered")
+        return result
 
     @staticmethod
     def _input_text(proc: Process, envelope: Envelope) -> str:
@@ -596,6 +609,8 @@ class Kernel:
             proc.transition(ProcessState.EXITED)
             self._topics.drop(proc.pid)
             undelivered = proc.mailbox.close()
+            for envelope in undelivered:
+                proc.record_delivery(envelope, "undelivered")
             proc.signals.clear()
             if undelivered:
                 logger.info(

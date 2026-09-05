@@ -93,8 +93,26 @@ async def deployed_site(request: Request, name: str, path: str = ""):
     try:
         headers = headers_to_upstream(request.headers, prefix)
         headers["X-Forwarded-Proto"] = request.url.scheme
+        # The ASGI stream otherwise becomes chunked, which stdlib HTTP servers
+        # cannot decode. Preserve known lengths; bound buffering for unknown ones.
+        length = request.headers.get("content-length")
+        data = request.stream()
+        if length is not None:
+            if not length.isascii() or not length.isdecimal():
+                await client.close()
+                return Response("Invalid Content-Length", status_code=400)
+            headers["Content-Length"] = str(int(length))
+        else:
+            body_bytes = bytearray()
+            async for chunk in request.stream():
+                if len(body_bytes) + len(chunk) > 16 * 1024 * 1024:
+                    await client.close()
+                    return Response("Provide Content-Length for uploads over 16 MiB", status_code=413)
+                body_bytes.extend(chunk)
+            data = bytes(body_bytes)
+            headers["Content-Length"] = str(len(data))
         upstream = await client.request(request.method, target_url(target, path, request.url.query),
-                                        data=request.stream(), headers=headers, allow_redirects=False)
+                                        data=data, headers=headers, allow_redirects=False)
     except BaseException as error:
         await client.close()
         if isinstance(error, (aiohttp.ClientError, TimeoutError)):

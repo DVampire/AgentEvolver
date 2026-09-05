@@ -18,6 +18,7 @@ normalizes text, reasoning and function-argument deltas into the framework's can
 events while retaining exact provider output items for stateless replay.
 """
 
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
@@ -57,6 +58,8 @@ def _rejected_features(error: Exception, active: List[str]) -> List[str]:
     """
     status = getattr(error, "status_code", None)
     text = str(error).lower()
+    if status is not None and status not in (400, 404, 405, 409, 422, 501):
+        return []  # auth, rate limits and server outages are not capability evidence
     markers = {
         "programmatic_tool_calling": (
             "programmatic_tool_calling", "allowed_callers", "unknown tool type",
@@ -68,6 +71,9 @@ def _rejected_features(error: Exception, active: List[str]) -> List[str]:
         "prompt_cache": (
             "prompt_cache", "prompt cache", "cache key", "cache_options",
         ),
+        "persisted_reasoning": ("reasoning.context", "all_turns"),
+        "configuration_updates": ("configuration_update",),
+        "async_tool_calling": ("async", "asynchronous"),
     }
     named = [
         feature for feature in active
@@ -115,7 +121,32 @@ def _content_text(content: Any) -> str:
     return "" if content is None else str(content)
 
 
-def serialize_input(messages: List[Message]) -> List[Dict[str, Any]]:
+def _input_content(content: Any) -> Any:
+    """Preserve multimodal inputs; never silently turn an image into empty text."""
+    if isinstance(content, str):
+        return content
+    parts = []
+    for value in content or []:
+        part = _dump(value)
+        kind = part.get("type")
+        if kind == "text":
+            parts.append({"type": "input_text", "text": part["text"]})
+        elif kind == "image_url":
+            image = part["image_url"]
+            parts.append({"type": "input_image", "image_url": image["url"],
+                          "detail": image.get("detail", "auto")})
+        elif kind == "pdf_url":
+            url = part["pdf_url"]["url"]
+            parts.append({"type": "input_file", **(
+                {"filename": "attachment.pdf", "file_data": url}
+                if url.startswith("data:") else {"file_url": url}
+            )})
+        else:
+            raise ValueError(f"Responses does not support input content type {kind!r}")
+    return parts
+
+
+def serialize_input(messages: List[Message], *, cache: bool = False) -> List[Dict[str, Any]]:
     """Convert the canonical message list into Responses-API input items.
 
     The two APIs disagree about what a turn is. Chat has one message per turn, with
@@ -124,6 +155,8 @@ def serialize_input(messages: List[Message]) -> List[Dict[str, Any]]:
     the same value on both sides.
     """
     items: List[Dict[str, Any]] = []
+    tool_outputs: List[Dict[str, Any]] = []
+    cache_count = 0
     for message in messages:
         if isinstance(message, CompactionMessage):
             state = (message.provider_state or {}).get("responses") or {}
@@ -138,6 +171,7 @@ def serialize_input(messages: List[Message]) -> List[Dict[str, Any]]:
                     item for item in items if item.get("role") in ("system", "developer")
                 ]
                 items = [*instructions, *[dict(item) for item in native]]
+                tool_outputs = []
                 continue
         role = getattr(message, "role", "user")
 
@@ -151,6 +185,7 @@ def serialize_input(messages: List[Message]) -> List[Dict[str, Any]]:
             if caller:
                 output["caller"] = dict(caller)
             items.append(output)
+            tool_outputs.append(output)
             continue
 
         if role == "assistant":
@@ -181,12 +216,27 @@ def serialize_input(messages: List[Message]) -> List[Dict[str, Any]]:
         # `system` is sent as a role item rather than as `instructions`: the caller may
         # send several, and `instructions` is a single field that would silently keep
         # only the last one.
-        items.append({"role": role, "content": _content_text(getattr(message, "content", ""))})
+        content = _input_content(getattr(message, "content", ""))
+        # Only mark existing input blocks, never rewrite signed/provider-owned output.
+        # Reserve two markers for completed tool steps; the implicit marker uses the
+        # fourth slot. Never spend every explicit slot on the fixed instructions.
+        if cache and message.cache and cache_count < 1:
+            blocks = ([{"type": "input_text", "text": content}] if isinstance(content, str)
+                      else deepcopy(content))
+            if blocks:
+                blocks[-1]["prompt_cache_breakpoint"] = {"mode": "explicit"}
+                content = blocks
+                cache_count += 1
+        items.append({"role": role, "content": content})
+    if cache:
+        for item in tool_outputs[-2:]:
+            item["output"] = [{"type": "input_text", "text": item["output"],
+                               "prompt_cache_breakpoint": {"mode": "explicit"}}]
     return items
 
 
 def serialize_tools(
-    tools: List["Tool"], *, programmatic: bool = False,
+    tools: List["Tool"], *, programmatic: bool = False, asynchronous: bool = False,
 ) -> List[Dict[str, Any]]:
     """Tool schemas in the Responses shape — flat, not nested under ``function``."""
     from agentevolver.model.llm_hub.serializer import LLMHubChatSerializer
@@ -201,7 +251,11 @@ def serialize_tools(
             "description": function.get("description", ""),
             "parameters": function.get("parameters") or {"type": "object", "properties": {}},
         }
-        if programmatic and bool((getattr(source, "metadata", None) or {}).get("programmatic")):
+        eligible = bool((getattr(source, "metadata", None) or {}).get("programmatic"))
+        if asynchronous and eligible:
+            # Same explicit read-only allowlist, but never combine async with PTC.
+            item["async"] = True
+        elif programmatic and eligible:
             item["allowed_callers"] = ["direct", "programmatic"]
         flattened.append(item)
     return flattened
@@ -232,6 +286,11 @@ class ResponseLLMHub(BaseModel):
     persisted_reasoning: bool = False
     native_programmatic_tool_calling: bool = False
     native_multi_agent: bool = False
+    native_async_tools: bool = False
+    explicit_prompt_cache: bool = False
+    native_configuration_updates: bool = False
+    reasoning_efforts: List[str] = []
+    supports_sampling: bool = True
     _disabled_features: set[str] = PrivateAttr(default_factory=set)
 
     @property
@@ -261,12 +320,15 @@ class ResponseLLMHub(BaseModel):
         tools: Optional[List["Tool"]] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
+        trace = kwargs.pop("_request_trace", None)
         if "prompt_cache" in self._disabled_features:
             kwargs.pop("prompt_cache_key", None)
             kwargs.pop("prompt_cache_options", None)
         params: Dict[str, Any] = {
             "model": self.model,
-            "input": serialize_input(messages),
+            "input": serialize_input(messages, cache=(
+                self.explicit_prompt_cache and "prompt_cache" not in self._disabled_features
+            )),
             "store": self.store,
         }
         if self.max_output_tokens:
@@ -296,12 +358,57 @@ class ResponseLLMHub(BaseModel):
             and "multi_agent" not in self._disabled_features
         )
         if tools:
-            serialized = serialize_tools(tools, programmatic=use_programmatic)
+            serialized = serialize_tools(
+                tools, programmatic=use_programmatic,
+                asynchronous=(features.get("async_tool_calling") == "native"
+                              and self.native_async_tools and not use_multi_agent
+                              and "async_tool_calling" not in self._disabled_features),
+            )
             if serialized:
                 if use_programmatic and any("programmatic" in item.get("allowed_callers", []) for item in serialized):
                     serialized.append({"type": "programmatic_tool_calling"})
                 params["tools"] = serialized
+        baseline_reasoning = dict(params.get("reasoning", {}))
+        override = kwargs.pop("reasoning", None)
+        if override:
+            params["reasoning"] = {**params.get("reasoning", {}), **override}
         params.update({k: v for k, v in kwargs.items() if v is not None})
+        if self.explicit_prompt_cache and "prompt_cache" not in self._disabled_features:
+            params.setdefault("prompt_cache_options", {"mode": "implicit", "ttl": "30m"})
+        if not self.supports_sampling:
+            for key in ("temperature", "top_p", "top_logprobs", "logprobs"):
+                params.pop(key, None)
+            if "include" in params:
+                params["include"] = [item for item in params["include"]
+                                     if item != "message.output_text.logprobs"]
+        reasoning = params.get("reasoning", {})
+        effort = reasoning.get("effort")
+        if self.reasoning_efforts and effort not in (None, *self.reasoning_efforts):
+            if effort in ("none", "minimal"):
+                reasoning["effort"] = self.reasoning_efforts[0]
+            else:
+                raise ValueError(f"Unsupported reasoning effort: {effort}")
+        if "persisted_reasoning" in self._disabled_features:
+            reasoning.pop("context", None)
+            baseline_reasoning.pop("context", None)
+        # Stateless full-history requests can change effort without rewriting the
+        # fixed request prefix. Stateful continuations need persisted updates and
+        # remain on request parameters until that protocol is managed by the caller.
+        if (
+            self.native_configuration_updates and not use_multi_agent
+            and "configuration_updates" not in self._disabled_features
+            and override and set(override) == {"effort"}
+            and baseline_reasoning.get("effort")
+            and reasoning.get("effort") != baseline_reasoning["effort"]
+            and not params.get("previous_response_id") and not params.get("store")
+        ):
+            user_index = next((i for i in range(len(params["input"]) - 1, -1, -1)
+                               if params["input"][i].get("role") == "user"), None)
+            if user_index is not None:
+                params["input"].insert(user_index, {
+                    "type": "configuration_update", "reasoning": {"effort": reasoning["effort"]},
+                })
+                params["reasoning"] = baseline_reasoning
         if use_multi_agent:
             # These parameters are rejected by the beta surface. Resolve the conflict
             # here so provider-specific constraints do not leak into Agent/MetaAgent.
@@ -313,6 +420,8 @@ class ResponseLLMHub(BaseModel):
                 "max_concurrent_subagents": int(features.get("max_concurrent_subagents") or 3),
             }
             params["betas"] = ["responses_multi_agent=v1"]
+        if trace:
+            params["_request_trace"] = trace
         return params
 
     def _parse(self, raw: Any) -> Response:
@@ -362,6 +471,7 @@ class ResponseLLMHub(BaseModel):
                     "name": item.get("name", ""),
                     "args": parsed,
                     "caller": item.get("caller"),
+                    "asynchronous": bool(item.get("async")),
                 })
             elif item_type == "reasoning":
                 reasoning_items.append(dict(item))
@@ -379,11 +489,18 @@ class ResponseLLMHub(BaseModel):
                 for f in functions
             )
 
+        status = payload.get("status")
+        detail = payload.get("error") or payload.get("incomplete_details") or {}
+        finish_reason = "tool_use" if functions else "end_turn"
+        if status not in (None, "completed", "queued", "in_progress"):
+            finish_reason = detail.get("reason") or status
+            message = f"Responses {status}: {detail.get('message') or detail.get('code') or finish_reason}"
+            # Never execute partial arguments or publish an incomplete checkpoint.
+            functions = []
+
         return Response(
             type=ResponseType.LLM,
-            success=payload.get("status") in (
-                None, "queued", "in_progress", "completed", "cancelling", "cancelled",
-            ),
+            success=status in (None, "queued", "in_progress", "completed"),
             message=message,
             data={
                 "text": text,
@@ -391,13 +508,15 @@ class ResponseLLMHub(BaseModel):
                 "reasoning": "".join(reasoning_parts),
                 "provider_state": {
                     "responses": {
+                        "model": self.model,
                         "output_items": output_items,
                         # Backward-compatible diagnostic; output_items is authoritative.
                         "reasoning_items": reasoning_items,
                     }
                 } if output_items else {},
                 "usage": usage,
-                "finish_reason": "tool_use" if functions else "end_turn",
+                "finish_reason": finish_reason,
+                "retryable": finish_reason not in ("max_output_tokens", "content_filter", "cancelled", "cancelling"),
                 "raw_response": payload,
                 "background": {
                     "response_id": payload.get("id"),
@@ -433,7 +552,7 @@ class ResponseLLMHub(BaseModel):
             raise RuntimeError("Responses compaction returned no compaction item")
 
         return {
-            "provider_state": {"responses": {"compaction_items": output}},
+            "provider_state": {"responses": {"model": self.model, "compaction_items": output}},
             "usage": payload.get("usage") or {},
             "format": "openai.responses.compaction",
             "native": True,
@@ -441,11 +560,18 @@ class ResponseLLMHub(BaseModel):
 
     async def _create(self, client: Any, params: Dict[str, Any]) -> Any:
         """Create one Responses segment and attribute native feature rejection."""
+        params = dict(params)
+        trace = params.pop("_request_trace", None)
+        if trace:
+            from agentevolver.trace.request import record_wire_audit
+            await record_wire_audit(params, trace)
         try:
             surface = client.beta.responses if params.get("multi_agent") else client.responses
             return await surface.create(**params)
         except Exception as error:
             active = []
+            if any(tool.get("async") for tool in params.get("tools") or []):
+                active.append("async_tool_calling")
             if any(
                 tool.get("type") == "programmatic_tool_calling"
                 for tool in params.get("tools") or []
@@ -453,8 +579,12 @@ class ResponseLLMHub(BaseModel):
                 active.append("programmatic_tool_calling")
             if params.get("multi_agent"):
                 active.append("multi_agent")
-            if params.get("prompt_cache_key"):
+            if any(item.get("type") == "configuration_update" for item in params.get("input", [])):
+                active.append("configuration_updates")
+            if params.get("prompt_cache_key") or params.get("prompt_cache_options"):
                 active.append("prompt_cache")
+            if (params.get("reasoning") or {}).get("context") == "all_turns":
+                active.append("persisted_reasoning")
             rejected = _rejected_features(error, active)
             if rejected:
                 self._disabled_features.update(rejected)
@@ -547,6 +677,7 @@ class ResponseLLMHub(BaseModel):
         if all_output_items:
             response.data["provider_state"] = {
                 "responses": {
+                    "model": self.model,
                     "output_items": all_output_items,
                     "reasoning_items": [
                         item for item in all_output_items
@@ -671,6 +802,8 @@ class ResponseLLMHub(BaseModel):
             saw_client_call = False
             hosted_only = False
             completed_payload: Dict[str, Any] = {}
+            completed = False
+            raw_stream = None
             try:
                 raw_stream = await self._create(client, dict(params))
                 async for raw_event in raw_stream:
@@ -695,6 +828,8 @@ class ResponseLLMHub(BaseModel):
                             hosted_only = True
                     elif event_type == "response.function_call_arguments.delta":
                         call_arguments_seen.add(index)
+                        item = segment_items.setdefault(index, {})
+                        item["arguments"] = str(item.get("arguments") or "") + str(event.get("delta") or "")
                         yield ToolCallArgsDelta(
                             index=index, partial_json=str(event.get("delta") or ""),
                         )
@@ -717,13 +852,7 @@ class ResponseLLMHub(BaseModel):
                     elif event_type == "response.output_item.done":
                         item = dict(event.get("item") or {})
                         segment_items[index] = item
-                        if item.get("type") == "function_call" and index in call_started:
-                            if index not in call_arguments_seen and item.get("arguments"):
-                                yield ToolCallArgsDelta(
-                                    index=index,
-                                    partial_json=str(item.get("arguments") or ""),
-                                )
-                        elif item.get("type") == "function_call":
+                        if item.get("type") == "function_call":
                             import json as _json
                             arguments = item.get("arguments") or "{}"
                             try:
@@ -737,14 +866,18 @@ class ResponseLLMHub(BaseModel):
                                 name=item.get("name") or "",
                                 input=parsed or {},
                                 caller=item.get("caller"),
+                                asynchronous=bool(item.get("async")),
                             )
                     elif event_type == "response.completed":
+                        completed = True
                         completed_payload = _dump(event.get("response") or {})
                     elif event_type in ("response.failed", "response.incomplete"):
                         detail = event.get("error") or event.get("response") or event
                         raise RuntimeError(f"Responses stream {event_type}: {detail}")
             except Exception as error:
                 active = []
+                if any(t.get("async") for t in params.get("tools") or []):
+                    active.append("async_tool_calling")
                 if any(t.get("type") == "programmatic_tool_calling" for t in params.get("tools") or []):
                     active.append("programmatic_tool_calling")
                 if params.get("multi_agent"):
@@ -756,8 +889,22 @@ class ResponseLLMHub(BaseModel):
                     self._disabled_features.update(rejected)
                     raise NativeFeatureUnavailable(rejected, error) from error
                 raise
+            finally:
+                close = (getattr(raw_stream, "close", None)
+                         or getattr(raw_stream, "aclose", None))
+                if close is not None:
+                    await close()
 
+            if not completed or completed_payload.get("status") not in (None, "completed"):
+                raise RuntimeError("Responses stream ended without a completed response")
             exact_items = [dict(item) for item in completed_payload.get("output") or []]
+            if exact_items:
+                fields = ("call_id", "name", "arguments", "caller", "async")
+                def calls(items):
+                    return [{key: item.get(key) for key in fields}
+                            for item in items if item.get("type") == "function_call"]
+                if calls(exact_items) != calls(segment_items[key] for key in sorted(segment_items)):
+                    raise RuntimeError("Responses terminal output changed completed tool calls")
             if not exact_items:
                 exact_items = [segment_items[key] for key in sorted(segment_items)]
             all_output.extend(exact_items)
@@ -784,6 +931,7 @@ class ResponseLLMHub(BaseModel):
 
         if all_output:
             yield ProviderState({"responses": {
+                "model": self.model,
                 "output_items": all_output,
                 "reasoning_items": [
                     item for item in all_output if item.get("type") == "reasoning"
@@ -833,7 +981,11 @@ class ResponseLLMHub(BaseModel):
         if not response_id:
             raise ValueError("response_id is required")
         raw = await self._client().responses.cancel(response_id)
-        return self._parse(raw)
+        result = self._parse(raw)
+        # Acknowledging cancellation is successful control, not a completed generation.
+        if (result.data.get("background") or {}).get("status") in ("cancelled", "cancelling"):
+            result.success = True
+        return result
 
 
 __all__ = [

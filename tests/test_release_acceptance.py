@@ -18,6 +18,8 @@ release a turn was *about* belongs to this protocol, so this protocol records it
 import time
 from types import SimpleNamespace
 
+import pytest
+
 from agentevolver.tool.default.deployment.deploy import ACCEPTANCE_TIMEOUT_S, DeployTool
 
 
@@ -109,3 +111,19 @@ def test_a_second_release_starts_from_a_clean_sheet():
 def test_no_release_yet_blocks_nothing():
     ctx = _ctx(releases=0)
     assert DeployTool._previous_release_blocker(ctx) == ""
+
+
+@pytest.mark.asyncio
+async def test_feedback_round_does_not_overwrite_artifact_version(monkeypatch):
+    from agentevolver.deploy.types import SiteRecord
+    from agentevolver.runtime import kernel
+
+    async def publish(*args, **kwargs):
+        return 3, "deployment.ready", SimpleNamespace(id="event-1")
+
+    monkeypatch.setattr(kernel, "publish_scoped", publish)
+    monkeypatch.setattr(DeployTool, "_access_urls", staticmethod(lambda rec: {}))
+    record = SiteRecord(site_id="echo-ark", runtime="static", release_number=7)
+    receipt = await DeployTool._publish_ready(record, action="deploy", ctx=_ctx(releases=0))
+    assert receipt["release_number"] == 1
+    assert receipt["version_number"] == record.release_number == 7

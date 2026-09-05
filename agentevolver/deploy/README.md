@@ -40,3 +40,22 @@ distinct sites get distinct ports and the whole map is visible in one place.
 
 Deployment coordinates a target backend; process isolation and command execution belong to
 the Sandbox module.
+
+## Versioned previews and releases
+
+Local source and inline deployments retain immutable source snapshots under
+`sites/<site>/releases/r<N>`. The original deployment recipe is stored beside the
+snapshot, outside the served directory. Registry version entries expose only the
+version, revision, timestamp and URL, never environment credentials.
+
+`/s/<site>/` follows the current deployment; `/s/<site>--r<N>/` opens a pinned
+version, starting its archived source on demand even after the preview was stopped.
+Previews have their own site identity and version sequence. Feedback round numbers
+are separate from these persistent artifact versions. Both monitoring pages list
+version history; old links and source are retained until explicitly removed.
+
+This preserves source and deployment configuration, not a snapshot of external
+databases or mutable application data. Direct `git_url` deployments do not yet
+archive cloned source: use a checked-out local source directory when reproducible
+version history is required. Legacy archives without recipe metadata retain their
+source, but can only fall back to the site's last known recipe.

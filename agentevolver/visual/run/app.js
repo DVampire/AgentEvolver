@@ -46,6 +46,16 @@ function render(data) {
     const deployed = d.deployed_at ? new Date(d.deployed_at) : null;
     el.append(node('p', 'Deployed · ' + (deployed && !Number.isNaN(deployed.getTime()) ? dateFormat.format(deployed) : 'Not recorded'), 'muted'));
     if (d.source_revision) el.append(node('small', 'Revision ' + d.source_revision.slice(0, 12), 'muted'));
+    if (d.versions?.length) {
+      const history = node('details'); history.append(node('summary', 'Version history · ' + d.versions.length));
+      [...d.versions].reverse().forEach(v => {
+        const row = node('p', null, 'entry');
+        row.append(v.url ? link('r' + v.number + ' ↗', v.url) : node('span', 'r' + v.number));
+        row.append(node('small', v.deployed_at || 'Time not recorded', 'muted'));
+        history.append(row);
+      });
+      el.append(history);
+    }
     return el;
   }));
   if (!data.deployments.length) empty('deployments', 'No deployments attributed to this run yet.');

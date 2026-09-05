@@ -64,6 +64,48 @@ async def kernel():
         await instance.shutdown(timeout=5)
 
 
+@pytest.mark.asyncio
+async def test_mailbox_receipt_distinguishes_queued_and_delivered(kernel):
+    from agentevolver.runtime.envelopes import ReplyEnvelope
+    proc = await kernel.spawn(Steps(steps=100), "work")
+    envelope = ReplyEnvelope(text="Change direction")
+    assert await kernel.send(proc, envelope)
+    assert proc.deliveries[envelope.id]["status"] == "queued"
+    assert await kernel.send(proc, envelope)  # a retransmit is not a second event
+    assert len(proc.mailbox) == 1
+    await asyncio.wait_for(proc.gate(), 1)
+    assert proc.deliveries[envelope.id]["status"] == "delivered"
+    assert proc.agent.events.count(envelope) == 1
+    assert proc.snapshot()["deliveries"][envelope.id]["status"] == "delivered"
+
+
+@pytest.mark.asyncio
+async def test_stopped_process_marks_queued_messages_undelivered(kernel):
+    from agentevolver.runtime.envelopes import ReplyEnvelope
+    proc = await kernel.spawn(Steps(steps=100), "work")
+    await kernel.suspend(proc)
+    await asyncio.sleep(0.03)
+    envelope = ReplyEnvelope(text="new direction")
+    await kernel.send(proc, envelope)
+    await kernel.stop(proc, force=True)
+    await kernel.wait(proc, timeout=1)
+    assert proc.deliveries[envelope.id]["status"] == "undelivered"
+
+
+@pytest.mark.asyncio
+async def test_failed_message_handler_does_not_claim_delivery(kernel):
+    from agentevolver.runtime.envelopes import ReplyEnvelope
+    class Broken(Steps):
+        async def on_event(self, envelope, proc):
+            raise ValueError("bad handler")
+    proc = await kernel.spawn(Broken(steps=100), "work")
+    envelope = ReplyEnvelope(text="change")
+    await kernel.send(proc, envelope)
+    await proc.gate()
+    assert proc.deliveries[envelope.id]["status"] == "failed"
+    assert not await kernel.send(proc, envelope)
+
+
 # ---------------------------------------------------------------------------
 # States
 # ---------------------------------------------------------------------------

@@ -69,7 +69,7 @@ class ContentPartVideo(BaseModel):
 class ImageURL(BaseModel):
     """An image URL content part."""
     url: str = Field(description="Either a URL of the image or the base64 encoded image data.")
-    detail: Literal['auto', 'low', 'high'] = Field(default='auto', description="Specifies the detail level of the image.")  # type: ignore  
+    detail: Literal['auto', 'low', 'high', 'original'] = Field(default='auto', description="Specifies the detail level of the image.")  # type: ignore
     """Specifies the detail level of the image.
     Learn more in the
     [Vision guide](https://platform.openai.com/docs/guides/vision#low-or-high-fidelity-image-understanding).

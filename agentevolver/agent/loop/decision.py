@@ -21,10 +21,12 @@ class ActionCall:
     id: str
     name: str
     args: Dict[str, Any] = field(default_factory=dict)
+    caller: Optional[Dict[str, Any]] = None
 
     def as_tool_call(self) -> ToolCall:
         return ToolCall(
             id=self.id,
+            caller=self.caller,
             function=Function(
                 name=self.name, arguments=json.dumps(self.args, ensure_ascii=False)
             ),
@@ -110,6 +112,7 @@ class ActionResult:
         return ToolMessage(
             content=self.error or self.output or "(no output)",
             tool_call_id=self.call.id,
+            caller=self.call.caller,
             name=self.call.name,
             is_error=bool(self.error),
         )

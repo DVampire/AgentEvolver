@@ -46,6 +46,11 @@ To find information on the web, use the `search` action — it returns a ranked 
 Workflow per step: OBSERVE the state → plan 1-{{ max_actions }} actions → ACT. The state is refreshed after your actions execute, so you verify the effect in the next step.
 
 - Plan few actions per step. Only batch actions whose targets are all visible in the current state and independent of each other's outcome (e.g. click input → type → press Enter). Never plan past a page change: anything after a click that navigates or opens a dialog belongs to the next step.
+- A `pending_dialog` blocks screenshots and navigation. Read its message and use `handle_dialog`
+  with an explicit accept/dismiss choice consistent with the task; accepting may commit an irreversible
+  action. Do not install dialog callbacks, automatically accept consent, or repeat the triggering action.
+- If an observation reports an error, use the remaining URL, elements and diagnostics as partial
+  evidence. A missing screenshot is not proof that the page is empty or that an action succeeded.
 - **Escalation policy**: if the same click failed twice, the element is not in the list, or the page ignores your clicks, switch to the `command` action with a Playwright selector, e.g. `await page.locator("text=Submit").click()`. Also use `command` to read structured data back from the page. `command` accepts async Python—not JavaScript. To evaluate JavaScript, call `await page.evaluate("...")` from the Python snippet.
 - If the page is mid-load or you just triggered navigation, use `wait` before acting.
 - Detect stuck patterns from the memory checkpoint and recent assistant/tool turns. If the

@@ -49,7 +49,8 @@ the continuation state for encrypted reasoning, `program` / `program_output`, fu
 call caller linkage, and beta multi-agent items; reconstructing only the visible text
 would corrupt all four. On this relay `gpt-5.6-sol` has live-probed compaction and
 programmatic tool calling. Multi-agent remains disabled because the relay rejects the
-request after dropping its required beta header, so orchestration stays in MetaAgent.
+request with a missing-beta-header error even when the header is explicitly supplied,
+so orchestration stays in MetaAgent. Which relay hop rejects it is not established.
 
 `claude-opus-5` omits `temperature`: Opus 4.7 and later removed the sampling parameters,
 and a request carrying one comes back "`temperature` is deprecated for this model". It is
@@ -70,12 +71,95 @@ reasoning_effort to 'none'.
 Every agent loop *is* tool calling, so turning reasoning off gives up the reason for
 picking such a model; the catalog routes it to `response.py` instead.
 
-`response.py` has no `stream()` on purpose: `ModelContextManager.stream` already buffers
-a client that lacks one and replays it as canonical events, and an agent step consumes
-the whole turn before acting either way.
+`response.py` supports both buffered requests and native SSE streaming. Both paths retain
+provider output items and share request serialization and capability downgrade handling.
 
 The APIs disagree about what a turn is. Chat attaches calls to the assistant and returns
 results through a `tool` role; Responses makes calls and results separate items; Anthropic
 Messages represents calls as `tool_use` blocks and results as user-side `tool_result`
 blocks. Provider serializers own those differences. `ContextEnvelope` validates the one
 provider-neutral assistant/tool relationship before any of them sees it.
+
+## GPT-6 and route fallbacks
+
+`llm_hub/gpt-6-astra` uses Responses, with GPT-5.6 Sol as its configured fallback.
+The relay's tool-call/result round-trip and native compaction/replay were verified on
+2026-09-05. A subsequent PTC probe executed a hosted program, called a client-owned
+arithmetic tool, replayed its caller-tagged result, and completed with `42`.
+Native PTC is now eligible when requested, for tools explicitly marked programmatic.
+Additional bounded probes on 2026-09-05:
+
+| Feature | LLM Hub result | Framework behavior |
+|---|---|---|
+| Native async tools | Launch, continuation before result, and original `call_id` result replay succeeded | Opt-in `Agent.async_tool_calling=True` overlaps explicitly safe reads with generation |
+| WebSocket steering | Responses WebSocket handshake returned HTTP 404 | Local mailbox at the next safe point; no native acknowledgement claimed |
+| Native multi-agent | HTTP 400 missing beta header, with both SDK `betas` and explicit `OpenAI-Beta` | Local runtime agents remain authoritative |
+
+The async implementation was also exercised through `ResponseLLMHub.stream` and the
+actual `ActionExecutor`: one tool executed once, started 0.626 seconds before generation
+ended, and its result replay produced `42` (316 tokens for the two requests). This is a
+small correctness probe, not a benchmark speedup claim.
+
+Async is a per-agent, provider-neutral opt-in; it defaults off to preserve the current
+PTC batching/cost policy. A route without support or an explicit async rejection falls
+back to awaited batches on the same model. Only the existing explicitly opted-in,
+read-only tool roster is eligible. The executor checks it again, waits at the first
+effectful-call barrier, and never executes partial argument deltas. Browser actions and
+workspace writes stay sequential. A completed call's `caller` linkage survives the
+Agent boundary as well as the serializer.
+
+This is **within-turn overlap**, not arbitrary pending jobs across model turns: all jobs
+are joined or cancelled before context is committed. Four-layer validation and native
+compaction therefore still receive complete tool turns. No pending tool result is
+fabricated. Stream failures are not replayed after output starts, and closing the model
+stream closes its underlying transport and reaps read tasks. Closing a connection does
+not prove that a provider immediately stopped computation or billing.
+
+Snapshots distinguish native async from `awaited_tool_batches`, and continue to report
+`mid_turn_steering=next_turn_mailbox`. Local delivery receipts distinguish queued,
+received, delivered, failed, interrupted and undelivered messages; they do not mean a
+remote model has acknowledged or applied a mid-turn instruction. Native multi-agent
+also falls back when tools require local isolation or the input contains a compaction
+checkpoint; the hosted beta cannot replace our independently scoped browser/user agents.
+
+Protocol references: [async tools](https://developers.openai.com/api/docs/guides/async-tool-calling),
+[steering](https://developers.openai.com/api/docs/guides/steering),
+[multi-agent](https://developers.openai.com/api/docs/guides/responses-multi-agent).
+
+The relay also accepted `configuration_update`. For a per-call `reasoning_effort`
+override on a stateless single-agent request, Astra keeps its baseline request-level
+effort and inserts the update before the latest user input. This preserves the fixed
+prefix, not necessarily the entire rolling cache. Multi-agent/stateful continuations
+and unsupported routes use ordinary request parameters instead. Claude uses its
+`output_config.effort` equivalent. No per-session state is hidden in a shared client.
+
+`provider_request_serialized` trace events link to the canonical request snapshot and
+record a hash, byte count, input item types and tool count of the final SDK payload.
+They do not duplicate image data or claim to capture SDK-generated HTTP headers.
+Incomplete Responses preserve their diagnostic text but cannot execute partial tool
+arguments or replace a checkpoint. Output-limit/content-filter/cancellation results
+are not retried with the same budget. Portable summaries use a shorter target and low
+reasoning effort, leaving more output budget for the actual checkpoint.
+
+The Responses serializer preserves text, images and PDF inputs. Unsupported content
+types raise an error instead of disappearing. Route configuration controls sampling and
+reasoning limits; Astra maps `none`/`minimal` to `low` and omits sampling parameters.
+
+On opted-in routes, stable input messages marked by the context assembler receive
+OpenAI cache breakpoints. The last two tool results receive rolling boundaries, and
+the implicit boundary remains enabled (at most four writes altogether).
+This uses OpenAI's 30-minute TTL, not Anthropic's TTL or cache-control schema. Rejection
+removes both breakpoints and options on retry. Cache reads and writes still determine
+the actual savings; an accepted request is not proof of a cache hit.
+
+Native optimizations are optional. The model manager records rejection per route with
+a TTL and downgrades to ordinary calls, local orchestration, or portable checkpoints.
+Each rejected feature unlocks at most one additional retry. Authentication errors,
+rate limits and server errors do not establish unsupported capabilities.
+
+Responses and Anthropic state record their originating model. A different model receives canonical
+messages/tool results and the readable checkpoint rather than incompatible opaque
+state. Source history is not mutated. An opaque-only checkpoint cannot safely switch
+models and is rejected explicitly. The readable companion summary is therefore kept
+for portability. Both native and text compaction receive the prior checkpoint; the new
+summary replaces it rather than appending it again.

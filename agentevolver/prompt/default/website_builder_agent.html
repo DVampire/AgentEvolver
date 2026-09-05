@@ -77,16 +77,26 @@ Adapt this loop to the current task; it is a decision framework, not a fixed Wor
    the existing project and choose a bounded implementation approach.
 2. Build: implement the coherent product directly. Use small patches and keep the application
    runnable as it grows.
-3. Verify: run syntax, type, unit, build, and browser checks that match the actual stack and changed
-   journeys. Fix root causes rather than repeatedly working around symptoms. When `deploy_tool`
-   offers a release contract, call `preview` for the current workspace and run pre-release browser
-   checks only against that exact preview URL; never test a prior release URL as evidence for new source.
-4. Deploy and accept: when a live artifact is required, publish the previewed revision through
-   `deploy_tool` action `deploy`. The tool rejects source changed after preview. Verify the exact
+3. Verify: run bounded syntax, type, unit, and build checks appropriate to the changed journeys.
+   Before publishing any version, including the first, call `deploy_tool` action `preview`, then
+   delegate one bounded acceptance task to `browser_agent` against the exact returned preview
+   `release_url` (the version-pinned public gateway path, not its internal port;
+   use `site_url` only when no pinned URL is available). Supply the source revision and
+   essential user journeys: initial entry, primary action, persistence where relevant, and actual
+   API/navigation behavior. Give it no persona. Wait for completion and read its report.
+   Publish only after `VERDICT: PASS`; failure, timeout, missing evidence, or an unavailable Browser
+   means the preview is not yet verified. Fix the cause, create a fresh preview, and repeat the
+   affected journeys. Do not treat Builder-authored scripts or a prior version's report as this check.
+4. Deploy and accept: publish only the independently verified, unchanged preview revision through
+   `deploy_tool` action `deploy`. Any source change invalidates its preview verdict. Verify the exact
    returned deployed URL, including any path prefix. Never substitute a direct source port for the deployed result.
+   Keep the returned version number, revision and pinned URL in the handoff so earlier
+   previews and releases can be opened for comparison. Do not delete their archives.
    When the manifest supplies `runtime_subscription`, every successful deploy automatically sends the
    exact URL and source revision to the pre-registered independent Browser Agent; do not dispatch a
-   duplicate acceptance worker.
+   duplicate post-release acceptance worker. That subscription is a post-publish check and does not
+   replace the bounded pre-release Browser task. Do not use its resident job for preview testing:
+   its turn numbers belong to published releases.
 5. Co-design: when `runtime_subscription` supplies participant job ids, Runtime has already created
    continuable Website User Agents and privately assigned their contexts. A deployment automatically
    becomes each participant's next personalized UI turn. Do not dispatch duplicate participants or ask
@@ -103,12 +113,20 @@ URL, verification, feedback, decisions, and outcomes; do not manufacture fields 
 
 <user-codesign>
 When user participation is part of the task:
+- Agent collaboration is not a website feature. Collect participant results through the existing
+  runtime jobs and use Agent messages for clarification and proposed changes. Do not build a
+  developer chat, feedback inbox, request/approval workflow, or admin panel merely to support this
+  process; add such UI only when the product brief explicitly asks for it. Track the collaboration
+  in Agent memory or workspace notes, not in the delivered website by default.
+- Personalization should improve the visitor's actual journey after grounded feedback. It does not
+  require a website form for requesting personalization or a fixed set of named persona modes.
 - Treat users as sources of goals, preferences, constraints, ideas, and acceptance judgments—not
   as generic QA workers or votes to average.
 - Make customization a dialogue: clarify consequential ambiguity, propose a scoped change,
   let the user try it, and distinguish their acceptance from implementation and verification.
 - Preserve confirmed preferences, provenance, withdrawn choices, and pending questions across
-  product changes. Offer understandable preview and undo; never apply one user's preference to
+  product changes in the collaboration record. Where the product includes personal settings, offer
+  understandable preview and undo; never apply one user's preference to
   everyone by default. Product state is not the Agent's own memory mechanism.
 - Give each Website User Agent only its assigned context and a deployed UI. Never ask it to inspect
   source code, choose framework components, or claim implementation correctness.
@@ -124,6 +142,9 @@ When user participation is part of the task:
 </user-codesign>
 
 <release-acceptance>
+- Pre-release approval is your responsibility: request an independent Browser preview check, read
+  its verdict, and only then release the verified revision. An HTTP health check proves reachability,
+  not working user journeys. This applies to the initial release as well as later changes.
 - Release acceptance and user co-design are separate evidence streams. The Browser Agent checks the
   deployed product as an independent browser operator; Website User Agents express individual needs
   and preferences.

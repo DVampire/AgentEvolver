@@ -62,6 +62,55 @@ def test_each_release_gets_its_own_directory(manager, tmp_path):
         assert open(path).read() == expected
 
 
+def test_archive_is_immutable_and_identical_retry_is_safe(manager, tmp_path):
+    src = _source(tmp_path / "source", "one")
+    archived = manager._archive_release("echo-ark", 1, src)
+    assert manager._archive_release("echo-ark", 1, src) == archived
+    (tmp_path / "source" / "index.html").write_text("two")
+    with pytest.raises(ValueError, match="overwrite"):
+        manager._archive_release("echo-ark", 1, src)
+    assert open(os.path.join(archived, "index.html")).read() == "one"
+
+
+def test_legacy_archives_remain_discoverable_without_fabricated_time(manager, tmp_path):
+    manager._archive_release("echo-ark", 1, _source(tmp_path / "one", "one"))
+    manager._archive_release("echo-ark", 2, _source(tmp_path / "two", "two"))
+    versions = manager.version_history(SiteRecord(site_id="echo-ark", runtime="static"))
+    assert [v["number"] for v in versions] == [1, 2]
+    assert versions[0]["url"] == "/s/echo-ark--r1/"
+    assert versions[0]["deployed_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_stopped_current_version_restarts_from_its_own_recipe(manager, tmp_path, monkeypatch):
+    src = _source(tmp_path / "source", "one")
+    manager._archive_release("echo-ark", 1, src)
+    record = SiteRecord(site_id="echo-ark", runtime="static", status=SiteStatus.STOPPED,
+                        release_number=1, source_revision="original", deployed_at="2026-09-05T12:00:00Z",
+                        request={"runtime": "static", "backend": "host", "env": {"PRIVATE": "test-secret"}})
+    manager._record_version(record)
+    assert record.versions[0]["url"] == "/s/echo-ark--r1/"
+    assert "request" not in record.versions[0] and "env" not in record.versions[0]
+    record.request = {"runtime": "python"}
+    manager._sites["echo-ark"] = record
+    captured = []
+
+    async def deploy(request):
+        captured.append(request)
+        manager._sites[request.site_id] = SiteRecord(
+            site_id=request.site_id, runtime=request.runtime, status=SiteStatus.RUNNING,
+            port=8899, url="http://localhost:8899", release_number=1)
+
+    async def initialized():
+        pass
+
+    monkeypatch.setattr(manager, "deploy", deploy)
+    monkeypatch.setattr(manager, "_ensure_initialized", initialized)
+    assert await manager.ensure_release("echo-ark--r1") == 8899
+    assert captured[0].runtime == "static"
+    assert captured[0].env == {"PRIVATE": "test-secret"}
+
+
 def test_a_release_number_advances_only_when_the_source_changes(manager):
     """A redeploy of identical bytes is a restart. Numbering it would point `--r<n>` at
     something the reader was never shown."""

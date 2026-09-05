@@ -102,6 +102,9 @@ class Process:
         # -- channels
         self.mailbox = Mailbox(owner=pid)
         self.signals = SignalBox()
+        # Local delivery receipts, not provider steering acknowledgements. No message
+        # bodies are duplicated here; the mailbox/trace remain the message authority.
+        self.deliveries: Dict[str, Dict[str, Any]] = {}
 
         # -- kernel-owned handles
         self._kernel = kernel
@@ -170,6 +173,14 @@ class Process:
             # A hook may have taken real time, and a stop may have arrived during it.
             await self._honor_signals()
 
+    def record_delivery(self, envelope: Envelope, status: str) -> None:
+        self.deliveries[envelope.id] = {"status": status, "at": time.time()}
+        # Bound terminal receipts; never evict a still-queued message's receipt.
+        terminal = [key for key, value in self.deliveries.items()
+                    if value["status"] != "queued"]
+        for key in terminal[:-128]:
+            self.deliveries.pop(key, None)
+
     async def recv(self, timeout: Optional[float] = None) -> Optional[Envelope]:
         """Safe point that waits for one message and hands it back to the caller.
 
@@ -187,6 +198,7 @@ class Process:
             await self._honor_signals()
             envelope = self.mailbox.take()
             if envelope is not None:
+                self.record_delivery(envelope, "received")
                 return envelope
             if self.mailbox.closed:
                 raise ProcessDead(f"process {self.pid} mailbox is closed")
@@ -297,6 +309,7 @@ class Process:
         """Hand one message to the agent. An agent error here must not kill the run."""
         handler: Optional[Callable[..., Any]] = getattr(self.agent, "on_event", None)
         if handler is None:
+            self.record_delivery(envelope, "unhandled")
             logger.debug(
                 f"| 📭 [{self.name}:{self.pid[:8]}] dropped {envelope.summary()}: "
                 "the agent defines no on_event"
@@ -304,9 +317,15 @@ class Process:
             return
         try:
             await handler(envelope, self)
+            self.record_delivery(envelope, "delivered")
         except (Stopped, Killed):
+            self.record_delivery(envelope, "interrupted")
+            raise
+        except asyncio.CancelledError:
+            self.record_delivery(envelope, "interrupted")
             raise
         except Exception as error:  # noqa: BLE001 - a bad handler must not end the run
+            self.record_delivery(envelope, "failed")
             logger.warning(
                 f"| ⚠️ [{self.name}:{self.pid[:8]}] on_event failed for "
                 f"{envelope.summary()}: {error}"
@@ -373,6 +392,7 @@ class Process:
     def snapshot(self) -> Dict[str, Any]:
         """A small, JSON-safe view for ``ps``-style listings and the UI."""
         return {
+            "deliveries": {key: dict(value) for key, value in self.deliveries.items()},
             "pid": self.pid,
             "name": self.name,
             "state": self.state.value,

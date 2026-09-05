@@ -64,10 +64,15 @@ class ModelConfig(BaseModel):
         default=False,
         description="Whether this exact route supports provider-hosted multi-agent execution.",
     )
+    native_async_tools: bool = False
     output_version: Optional[str] = Field(
         default=None,
         description="Optional output schema version when required by provider.",
     )
+    explicit_prompt_cache: bool = False
+    native_configuration_updates: bool = False
+    reasoning_efforts: List[str] = Field(default_factory=list)
+    supports_sampling: bool = True
     timeout: Optional[float] = Field(default=None, description="Request timeout in seconds.")
     cost: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -453,6 +458,7 @@ class ToolCallComplete:
     name: str
     input: Dict[str, Any] = field(default_factory=dict)
     caller: Optional[Dict[str, Any]] = None
+    asynchronous: bool = False
 
 
 @dataclass
@@ -593,7 +599,7 @@ async def build_response_from_stream(
             type=ResponseType.LLM,
             success=False,
             message="Model response stopped at max_tokens before completing the turn.",
-            data={**common, "partial_tool_calls": [
+            data={**common, "retryable": False, "partial_tool_calls": [
                 {"id": call.id, "name": call.name, "input": call.input}
                 for call in acc["tool_calls"]
             ]},

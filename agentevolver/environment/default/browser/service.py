@@ -7,8 +7,11 @@ Supports two launch modes:
 
 import asyncio
 import base64
+import io
 import re
 import textwrap
+import tokenize
+from functools import wraps
 from typing import Any, Dict, List, Optional
 
 from playwright.async_api import Browser, Page, Playwright, async_playwright
@@ -84,8 +87,16 @@ _JAVASCRIPT_COMMAND_PATTERNS = (
 
 
 def _javascript_command_hint(code: str) -> bool:
-    """Recognize unambiguous JavaScript accidentally sent to the Python action."""
-    return any(pattern.search(code or "") for pattern in _JAVASCRIPT_COMMAND_PATTERNS)
+    """Check Python tokens, not JavaScript inside evaluate strings or comments."""
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(code or "").readline)
+        source = tokenize.untokenize([
+            token if token.type not in (tokenize.STRING, tokenize.COMMENT) else token._replace(string="")
+            for token in tokens
+        ])
+    except (tokenize.TokenError, IndentationError):
+        return False  # The compiler supplies the precise syntax error below.
+    return any(pattern.search(source) for pattern in _JAVASCRIPT_COMMAND_PATTERNS)
 
 
 # Returns page HTML with non-content nodes stripped (scripts, styles, svg, hidden elements).
@@ -111,9 +122,11 @@ class BrowserService:
         sandbox_image: str = "opensandbox/chrome:latest",
         sandbox_timeout_minutes: int = 30,
         vnc: bool = False,
+        action_timeout: float = 5.0,
     ):
         # VNC live view needs a headful browser in the chrome-vnc sandbox.
         self.vnc = vnc
+        self.action_timeout = max(0.1, float(action_timeout))
         if vnc:
             use_sandbox = True
         self.headless = headless
@@ -257,6 +270,8 @@ class BrowserService:
                     f"session {session_id!r}"
                 ) from error
             page = await context.new_page()
+            page.set_default_timeout(self.action_timeout * 1000)
+            page.set_default_navigation_timeout(10000)
             sess = {
                 "context": context,
                 "page": page,
@@ -266,6 +281,7 @@ class BrowserService:
             }
             self._sessions[session_id] = sess
             self._attach_diagnostics(page, session_id)
+            self._attach_dialogs(page, session_id)
             try:
                 await page.goto("about:blank")
             except Exception:
@@ -290,8 +306,77 @@ class BrowserService:
 
     async def _screenshot_b64(self, page: Page) -> str:
         """Return a base64-encoded PNG screenshot of the given page."""
-        data = await page.screenshot(type="png")
+        data = await page.screenshot(type="png", timeout=5000)
         return base64.b64encode(data).decode("utf-8")
+
+    def _attach_dialogs(self, page: Page, session_id: str) -> None:
+        sess = self._sessions[session_id]
+        sess["dialog"] = None
+        sess["dialog_open"] = asyncio.Event()
+
+        def opened(dialog):
+            sess["dialog"] = dialog
+            sess["dialog_open"].set()
+            self._record_diagnostic(session_id, "dialog", dialog.message, page.url)
+            # Keep native async callbacks compatible: whichever public method
+            # resolves this dialog also clears our observation of it.
+            def track(method):
+                @wraps(method)
+                async def resolve(*args, **kwargs):
+                    result = await method(*args, **kwargs)
+                    if sess["dialog"] is dialog:
+                        sess["dialog"] = None
+                        sess["dialog_open"].clear()
+                    return result
+                return resolve
+            dialog.accept = track(dialog.accept)
+            dialog.dismiss = track(dialog.dismiss)
+
+        page.on("dialog", opened)
+
+    def pending_dialog(self, session_id: str = "default") -> Optional[Dict[str, Any]]:
+        dialog = (self._sessions.get(session_id) or {}).get("dialog")
+        if dialog is None:
+            return None
+        return {"type": dialog.type, "message": dialog.message, "default_value": dialog.default_value}
+
+    async def _run_action(self, operation, session_id: str, timeout: float = 10.0):
+        """Bound browser I/O and surface modal blocking without accepting consent."""
+        task = asyncio.ensure_future(operation)
+        event = (self._sessions.get(session_id) or {}).get("dialog_open")
+        waiter = asyncio.create_task(event.wait()) if event is not None else None
+        try:
+            if self.pending_dialog(session_id):
+                raise RuntimeError("Dialog pending: use handle_dialog to accept or dismiss it; do not repeat the triggering action.")
+            done, _ = await asyncio.wait([task, *([waiter] if waiter else [])], timeout=timeout,
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if waiter in done:
+                # Give a correctly awaited native dialog callback a chance to finish.
+                await asyncio.sleep(0.05)
+                if self.pending_dialog(session_id):
+                    raise RuntimeError("Dialog pending: use handle_dialog to accept or dismiss it; do not repeat the triggering action.")
+                return await asyncio.wait_for(task, timeout=timeout)
+            if task in done:
+                return task.result()
+            raise asyncio.TimeoutError(f"Browser operation exceeded {timeout}s")
+        finally:
+            for pending in (task, waiter):
+                if pending is not None and not pending.done():
+                    pending.cancel()
+            await asyncio.gather(*[t for t in (task, waiter) if t is not None], return_exceptions=True)
+
+    async def handle_dialog(self, accept: bool, prompt_text: str = "", session_id: str = "default") -> Response:
+        dialog = (self._sessions.get(session_id) or {}).get("dialog")
+        if dialog is None:
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message="No pending dialog")
+        try:
+            operation = dialog.accept(prompt_text) if accept and dialog.type == "prompt" else (
+                dialog.accept() if accept else dialog.dismiss())
+            await asyncio.wait_for(operation, timeout=5)
+            return Response(type=ResponseType.ENVIRONMENT, success=True,
+                            message="Dialog accepted" if accept else "Dialog dismissed")
+        except Exception as error:
+            return Response(type=ResponseType.ENVIRONMENT, success=False, message=str(error))
 
     def _tabs(self, page: Page) -> List[str]:
         """Return URLs of all open pages in the page's context."""
@@ -390,7 +475,7 @@ class BrowserService:
         try:
             if not url.startswith(("http://", "https://", "file://", "about:")):
                 url = "https://" + url
-            await page.goto(url, wait_until=wait_until, timeout=30000)
+            await self._run_action(page.goto(url, wait_until=wait_until, timeout=10000), session_id)
             return Response(
                 type=ResponseType.ENVIRONMENT,
                 success=True,
@@ -497,7 +582,7 @@ class BrowserService:
         if not page:
             return self._unavailable("click")
         try:
-            await page.mouse.click(x, y, button=button)
+            await self._run_action(page.mouse.click(x, y, button=button), session_id)
             return Response(
                 type=ResponseType.ENVIRONMENT,
                 success=True,
@@ -515,7 +600,7 @@ class BrowserService:
         if not page:
             return self._unavailable("double_click")
         try:
-            await page.mouse.dblclick(x, y)
+            await self._run_action(page.mouse.dblclick(x, y), session_id)
             return Response(
                 type=ResponseType.ENVIRONMENT,
                 success=True,
@@ -535,8 +620,8 @@ class BrowserService:
         if not page:
             return self._unavailable("scroll")
         try:
-            await page.mouse.move(x, y)
-            await page.mouse.wheel(scroll_x, scroll_y)
+            await self._run_action(page.mouse.move(x, y), session_id)
+            await self._run_action(page.mouse.wheel(scroll_x, scroll_y), session_id)
             return Response(
                 type=ResponseType.ENVIRONMENT,
                 success=True,
@@ -554,7 +639,7 @@ class BrowserService:
         if not page:
             return self._unavailable("type")
         try:
-            await page.keyboard.type(text)
+            await self._run_action(page.keyboard.type(text), session_id)
             return Response(
                 type=ResponseType.ENVIRONMENT,
                 success=True,
@@ -590,7 +675,7 @@ class BrowserService:
         if not page:
             return self._unavailable("move")
         try:
-            await page.mouse.move(x, y)
+            await self._run_action(page.mouse.move(x, y), session_id)
             return Response(
                 type=ResponseType.ENVIRONMENT,
                 success=True,
@@ -608,8 +693,19 @@ class BrowserService:
         if not page:
             return self._unavailable("keypress")
         try:
-            combo = "+".join(keys)
-            await page.keyboard.press(combo)
+            if not keys or any(not isinstance(key, str) or not key.strip() for key in keys):
+                raise ValueError("keys must be a non-empty list of key names")
+            aliases = {"esc": "Escape", "escape": "Escape", "tab": "Tab", "space": "Space",
+                       "enter": "Enter", "return": "Enter", "ctrl": "Control", "control": "Control",
+                       "shift": "Shift", "alt": "Alt", "meta": "Meta", "cmd": "Meta",
+                       "backspace": "Backspace", "delete": "Delete", "home": "Home", "end": "End",
+                       "pageup": "PageUp", "pagedown": "PageDown",
+                       **{key.lower(): key for key in ("ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight")}}
+            normalized = ["+".join(aliases.get(part.lower(), part) for part in key.split("+")) for key in keys]
+            # A modifier list denotes one chord; otherwise entries are successive presses.
+            chords = ["+".join(normalized)] if any(k in {"Control", "Shift", "Alt", "Meta"} for k in normalized) else normalized
+            for chord in chords:
+                await self._run_action(page.keyboard.press(chord), session_id)
             return Response(
                 type=ResponseType.ENVIRONMENT,
                 success=True,
@@ -630,11 +726,11 @@ class BrowserService:
             if len(path) < 2:
                 raise ValueError("Drag path must have at least 2 points")
             start = path[0]
-            await page.mouse.move(start[0], start[1])
-            await page.mouse.down()
+            await self._run_action(page.mouse.move(start[0], start[1]), session_id)
+            await self._run_action(page.mouse.down(), session_id)
             for point in path[1:]:
-                await page.mouse.move(point[0], point[1])
-            await page.mouse.up()
+                await self._run_action(page.mouse.move(point[0], point[1]), session_id)
+            await self._run_action(page.mouse.up(), session_id)
             return Response(
                 type=ResponseType.ENVIRONMENT,
                 success=True,
@@ -677,10 +773,8 @@ class BrowserService:
             ns: Dict[str, Any] = {}
             exec(src, ns)
             task = asyncio.create_task(ns["__cmd__"](page, page.context))
-            # Playwright locators default to a 30s timeout. Give that native error a
-            # moment to settle before the outer guard cancels the coroutine; cancelling
-            # both at the same instant is what produced an un-retrieved Future exception.
-            result = await asyncio.wait_for(task, timeout=timeout + 1.0)
+            # The command has a total budget; each locator has a shorter page default.
+            result = await self._run_action(task, session_id, timeout=timeout + 1.0)
             result_repr = repr(result)
             return Response(
                 type=ResponseType.ENVIRONMENT,
@@ -696,7 +790,7 @@ class BrowserService:
             return Response(
                 type=ResponseType.ENVIRONMENT,
                 success=False,
-                message=f"Command timed out after {timeout}s. Locators auto-wait up to 30s by default; "
+                message=f"Command timed out after {timeout}s. Locators auto-wait up to {self.action_timeout}s by default; "
                 f"pass a shorter timeout in the code, e.g. page.locator(...).click(timeout=5000).",
                 data={"error": "command_timeout"},
             )
@@ -737,7 +831,7 @@ class BrowserService:
         self, include_elements: bool = True, include_html: bool = False, session_id: str = "default"
     ) -> Dict[str, Any]:
         """Return current page state for a session including a base64 screenshot."""
-        empty = {
+        state = {
             "url": None,
             "title": None,
             "tabs": [],
@@ -748,10 +842,16 @@ class BrowserService:
             "iframes": 0,
             "html": "",
             "diagnostics": self.diagnostics(session_id),
+            "dialog": self.pending_dialog(session_id),
+            "errors": [],
         }
         page = await self._page_for(session_id)
         if not page:
-            return empty
+            return state
+        state.update(url=page.url, tabs=self._tabs(page))
+        if state["dialog"]:
+            state["errors"].append("Dialog pending: use handle_dialog; screenshots and navigation are blocked until it is resolved.")
+            return state
         # Observing right after an action may race a navigation it triggered:
         # wait_for_load_state returns immediately on the old document, then
         # title/evaluate die with "Execution context was destroyed". Retry.
@@ -759,27 +859,13 @@ class BrowserService:
         for attempt in range(3):
             try:
                 try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=8000)
+                    await self._run_action(page.wait_for_load_state("domcontentloaded", timeout=2000), session_id, 2.5)
                 except Exception:
                     pass
-                url = page.url
-                title = await page.title()
-                tabs = self._tabs(page)
-                screenshot = await self._screenshot_b64(page)
-                state: Dict[str, Any] = {
-                    "url": url,
-                    "title": title,
-                    "tabs": tabs,
-                    "screenshot": screenshot,
-                    "elements": [],
-                    "scroll": {},
-                    "focus": "none",
-                    "iframes": 0,
-                    "html": "",
-                    "diagnostics": self.diagnostics(session_id),
-                }
+                state.update(url=page.url, tabs=self._tabs(page))
+                state["title"] = await self._run_action(page.title(), session_id, 3)
                 if include_elements:
-                    observed = await self.observe(page)
+                    observed = await self._run_action(self.observe(page), session_id, 3)
                     state.update(
                         {
                             k: observed.get(k, state[k])
@@ -787,13 +873,20 @@ class BrowserService:
                         }
                     )
                 if include_html:
-                    state["html"] = await self.get_html(page)
+                    state["html"] = await self._run_action(self.get_html(page), session_id, 3)
+                # DOM evidence remains usable even if rendering/screenshot fails.
+                state["screenshot"] = await self._run_action(self._screenshot_b64(page), session_id, 6)
+                state["diagnostics"] = self.diagnostics(session_id)
                 return state
             except Exception as e:
                 last_error = e
-                if "Execution context was destroyed" in str(e) or "navigat" in str(e).lower():
+                if "Execution context was destroyed" in str(e):
+                    state.update(title=None, elements=[], scroll={}, focus="none", html="", screenshot=None)
                     await asyncio.sleep(0.7)
                     continue
                 break
         logger.error(f"| ❌ get_state failed: {last_error}")
-        return empty
+        state["errors"].append(str(last_error) or type(last_error).__name__)
+        state.update(url=page.url, tabs=self._tabs(page), dialog=self.pending_dialog(session_id),
+                     diagnostics=self.diagnostics(session_id))
+        return state

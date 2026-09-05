@@ -30,6 +30,60 @@ class ActionExecutor:
     def __init__(self, router: ToolRouter) -> None:
         self.router = router
 
+    async def consume(self, stream: Any, *, agent: Any, ctx: Any,
+                      routing: Dict[str, Any], eligible: set[str],
+                      execution: Optional[Dict[str, Any]] = None
+                      ) -> tuple[Dict[str, Any], Dict[str, ActionResult]]:
+        """Overlap complete native async reads with generation, closing jobs on exit.
+
+        Pending calls never enter durable context. No speculative writes, execution of
+        argument fragments, or automatic replay after a stream disconnect.
+        """
+        from agentevolver.model.types import ToolCallComplete, accumulate_stream
+
+        jobs: Dict[str, asyncio.Task] = {}
+        seen: Dict[str, ActionCall] = {}
+
+        async def watched():
+            barrier = False
+            async for event in stream:
+                if isinstance(event, ToolCallComplete):
+                    call = ActionCall(event.id, event.name, event.input, event.caller)
+                    if not call.id or call.id in seen:
+                        raise ValueError("Stream contains an empty or duplicate tool-call id")
+                    seen[call.id] = call
+                    safe = (isinstance(call.args, dict) and call.name in eligible and not call.caller
+                            and "__raw__" not in call.args
+                            and self.router.read_only(call, routing) is True)
+                    # A read after a write may depend on that write's result.
+                    barrier = barrier or not safe
+                    if (event.asynchronous and safe and not barrier
+                            and len(seen) <= agent.max_actions):
+                        jobs[call.id] = asyncio.create_task(self._one(
+                            call, agent, ctx, routing, execution, len(seen) - 1,
+                        ))
+                yield event
+
+        try:
+            accumulated = await accumulate_stream(watched())
+            if accumulated.get("stop_reason") not in (None, "end_turn", "tool_use"):
+                return accumulated, {}
+            # The adapter must not change a completed call in a later terminal item.
+            for call in accumulated["tool_calls"]:
+                prior = seen.get(call.id)
+                if prior and (prior.name != call.name or prior.args != call.input):
+                    raise ValueError("Completed tool call changed within a response")
+            results = await asyncio.gather(*jobs.values())
+            return accumulated, dict(zip(jobs, results))
+        finally:
+            for job in jobs.values():
+                if not job.done():
+                    job.cancel()
+            await asyncio.gather(*jobs.values(), return_exceptions=True)
+            close = getattr(stream, "aclose", None)
+            if close is not None:
+                await close()
+
     async def run(
         self,
         calls: Sequence[ActionCall],
@@ -38,6 +92,7 @@ class ActionExecutor:
         ctx: Any,
         routing: Dict[str, Any],
         execution: Optional[Dict[str, Any]] = None,
+        prepared: Optional[Dict[str, ActionResult]] = None,
     ) -> List[ActionResult]:
         """Run every call, in parallel when that is provably safe.
 
@@ -47,17 +102,25 @@ class ActionExecutor:
         """
         if not calls:
             return []
+        prepared = prepared or {}
+        if any(call.id in prepared and prepared[call.id].call != call for call in calls):
+            raise ValueError("Prepared result does not match the completed tool call")
         if self._parallel_safe(calls, routing):
             logger.info(f"| ⚡ {len(calls)} read-only action(s) in parallel")
             return list(
                 await asyncio.gather(
                     *[
-                        self._one(call, agent, ctx, routing, execution, index)
+                        self._result(call, agent, ctx, routing, execution, index, prepared)
                         for index, call in enumerate(calls)
                     ]
                 )
             )
-        return await self._serial(calls, agent, ctx, routing, execution)
+        return await self._serial(calls, agent, ctx, routing, execution, prepared)
+
+    async def _result(self, call, agent, ctx, routing, execution, index, prepared):
+        if call.id in prepared:
+            return prepared[call.id]
+        return await self._one(call, agent, ctx, routing, execution, index)
 
     async def _serial(
         self,
@@ -66,13 +129,14 @@ class ActionExecutor:
         ctx: Any,
         routing: Dict[str, Any],
         execution: Optional[Dict[str, Any]],
+        prepared: Dict[str, ActionResult],
     ) -> List[ActionResult]:
         results: List[ActionResult] = []
         for index, call in enumerate(calls):
-            result = await self._one(call, agent, ctx, routing, execution, index)
+            result = await self._result(call, agent, ctx, routing, execution, index, prepared)
             results.append(result)
             if result.error:
-                skipped = [item.name for item in calls[index + 1:]]
+                skipped = [item.name for item in calls[index + 1:] if item.id not in prepared]
                 if skipped:
                     logger.warning(
                         f"| ⏹️ batch stopped after {call.name} failed; "
@@ -81,7 +145,7 @@ class ActionExecutor:
                 # A skipped call still needs a result, or the assistant turn is left
                 # with unanswered tool calls and the whole conversation is unsendable.
                 results.extend(
-                    ActionResult(
+                    prepared[item.id] if item.id in prepared else ActionResult(
                         call=item,
                         error=(
                             f"Not executed: the batch stopped after {call.name!r} "

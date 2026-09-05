@@ -1,6 +1,7 @@
 """Model manager server — global singleton, mirrors agent_manager pattern."""
 from __future__ import annotations
 
+from contextlib import aclosing
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -182,8 +183,9 @@ class ModelManagerServer(BaseModel):
         input = input or {}
         if not name:
             name = self.resolve_role(role)
-        async for ev in self.model_context_manager.stream(name=name, input=input, ctx=ctx, **kwargs):
-            yield ev
+        async with aclosing(self.model_context_manager.stream(name=name, input=input, ctx=ctx, **kwargs)) as stream:
+            async for ev in stream:
+                yield ev
 
 
 # Global singleton

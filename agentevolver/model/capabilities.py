@@ -19,6 +19,39 @@ from agentevolver.trace.request import endpoint_fingerprint
 from agentevolver.utils.file_utils import atomic_json_update
 
 
+def project_messages(messages: list, config: Any) -> list:
+    """Replay portable history when switching away from provider-owned state.
+
+    Keep source messages untouched: a temporary fallback must not erase the primary's
+    state. Legacy untagged state remains unchanged on the same protocol surface.
+    """
+    from agentevolver.message.types import AssistantMessage, CompactionMessage, ToolMessage
+
+    result = []
+    portable_calls = set()
+    for message in messages:
+        states = getattr(message, "provider_state", None) or {}
+        incompatible = any(
+            state and (config.model_type != surface
+                       or (state.get("model") and state["model"] != config.model_id))
+            for namespace, surface in (("responses", "responses"), ("anthropic", "anthropic/messages"))
+            if (state := states.get(namespace))
+        )
+        if incompatible:
+            if isinstance(message, CompactionMessage) and not message.text.strip():
+                raise ValueError("Cannot switch models: native checkpoint has no portable summary")
+            if isinstance(message, AssistantMessage):
+                portable_calls.update(call.id for call in message.tool_calls)
+                calls = [call.model_copy(update={"caller": None}) for call in message.tool_calls]
+                message = message.model_copy(update={"provider_state": {}, "tool_calls": calls})
+            else:
+                message = message.model_copy(update={"provider_state": {}})
+        if isinstance(message, ToolMessage) and message.tool_call_id in portable_calls:
+            message = message.model_copy(update={"caller": None})
+        result.append(message)
+    return result
+
+
 class CapabilityState(str, Enum):
     UNKNOWN = "unknown"
     PROBING = "probing"

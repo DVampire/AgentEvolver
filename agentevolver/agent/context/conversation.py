@@ -172,8 +172,9 @@ class Conversation:
         folded = self.foldable(keep_turns)
         if not folded:
             return 0
-        previous = self.checkpoint.text if self.checkpoint else ""
-        body = f"{previous}\n\n{summary}".strip() if previous else summary
+        # The compactor already receives the prior checkpoint. Its output supersedes
+        # it; appending the old summary again grows memory on every fold.
+        body = summary.strip()
         self.checkpoint = CompactionMessage(
             content=f"<memory-checkpoint>\n{body}\n</memory-checkpoint>",
             provider_state=dict(provider_state or {}),

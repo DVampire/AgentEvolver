@@ -22,6 +22,50 @@ from pydantic import BaseModel, ConfigDict, Field
 
 REQUEST_SNAPSHOT_VERSION = 2
 
+
+async def record_wire_audit(params: Dict[str, Any], coordinates: Dict[str, Any]) -> None:
+    """Observe the final SDK payload, without duplicating prompts, images or credentials.
+
+    The canonical snapshot is not proof that the provider serializer kept images or
+    opaque state. This separate fingerprint/count record audits that boundary; it does
+    not claim to capture HTTP bytes or headers subsequently produced by the SDK.
+    """
+    if not coordinates.get("session_id") or not coordinates.get("snapshot_id"):
+        return
+    try:
+        from collections import Counter
+        from agentevolver.trace.server import trace_manager
+        from agentevolver.trace.types import TraceEvent, TraceEventType
+
+        counts = Counter()
+
+        def visit(value):
+            if isinstance(value, dict):
+                if isinstance(value.get("type"), str):
+                    counts[value["type"]] += 1
+                for child in value.values():
+                    visit(child)
+            elif isinstance(value, list):
+                for child in value:
+                    visit(child)
+
+        visit(params.get("input", params.get("messages", [])))
+        body = json.dumps(params, sort_keys=True, ensure_ascii=False, default=str).encode()
+        await trace_manager.emit(TraceEvent(
+            event_type=TraceEventType.CUSTOM, ignorable=True,
+            session_id=coordinates["session_id"], task_id=coordinates.get("task_id"),
+            agent_name=coordinates.get("agent_name"), step_number=coordinates.get("step_number"),
+            action_name="provider_request_serialized",
+            metadata={"type": "provider_request_serialized", "request_snapshot_id": coordinates["snapshot_id"],
+                      "payload_sha256": hashlib.sha256(body).hexdigest(), "payload_bytes": len(body),
+                      "input_types": dict(counts), "tool_count": len(params.get("tools") or []),
+                      "stream": bool(params.get("stream")),
+                      "surface": "responses" if "input" in params else "anthropic/messages"},
+        ))
+    except Exception as error:
+        from agentevolver.logger import logger
+        logger.warning(f"| Wire audit unavailable: {type(error).__name__}")
+
 # Only parameters that can change model behaviour or request handling belong in the
 # durable snapshot. Passing arbitrary kwargs through would eventually persist a vendor
 # credential, transport object, or callback that happened to ride beside the request.

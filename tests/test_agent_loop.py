@@ -90,9 +90,139 @@ TOOLS = {
 }
 
 
+@pytest.mark.asyncio
+async def test_native_async_read_overlaps_generation_and_is_not_repeated(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from agentevolver.model.types import ToolCallComplete, TextDelta, StreamDone
+
+    started, finish = asyncio.Event(), asyncio.Event()
+    class Router(StubRouter):
+        async def schemas(self, agent, ctx):
+            return [SimpleNamespace(name="read", metadata={"programmatic": True})], {"read": ("tool", "read")}
+
+        async def invoke(self, call, **kwargs):
+            self.invoked.append(call.name)
+            started.set()
+            await finish.wait()
+            return ActionResult(call=call, output="42")
+
+    router = Router(TOOLS, read_only=["read"])
+    agent = Agent(router=router, async_tool_calling=True)
+    async def stream(**kwargs):
+        assert kwargs["input"]["runtime_features"]["async_tool_calling"]
+        yield ToolCallComplete(0, "call1", "read", {"path": "x"}, asynchronous=True)
+        await asyncio.wait_for(started.wait(), 1)
+        yield TextDelta("Independent reasoning while the read is running")
+        finish.set()
+        yield StreamDone("tool_use")
+
+    monkeypatch.setattr("agentevolver.model.model_manager", SimpleNamespace(stream=stream))
+    decision = await agent.think(0)
+    assert not decision.error
+    assert router.invoked == ["read"]
+    results = await agent.act(decision)
+    assert results[0].output == "42" and router.invoked == ["read"]
+    agent.conversation.add_turn(decision.as_assistant(), [r.as_message() for r in results])
+    agent.assembler.build(agent.conversation)  # unchanged complete-turn validation
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ending", ["disconnect", "cancel", "max_tokens"])
+async def test_async_read_is_reaped_when_generation_stops(ending):
+    import asyncio
+    from agentevolver.model.types import ToolCallComplete, StreamDone
+    started, cancelled = asyncio.Event(), asyncio.Event()
+
+    class Router(StubRouter):
+        async def invoke(self, call, **kwargs):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+    agent = Agent(router=Router(TOOLS, read_only=["read"]), async_tool_calling=True)
+    async def stream():
+        yield ToolCallComplete(0, "c1", "read", {}, asynchronous=True)
+        await asyncio.wait_for(started.wait(), 1)
+        if ending == "disconnect":
+            raise ConnectionError("stream dropped")
+        if ending == "cancel":
+            raise asyncio.CancelledError()
+        yield StreamDone("max_tokens")
+
+    async def consume():
+        return await agent.executor.consume(stream(), agent=agent, ctx=None,
+                                            routing={}, eligible={"read"})
+    if ending == "max_tokens":
+        _, prepared = await consume()
+        assert prepared == {}
+    else:
+        with pytest.raises(ConnectionError if ending == "disconnect" else asyncio.CancelledError):
+            await consume()
+    assert cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_async_never_reorders_a_read_after_a_write():
+    from agentevolver.model.types import ToolCallComplete, StreamDone
+    router = StubRouter(TOOLS, read_only=["read"])
+    agent = Agent(router=router, async_tool_calling=True)
+    async def stream():
+        yield ToolCallComplete(0, "w", "write", {}, asynchronous=True)
+        yield ToolCallComplete(1, "r", "read", {}, asynchronous=True)
+        yield StreamDone("tool_use")
+    accumulated, prepared = await agent.executor.consume(
+        stream(), agent=agent, ctx=None, routing={}, eligible={"read", "write"},
+    )
+    assert not prepared and not router.invoked
+    await agent.act(agent._decide(accumulated))
+    assert router.invoked == ["write", "read"]
+
+
+@pytest.mark.asyncio
+async def test_action_limit_returns_skips_without_breaking_tool_protocol():
+    router = StubRouter(TOOLS, read_only=["read"])
+    agent = Agent(router=router, max_actions=1)
+    decision = calls(("read", {}), ("write", {}))
+    results = await agent.act(decision)
+    assert len(results) == 2 and results[1].error
+    assert router.invoked == ["read"]
+    agent.conversation.add_turn(decision.as_assistant(), [r.as_message() for r in results])
+    agent.assembler.build(agent.conversation)
+
+
+def test_native_caller_identity_survives_agent_action_roundtrip():
+    caller = {"type": "programmatic", "id": "program1"}
+    call = ActionCall("c1", "read", {}, caller)
+    assert call.as_tool_call().caller == caller
+    assert ActionResult(call=call, output="42").as_message().caller == caller
+
+
 async def _completed(value):
     """A coroutine that just returns `value`, for patching an async seam."""
     return value
+
+
+@pytest.mark.asyncio
+async def test_native_compaction_receives_the_previous_checkpoint(monkeypatch):
+    from agentevolver.message.types import CompactionMessage
+    from agentevolver.model import model_manager
+
+    agent = Scripted([])
+    checkpoint = CompactionMessage(content="previous discoveries")
+    agent.conversation.checkpoint = checkpoint
+    new_turn = AssistantMessage(content="new discovery")
+    captured = []
+
+    async def compact(self, name, messages, **kwargs):
+        captured.extend(messages)
+        return None
+
+    monkeypatch.setattr(type(model_manager), "compact_history", compact)
+    await agent.native_checkpoint([new_turn])
+    assert captured == [checkpoint, new_turn]
 
 
 def make(script, *, read_only=("read", "grep"), **kwargs) -> Scripted:

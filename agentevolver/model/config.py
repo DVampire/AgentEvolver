@@ -245,6 +245,27 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
     # reasoning is not the trade to make — it is routed to the other surface instead.
     response_models = [
         {
+            "model_name": "llm_hub/gpt-6-astra",
+            "model_id": "gpt-6-astra",
+            "model_type": "responses",
+            # Verified relay tools, compact + replay, configuration_update and hosted
+            # program execution, 2026-09-05. Native multi-agent remains opt-in/unverified.
+            "native_compaction": True,
+            "native_configuration_updates": True,
+            # Verified launch → pending continuation → original call_id result replay.
+            "native_async_tools": True,
+            "native_programmatic_tool_calling": True,
+            "persisted_reasoning": True,
+            "explicit_prompt_cache": True,
+            "reasoning": {"effort": "high", "context": "all_turns"},
+            "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"],
+            "supports_sampling": False,
+            "context_window": 1_050_000,
+            "max_output_tokens": max_tokens,
+            "timeout": default_timeout,
+            "fallback_model": "llm_hub/gpt-5.6-sol",
+        },
+        {
             "model_name": "llm_hub/gpt-5.6-sol",
             "model_id": "gpt-5.6-sol",
             "model_type": "responses",
@@ -253,6 +274,7 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             # to support it merely because they share a client implementation.
             "native_compaction": True,
             "persisted_reasoning": True,
+            "explicit_prompt_cache": True,
             # Live probe on this exact relay accepted both allowed_callers and the
             # programmatic_tool_calling hosted tool. Multi-agent is intentionally absent:
             # the same relay returned 400 because it strips the required beta header.

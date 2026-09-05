@@ -222,7 +222,10 @@ def build_task_text(
     return (
         f"{document.content}\n\n"
         "## runtime-input-manifest\n"
-        "This manifest assigns attachment roles; it does not reveal persona contents.\n"
+        "This manifest configures the Agent experiment, not website features. Participant feedback "
+        "and clarification travel through Agent results/messages; no in-product developer chat, "
+        "request inbox, or approval UI is implied. It assigns attachment roles without revealing "
+        "persona contents.\n"
         f"{json.dumps(manifest, ensure_ascii=False, indent=2)}"
     )
 

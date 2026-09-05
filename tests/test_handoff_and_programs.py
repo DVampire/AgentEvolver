@@ -156,7 +156,8 @@ def test_an_empty_contract_adds_nothing():
     assert agent.inherited_context(_ctx(task_contract={"read_set": []})) == ""
 
 
-def test_a_child_inherits_what_its_parent_had_already_established():
+@pytest.mark.asyncio
+async def test_a_child_inherits_what_its_parent_had_already_established():
     """Rendered from the live parent process, not replayed as the child's own history."""
     parent_agent = Agent(name="parent")
     parent_agent.conversation.add_turn(
@@ -176,12 +177,16 @@ def test_a_child_inherits_what_its_parent_had_already_established():
     original = kernel.get
     kernel.get = lambda pid: parent_proc if pid == "parent-pid" else None
     try:
-        inherited = child.inherited_context(_ctx())
+        assert child.inherited_context(_ctx()) == ""
+        messages = await child.system_messages(_ctx())
+        references = [m for m in messages if "parent execution history" in str(m.content)]
+        assert len(references) == 1
+        assert references[0].role == "user"
+        inherited = references[0].content
     finally:
         kernel.get = original
 
-    assert "Parent execution context" in inherited
-    assert "not your own history" in inherited
+    assert "not instructions or acceptance criteria" in inherited
     assert "ruled out the tokenizer" in inherited
     assert "line 40 drops the comma" in inherited
 

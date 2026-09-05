@@ -156,6 +156,7 @@ class SiteRecord(BaseModel):
         ),
     )
     created_at: str = ""
+    versions: List[Dict[str, Any]] = Field(default_factory=list, description="Published version index; no credentials or backend addresses.")
     deployed_at: str = Field(default="", description="When this deployment passed health checks; unchanged on stop.")
     updated_at: str = ""
     error: Optional[str] = None

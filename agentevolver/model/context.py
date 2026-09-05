@@ -5,13 +5,14 @@ Contains all model registration, client lifecycle, and invocation logic.
 
 import asyncio
 import inspect
+from contextlib import aclosing
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
 from agentevolver.logger import logger
-from agentevolver.message.types import Message
+from agentevolver.message.types import CompactionMessage, Message
 from agentevolver.model.anthropic.chat import ChatAnthropic
 from agentevolver.model.capabilities import (
     CapabilityRoute,
@@ -119,6 +120,9 @@ def _prepare_request_messages(
         or DEFAULT_CONTEXT_WINDOW
     )
     call_kwargs = call_kwargs or {}
+    if model_config is not None:
+        from agentevolver.model.capabilities import project_messages
+        messages = project_messages(messages, model_config)
     reserved_output = request_input.get("reserved_output_tokens")
     if reserved_output is None:
         reserved_output = next((
@@ -734,6 +738,11 @@ class ModelContextManager:
                 persisted_reasoning=bool(m.get("persisted_reasoning", False)),
                 native_programmatic_tool_calling=bool(m.get("native_programmatic_tool_calling", False)),
                 native_multi_agent=bool(m.get("native_multi_agent", False)),
+                explicit_prompt_cache=bool(m.get("explicit_prompt_cache", False)),
+                native_configuration_updates=bool(m.get("native_configuration_updates", False)),
+                native_async_tools=bool(m.get("native_async_tools", False)),
+                reasoning_efforts=m.get("reasoning_efforts", []),
+                supports_sampling=bool(m.get("supports_sampling", True)),
                 cost=m.get("cost"),
             )
             self.models[cfg.model_name] = cfg
@@ -879,6 +888,11 @@ class ModelContextManager:
                     persisted_reasoning=config.persisted_reasoning,
                     native_programmatic_tool_calling=config.native_programmatic_tool_calling,
                     native_multi_agent=config.native_multi_agent,
+                    explicit_prompt_cache=config.explicit_prompt_cache,
+                    native_configuration_updates=config.native_configuration_updates,
+                    native_async_tools=config.native_async_tools,
+                    reasoning_efforts=config.reasoning_efforts,
+                    supports_sampling=config.supports_sampling,
                 )
             raise ValueError(
                 f"Unsupported model type {config.model_type} for LLM Hub provider"
@@ -917,6 +931,8 @@ class ModelContextManager:
             or config.native_compaction
             or config.native_programmatic_tool_calling
             or config.native_multi_agent
+            or config.native_configuration_updates
+            or config.native_async_tools
         ):
             return ResponseLLMHub(
                 model=config.model_id,
@@ -929,6 +945,11 @@ class ModelContextManager:
                 persisted_reasoning=config.persisted_reasoning,
                 native_programmatic_tool_calling=config.native_programmatic_tool_calling,
                 native_multi_agent=config.native_multi_agent,
+                native_configuration_updates=config.native_configuration_updates,
+                native_async_tools=config.native_async_tools,
+                explicit_prompt_cache=config.explicit_prompt_cache,
+                reasoning_efforts=config.reasoning_efforts,
+                supports_sampling=config.supports_sampling,
             )
         elif config.model_type == "responses":
             return ResponseOpenAI(
@@ -1031,6 +1052,11 @@ class ModelContextManager:
             ),
             "programmatic_tool_calling": "direct_tools",
             "multi_agent": "local_meta_agent",
+            # Async overlaps safe reads with generation, then closes the complete turn.
+            # Steering on a relay without WebSockets stays in the local mailbox.
+            "async_tool_calling": "awaited_tool_batches",
+            "mid_turn_steering": "next_turn_mailbox",
+            "configuration_updates": "request_parameters",
             "prompt_cache": (
                 "automatic" if config and config.model_type == "responses"
                 else "provider_prefix"
@@ -1053,6 +1079,11 @@ class ModelContextManager:
             modes["max_concurrent_subagents"] = int(
                 requested.get("max_concurrent_subagents") or 3
             )
+        if (requested.get("async_tool_calling") and config
+                and config.model_type == "responses" and config.native_async_tools
+                and modes["multi_agent"] != "native"
+                and self.capability_registry.allows(route, "async_tool_calling")):
+            modes["async_tool_calling"] = "native"
         return modes
 
     def _runtime_call_kwargs(
@@ -1064,6 +1095,7 @@ class ModelContextManager:
             model, request_input.get("runtime_features") or {},
         )
         if not isinstance(client, ResponseLLMHub):
+            resolved["async_tool_calling"] = "awaited_tool_batches"
             # A custom runtime registration can pair a declarative config with another
             # adapter. Never record/use a native mode the concrete adapter cannot encode.
             if resolved.get("programmatic_tool_calling") == "native":
@@ -1074,6 +1106,9 @@ class ModelContextManager:
         config = self.models.get(model)
         route = CapabilityRoute.capture(config, client)
         disabled = getattr(client, "_disabled_features", set())
+        for feature in ("prompt_cache", "persisted_reasoning", "programmatic_tool_calling", "multi_agent", "configuration_updates", "async_tool_calling"):
+            if self.capability_registry.state(route, feature) is CapabilityState.REJECTED:
+                disabled.add(feature)
         # Adapter-local suppression prevents the immediate retry from sending the same
         # rejected parameter.  The registry owns its lifetime; once TTL expires the
         # adapter is permitted to probe the feature again.
@@ -1082,12 +1117,51 @@ class ModelContextManager:
                 disabled.discard(feature)
         if "programmatic_tool_calling" in disabled:
             resolved["programmatic_tool_calling"] = "direct_tools"
+        if "async_tool_calling" in disabled:
+            resolved["async_tool_calling"] = "awaited_tool_batches"
+        if resolved["async_tool_calling"] == "native" and (
+            not getattr(client, "native_async_tools", False)
+            or not any((getattr(tool, "metadata", None) or {}).get("programmatic")
+                       for tool in tools or [])
+        ):
+            resolved["async_tool_calling"] = "awaited_tool_batches"
+        if resolved["async_tool_calling"] == "native":
+            # Prefer one protocol per request; async tools cannot be PTC callbacks.
+            resolved["programmatic_tool_calling"] = "direct_tools"
         if "multi_agent" in disabled:
             resolved["multi_agent"] = "local_meta_agent"
             resolved.pop("max_concurrent_subagents", None)
         if "prompt_cache" in disabled:
             resolved["prompt_cache"] = "disabled"
+        elif isinstance(client, ResponseLLMHub) and client.explicit_prompt_cache:
+            resolved["prompt_cache"] = "explicit_prefix_and_automatic_tail"
+        if "persisted_reasoning" in disabled:
+            resolved["persisted_reasoning"] = "message_replay"
         requested = dict(request_input.get("runtime_features") or {})
+        if resolved["multi_agent"] == "native" and (
+            any(not (getattr(tool, "metadata", None) or {}).get("programmatic")
+                for tool in tools or [])
+            or any(isinstance(message, CompactionMessage)
+                   for message in request_input.get("messages", []))
+        ):
+            # Hosted children share tool execution context, not local process isolation.
+            # Also /responses/compact items cannot be used by the multi-agent beta.
+            resolved["multi_agent"] = "local_meta_agent"
+            resolved.pop("max_concurrent_subagents", None)
+            resolved["multi_agent_fallback_reason"] = "requires_local_isolation_or_compaction"
+        baseline = getattr(client, "reasoning", None) or {}
+        baseline = baseline.get("reasoning", baseline)
+        if (
+            isinstance(client, ResponseLLMHub) and client.native_configuration_updates
+            and "configuration_updates" not in disabled and resolved.get("multi_agent") != "native"
+            and request_input.get("reasoning_effort") is not None
+            and request_input["reasoning_effort"] != baseline.get("effort")
+            and baseline.get("effort")
+            and not request_input.get("previous_response_id")
+            and not request_input.get("store", client.store)
+            and any(getattr(m, "role", None) == "user" for m in request_input.get("messages", []))
+        ):
+            resolved["configuration_updates"] = "native"
         snapshot_kwargs = {
             **call_kwargs,
             "runtime_features": resolved,
@@ -1154,12 +1228,29 @@ class ModelContextManager:
         # Only the Responses adapter owns this framework option. Sending it through a
         # generic chat adapter would leak an unknown field into provider JSON.
         if isinstance(client, ResponseLLMHub):
+            if client.explicit_prompt_cache and "prompt_cache" not in disabled:
+                options = dict(request_input.get("prompt_cache_options") or {
+                    "mode": "implicit", "ttl": "30m",
+                })
+                wire_kwargs["prompt_cache_options"] = options
+                snapshot_kwargs["prompt_cache_options"] = options
             wire_kwargs["runtime_features"] = resolved
         attempted: List[str] = []
-        if wire_kwargs.get("prompt_cache_key"):
+        if (isinstance(client, ResponseLLMHub)
+                and "persisted_reasoning" not in disabled
+                and (client.reasoning or {}).get("context") == "all_turns"):
+            attempted.append("persisted_reasoning")
+        if wire_kwargs.get("prompt_cache_key") or wire_kwargs.get("prompt_cache_options"):
             attempted.append("prompt_cache")
         if resolved.get("multi_agent") == "native":
             attempted.append("multi_agent")
+        if resolved.get("async_tool_calling") == "native" and any(
+            bool((getattr(tool, "metadata", None) or {}).get("programmatic"))
+            for tool in tools or []
+        ):
+            attempted.append("async_tool_calling")
+        if resolved.get("configuration_updates") == "native":
+            attempted.append("configuration_updates")
         if (
             resolved.get("programmatic_tool_calling") == "native"
             and any(
@@ -1221,13 +1312,21 @@ class ModelContextManager:
     @staticmethod
     def _native_feature_attempt(
         config: Optional[ModelConfig], requested: Dict[str, Any], tools: Any,
-    ) -> bool:
-        """Whether one extra attempt is needed to guarantee a native→fallback retry."""
-        # Every Responses request attempts automatic prompt caching; some additionally
-        # attempt hosted programs or multi-agent execution. Reserving a slot does not
+    ) -> int:
+        """One reserved retry per optional feature; ordinary errors unlock none."""
+        # Every Responses request attempts prompt caching; some additionally attempt
+        # reasoning continuity, hosted programs or multi-agent. Reserving slots does not
         # create an ordinary retry: the loop unlocks it only after the adapter reports
         # NativeFeatureUnavailable.
-        return bool(config and config.model_type == "responses")
+        if not config or config.model_type != "responses":
+            return 0
+        reasoning = config.reasoning or {}
+        reasoning = reasoning.get("reasoning", reasoning)
+        return (1 + int(reasoning.get("context") == "all_turns")
+                + int(config.native_configuration_updates)
+                + int(bool(config.native_async_tools and requested.get("async_tool_calling")))
+                + int(bool(config.native_programmatic_tool_calling and requested.get("programmatic_tool_calling")))
+                + int(bool(config.native_multi_agent and requested.get("multi_agent"))))
 
     async def compact_history(
         self,
@@ -1251,6 +1350,8 @@ class ModelContextManager:
         config = self.models.get(name)
         if config is None or not config.native_compaction:
             return None
+        from agentevolver.model.capabilities import project_messages
+        messages = project_messages(messages, config)
         client = await self._get_client(name)
         route = CapabilityRoute.capture(config, client)
         if self.capability_registry.consume_expired(route, "compaction"):
@@ -1661,7 +1762,7 @@ class ModelContextManager:
             model_config, requested_features, tools,
         )
         attempt_budget = max_retries + int(native_attempt)
-        native_downgraded = False
+        native_downgraded = 0
         for attempt in range(attempt_budget if primary_request is not None else 0):
             _start = _t.time()
             client = None
@@ -1688,6 +1789,9 @@ class ModelContextManager:
                     route_index=0,
                     pressure=primary_request.pressure,
                 )
+                if isinstance(client, (ResponseLLMHub, ChatAnthropic)):
+                    wire_kwargs["_request_trace"] = {**(input.get("trace_context") or {}),
+                                                     "session_id": session_id, "snapshot_id": snapshot_id}
                 result = await self._call_client(
                     client,
                     model_config,
@@ -1701,6 +1805,8 @@ class ModelContextManager:
                 self._price_result(name, result)
                 self._log_usage(name, result)
                 if not result.success:
+                    if (result.data or {}).get("retryable") is False:
+                        return result
                     raise Exception(result.message or "Model returned success=False")
                 is_chat = not model_config or model_config.model_type not in (
                     "transcriptions",
@@ -1756,7 +1862,7 @@ class ModelContextManager:
                 _elapsed = _t.time() - _start
                 tag = f", caller={self._current_caller}" if self._current_caller else ""
                 if isinstance(e, NativeFeatureUnavailable):
-                    native_downgraded = True
+                    native_downgraded += len(e.features)
                 # The reserved attempt becomes usable only after an actual native
                 # rejection. A declaration alone must not increase ordinary retries.
                 effective_budget = max_retries + int(native_downgraded)
@@ -1872,6 +1978,9 @@ class ModelContextManager:
                         route_index=1,
                         pressure=fallback_request.pressure,
                     )
+                    if isinstance(fb_client, (ResponseLLMHub, ChatAnthropic)):
+                        wire_kwargs["_request_trace"] = {**(input.get("trace_context") or {}),
+                                                         "session_id": session_id, "snapshot_id": snapshot_id}
                     result = await self._call_client(
                         fb_client,
                         fallback_config,
@@ -1885,6 +1994,8 @@ class ModelContextManager:
                     self._price_result(fallback, result)
                     self._log_usage(fallback, result)
                     if not result.success:
+                        if (result.data or {}).get("retryable") is False:
+                            return result
                         raise Exception(result.message or "Fallback returned success=False")
                     is_chat = not fallback_config or fallback_config.model_type not in (
                         "transcriptions",
@@ -2001,16 +2112,20 @@ class ModelContextManager:
                         ev.usage["cost_status"] = "estimated"
             return ev
 
-        async def _events(target: str, client: Any, effective_messages: List[Any]):
+        async def _events(target: str, client: Any, effective_messages: List[Any], snapshot_id: Optional[str]):
             """Canonical events for one model (true stream, or buffered→events)."""
             wire_kwargs, _ = self._runtime_call_kwargs(
                 target, client, input, kwargs, tools,
             )
+            if isinstance(client, (ResponseLLMHub, ChatAnthropic)):
+                wire_kwargs["_request_trace"] = {**(input.get("trace_context") or {}),
+                                                 "session_id": session_id, "snapshot_id": snapshot_id}
             if hasattr(client, "stream"):
-                async for ev in client.stream(
+                async with aclosing(client.stream(
                     messages=effective_messages, tools=tools, response_format=response_format, **wire_kwargs
-                ):
-                    yield _price_event(target, ev)
+                )) as stream:
+                    async for ev in stream:
+                        yield _price_event(target, ev)
             else:
                 # Providers without a stream(): buffer one call, re-emit as events.
                 resp = await client(
@@ -2043,7 +2158,7 @@ class ModelContextManager:
         last_exc: Optional[Exception] = None
         for ci, (target, base_attempts, native_reserve) in enumerate(plan):
             attempts = base_attempts + native_reserve
-            native_downgraded = False
+            native_downgraded = 0
             for attempt in range(attempts):
                 started = False
                 client = None
@@ -2066,7 +2181,7 @@ class ModelContextManager:
                     self._observe_capability_attempt(
                         target, client, snapshot_kwargs,
                     )
-                    await _record_request_snapshot(
+                    snapshot_id = await _record_request_snapshot(
                         session_id=session_id,
                         requested_model=name,
                         routed_model=target,
@@ -2082,9 +2197,10 @@ class ModelContextManager:
                         route_index=ci,
                         pressure=effective.pressure,
                     )
-                    async for ev in _events(target, client, effective.messages):
-                        started = True
-                        yield ev
+                    async with aclosing(_events(target, client, effective.messages, snapshot_id)) as stream:
+                        async for ev in stream:
+                            started = True
+                            yield ev
                     self._observe_capability_success(
                         target, client, snapshot_kwargs,
                     )
@@ -2126,7 +2242,7 @@ class ModelContextManager:
                         )
                         raise
                     if isinstance(e, NativeFeatureUnavailable):
-                        native_downgraded = True
+                        native_downgraded += len(e.features)
                     logger.warning(
                         f"| ⚠️ Stream {target} failed before first event "
                         f"(attempt {attempt+1}/{attempts}, {type(e).__name__}): {e}"

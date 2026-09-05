@@ -233,6 +233,17 @@ def test_browser_native_diagnostics_aggregate_identical_events_losslessly():
     ]
 
 
+def test_builder_prompt_requires_independent_preview_before_first_release():
+    path = Path(__file__).resolve().parents[1] / "agentevolver/prompt/default/website_builder_agent.html"
+    prompt = path.read_text()
+    verify = prompt[prompt.index("3. Verify:"):prompt.index("5. Co-design:")]
+    assert "including the first" in verify
+    assert "delegate one bounded acceptance task to `browser_agent`" in verify
+    assert "Publish only after `VERDICT: PASS`" in verify
+    assert "public gateway path, not its internal port" in verify
+    assert "Do not use its resident job for preview testing" in verify
+
+
 @pytest.mark.asyncio
 async def test_browser_command_rejects_javascript_with_python_guidance(monkeypatch):
     service = BrowserService()
@@ -251,6 +262,12 @@ async def test_browser_command_rejects_javascript_with_python_guidance(monkeypat
 @pytest.mark.asyncio
 async def test_concurrent_browser_users_get_distinct_contexts_and_pages():
     class Page:
+        def set_default_timeout(self, timeout):
+            assert timeout == 5000
+
+        def set_default_navigation_timeout(self, timeout):
+            assert timeout == 10000
+
         def on(self, _event, _callback):
             return None
 
@@ -687,6 +704,34 @@ def test_website_task_manifest_routes_independent_acceptance(tmp_path):
     assert "minimum_kept_evolutions" not in manifest
     assert all("source_path" not in item for item in manifest["attachments"])
     assert all(str(path) not in task for path in personas)
+    assert "configures the Agent experiment, not website features" in task
+
+
+def test_echo_brief_reaches_builder_without_private_personas():
+    from agentevolver.task.context import load_task_document
+    from examples.run_website_evolution_demo import build_task_text
+
+    root = Path(__file__).resolve().parents[1]
+    scenario = root / "examples/tasks/website_evolution/echo_ark"
+    document = load_task_document(str(scenario / "scenario.html"))
+    personas = [scenario / f"persona_{index:02d}.html" for index in range(1, 4)]
+    task = build_task_text(scenario / "scenario.html", personas)
+    # Test the input contract, not a particular room name, palette or game mechanic.
+    assert document.content.strip()
+    assert task.startswith(document.content + "\n\n## runtime-input-manifest\n")
+    manifest = json.loads(task[task.index("{", task.index("runtime-input-manifest")):])
+    assert manifest["attachments"][0] == {"id": "site_brief", "role": "requirements"}
+    assert [a["role"] for a in manifest["attachments"][1:]] == ["user_context"] * 3
+    for path in personas:
+        private = load_task_document(str(path))
+        assert private.content.strip() and private.content not in task
+        assert str(path) not in task
+        persona = path.read_text()
+        assert "Agent conversation and final feedback" in persona
+        assert "fresh browser context" in persona
+        assert "Express needs through the available\n    request flow" not in persona
+    builder = (root / "agentevolver/prompt/default/website_builder_agent.html").read_text()
+    assert "Agent collaboration is not a website feature" in builder
 
 
 def test_website_prompts_do_not_encode_one_demo_protocol():

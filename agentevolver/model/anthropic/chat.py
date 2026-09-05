@@ -212,7 +212,7 @@ class ChatAnthropic(BaseChatModel):
             str(block.get("content") or "") for block in blocks
         ).strip()
         return {
-            "provider_state": {"anthropic": {"compaction_blocks": blocks}},
+            "provider_state": {"anthropic": {"model": self.model, "compaction_blocks": blocks}},
             "summary": summary,
             "usage": usage,
             "format": "anthropic.compact_20260112",
@@ -331,7 +331,11 @@ class ChatAnthropic(BaseChatModel):
         used when output_format (structured output) was requested.
         """
         client = self.get_client()
-        params = built["params"]
+        params = dict(built["params"])
+        trace = params.pop("_request_trace", None)
+        if trace:
+            from agentevolver.trace.request import record_wire_audit
+            await record_wire_audit(params, trace)
         if built.get("use_beta_api"):
             return await client.beta.messages.create(**params)
         return await client.messages.create(**params)
@@ -342,6 +346,10 @@ class ChatAnthropic(BaseChatModel):
             raise ImportError("anthropic package is required. Install it with: pip install anthropic")
         params = dict(built["params"])
         params.pop("stream", None)
+        trace = params.pop("_request_trace", None)
+        if trace:
+            from agentevolver.trace.request import record_wire_audit
+            await record_wire_audit({**params, "stream": True}, trace)
         client = self.get_client()
         create = client.beta.messages.create if built.get("use_beta_api") else client.messages.create
         return await create(stream=True, **params)
@@ -398,6 +406,7 @@ class ChatAnthropic(BaseChatModel):
         if thinking_blocks:
             yield ProviderState({
                 "anthropic": {
+                    "model": self.model,
                     "thinking_blocks": [thinking_blocks[i] for i in sorted(thinking_blocks)]
                 }
             })
@@ -419,7 +428,8 @@ class ChatAnthropic(BaseChatModel):
             else:
                 content = []
 
-            if not content:
+            stop_reason = response.stop_reason if hasattr(response, 'stop_reason') else response.get("stop_reason") if isinstance(response, dict) else None
+            if not content and stop_reason not in ("max_tokens", "refusal"):
                 return Response(
                     type=ResponseType.LLM,
                     success=False,
@@ -453,7 +463,15 @@ class ChatAnthropic(BaseChatModel):
             message_text = "\n".join(text_parts) if text_parts else ""
 
             usage = self._get_usage(response)
-            stop_reason = response.stop_reason if hasattr(response, 'stop_reason') else response.get("stop_reason") if isinstance(response, dict) else None
+            if stop_reason in ("max_tokens", "refusal"):
+                return Response(
+                    type=ResponseType.LLM, success=False,
+                    message=f"Anthropic response ended with {stop_reason}",
+                    data={"raw_response": response.model_dump() if hasattr(response, "model_dump") else response,
+                          "text": message_text, "functions": [], "stop_reason": stop_reason,
+                          "finish_reason": stop_reason, "retryable": False, "usage": usage},
+                    usage=TokenUsage.from_raw(usage),
+                )
 
             # Handle function calling
             if tools and tool_calls:

@@ -492,10 +492,10 @@ class WebsiteBuilderAgent(MetaAgent):
             return ""
         return (
             f"<iteration-budget>\nIteration budget reached ({budget} model turns since "
-            f"release {releases}). Stop exploratory checks. Use deploy_tool preview on "
-            "the current workspace, make at most one bounded root-cause patch if that "
-            "evidence fails, then publish; or finish any capability evolution you "
-            "already chose to start and report an honest blocker.\n</iteration-budget>"
+            f"release {releases}). Stop broadening scope and focus on the critical path. "
+            "Follow the delivery and acceptance rules in your system prompt; budget "
+            "pressure does not establish that an artifact is ready. Report an honest "
+            "blocker if the remaining budget cannot complete verification.\n</iteration-budget>"
         )
 
     async def completion_blocker(self, ctx: Any) -> Optional[str]:

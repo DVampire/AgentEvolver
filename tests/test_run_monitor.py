@@ -64,6 +64,15 @@ def test_runtime_idle_and_parent_relationships(monitor):
     assert row["usage"]["calls"] == 0
 
 
+def test_dead_launcher_does_not_leave_busy_agents(monitor):
+    monitor.state["launcher_start"] = "dead-process"
+    monitor.publish([dict(pid="child", name="user", session="s", state="running", busy=True)])
+    row = RunView(monitor.path).snapshot()["agents"][0]
+    assert row["state"] == "interrupted"
+    assert row["last_observed_state"] == "running"
+    assert not row["busy"]
+
+
 def test_no_prompts_or_tool_inputs_exposed(monitor):
     append(monitor, [event(input={"secret": "DO-NOT-EXPOSE"}, output="DO-NOT-EXPOSE", error="DO-NOT-EXPOSE")])
     data = RunView(monitor.path).snapshot()

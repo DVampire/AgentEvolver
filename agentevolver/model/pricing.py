@@ -100,6 +100,13 @@ DIRECT_MODEL_PRICING: Dict[str, Dict[str, Any]] = {
     # LLM Hub stable upstream/list-price estimates.  Hub channel discounts are
     # deliberately not baked in because routing can change between requests.
     "llm_hub/claude-opus-5": per_million(5.00, 25.00, 0.50, 6.25),
+    # GPT-6 Astra official Standard rates, checked 2026-09-05; relay invoice may differ.
+    "llm_hub/gpt-6-astra": per_million(
+        10.00, 50.00, 1.00, 12.50,
+        long_context_threshold=272_000,
+        long_input=20.00, long_output=75.00,
+        long_cache_read=2.00, long_cache_write=25.00,
+    ),
     "llm_hub/gpt-5.6-luna": per_million(
         0.20, 1.20, 0.02, 0.25,
         long_context_threshold=272_000,
@@ -206,4 +213,3 @@ def apply_pricing(catalog: Dict[str, Iterable[Dict[str, Any]]]) -> Dict[str, Ite
             "Missing token pricing for registered model(s): " + ", ".join(sorted(missing))
         )
     return catalog
-

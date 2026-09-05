@@ -217,24 +217,67 @@ class DeploymentManagerServer(BaseModel):
         return str(path_manager.resolve_under(releases, f"r{int(release)}"))
 
     def _archive_release(self, site_id: str, release: int, source_dir: str) -> str:
-        """Copy this release's source aside so it can be served again later."""
+        """Create an immutable source snapshot; never overwrite an earlier version."""
         import shutil
+        import tempfile
 
         destination = self._release_dir(site_id, release)
         if os.path.isdir(destination):
-            shutil.rmtree(destination, ignore_errors=True)
+            archived = self._source_revision(DeployRequest(site_id=site_id, source_dir=destination))
+            incoming = self._source_revision(DeployRequest(site_id=site_id, source_dir=source_dir))
+            if archived != incoming:
+                raise ValueError(f"Refusing to overwrite archived {site_id} r{release}")
+            return destination
         os.makedirs(os.path.dirname(destination), exist_ok=True)
+        temporary = tempfile.mkdtemp(prefix=".snapshot-", dir=os.path.dirname(destination))
         try:
             shutil.copytree(
                 source_dir,
-                destination,
+                temporary,
+                dirs_exist_ok=True,
                 ignore=shutil.ignore_patterns(*_SKIP_DIRS),
             )
-        except OSError as exc:
-            # An unreadable source costs this release its archive, never its deploy.
-            logger.warning(f"| 📦 could not archive release {release} of '{site_id}': {exc}")
-            return ""
+            os.rename(temporary, destination)
+        finally:
+            if os.path.isdir(temporary):
+                shutil.rmtree(temporary)
         return destination
+
+    def _version_metadata(self, site_id: str, release: int) -> str:
+        archive = self._release_dir(site_id, release)
+        return str(path_manager.resolve_under(os.path.dirname(archive), f"r{int(release)}.json"))
+
+    def _record_version(self, record: SiteRecord) -> None:
+        """Pin the original recipe beside its source, outside the served directory."""
+        if self._split_release(record.site_id):
+            return
+        archive = self._release_dir(record.site_id, record.release_number)
+        if not os.path.isdir(archive):
+            return
+        if any(v["number"] == record.release_number for v in record.versions):
+            return
+        entry = dict(number=record.release_number, source_revision=record.source_revision,
+                     deployed_at=record.deployed_at, runtime=record.runtime,
+                     url=f"/s/{quote(record.site_id, safe='')}--r{record.release_number}/")
+        atomic_json_update(self._version_metadata(record.site_id, record.release_number),
+                           lambda existing: existing or {**entry, "request": record.request})
+        record.versions.append(entry)
+        record.versions = self.version_history(record)
+
+    def version_history(self, record: SiteRecord) -> List[Dict[str, Any]]:
+        """Include legacy source archives without inventing deployment timestamps."""
+        versions = {v["number"]: v for v in record.versions}
+        root = os.path.dirname(self._release_dir(record.site_id, 1))
+        if os.path.isdir(root):
+            for name in os.listdir(root):
+                if not name.startswith("r") or not name[1:].isdigit():
+                    continue
+                number = int(name[1:])
+                if number in versions or not os.path.isdir(self._release_dir(record.site_id, number)):
+                    continue
+                versions[number] = dict(number=number, deployed_at=None, source_revision=None,
+                                        url=f"/s/{quote(record.site_id, safe='')}--r{number}/")
+        return [versions[number] for number in sorted(versions)]
 
     @staticmethod
     def _reserve_host_port(site_id: str, preferred: int) -> int:
@@ -455,12 +498,6 @@ class DeploymentManagerServer(BaseModel):
         # first process or reports the old artifact healthy on the reused port.
         self.refresh()
         previous = self._sites.get(request.site_id)
-        if previous is not None and previous.status not in {
-            SiteStatus.STOPPED,
-            SiteStatus.FAILED,
-        }:
-            await self.stop_site(request.site_id)
-
         # Decide the backend *before* materializing inline content — materialization sets
         # source_dir, which would otherwise mask the "local source ⇒ host by default" rule.
         backend = self._backend_kind(request, previous)
@@ -472,6 +509,26 @@ class DeploymentManagerServer(BaseModel):
 
         spec = self._resolve_spec(request)  # raises on bad profile / missing custom.start
         source_revision = self._source_revision(request)
+
+        # Freeze source before stopping the live version or allocating resources.
+        # A failed/conflicting archive must not take a working site down.
+        pinned = self._split_release(request.site_id)
+        archived_source = ""
+        if pinned is not None:
+            release_number = pinned[1]
+        else:
+            release_number = int(getattr(previous, "release_number", 0) or 0)
+            recipe_changed = previous is not None and any(
+                (previous.request or {}).get(key) != request.model_dump().get(key)
+                for key in ("runtime", "env", "overrides", "backend")
+            )
+            if previous is None or previous.source_revision != source_revision or recipe_changed:
+                release_number += 1
+            if not request.git_url and request.source_dir and os.path.isdir(request.source_dir):
+                archived_source = self._archive_release(request.site_id, release_number, request.source_dir)
+
+        if previous is not None and previous.status not in {SiteStatus.STOPPED, SiteStatus.FAILED}:
+            await self.stop_site(request.site_id)
 
         # The host backend has no container filesystem, so run in a real host directory
         # and write the server log beside it (containers keep a per-container /tmp log).
@@ -500,25 +557,6 @@ class DeploymentManagerServer(BaseModel):
         spec.env = {**spec.env, "PORT": str(spec.port),
                     "BASE_PATH": f"/s/{quote(request.site_id, safe='')}/"}
 
-        # A release is what this site published, so the count belongs to the site and
-        # advances only when its source actually changed. Redeploying identical bytes is
-        # a restart, not a new release, and giving it a number would make `--r<n>` point
-        # somewhere the reader never saw. This field had no writer at all before: it sat
-        # at its default of 0, which silently disabled both `release_url` and every
-        # `--r<n>` lookup that checked it.
-        # A site pinned to one release (`<site>--r<n>`) is an archive being served, not a
-        # site that publishes. It carries the number it was asked for, and archiving it
-        # again would copy an archive into an archive on every lazy start.
-        pinned = self._split_release(request.site_id)
-        if pinned is not None:
-            release_number = pinned[1]
-        else:
-            release_number = int(getattr(previous, "release_number", 0) or 0)
-            if previous is None or previous.source_revision != source_revision:
-                release_number += 1
-            if request.source_dir and os.path.isdir(request.source_dir):
-                self._archive_release(request.site_id, release_number, request.source_dir)
-
         rec = SiteRecord(
             site_id=request.site_id,
             runtime=spec.runtime,
@@ -536,6 +574,7 @@ class DeploymentManagerServer(BaseModel):
             updated_at=_now(),
             log_path=log_path,
             request=request.model_dump(),
+            versions=list(previous.versions) if previous else [],
         )
         self._sites[request.site_id] = rec
         self._owned_sites.add(request.site_id)
@@ -575,7 +614,7 @@ class DeploymentManagerServer(BaseModel):
             else:
                 await sandbox.run_command(f"mkdir -p {shlex.quote(spec.workspace_root)}")
                 if request.source_dir:
-                    await self._upload_dir(sandbox, request.source_dir, spec.workspace_root)
+                    await self._upload_dir(sandbox, archived_source or request.source_dir, spec.workspace_root)
 
             # --- build (fail-fast) -----------------------------------------------
             for cmd in spec.build:
@@ -610,6 +649,7 @@ class DeploymentManagerServer(BaseModel):
             rec.status = SiteStatus.RUNNING
             rec.error = None
             rec.deployed_at = rec.updated_at = _now()
+            self._record_version(rec)
             self._save()
             logger.info(f"| 🌐 Site '{request.site_id}' ({spec.runtime}) deployed at {url}")
             return rec
@@ -772,7 +812,8 @@ class DeploymentManagerServer(BaseModel):
         await self._ensure_initialized()
         current = self._sites.get(base)
         if current is not None and int(getattr(current, "release_number", 0) or 0) == release:
-            return self.resolve_port(base)
+            if port := self.resolve_port(base):
+                return port
 
         running = self.resolve_port(name)
         if running:
@@ -786,14 +827,20 @@ class DeploymentManagerServer(BaseModel):
         # Reuse the release's own deploy request: its runtime and overrides are what made
         # those bytes serveable, and re-deriving them here would be a second opinion about
         # a site that already has one.
-        stored = dict((getattr(current, "request", None) or {}))
+        metadata_path = self._version_metadata(base, release)
+        if os.path.isfile(metadata_path):
+            with open(metadata_path) as handle:
+                stored = dict(json.load(handle)["request"])
+        else:
+            # Compatibility for archives created before recipe snapshots existed.
+            stored = dict((getattr(current, "request", None) or {}))
         stored.update(
             site_id=name,
             source_dir=archive,
             content=None,
             files=None,
             git_url=None,
-            backend="host",
+            backend=stored.get("backend") or "host",
             port=None,
         )
         try:
@@ -847,7 +894,8 @@ class DeploymentManagerServer(BaseModel):
                  "kind": record.request.get("kind") or "website", "status": record.status.value,
                  "url": f"/s/{quote(record.site_id, safe='')}/",
                  "created_at": record.created_at, "deployed_at": record.deployed_at,
-                 "updated_at": record.updated_at}
+                 "updated_at": record.updated_at, "version": record.release_number,
+                 "versions": self.version_history(record)}
                 for record in self._sites.values()]
 
     async def stop_site(self, site_id: str) -> SiteRecord:

@@ -37,6 +37,10 @@ preferences, contributions, or successful outcomes.
   and tolerance for friction; it is not a script of findings you must claim.
 - Describe desired user-visible outcomes. Do not prescribe source changes, prompts, tools, skills,
   Agents, or framework architecture.
+- Co-design feedback belongs in your Agent response and follow-up conversation. Do not look for
+  a developer chat, request form or approval panel unless the product brief actually requires one;
+  their absence is not a product defect. Test improvements in the website itself, and report your
+  acceptance or disagreement through the Agent conversation.
 </user-context-boundaries>
 
 <interaction-loop>
@@ -58,6 +62,10 @@ preferences, contributions, or successful outcomes.
    works only because the Builder says it exists.
 7. Retry one genuine interaction failure with a sensible alternative. If it still fails, record the
    precise blocker and continue with any unaffected goal instead of looping or fabricating evidence.
+   If state reports `pending_dialog`, read it and choose `handle_dialog` accept/dismiss according to
+   your intended action. Do not install dialog callbacks or repeat the action that opened it. A modal
+   blocks screenshots/navigation; resolve it before proceeding. Treat observation errors as missing
+   evidence, not as an empty page or a successful action.
 </interaction-loop>
 
 <continuity>

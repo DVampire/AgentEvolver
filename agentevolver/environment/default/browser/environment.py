@@ -45,6 +45,7 @@ class BrowserEnvironment(Environment):
         state_detail: str = "elements",
         max_state_elements: int = 0,  # 0 = no truncation (show all interactive elements)
         command_timeout: float = 30.0,
+        action_timeout: float = 5.0,
         vnc: bool = False,
         **kwargs,
     ):
@@ -62,12 +63,14 @@ class BrowserEnvironment(Environment):
         self.state_detail = state_detail
         self.max_state_elements = max_state_elements
         self.command_timeout = command_timeout
+        self.action_timeout = action_timeout
 
         # Created lazily when a screenshot is actually saved — constructing the
         # environment (which happens at manager init, before any session is bound)
         # must not leave an empty directory behind.
 
         self._service = BrowserService(
+            action_timeout=action_timeout,
             headless=headless,
             viewport=self.viewport,
             use_sandbox=use_sandbox,
@@ -86,6 +89,10 @@ class BrowserEnvironment(Environment):
     # ------------------------------------------------------------------ lifecycle
 
     async def initialize(self) -> None:
+        from agentevolver.utils import hvac_client
+
+        if not hvac_client.get("FIRECRAWL_API_KEY"):
+            self.actions.pop("search", None)
         await self._service.start()
         logger.info(f"| 🌐 BrowserEnvironment ready at: {self.base_dir}")
 
@@ -320,12 +327,23 @@ class BrowserEnvironment(Environment):
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
 
     @environment_manager.action(
+        name="handle_dialog",
+        description="Resolve the pending browser alert/confirm/prompt shown in environment state. Explicitly choose accept=True or False; accepting may commit the original action. Do not repeat that action afterward. prompt_text is only for a prompt dialog.",
+        read_only=False, destructive=True,
+    )
+    async def handle_dialog(self, accept: bool, prompt_text: str = "", ctx=None, **kwargs) -> Dict[str, Any]:
+        sid, _ = self._sess(ctx)
+        result = await self._service.handle_dialog(accept, prompt_text, session_id=sid)
+        return self._wrap(result, {"accept": accept, "prompt_text": prompt_text})
+
+    @environment_manager.action(
         name="command",
         description=(
             "Run a Playwright Python snippet with `page` (current Page) and `context` (BrowserContext) in scope. "
             "Use this as a fallback when coordinate-based actions fail (element not clickable, hidden, or moving), "
             "or to read structured data from the page. The code runs inside an async function: use `await` directly "
             "and `return` to send a value back. Timeout: 30s.\n"
+            "For JavaScript alert/confirm/prompt, use handle_dialog with an explicit choice when state reports a pending dialog. Do not install dialog callbacks or automatically accept confirmations.\n"
             "Examples:\n"
             '- Click by text (auto-wait, auto-scroll, trusted event): await page.locator("text=Login").click()\n'
             '- Click by selector from the elements list: await page.locator("#submit").click()\n'
@@ -416,6 +434,15 @@ class BrowserEnvironment(Environment):
                 )
             info_lines.append("</info>")
             sections = ["\n".join(info_lines)]
+            if state_data.get("dialog"):
+                dialog = state_data["dialog"]
+                sections.append(
+                    f"<pending_dialog type={dialog['type']}>\n{dialog['message']}\n"
+                    f"Default value: {dialog.get('default_value', '')}\n"
+                    "Use handle_dialog with an explicit accept/dismiss choice. Do not repeat the triggering action.\n</pending_dialog>"
+                )
+            if state_data.get("errors"):
+                sections.append("<observation_errors>\n" + "\n".join(state_data["errors"]) + "\n</observation_errors>")
 
             if include_elements:
                 in_vp = sum(1 for el in elements if el.get("in_viewport"))
@@ -461,6 +488,7 @@ class BrowserEnvironment(Environment):
             state_text = "\n\n".join(sections)
 
             screenshots = []
+            rec["screenshot"] = None
             if state_data.get("screenshot"):
                 step = rec["step"]
                 img = _b64_to_image(state_data["screenshot"])
@@ -495,6 +523,8 @@ class BrowserEnvironment(Environment):
                     "elements": elements,
                     "scroll": scroll,
                     "focus": state_data.get("focus", "none"),
+                    "dialog": state_data.get("dialog"),
+                    "errors": state_data.get("errors", []),
                 },
             }
         except Exception as e:

@@ -57,6 +57,14 @@ are two, and that is the entire definition:
 - `recv()` — the process is explicitly waiting: for a child's report, for a reply to an
   escalation, or, when idle, for its next turn.
 
+`send()` still returns acceptance into the local mailbox, not model acknowledgement.
+`Process.snapshot()["deliveries"]` exposes receipt states keyed by envelope ID:
+`queued`, `received`, `delivered`, `failed`, `unhandled`, `interrupted`, `undelivered`.
+`delivered` means the local handler/turn returned, not that a remote model obeyed it.
+Queued receipts and the most recent 128 terminal receipts are retained. Retransmitting
+an ID still in that window does not invoke the handler twice; this is not durable
+exactly-once delivery. Queued messages left on shutdown become `undelivered`.
+
 Suspending or stopping anywhere else cuts a turn in half — the model has emitted tool
 calls whose results are not all recorded — and a conversation in that shape is rejected
 by strict provider validation on the next request.

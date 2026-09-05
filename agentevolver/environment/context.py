@@ -346,6 +346,11 @@ class EnvironmentContextManager(BaseModel):
             # Initialize environment if it has an initialize method
             if hasattr(env_instance, "initialize"):
                 await env_instance.initialize()
+
+            # Initialization may disable actions whose optional service is unavailable.
+            # Keep discovery, schemas and dispatch on that same executable subset.
+            env_config.actions = {name: action for name, action in env_config.actions.items()
+                                  if name in env_instance.actions}
                 
             env_config.instance = env_instance
             permission_manager.register(

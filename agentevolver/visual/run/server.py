@@ -154,6 +154,12 @@ class RunView:
             status = state.get("status", "unknown")
             if status == "running" and not alive:
                 status = "interrupted"
+            if not alive and state.get("launcher_start"):
+                for row in agents.values():
+                    if row.get("state") not in {"exited", "failed", "cancelled", "completed", "interrupted"}:
+                        row["last_observed_state"] = row.get("state")
+                        row["state"] = "interrupted"
+                    row["busy"] = False
             registry = read_json(state.get("deploy_registry", ""), {})
             deployments = []
             for site_id, record in registry.items():
@@ -163,7 +169,11 @@ class RunView:
                     continue
                 base = state.get("gateway_base")
                 public = f"{base}/s/{quote(site_id, safe='')}/" if base and record.get("url") else record.get("url")
-                deployments.append({**{k: record.get(k) for k in ("site_id", "status", "release_number", "source_revision", "created_at", "deployed_at", "updated_at")}, "url": safe_url(public)})
+                versions = [{"number": v.get("number"), "deployed_at": v.get("deployed_at"),
+                             "source_revision": v.get("source_revision"),
+                             "url": safe_url(f"{base}/s/{quote(site_id, safe='')}--r{int(v['number'])}/") if base else None}
+                            for v in record.get("versions", []) if isinstance(v.get("number"), int)]
+                deployments.append({**{k: record.get(k) for k in ("site_id", "status", "release_number", "source_revision", "created_at", "deployed_at", "updated_at")}, "url": safe_url(public), "versions": versions})
             manifest = read_json(state.get("extension_manifest", ""), {})
             components = [{k: c.get(k) for k in ("module", "name", "version")} for c in manifest.get("components", [])]
             requests = sorted((log / "model_requests").glob("*/*.html"), key=lambda p: p.stat().st_mtime, reverse=True)[:30]

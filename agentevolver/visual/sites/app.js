@@ -28,7 +28,20 @@ async function refresh() {
       times.append(timestamp('Deployed', page.deployed_at));
       if (!page.deployed_at) times.append(timestamp('Created', page.created_at));
       times.append(timestamp('Status updated', page.updated_at));
-      card.append(link, times); return card;
+      card.append(link, times);
+      if (page.versions?.length) {
+        const history = el('details');
+        history.append(el('summary', 'Version history · ' + page.versions.length));
+        [...page.versions].reverse().forEach(version => {
+          const row = el('p');
+          const a = el('a', 'r' + version.number + ' ↗', 'run-name');
+          a.href = version.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+          row.append(a, el('span', ' · ' + (version.deployed_at || 'Time not recorded'), 'muted'));
+          history.append(row);
+        });
+        card.append(history);
+      }
+      return card;
     }));
     document.getElementById('count').textContent = pages.filter(p => p.status === 'running').length + ' running';
     document.getElementById('health').textContent = 'Connected';

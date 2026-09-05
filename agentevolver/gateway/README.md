@@ -83,6 +83,10 @@ files to discover deployments created by other processes.
 The relay supports HTTP methods, streaming responses, WebSocket text/binary
 frames, prefix-scoped redirects and cookie paths. It uses the registered backend
 URL, including container port mappings, not an arbitrary client-supplied target.
+Request bodies with a known Content-Length retain that framing while streaming, so
+stdlib HTTP servers receive JSON/form bodies correctly. Unknown-length uploads are
+buffered up to 16 MiB and forwarded with a computed length; larger unknown-length
+uploads receive 413 and must supply Content-Length. Responses remain streamed.
 The page index returns names and status only, never deployment sources, env vars,
 or complete deployment requests. It does not start stopped applications.
 

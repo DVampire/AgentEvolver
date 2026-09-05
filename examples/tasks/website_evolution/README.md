@@ -32,6 +32,18 @@ from actual operation failures, corrections, feedback, measured quality, and rep
 No qualifying evidence is a valid outcome. Report product customization and verified capability
 improvement separately; registering a component alone proves neither use nor improvement.
 
-ECHO centers on resident/developer dialogue, scoped proposals, confirmation, continuity, and undo.
-Richer media and broader shared-world features follow real use rather than dominating the first
-release. Other scenarios may expose different needs; a single run need not use every component type.
+ECHO is a showcase-quality, scene-led science-fiction exploration website with meaningful
+interaction, visible consequences and a recognizable return journey. The brief fixes experience
+goals, not room counts, mechanics, palettes or endings. Optional inspirations are explicitly
+not acceptance criteria. Keep the initial scope small and polished; later visitor evidence may
+justify revisiting the original design rather than merely decorating it.
+Its product brief does not prescribe Agent collaboration or
+evolution. Co-design happens through participant results and Agent messages, not an obligatory
+chat or request-management interface inside the website. The launcher owns experiment cadence;
+the Builder prompt owns delivery and independent preview acceptance. Other scenarios may expose
+different needs; a single run need not use every component type.
+
+Participant conversation memory and browser storage are separate. The demo currently opens a
+fresh browser context for each conversation turn. Check same-browser persistence by reloading or
+revisiting within that turn; absence of old local storage in a new context is not a product bug.
+Longitudinal feedback can compare remembered experiences without claiming stored state survived.

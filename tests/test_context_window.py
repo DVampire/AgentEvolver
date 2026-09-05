@@ -231,7 +231,7 @@ def test_a_fold_cuts_at_a_turn_boundary_and_keeps_the_tail_sendable():
     assembler.build(held)
 
 
-def test_a_second_fold_merges_into_the_one_canonical_checkpoint():
+def test_a_second_fold_installs_one_replacement_checkpoint():
     assembler = ContextAssembler(retain_turns=2, compact_after_turns=2)
     held = conversation(turns=6)
     assembler.fold(held, "first pass")
@@ -241,7 +241,8 @@ def test_a_second_fold_merges_into_the_one_canonical_checkpoint():
 
     envelope = assembler.build_envelope(held)
     assert len(envelope.checkpoint) == 1
-    assert "first pass" in envelope.checkpoint[0].text
+    # The summariser, not the history container, merges the old checkpoint.
+    assert "first pass" not in envelope.checkpoint[0].text
     assert "second pass" in envelope.checkpoint[0].text
 
 

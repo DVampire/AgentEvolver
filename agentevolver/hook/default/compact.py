@@ -36,7 +36,7 @@ mutations, Verification, Failed approaches, Remaining conditions, Next action. P
 exact paths, commands, values, errors, tool outcomes, unresolved blockers, and source_seq
 references. Never invent a decision from private reasoning that is not present in the
 model-visible evidence. Drop raw dumps and repeated observations. Resolve contradictions in
-favor of the newest sourced turn. Keep the checkpoint under 2,000 words and make it stand
+favor of the newest sourced turn. Keep the checkpoint under 800 words and make it stand
 alone; do not refer to an 'existing checkpoint' or 'records above'."""
 
 
@@ -71,7 +71,7 @@ class CompactHook(Hook):
         existing = inp.get("existing_summary") or ""
         model = inp.get("model_name") or self.model_name
         instruction = inp.get("instruction") or _DEFAULT_INSTRUCTION
-        max_output_tokens = max(256, int(inp.get("max_output_tokens") or 2_048))
+        max_output_tokens = max(256, int(inp.get("max_output_tokens") or 4_096))
 
         prior = f"Existing checkpoint:\n{existing}\n\n" if existing else ""
         body = "\n".join(f"- {it}" for it in items)
@@ -82,6 +82,7 @@ class CompactHook(Hook):
                 name=model,
                 input={
                     "operation": "compact",
+                    "reasoning_effort": "low",
                     "max_output_tokens": max_output_tokens,
                     "reserved_output_tokens": max_output_tokens,
                     "messages": [

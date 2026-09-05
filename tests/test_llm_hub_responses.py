@@ -58,6 +58,108 @@ def _client(**kwargs):
     return ResponseLLMHub(model="gpt-5.6-sol", api_key="k", base_url="http://x/v1", **kwargs)
 
 
+def test_async_tools_are_direct_only_and_opt_in():
+    read, write = _tool(), _tool("write_file_tool")
+    read.metadata = {"programmatic": True}
+    wire = serialize_tools([read, write], programmatic=True, asynchronous=True)
+    assert wire[0]["async"] and "allowed_callers" not in wire[0]
+    assert "async" not in wire[1]
+    assert "async" not in serialize_tools([read])[0]
+
+
+@pytest.mark.asyncio
+async def test_stream_emits_complete_async_call_once_after_arguments(monkeypatch):
+    from agentevolver.model.types import ToolCallComplete
+    item = {"type": "function_call", "id": "fc1", "call_id": "c1",
+            "name": "read", "arguments": '{"path":"x"}', "async": True}
+    async def raw_stream():
+        yield {"type": "response.output_item.added", "item": {**item, "arguments": ""}}
+        yield {"type": "response.function_call_arguments.delta", "delta": item["arguments"]}
+        yield {"type": "response.output_item.done", "item": item}
+        yield {"type": "response.completed", "response": {"status": "completed", "output": [item]}}
+    async def create(**kwargs):
+        return raw_stream()
+    c = _client(native_async_tools=True)
+    c._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
+    events = [event async for event in c.stream([HumanMessage(content="read")])]
+    completed = [event for event in events if isinstance(event, ToolCallComplete)]
+    assert len(completed) == 1 and completed[0].asynchronous
+    async def replay():
+        for event in events:
+            yield event
+    accumulated = await accumulate_stream(replay())
+    assert accumulated["tool_calls"][0].input == {"path": "x"}
+
+
+@pytest.mark.asyncio
+async def test_async_rejection_falls_back_without_changing_model(monkeypatch):
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig, ModelContext
+    attempts = []
+    async def create(**params):
+        native = any(t.get("async") for t in params.get("tools", []))
+        attempts.append(native)
+        if native:
+            raise RuntimeError("async tools unsupported")
+        return {"status": "completed", "output": [{"type": "message", "content": [{"text": "OK"}]}]}
+    c = _client(native_async_tools=True)
+    c._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
+    manager = ModelContextManager()
+    manager.models["main"] = ModelConfig(model_name="main", model_id="gpt-6-astra",
+        model_type="responses", provider="llm_hub", supports_functions=True, native_async_tools=True)
+    manager.model_clients["main"] = c
+    read = _tool()
+    read.metadata = {"programmatic": True}
+    monkeypatch.setattr("agentevolver.model.context._record_request_snapshot", lambda **kw: asyncio.sleep(0))
+    result = await manager(name="main", input={"messages": [HumanMessage(content="read")],
+        "tools": [read], "max_retries": 1, "runtime_features": {"async_tool_calling": True}},
+        ctx=ModelContext(id="test"))
+    assert result.success and attempts == [True, False]
+
+
+def test_hosted_multi_agent_with_write_tools_keeps_local_isolation():
+    from agentevolver.model.context import ModelContextManager
+    from agentevolver.model.types import ModelConfig
+    manager = ModelContextManager()
+    manager.models["main"] = ModelConfig(model_name="main", model_id="gpt-6-astra",
+        model_type="responses", provider="llm_hub", native_multi_agent=True)
+    c = _client(native_multi_agent=True)
+    manager.model_clients["main"] = c
+    wire, snapshot = manager._runtime_call_kwargs("main", c,
+        {"runtime_features": {"multi_agent": True}}, {}, tools=[_tool("write")])
+    assert snapshot["runtime_features"]["multi_agent"] == "local_meta_agent"
+    assert wire["runtime_features"]["multi_agent"] == "local_meta_agent"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["eof", "changed_call", "consumer_close"])
+async def test_stream_requires_terminal_integrity_and_closes_transport(fault):
+    closed = False
+    item = {"type": "function_call", "call_id": "c1", "name": "read", "arguments": "{}", "async": True}
+    async def raw_stream():
+        nonlocal closed
+        try:
+            yield {"type": "response.output_item.done", "item": item}
+            if fault == "eof":
+                return
+            yield {"type": "response.completed", "response": {"status": "completed",
+                "output": [{**item, "arguments": '{"changed":true}'}]}}
+        finally:
+            closed = True
+    async def create(**kwargs):
+        return raw_stream()
+    c = _client(native_async_tools=True)
+    c._client = lambda: SimpleNamespace(responses=SimpleNamespace(create=create))
+    stream = c.stream([HumanMessage(content="read")])
+    if fault == "consumer_close":
+        await anext(stream)
+        await stream.aclose()
+    else:
+        with pytest.raises(RuntimeError, match="completed response|changed completed tool calls"):
+            await accumulate_stream(stream)
+    assert closed
+
+
 # --------------------------------------------------------------------------- #
 # Catalog and dispatch
 # --------------------------------------------------------------------------- #
@@ -75,7 +177,9 @@ def test_the_catalog_routes_both_gpt_5_6_routes_to_responses():
     specs = llm_hub_models(max_tokens=8192, default_temperature=0.7, default_timeout=600)
     by_name = {m["model_name"]: m for m in specs["response"]}
 
-    assert set(by_name) == {"llm_hub/gpt-5.6-sol", "llm_hub/gpt-5.6-luna"}
+    assert set(by_name) == {
+        "llm_hub/gpt-5.6-sol", "llm_hub/gpt-5.6-luna", "llm_hub/gpt-6-astra",
+    }
     assert all(m["model_type"] == "responses" for m in by_name.values())
     # Neither may remain on the surface that refuses its tools.
     assert not any("5.6-sol" in m["model_name"] for m in specs["chat"])
@@ -606,6 +710,9 @@ def test_feature_resolution_has_a_named_fallback_for_every_optimization():
         "programmatic_tool_calling": "direct_tools",
         "multi_agent": "local_meta_agent",
         "prompt_cache": "provider_prefix",
+        "async_tool_calling": "awaited_tool_batches",
+        "mid_turn_steering": "next_turn_mailbox",
+        "configuration_updates": "request_parameters",
     }
 
 

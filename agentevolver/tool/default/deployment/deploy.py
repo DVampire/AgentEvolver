@@ -110,7 +110,7 @@ class DeployTool(Tool):
     def _access_urls(rec) -> Dict[str, str]:
         """Return loopback for agents plus a routable host URL for remote users."""
         internal = str(rec.url or "")
-        urls = {"internal_url": internal}
+        urls = {"internal_url": internal, **DeployTool._named_urls(rec)}
         if not internal:
             return urls
         parsed = urlsplit(internal)
@@ -305,14 +305,10 @@ class DeployTool(Tool):
             history = []
             extra["deployment_release_history"] = history
         release_number = len(history) + 1
-        # Stamped on the record so `/s/<site>--r<n>` can address this exact release
-        # after the name has moved on to the next one.
-        try:
-            rec.release_number = release_number
-        except Exception:  # noqa: BLE001 - a stamp must not fail a publish
-            pass
+        # A task's feedback round is not the persistent site's artifact version.
         payload = {
             "release_number": release_number,
+            "version_number": rec.release_number,
             "action": action,
             "site_id": rec.site_id,
             "runtime": rec.runtime,
@@ -426,6 +422,7 @@ class DeployTool(Tool):
                     preview = {
                         "site_id": requested_site_id,
                         "preview_site_id": rec.site_id,
+                        "version_number": rec.release_number,
                         "url": rec.url,
                         "source_revision": rec.source_revision,
                         **self._access_urls(rec),
@@ -433,7 +430,7 @@ class DeployTool(Tool):
                     if isinstance(contract, dict):
                         contract["latest_preview"] = preview
                     urls = self._access_urls(rec)
-                    msg = f"✅ Preview for '{requested_site_id}' is running at {rec.url}"
+                    msg = f"✅ Preview r{rec.release_number} for '{requested_site_id}' is running at {urls.get('release_url') or rec.url}"
                     if urls.get("public_url") and urls["public_url"] != rec.url:
                         msg += f"; remote browser URL: {urls['public_url']}"
                     return Response(
@@ -454,6 +451,8 @@ class DeployTool(Tool):
                     else f"❌ '{rec.site_id}' status={rec.status.value}: {rec.error}"
                 )
                 urls = self._access_urls(rec)
+                if ok:
+                    msg += f"; version r{rec.release_number}: {urls.get('release_url') or rec.url}"
                 if ok and urls.get("public_url") and urls["public_url"] != rec.url:
                     msg += f"; remote browser URL: {urls['public_url']}"
                 if release:
