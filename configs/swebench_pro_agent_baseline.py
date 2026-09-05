@@ -6,12 +6,12 @@ value MUST stay in sync (see test_shipped_configs):
 
 | field         | agent arm                                  | this baseline        |
 | `agent_names` | meta_agent + generate/optimize/evaluate    | meta_agent           |
-| `tool_names`  | bash + done + swebench_pro_eval + evolution| bash + done + eval   |
+| `tool_names`  | bash + done + adoption                     | bash + done          |
 | `skill_names` | self_evolving_skill                        | none                 |
 
 The comparison is only meaningful while the two arms run the same model, the same
-memory settings, and the same grader tool. The grader (`swebench_pro_eval_tool`) is
-in BOTH arms on purpose — it is the task's iterative signal, not part of evolution.
+memory settings, and the same final-only grading protocol. Both arms verify locally;
+neither receives hidden test scores while solving.
 
 GT-SAFETY (critical): the launcher hands the agent ONLY
 `problem_statement` / `requirements` / `interface`; the oracle fields
@@ -42,8 +42,6 @@ agent_names = [
 tool_names = [
     "bash_tool",
     "done_tool",
-    # Same GT-safe grader bridge as the evolution arm (names + counts only).
-    "swebench_pro_eval_tool",
 ]
 # No self_evolving_skill here — that is the evolution arm's alone.
 skill_names = []

@@ -1,6 +1,7 @@
 """The generic benchmark view is driven only by its state and result contracts."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -9,11 +10,23 @@ from agentevolver.deploy.types import SiteRecord, SiteStatus
 from agentevolver.visual import BenchmarkMonitor, build_snapshot
 
 
-def test_dashboard_uses_the_shared_visual_palette():
-    css = (Path(__file__).parents[1] / "agentevolver/visual/benchmark/style.css").read_text()
-
-    for token in ("#0E1210", "#141B12", "#C8DDB8", "#5BAD78", "#CFA040", "#D45E3E"):
-        assert token in css
+def test_dashboard_preserves_the_original_live_layout():
+    root = Path(__file__).parents[1]
+    visual = root / "agentevolver/visual/benchmark"
+    assert (visual / "style.css").read_text() == (root / "others/swe_dashboard.css").read_text()
+    original = (root / "others/swe_dashboard.html").read_text()
+    expected = original.replace("/swe_dashboard.css", "/benchmark.css").replace(
+        "/swe_dashboard.js", "/benchmark.js"
+    ).replace("<title>SWE-bench Pro · Live</title>", "<title>Benchmark · Live</title>").replace(
+        "<h1>SWE-bench Pro</h1>", '<h1 id="title">Benchmark</h1>'
+    )
+    html = (visual / "index.html").read_text()
+    # Translation changes copy, not the original markup or visual layout.
+    assert re.findall(r"<[^>]+>", html) == re.findall(
+        r"<[^>]+>", expected.replace('lang="zh-CN"', 'lang="en-US"')
+    )
+    for filename in ("index.html", "app.js"):
+        assert not re.search(r"[\u3400-\u9fff]", (visual / filename).read_text())
 
 
 def test_monitor_publishes_progress_and_live_activity(tmp_path):
@@ -134,3 +147,66 @@ async def test_monitor_deploys_through_deployment_manager(monkeypatch, tmp_path)
     assert request.runtime == "custom"
     assert {"benchmark.py", "index.html", "benchmark.css", "benchmark.js"} == set(request.files)
     assert json.loads(Path(monitor.path).read_text())["monitor_url"] == "http://localhost:9000"
+
+
+def test_cumulative_scores_replace_history_but_keep_attempt_costs(tmp_path, monkeypatch):
+    from agentevolver.visual.benchmark import server
+
+    run = tmp_path / "run"
+    run.mkdir()
+    old = tmp_path / "old.json"
+    old.write_text(json.dumps([
+        {"instance_id": "passed", "resolved": True, "spend": {"total_cost_usd": 1}},
+        {"instance_id": "retry", "resolved": False, "spend": {"total_cost_usd": 2}},
+        {"instance_id": "error", "error": "harness", "spend": {"total_cost_usd": 3}},
+    ]))
+    results = run / "results.json"
+    results.write_text(json.dumps([
+        {"instance_id": "retry", "resolved": True, "spend": {"total_cost_usd": 4}},
+        {"instance_id": "new", "resolved": False, "spend": {"total_cost_usd": 5}},
+    ]))
+    monitor = BenchmarkMonitor(str(run), "demo", 5, 2, owner_dir=str(tmp_path / "owner"))
+    monitor.state["initial_completed"] = 0
+    monitor.task("error", "solving")
+    monitor.task("retry", "grading")  # Published result; do not double count its live cost.
+    (run / "aggregate.json").write_text(json.dumps({
+        "history": [str(old), str(old), str(results)], "total": 6,
+    }))
+    monkeypatch.setattr(server, "_live_usage", lambda _: {"cost_usd": 0.5})
+    monkeypatch.setattr(server, "_elapsed", lambda _: 100)
+    snapshot = build_snapshot(monitor.path)
+    assert snapshot["progress"] == {
+        "completed": 4, "total": 6, "scored": 3, "passed": 2, "failed": 1, "errors": 1,
+    }
+    assert snapshot["telemetry"]["cost_usd"] == 15.5
+    assert snapshot["score_mode"] == "cumulative_retry"
+    assert snapshot["eta_seconds"] == 150
+    assert [row["task_id"] for row in snapshot["recent"]] == ["new", "retry", "error", "passed"]
+    assert len(json.loads(old.read_text())) == 3
+    assert len(json.loads(results.read_text())) == 2
+
+
+def test_evaluation_issues_do_not_inflate_pass_rate(tmp_path):
+    results = tmp_path / "results.json"
+    results.write_text(json.dumps([
+        {"instance_id": "pass", "resolved": True},
+        {"instance_id": "fail", "resolved": False},
+        {"instance_id": "build", "final_grade": {"error_code": "test_build_failed"}},
+        {"instance_id": "setup", "final_grade": {"error_code": "test_fixture_missing"}},
+    ]))
+    original = results.read_bytes()
+    monitor = BenchmarkMonitor(str(tmp_path), "demo", 4, 1)
+    snapshot = build_snapshot(monitor.path)
+    assert snapshot["progress"]["scored"] == 2
+    assert snapshot["pass_rate"] == {
+        "numerator": 1, "denominator": 4, "percent": 25.0,
+        "basis": "completed_including_errors",
+    }
+    assert snapshot["issue_counts"] == {"test_compatibility": 1, "grading_setup": 1}
+    assert snapshot["recent"][1]["failure"]["kind"] == "test_compatibility"
+    assert results.read_bytes() == original
+
+
+def test_empty_run_has_no_pass_rate(tmp_path):
+    monitor = BenchmarkMonitor(str(tmp_path), "demo", 4, 1)
+    assert build_snapshot(monitor.path)["pass_rate"]["percent"] is None

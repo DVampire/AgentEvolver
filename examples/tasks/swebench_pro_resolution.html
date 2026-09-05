@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="swebench_pro_resolution">
   <meta name="description" content="Resolve a real GitHub issue in a codebase by editing it into a patch">
-  <meta name="version" content="1.0.0">
+  <meta name="version" content="2.0.0">
   <link rel="stylesheet" href="../../agentevolver/visual/css/task.css">
   <script src="../../agentevolver/visual/js/task.js"></script>
 </head>
@@ -54,9 +54,9 @@ when the task gives none:
   that define resolution, and the reference fix are deliberately absent from this
   environment. Do not go looking for them. Reason about the fix from the issue text, the
   `requirements`, the `interface`, and the existing code — that is the whole task.
-- The repository's OWN existing tests (already in `/workspace`) are yours to run, as often as you
-  like, for free — use `git log`, `grep`, and the project's test command to understand the
-  code and check your change locally before spending a grader eval.
+- Run the repository's existing tests and write your own regression tests from the issue
+  and requirements. Iterate locally within your time and token budget. Official hidden
+  tests, their results and previous benchmark attempts are not available to you.
 </environment>
 
 <how-to-work>
@@ -64,34 +64,41 @@ when the task gives none:
   the issue / interface). Understand the current behaviour before changing it.
 - Make a focused change that satisfies the `requirements`. Prefer editing existing code over
   adding new files; match the codebase's style.
-- Run the repository's own tests locally (free) to catch regressions early.
+- Run relevant existing tests and your own regression tests to catch regressions early.
 - Commit as you go (`git add -A && git commit`) — your committed and uncommitted edits are
   both collected, but committing keeps your work legible.
 - Do NOT rewrite unrelated code, reformat the whole file, or change behaviour the issue did
   not ask about — a change that breaks a previously-passing test costs you.
 </how-to-work>
 
-<checking-with-the-real-grader>
-`swebench_pro_eval_tool` runs the hidden suite against your CURRENT edits and returns a
-COUNTS-ONLY progress report:
-- `fail_to_pass resolved: X/N` — how many of the hidden target tests your patch now passes.
-- `pass_to_pass preserved: Y/M` — how many previously-passing tests still pass (a drop means
-  your change broke something — find and undo the regression).
-- `fully resolved: yes/no`.
+<verification-and-submission>
+Use Bash to run tests, build checks, and small reproduction scripts. Check that a regression
+test exercises the reported defect, not just your implementation's assumptions. Do not
+weaken existing tests or assertions to make a failure disappear.
 
-You get NO test names, NO test bodies, NO expected outputs — only these counts. It is a
-progress signal to tell you whether your last batch of changes helped and whether it broke
-anything; it is not a to-do list and it cannot hand you the answer.
+Before implementing, derive a short checklist from the requirements and documented
+interfaces: exact names and signatures, scalar versus collection types, defaults,
+precedence, and compatibility with existing callers. Existing conventions do not override
+an explicit requirement. If the specification is ambiguous, inspect local callers and
+tests and state the assumption rather than inventing an undocumented contract.
 
-It is heavy and rate-limited (a handful of calls per run). So: make a real batch of changes,
-check them against the repo's own tests yourself (free), THEN spend one grader eval to see
-whether `fail_to_pass` moved. Do not call it after a trivial edit, and make sure the repo
-actually runs (no syntax errors) before calling — an eval on a broken checkout just spends a
-call to tell you it does not run.
+Derive expected test values from that checklist independently of the implementation.
+Where practical, demonstrate that the regression test fails on the original behavior and
+passes after the fix. Cover duplicates, empty or missing inputs, configuration file and
+environment-variable loading, and other boundaries relevant to this issue. Do not blindly
+regenerate expected fixtures from your program's current output; justify changed expected
+values against the requested behavior. Compile the affected test packages as well as
+production code. Before submitting, review the diff against the checklist and report
+which requirements remain unverified. Do not search for hidden tests or reference fixes.
 
-Finish (`done_tool`) when the grader reports `fully resolved: yes`, or when your eval budget
-is spent and you have made your best, locally-verified change.
-</checking-with-the-real-grader>
+When the fix is ready, call `done_tool` and report the commands you ran, their outcomes,
+and any remaining failures or unverified behavior. Do not claim success for tests you
+did not run. If your budget runs out, leave your best patch and describe its limitations.
+
+Your final patch is frozen when execution ends. Only then does an independent evaluator
+run the official hidden tests. You cannot request that evaluation, receive its feedback,
+or revise your submission afterwards. Local test failures do not exclude a task from scoring.
+</verification-and-submission>
 
 </div>
 </body>

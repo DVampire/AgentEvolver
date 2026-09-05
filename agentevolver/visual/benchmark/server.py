@@ -181,6 +181,21 @@ def _outcome(record: dict[str, Any]) -> str:
     return "completed" if record.get("status") in {"done", "completed"} else "error"
 
 
+def _failure(record: dict[str, Any]) -> dict[str, Any]:
+    """Explain an issue without turning uncertain test failures into host faults."""
+    grade = record.get("final_grade") or {}
+    code = grade.get("error_code")
+    # Legacy records predate failure_kind. Interpret them without rewriting their ledger.
+    kind = grade.get("failure_kind") or (
+        "test_compatibility" if code == "test_build_failed" else
+        "grading_setup" if code in {
+            "test_fixture_missing", "parser_failed", "test_selection_failed",
+            "no_tests_executed", "test_results_missing",
+        } else "evaluation"
+    )
+    return {"kind": kind, "code": code, "details": grade.get("error_details") or record.get("error")}
+
+
 def _activity(owner_dir: Path | None, task: dict[str, Any]) -> dict[str, Any]:
     result = dict(task)
     result["elapsed_seconds"] = _elapsed(task.get("started_at"))
@@ -222,11 +237,27 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
     state_path = Path(state_path).resolve()
     state = _read_json(state_path, {})
     results_path = Path(state.get("results_path") or state_path.with_name("results.json"))
-    records = _records(_read_json(results_path, []))
+    current = _records(_read_json(results_path, []))
+    # Display-only aggregation stays outside the launcher's resumable score ledger.
+    # A sidecar also lets a running experiment adopt history without restarting workers.
+    aggregate = _read_json(state_path.with_name("aggregate.json"), {})
+    sources = list(dict.fromkeys(
+        str(Path(path).resolve()) for path in aggregate.get("history", [])
+        if Path(path).resolve() != results_path.resolve()
+    ))
+    history = [record for path in sources for record in _records(_read_json(Path(path), []))]
+    attempts = history + current
+    latest = {}
+    for index, record in enumerate(attempts):
+        key = record.get("instance_id") or record.get("task_id") or ("anonymous", index)
+        # Move replaced records to the end so 'recent' reflects the new attempt.
+        latest.pop(key, None)
+        latest[key] = record
+    records = list(latest.values())
     outcomes = [_outcome(record) for record in records]
     telemetry = _empty_usage()
-    recent = []
-    for record, outcome in zip(records, outcomes):
+    # Failed attempts still cost money, even after a later result replaces their score.
+    for record in attempts:
         spend = record.get("spend") or {}
         _add_usage(telemetry, {
             "cost_usd": spend.get("total_cost_usd"),
@@ -236,12 +267,20 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
             "cache_read_tokens": spend.get("cache_read_tokens"),
             "cache_write_tokens": spend.get("cache_write_tokens"),
         })
+    recent = []
+    issues: dict[str, int] = {}
+    for record, outcome in zip(records, outcomes):
+        spend = record.get("spend") or {}
+        failure = _failure(record) if outcome == "error" else None
+        if failure:
+            issues[failure["kind"]] = issues.get(failure["kind"], 0) + 1
         recent.append({
             "task_id": record.get("instance_id") or record.get("task_id") or "unknown",
             "outcome": outcome,
             "time_seconds": record.get("time_seconds", record.get("time")),
             "calls": int(_number(spend.get("n_llm_calls"), int)),
             "cost_usd": float(_number(spend.get("total_cost_usd"), float)),
+            "failure": failure,
         })
 
     owner = Path(state["owner_dir"]) if state.get("owner_dir") else None
@@ -249,7 +288,7 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
     active.sort(key=lambda item: (item.get("position", 0), item.get("task_id", "")))
     completed_ids = {
         str(record.get("instance_id") or record.get("task_id"))
-        for record in records
+        for record in current
         if record.get("instance_id") is not None or record.get("task_id") is not None
     }
     for task in active:
@@ -270,10 +309,11 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
     failed = outcomes.count("failed")
     errors = outcomes.count("error")
     scored = passed + failed
-    total = int(state.get("total") or len(records))
+    total = int(aggregate.get("total") or state.get("total") or len(records))
     elapsed = _elapsed(state.get("started_at"))
-    throughput = max(0, len(records) - int(state.get("initial_completed") or 0))
-    eta = int(elapsed / throughput * (total - len(records))) if elapsed and throughput else None
+    throughput = max(0, len(current) - int(state.get("initial_completed") or 0))
+    remaining = max(0, int(state.get("total") or total) - len(current))
+    eta = int(elapsed / throughput * remaining) if elapsed and throughput else None
     return {
         "schema_version": SCHEMA_VERSION,
         "updated_at": _now(),
@@ -282,6 +322,16 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
         "run_id": state.get("run_id") or state_path.parent.name,
         "status": status,
         "results_path": str(results_path),
+        "result_sources": sources + [str(results_path)],
+        "score_mode": "cumulative_retry" if sources else "single_run",
+        # Keep errors visible in the headline denominator rather than making a run look
+        # better when a test package could not compile. 'scored' remains a separate fact.
+        "pass_rate": {
+            "numerator": passed, "denominator": len(records),
+            "percent": 100 * passed / len(records) if records else None,
+            "basis": "completed_including_errors",
+        },
+        "issue_counts": issues,
         "progress": {
             "completed": len(records), "total": total, "scored": scored,
             "passed": passed, "failed": failed, "errors": errors,
@@ -293,7 +343,7 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
         "telemetry": telemetry,
         "eta_seconds": eta,
         "recent": list(reversed(recent[-10:])),
-        "monitor_url": state.get("monitor_url"),
+        "monitor_url": aggregate.get("monitor_url") or state.get("monitor_url"),
     }
 
 
@@ -368,7 +418,8 @@ class BenchmarkMonitor:
 
         slug = _SAFE_ID.sub("-", self.state["benchmark"].lower()).strip("-") or "benchmark"
         digest = hashlib.sha256(str(self.run_dir).encode()).hexdigest()[:10]
-        site_id = f"benchmark-{slug}-{digest}"
+        aggregate = _read_json(self.path.with_name("aggregate.json"), {})
+        site_id = aggregate.get("monitor_site_id") or f"benchmark-{slug}-{digest}"
         source = Path(__file__).resolve().parent
         files = {
             "benchmark.py": Path(__file__).read_text(encoding="utf-8"),

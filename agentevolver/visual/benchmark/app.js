@@ -1,8 +1,123 @@
-const $=id=>document.getElementById(id),num=new Intl.NumberFormat("zh-CN"),money=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}),esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
-const duration=s=>{if(s==null)return"—";const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d?`${d}天 ${h}小时`:h?`${h}小时 ${m}分`:`${m}分 ${Math.floor(s%60)}秒`};
-const ago=s=>s==null?"暂无活动":s<10?"刚刚有活动":s<60?`${s} 秒前`:`${Math.floor(s/60)} 分钟前`;
-const short=s=>String(s).replace(/^instance_/,"").replace(/-v[0-9a-f]+$/i,"");
-function slots(active,count){const root=$("slots");root.replaceChildren();for(let i=0;i<count;i++){const x=active[i],node=document.createElement("div");node.className=`slot${x?"":" empty"}`;if(!x)node.innerHTML=`<div class="slot-top"><span>SLOT ${i+1}</span><span>空闲</span></div><div class="slot-name">等待任务</div>`;else{const names={preparing:"准备中",solving:"求解中",grading:"评分中"},id=esc(x.task_id),phase=esc(x.phase);node.innerHTML=`<div class="slot-top"><span>SLOT ${i+1}</span><span class="slot-state ${phase}">${esc(names[x.phase]||x.phase)}</span></div><div class="slot-name" title="${id}">${esc(short(x.task_id))}</div><div class="slot-metrics"><span>${x.step==null?"STEP —":`STEP ${x.step} / ${x.max_step}`}</span><span>${num.format(x.requests||0)} REQUESTS</span></div><div class="slot-time"><span>${duration(x.elapsed_seconds)}</span><span>${ago(x.last_activity_seconds)}</span></div>`}root.appendChild(node)}}
-function recent(rows){const body=$("recent");body.replaceChildren();for(const x of rows){const tr=document.createElement("tr"),mark=x.outcome==="passed"?"✓":x.outcome==="failed"?"×":x.outcome==="completed"?"·":"!",cls=x.outcome==="failed"?"failed":x.outcome==="error"?"error":"",id=esc(x.task_id);tr.innerHTML=`<td><span class="mark ${cls}">${mark}</span></td><td title="${id}">${esc(short(x.task_id))}</td><td>${duration(x.time_seconds)}</td><td>${num.format(x.calls||0)}</td><td>${money.format(x.cost_usd||0)}</td>`;body.appendChild(tr)}}
-function render(x){const p=x.progress,l=x.launcher,t=x.telemetry,percent=p.total?100*p.completed/p.total:0,score=p.scored?100*p.passed/p.scored:0,complete=x.status.startsWith("completed");document.title=`${x.title} · Live`;$("title").textContent=x.title;$("run-id").textContent=x.run_id;$("completed").textContent=num.format(p.completed);$("total").textContent=`/ ${num.format(p.total)}`;$("progress").style.width=`${percent}%`;$("percent").textContent=`${percent.toFixed(2)}%`;$("eta").textContent=x.eta_seconds==null?"等待样本估算 ETA":`预计剩余 ${duration(x.eta_seconds)}`;$("score").textContent=p.scored?`${score.toFixed(1)}%`:"—";$("passed").textContent=p.passed;$("failed").textContent=p.failed;$("errors").textContent=p.errors;$("elapsed").textContent=duration(l.elapsed_seconds);$("active-count").textContent=l.active.length;$("concurrency").textContent=l.concurrency;$("pid").textContent=l.pid?`PID ${l.pid}`:"PID —";const phases=l.active.reduce((a,v)=>(a[v.phase]=(a[v.phase]||0)+1,a),{});$("phases").textContent=`${phases.solving||0} 求解 · ${phases.grading||0} 评分 · ${phases.preparing||0} 准备`;$("cost").textContent=money.format(t.cost_usd);$("calls").textContent=num.format(t.calls);$("input").textContent=num.format(t.input_tokens);$("output").textContent=num.format(t.output_tokens);$("cache").textContent=num.format(t.cache_read_tokens);$("cache-rate").textContent=`${t.cache_hit_percent.toFixed(1)}%`;$("path").textContent=x.results_path;$("health-dot").className=l.alive||complete?"live":"";$("health").textContent=complete?(x.status==="completed"?"已完成":"已完成（有错误）"):l.alive?"运行中":"已中断";$("updated").textContent=new Date(x.updated_at).toLocaleTimeString("zh-CN");slots(l.active,l.concurrency);recent(x.recent)}
-async function refresh(){try{const r=await fetch("/api/status",{cache:"no-store"});if(!r.ok)throw Error(`HTTP ${r.status}`);render(await r.json())}catch(e){$("health-dot").className="";$("health").textContent="连接失败";$("updated").textContent=e.message}}refresh();setInterval(refresh,5000);
+const $ = (id) => document.getElementById(id);
+const escapeHtml = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+const number = new Intl.NumberFormat("en-US");
+const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+
+function duration(seconds) {
+  if (seconds == null || !Number.isFinite(seconds)) return "—";
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${minutes}m`;
+  return `${minutes}m ${Math.floor(seconds % 60)}s`;
+}
+
+function recency(seconds) {
+  if (seconds == null) return "No activity yet";
+  if (seconds < 10) return "Just active";
+  if (seconds < 60) return `Active ${seconds}s ago`;
+  return `Active ${Math.floor(seconds / 60)}m ago`;
+}
+
+function shortName(instance) {
+  return String(instance).replace(/^instance_/, "").replace(/-v[0-9a-f]+$/, "");
+}
+
+function renderSlots(active, concurrency) {
+  const slots = $("slots");
+  slots.replaceChildren();
+  for (let index = 0; index < concurrency; index += 1) {
+    const item = active[index];
+    const node = document.createElement("div");
+    node.className = `slot${item ? "" : " empty"}`;
+    if (!item) {
+      node.innerHTML = `<div class="slot-top"><span class="slot-index">SLOT ${index + 1}</span><span class="slot-state">Idle</span></div><div class="slot-name">Waiting for next task</div><div class="slot-time">—</div>`;
+    } else {
+      const state = item.phase === "solving" ? "Solving" : item.phase === "grading" ? "Grading" : "Preparing";
+      const step = item.step == null ? "STEP —" : `STEP ${item.step} / ${item.max_step}`;
+      const elapsedLabel = item.phase === "preparing" ? "Preparing for" : "Running for";
+      node.innerHTML = `<div class="slot-top"><span class="slot-index">SLOT ${index + 1}</span><span class="slot-state ${escapeHtml(item.phase)}"><i></i>${state}</span></div><div class="slot-name" title="${escapeHtml(item.task_id)}">${escapeHtml(shortName(item.task_id))}</div><div class="slot-metrics"><span>${step}</span><span>${number.format(item.requests || 0)} REQUESTS</span></div><div class="slot-time"><span>${elapsedLabel} ${duration(item.elapsed_seconds)}</span><span>${recency(item.last_activity_seconds)}</span></div>`;
+    }
+    slots.appendChild(node);
+  }
+}
+
+function renderResults(rows) {
+  const body = $("recent-results");
+  body.replaceChildren();
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    const mark = row.outcome === "passed" ? "✓" : row.outcome === "failed" ? "×" : row.outcome === "completed" ? "·" : "!";
+    const markClass = row.outcome === "failed" ? "failed" : row.outcome === "error" ? "error" : "";
+    const detail = row.failure ? `${row.failure.kind}: ${row.failure.code || "unknown"} — ${row.failure.details || "Review required"}` : row.outcome;
+    tr.innerHTML = `<td><span class="result-mark ${markClass}" title="${escapeHtml(detail)}">${mark}</span></td><td class="instance" title="${escapeHtml(row.task_id)}">${escapeHtml(shortName(row.task_id))}</td><td>${duration(row.time_seconds)}</td><td>${number.format(row.calls || 0)}</td><td>${money.format(row.cost_usd || 0)}</td>`;
+    body.appendChild(tr);
+  }
+}
+
+function render(data) {
+  const progress = data.progress;
+  const telemetry = data.telemetry;
+  const launcher = data.launcher;
+  const percent = progress.total ? (progress.completed / progress.total) * 100 : 0;
+  const score = data.pass_rate?.percent ?? (progress.completed ? (progress.passed / progress.completed) * 100 : null);
+
+  document.title = `${data.title} · Live`;
+  $("title").textContent = data.title;
+  $("run-name").textContent = data.run_id + (data.score_mode === "cumulative_retry" ? " · Cumulative retries (not pass@1)" : "");
+  $("completed").textContent = number.format(progress.completed);
+  $("total").textContent = `/ ${number.format(progress.total)}`;
+  $("progress-fill").style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  $("progress-percent").textContent = `${percent.toFixed(2)}%`;
+  $("eta").textContent = data.eta_seconds == null ? "Waiting for samples to estimate ETA" : `Time remaining: ${duration(data.eta_seconds)}`;
+  $("score").textContent = score == null ? "—" : `${score.toFixed(1)}%`;
+  $("score").title = `${progress.passed} passed / ${progress.completed} completed, including evaluation issues. ${progress.scored} have valid scores.`;
+  $("resolved").textContent = number.format(progress.passed);
+  $("unresolved").textContent = number.format(progress.failed);
+  $("harness-errors").textContent = number.format(progress.errors);
+  $("elapsed").textContent = duration(launcher.elapsed_seconds);
+  $("active-count").textContent = launcher.active.length;
+  $("concurrency").textContent = launcher.concurrency;
+  $("launcher-pid").textContent = launcher.pid ? `PID ${launcher.pid}` : "PID —";
+  const phases = launcher.active.reduce((counts, item) => {
+    counts[item.phase] = (counts[item.phase] || 0) + 1;
+    return counts;
+  }, {});
+  $("slot-summary").textContent = `${phases.solving || 0} solving · ${phases.grading || 0} grading · ${phases.preparing || 0} preparing`;
+  $("cost").textContent = money.format(telemetry.cost_usd);
+  $("calls").textContent = number.format(telemetry.calls);
+  $("input-tokens").textContent = number.format(telemetry.input_tokens);
+  $("output-tokens").textContent = number.format(telemetry.output_tokens);
+  $("cache-read").textContent = number.format(telemetry.cache_read_tokens);
+  $("cache-rate").textContent = `${telemetry.cache_hit_percent.toFixed(1)}%`;
+  $("data-path").textContent = data.results_path;
+  const labels = {test_compatibility: "test compatibility", grading_setup: "grading setup", evaluation: "other evaluation"};
+  const issueSummary = Object.entries(data.issue_counts || {}).map(([kind, count]) => `${count} ${labels[kind] || kind}`).join(" · ");
+  $("error-summary").textContent = issueSummary || (progress.errors ? `${progress.errors} evaluation issues` : "No evaluation issues");
+  $("error-summary").title = issueSummary;
+  $("harness-errors").parentElement.title = $("error-summary").title;
+
+  const complete = data.status.startsWith("completed");
+  const alive = launcher.alive || complete;
+  $("health-dot").className = `health-dot ${alive ? "live" : ""}`;
+  $("health-label").textContent = complete ? (data.status === "completed" ? "Completed" : "Completed with errors") : alive ? "Running" : "Interrupted";
+  $("updated-at").textContent = `Updated ${new Date(data.updated_at).toLocaleTimeString("en-US")}`;
+  renderSlots(launcher.active, launcher.concurrency);
+  renderResults(data.recent);
+}
+
+async function refresh() {
+  try {
+    const response = await fetch("/api/status", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    render(await response.json());
+  } catch (error) {
+    $("health-dot").className = "health-dot";
+    $("health-label").textContent = "Connection failed";
+    $("updated-at").textContent = error.message;
+  }
+}
+
+refresh();
+setInterval(refresh, 5000);

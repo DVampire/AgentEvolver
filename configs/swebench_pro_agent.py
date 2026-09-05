@@ -11,11 +11,9 @@ The roster, deliberately minimal:
   through the shell; that is the whole toolset the reference SWE agents
   (SWE-agent / mini-SWE-agent) use, and the score comes from the model reasoning
   over the codebase, not from a wide tool surface.
-- **`swebench_pro_eval_tool`** — the GT-safe iterative grader bridge. The agent
-  may ask the real hidden suite to score its current patch; what comes back is
-  ONLY the names and pass/fail counts of the `fail_to_pass` / `pass_to_pass`
-  tests — never the gold patch, the `test_patch`, an expected value, or any test
-  body. Present in BOTH arms, so it does not affect the evolution-only difference.
+- **Local verification only.** The agent runs existing repository tests and writes
+  its own regression tests. Hidden grading happens only after submission, outside
+  the agent; no official scores are returned to it.
 - **The self-evolution roster** — `generate_agent` / `optimize_agent` /
   `evaluate_agent`, `adoption_tool`, `self_evolving_skill`. This is the ONLY
   thing that differs from `swebench_pro_agent_baseline.py`; keep every other value
@@ -59,7 +57,7 @@ memory_names = [
 ]
 agent_names = [
     # ONE actor. The MetaAgent does the whole task itself (read the codebase, write the
-    # fix, iterate against the grader), the way the reference bash-only SWE agents do.
+    # fix, verify locally), the way the reference bash-only SWE agents do.
     "meta_agent",
     # self-evolution roster — the ONLY difference from the baseline arm.
     "generate_agent",
@@ -69,10 +67,6 @@ agent_names = [
 tool_names = [
     "bash_tool",
     "done_tool",
-    # Ask the real hidden suite to score the current patch and return which tests still
-    # fail (NAMES + counts only, never a test body or expected output). Host-mediated,
-    # rate-limited. Present in both arms, so it does not affect the evolution difference.
-    "swebench_pro_eval_tool",
     "adoption_tool",
 ]
 skill_names = [

@@ -1,8 +1,8 @@
 """Run AgentEvolver on SWE-bench Pro — the same launcher shape as run_programbench.py.
 
-A launcher on the host starts one task container per instance and runs the MetaAgent
-inside it; the agent edits the repository, and whatever it changes is collected as a git
-patch and scored by the official ``swe_bench_pro_eval.py`` grader. Two arms
+A launcher on the host runs one MetaAgent process per instance; repository commands run
+in its task container. The final edits are frozen as a git patch and scored with the
+SWE Pro grading scripts. Two arms
 (configs/swebench_pro_agent.py and .._baseline.py) differ only in the evolution roster.
 
 Key differences from ProgramBench, all deliberate:
@@ -10,8 +10,7 @@ Key differences from ProgramBench, all deliberate:
 - **The repo lives at ``/app``** in the instance image (``WORKDIR /app; git clone; git
   checkout <base_commit>``). The session workspace is seeded from that ``/app`` on the
   host, then mounted into the agent's container at ``/workspace`` — the framework's
-  own workspace root, where the bash tool defaults its cwd and the eval tool checkpoints
-  its git state, so reusing it avoids fighting ``config.workspace_root``. The agent works
+  own workspace root, where the bash tool defaults its cwd. The agent works
   at ``/workspace`` and the patch is ``git diff`` there against the base commit. Only the
   grader's throwaway peer sandbox uses the image-native ``/app`` (see ``_build_entryscript``).
 
@@ -21,20 +20,16 @@ Key differences from ProgramBench, all deliberate:
   ``interface`` (plus repo/base_commit for setup) are ever handed to the container;
   ``_safe_instance`` strips the rest. The oracle stays on the host, where the grader runs.
 
-- **The grader runs in a PEER SANDBOX, counts-only.** ``swebench_pro_eval_tool`` bridges
-  out to ``_grade_once`` on the host, which spins a THROWAWAY container from the same
-  instance image (via the framework's own ``sandbox_manager`` — the machinery that runs the
-  agent's sandbox, not Scale AI's Beta ``--use_local_docker`` path), applies the agent's
-  patch, injects the resolution tests THERE (never in the agent's sandbox), runs the hidden
-  suite, and returns only how many ``fail_to_pass`` now pass and how many ``pass_to_pass``
-  still pass — never a test name, body, or expected output.
+- **Final-only grading.** The agent verifies locally. After its process and task sandbox
+  stop, the host freezes one patch and grades it in a throwaway peer sandbox. No scores
+  return to the agent. Resume after a grader failure reuses that exact frozen submission.
 
 - **Grader assets** — the per-instance ``run_script.sh`` / ``parser.py`` and the dockerfiles
   (for their ENV) live in the cloned checkout (``--grader-repo``, default
   ``others/SWE-bench_Pro``); the entryscript mirrors the official ``create_entryscript``.
 
-Modes: ``launcher`` (default, host) selects instances and runs a container each; ``inner``
-(``--instance-json``) is the actual MAS run inside that container.
+Modes: ``launcher`` (default, host) selects instances and owns final grading; ``inner``
+(``--instance-json``) is the host-side Agent worker bound to its task container.
 """
 from __future__ import annotations
 
@@ -42,6 +37,8 @@ import argparse
 import ast
 import asyncio
 import contextlib
+import hashlib
+import inspect
 import json
 import os
 import random
@@ -95,19 +92,16 @@ CONTAINER_REPO = "/AgentEvolver"
 DEFAULT_TASK_FILE = os.path.join(root, "examples", "tasks", "swebench_pro_resolution.html")
 DEFAULT_GRADER_REPO = os.path.join(root, "others", "SWE-bench_Pro")
 
-#: Per-run grader-eval budget (see swebench_pro_eval.py) and how long one grade may take.
-_EVAL_BUDGET = 6
+#: Hidden grading is never an agent tool in this protocol.
+EVALUATION_PROTOCOL = "swe-pro-final-only-v2"
 _GRADE_TIMEOUT_SECONDS = 1800
+_GRADER_WORKERS = 2
 
 #: Seeding copies a whole checkout out of the image and then garbage-collects its history.
 #: 900s was not enough for the largest repos in the set.
 _SEED_TIMEOUT_SECONDS = 2700
 _PULL_TIMEOUT_SECONDS = 2700
 _PULL_ATTEMPTS = 4
-
-#: How much of each grader log to keep. A Go build log runs to megabytes and the cause of a
-#: zero is always at the end, so the tail is the part worth the disk.
-_EVIDENCE_TAIL = 200_000
 
 # The model/runtime stays in the known ``agentos`` host environment. Only repository
 # commands execute in the task image, so an Alpine/musl image never has to load a
@@ -330,7 +324,59 @@ def _argv_safe_run_script(script: str) -> str:
 else
     TEST_FILES=("$@")
 fi'''
-    return script.replace(legacy, 'TEST_FILES=("$@")')
+    script = script.replace(legacy, 'TEST_FILES=("$@")')
+    # ansible-test chooses its own xdist worker count, ignoring CPU quotas on some
+    # images. Bound that inner parallelism independently from benchmark concurrency.
+    return re.sub(r"(\bansible-test\s+units\b)(?![^\n]*--num-workers)",
+                  rf"\1 --num-workers {_GRADER_WORKERS}", script)
+
+
+def _restore_test_fixtures(repo: str, base: str, before: str) -> list[str]:
+    """Restore missing added Go test data in the grader only, never reference code.
+
+    Self-contained because this function also runs in the isolated grading image.
+    Existing files, executable files, symlinks and production directories are excluded.
+    """
+    import os
+    import re
+    import shlex
+    import subprocess
+    from pathlib import Path, PurePosixPath
+
+    command = shlex.split(before)
+    if len(command) < 5 or command[:2] != ["git", "checkout"] or command[3] != "--":
+        return []
+    revision = command[2]
+    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", revision):
+        return []
+    roots = sorted({str(PurePosixPath(p).parent / "testdata") for p in command[4:]
+                    if p.endswith("_test.go") and not PurePosixPath(p).is_absolute()
+                    and ".." not in PurePosixPath(p).parts})
+    if not roots:
+        return []
+
+    def git(*args):
+        return subprocess.check_output(["git", "-C", repo, *args])
+
+    paths = git("diff", "--name-only", "-z", "--diff-filter=A", base, revision, "--", *roots)
+    restored = []
+    allowed = {".json", ".yaml", ".yml", ".txt", ".csv", ".tsv", ".xml", ".golden"}
+    for raw in paths.split(b"\0"):
+        if not raw:
+            continue
+        path = raw.decode("utf-8")
+        relative = PurePosixPath(path)
+        target = Path(repo) / path
+        if relative.is_absolute() or ".." in relative.parts or relative.suffix not in allowed:
+            continue
+        if os.path.lexists(target) or any(p.is_symlink() for p in target.parents):
+            continue
+        entry = git("ls-tree", revision, "--", path)
+        if not entry.startswith(b"100644 blob "):
+            continue
+        git("restore", "--source", revision, "--worktree", "--", path)
+        restored.append(path)
+    return restored
 
 
 def _parser_with_fail_boundaries(script: str) -> str:
@@ -351,7 +397,7 @@ def _parser_with_fail_boundaries(script: str) -> str:
     )
 
 
-def _build_entryscript(row: dict, grader_repo: str) -> str:
+def _build_entryscript(row: dict, grader_repo: str, *, profile: str = "diagnostic") -> str:
     """Mirror swe_bench_pro_eval.create_entryscript: ENV from the dockerfiles, then reset to
     base, apply the agent's patch, run before_repo_set_cmd (which checks out the resolution
     test files from the graded commit), run the selected tests, and parse to output.json.
@@ -371,16 +417,51 @@ def _build_entryscript(row: dict, grader_repo: str) -> str:
     before = row.get("before_repo_set_cmd", "").strip().split("\n")[-1]
     test_files = shlex.join(str(item) for item in _as_list(row, "selected_test_files_to_run"))
     base = row.get("base_commit", "")
-    return "\n".join(env_cmds) + f"""
-set +e
+    if profile == "official":
+        # Preserve upstream invocation semantics, including its comma-joined selector.
+        env = "\n".join(env_cmds)
+        selected = ",".join(str(item) for item in _as_list(row, "selected_test_files_to_run"))
+        return f"""
+{env}
+# apply patch
 cd /app
-git config --global --add safe.directory /app
 git reset --hard {base}
 git checkout {base}
 git apply -v /workspace/patch.diff
 {before}
-bash /workspace/run_script.sh {test_files} > /workspace/stdout.log 2> /workspace/stderr.log
+# run test and save stdout and stderr to separate files
+bash /workspace/run_script.sh {selected} > /workspace/stdout.log 2> /workspace/stderr.log
+# run parsing script
 python /workspace/parser.py /workspace/stdout.log /workspace/stderr.log /workspace/output.json
+"""
+    return "\n".join(env_cmds) + f"""
+set -e
+stage=setup
+test_exit=0
+parser_exit=0
+write_status() {{
+    code=$?
+    printf '{{"stage":"%s","exit_code":%s,"test_exit":%s,"parser_exit":%s}}' "$stage" "$code" "$test_exit" "$parser_exit" > /workspace/status.json
+}}
+trap write_status EXIT
+export PYTEST_XDIST_AUTO_NUM_WORKERS={_GRADER_WORKERS}
+export GOMAXPROCS={_GRADER_WORKERS}
+export GOFLAGS="${{GOFLAGS:+$GOFLAGS }}-p={_GRADER_WORKERS}"
+cd /app
+git config --global --add safe.directory /app
+git reset --hard {shlex.quote(base)}
+git checkout {shlex.quote(base)}
+stage=patch
+git apply -v /workspace/patch.diff
+stage=tests_restore
+{before}
+stage=fixtures_restore
+python /workspace/restore_fixtures.py
+stage=tests
+bash /workspace/run_script.sh {test_files} > /workspace/stdout.log 2> /workspace/stderr.log || test_exit=$?
+stage=parser
+python /workspace/parser.py /workspace/stdout.log /workspace/stderr.log /workspace/output.json || parser_exit=$?
+stage=complete
 """
 
 
@@ -401,81 +482,123 @@ def _counts(results, fail_to_pass: list, pass_to_pass: list) -> dict:
 
 
 #: Where a grading round leaves its own evidence, beside the bridge's request/response.
-_GRADER_EVIDENCE = ("stdout.log", "stderr.log", "output.json")
+_GRADER_EVIDENCE = ("stdout.log", "stderr.log", "output.json", "status.json", "fixtures.json")
 
 
-async def _save_grader_evidence(sbx, workspace_dir: str, run) -> None:
+async def _save_grader_evidence(sbx, workspace_dir: str, run) -> dict:
     """Copy the grading container's own logs out before it is destroyed.
 
     The container is thrown away at the end of the round, so anything not copied here is
     gone. Failures are swallowed: evidence is what explains a score, never what decides it.
     """
+    evidence = {"entry.log": (getattr(run, "stdout", "") or "") + (getattr(run, "stderr", "") or "")}
+    for name in _GRADER_EVIDENCE:
+        with contextlib.suppress(Exception):
+            evidence[name] = await sbx.read_file(f"/workspace/{name}")
     dest = os.path.join(workspace_dir, os.pardir, "eval_bridge")
     with contextlib.suppress(Exception):
         os.makedirs(dest, exist_ok=True)
-        seq = len([n for n in os.listdir(dest) if n.startswith("grader-") and n.endswith(".entry.log")])
-        with contextlib.suppress(Exception):
-            entry = (getattr(run, "stdout", "") or "") + (getattr(run, "stderr", "") or "")
-            with open(os.path.join(dest, f"grader-{seq}.entry.log"), "w", encoding="utf-8") as h:
-                h.write(entry[-_EVIDENCE_TAIL:])
-        for name in _GRADER_EVIDENCE:
+        numbers = [int(m.group(1)) for name in os.listdir(dest)
+                   if (m := re.fullmatch(r"grader-(\d+)\.entry\.log", name))]
+        seq = max(numbers, default=-1) + 1
+        for name, data in evidence.items():
             with contextlib.suppress(Exception):
-                data = await sbx.read_file(f"/workspace/{name}")
                 with open(os.path.join(dest, f"grader-{seq}.{name}"), "w", encoding="utf-8") as h:
-                    h.write(data[-_EVIDENCE_TAIL:] if isinstance(data, str) else str(data))
+                    h.write(data if isinstance(data, str) else str(data))
+    return evidence
 
 
-def _diagnose_zero(workspace_dir: str) -> str:
-    """Read back this round's own entry log and name the first cause it proves.
+def _grade_report(results, row: dict, evidence: dict, *, profile: str = "diagnostic") -> dict:
+    """Classify this invocation from its own evidence, not another round's log tail.
 
-    Ordered by how early it happens: a patch that did not apply makes the build and the
-    selector irrelevant, and reporting the later symptom would send the reader to the wrong
-    place. Returns "" when the log shows none of them, because a guess is worse than nothing.
+    Failed assertions stay benchmark failures. A partial/empty parser result is not a
+    valid score when setup, dependencies or the test runner prevented target execution.
+    All messages crossing the bridge are generic: test identities stay in host logs.
     """
-    dest = os.path.join(workspace_dir, os.pardir, "eval_bridge")
+    counts = _counts(results, _as_list(row, "fail_to_pass"), _as_list(row, "pass_to_pass"))
+    tests = results if isinstance(results, list) else results.get("tests", [])
     try:
-        logs = sorted(n for n in os.listdir(dest) if n.startswith("grader-"))
-        if not logs:
-            return ""
-        seq = logs[-1].split(".", 1)[0]
-        text = ""
-        for name in (f"{seq}.entry.log", f"{seq}.stderr.log", f"{seq}.stdout.log"):
-            with contextlib.suppress(Exception):
-                with open(os.path.join(dest, name), encoding="utf-8") as h:
-                    text += h.read()
-    except Exception:  # noqa: BLE001
-        return ""
-    if "error: patch failed" in text or "does not apply" in text or "unrecognized input" in text:
-        return "the agent's patch did not apply to the base checkout — the tests ran unpatched"
-    if "no tests to run" in text or "testing: warning: no tests to run" in text:
-        return "the test selector matched nothing — no target test was executed"
-    if "no test files" in text or "build failed" in text or "cannot find package" in text:
-        return "the test build failed — no test binary ran"
-    return ""
+        status = json.loads(evidence.get("status.json", "{}"))
+        fixtures = json.loads(evidence.get("fixtures.json", "[]"))
+    except (TypeError, ValueError):
+        status, fixtures = {}, []
+    text = "\n".join(str(evidence.get(name, "")) for name in ("stdout.log", "stderr.log"))
+    error = None
+    if status.get("exit_code") and status.get("stage") != "complete":
+        error = (f"{status.get('stage', 'setup')}_failed", "the grader stopped before completing its test and parser stages")
+    elif status.get("parser_exit"):
+        error = ("parser_failed", "the test result parser exited unsuccessfully")
+    elif ("INTERNALERROR>" in text or (not tests and re.search(
+            r"Too many open files|can't start new thread|Resource temporarily unavailable", text))):
+        error = ("test_runner_failed", "the test runner failed internally or exhausted host resources")
+    elif not tests and re.search(r"(?:testdata|fixtures?)/[^\n]*[Nn]o such file or directory", text):
+        error = ("test_fixture_missing", "required test data is missing in the grading checkout")
+    elif ("[build failed]" in text or (not tests and re.search(
+            r"undefined[: ]|unknown field |cannot find package|ModuleNotFoundError:|ImportError:", text))):
+        error = ("test_build_failed", "test compilation or imports failed; patch correctness and test compatibility need separate review")
+    else:
+        executed = bool(tests) or bool(re.search(
+            r"^=== RUN\s|^--- (?:PASS|FAIL):|\b\d+ (?:passed|failed)\b|[✓✕✔✖]", text, re.M))
+        if not executed:
+            code = "test_selection_failed" if "no tests to run" in text else "no_tests_executed"
+            error = (code, "no test execution was observed in the grader output")
+        elif not tests:
+            error = ("test_results_missing", "tests ran but the parser produced no test results")
+    if error:
+        counts.update(error_code=error[0], error_details=error[1], resolved=False)
+        # A failed test build does not establish an infrastructure fault: the patch may
+        # omit an interface required by tests. Keep it unscored and explicitly uncertain.
+        counts["failure_kind"] = (
+            "test_compatibility" if error[0] == "test_build_failed" else
+            "grading_setup" if error[0] in {
+                "test_fixture_missing", "parser_failed", "test_selection_failed",
+                "no_tests_executed", "test_results_missing",
+            } else "evaluation"
+        )
+    elif not counts["resolved"]:
+        counts["failure_kind"] = "test_failure"
+    if not counts["resolved"] and re.search(
+            r"(?:testdata|fixtures?)/[^\n]*[Nn]o such file or directory", text):
+        # Negative tests can intentionally reference absent files. Preserve a diagnostic
+        # hint, not an automatic fixture repair or a change to the official score.
+        counts["diagnostic_notes"] = [
+            "Missing fixture paths appear in the test log; check whether expected by a "
+            "negative test or required by a failing test before attributing the failure."
+        ]
+    if fixtures:
+        counts.update(fixture_files_restored=len(fixtures), leaderboard_comparable=False)
+    counts.update(grader_protocol=f"swe-pro-{profile}-v1", grader_profile=profile)
+    if profile == "diagnostic":
+        counts["leaderboard_comparable"] = False
+    return counts
 
 
-async def _grade_once(workspace_dir: str, row: dict, grader_repo: str) -> dict:
-    """Score the current patch in a PEER SANDBOX (the framework's own machinery, like the
-    agent's own container) — not Scale AI's Beta ``--use_local_docker`` path. Returns COUNTS
-    ONLY; the oracle (which tests, the resolution criteria) never leaves the host.
-    """
+async def _grade_once(workspace_dir: str, row: dict, grader_repo: str, *, patch: str,
+                      profile: str = "official") -> dict:
+    """Grade a frozen submission; never collect a mutable workspace or call an agent."""
     from agentevolver.sandbox import sandbox_manager
 
     instance_id = row["instance_id"]
-    try:
-        patch = strip_binary_hunks(collect_patch(workspace_dir, row.get("base_commit", "")))
-    except Exception as e:  # noqa: BLE001
-        return {"error_code": "patch_collection_failed", "error_details": str(e)}
+    patch = strip_binary_hunks(patch)
     if not patch.strip():
-        return {"error_code": "empty_patch", "error_details": "the working tree is unchanged from base"}
+        return {**_counts([], _as_list(row, "fail_to_pass"), _as_list(row, "pass_to_pass")),
+                "resolved": False, "grader_note": "empty submission"}
     try:
-        run_script = _argv_safe_run_script(
-            _load_script(grader_repo, instance_id, "run_script.sh")
-        )
-        parser_py = _parser_with_fail_boundaries(
-            _load_script(grader_repo, instance_id, "parser.py")
-        )
-        entryscript = _build_entryscript(row, grader_repo)
+        run_script = _load_script(grader_repo, instance_id, "run_script.sh")
+        parser_py = _load_script(grader_repo, instance_id, "parser.py")
+        if profile == "diagnostic":
+            run_script = _argv_safe_run_script(run_script)
+            parser_py = _parser_with_fail_boundaries(parser_py)
+        elif profile != "official":
+            raise ValueError(f"unknown grader profile: {profile}")
+        entryscript = _build_entryscript(row, grader_repo, profile=profile)
+        before = row.get("before_repo_set_cmd", "").strip().split("\n")[-1]
+        fixture_script = (
+            "from __future__ import annotations\n" + inspect.getsource(_restore_test_fixtures)
+            + "\nimport json\n"
+            + f"restored = _restore_test_fixtures('/app', {row.get('base_commit', '')!r}, {before!r})\n"
+            + "with open('/workspace/fixtures.json', 'w') as f:\n    json.dump(restored, f)\n"
+        ) if profile == "diagnostic" else ""
     except Exception as e:  # noqa: BLE001
         return {"error_code": "scripts_missing", "error_details": str(e)}
 
@@ -493,6 +616,7 @@ async def _grade_once(workspace_dir: str, row: dict, grader_repo: str) -> dict:
         for path, data in (("/workspace/patch.diff", patch),
                            ("/workspace/run_script.sh", run_script),
                            ("/workspace/parser.py", parser_py),
+                           ("/workspace/restore_fixtures.py", fixture_script),
                            ("/workspace/entryscript.sh", entryscript)):
             await sbx.write_file(path, data)
         run = await sbx.run_command("bash /workspace/entryscript.sh",
@@ -500,80 +624,22 @@ async def _grade_once(workspace_dir: str, row: dict, grader_repo: str) -> dict:
         # Keep the grader's own evidence beside the counts. Without it a 0/N result cannot
         # be told apart from a patch that never applied, a build that never compiled, and a
         # test selector that matched nothing — three different failures that look identical
-        # from the counts alone. `set +e` in the entryscript means none of them stop the run.
-        await _save_grader_evidence(sbx, workspace_dir, run)
+        # from the counts alone. Setup is fail-fast; test failures still reach the parser.
+        evidence = await _save_grader_evidence(sbx, workspace_dir, run)
         try:
-            output = await sbx.read_file("/workspace/output.json")
-            results = json.loads(output)
-        except Exception as e:  # noqa: BLE001
-            return {"error_code": "no_output_json",
-                    "error_details": f"the test run produced no output.json ({e})"}
-        counts = _counts(results, _as_list(row, "fail_to_pass"), _as_list(row, "pass_to_pass"))
-        # A patch that did not apply scores every target test as still-failing, which reads
-        # as "the agent did not fix it". Say which one it was.
-        if counts["fail_to_pass_resolved"] == 0 and counts["fail_to_pass_total"] > 0:
-            note = _diagnose_zero(workspace_dir)
-            if note:
-                counts["grader_note"] = note
-                if "selector matched nothing" in note:
-                    return {
-                        "error_code": "test_selection_failed",
-                        "error_details": note,
-                    }
-        return counts
+            results = json.loads(evidence.get("output.json", ""))
+        except (ValueError, TypeError):
+            report = _grade_report({"tests": []}, row, evidence, profile=profile)
+            if report.get("error_code") in {"no_tests_executed", "test_results_missing", None}:
+                report.update(error_code="no_output_json", error_details="the test run produced no valid output.json", resolved=False)
+            return report
+        return _grade_report(results, row, evidence, profile=profile)
     except Exception as e:  # noqa: BLE001
         return {"error_code": "grade_failed", "error_details": str(e)}
     finally:
         if sbx is not None:
             with contextlib.suppress(Exception):
                 await sandbox_manager.release("docker", reuse_key=reuse)
-
-
-async def eval_bridge_watcher(bridge_dir: str, workspace_dir: str, row: dict,
-                              grader_repo: str, budget: int, counter: dict) -> None:
-    """Serve swebench_pro_eval_tool requests from inside the sandbox, host-side.
-
-    One grade per request (capped at budget); writes back response-<n>.json carrying only
-    the counts. Cancelled when the inner run finishes.
-    """
-    os.makedirs(bridge_dir, exist_ok=True)
-    served: set = set()
-    instance_id = row["instance_id"]
-    try:
-        while True:
-            for name in sorted(os.listdir(bridge_dir)):
-                if not (name.startswith("request-") and name.endswith(".json")):
-                    continue
-                seq = name[len("request-"):-len(".json")]
-                response_path = os.path.join(bridge_dir, f"response-{seq}.json")
-                if seq in served or os.path.isfile(response_path):
-                    continue
-                served.add(seq)
-                try:
-                    seq_n = int(seq)
-                except ValueError:
-                    continue
-                if seq_n >= budget:
-                    report = {"error_code": "budget_exhausted",
-                              "error_details": f"{seq_n} requested, budget {budget}"}
-                else:
-                    logger.info(f"| 🧪 [{instance_id}] grading eval #{seq_n} for the agent…")
-                    report = await _grade_once(workspace_dir, row, grader_repo)
-                    counter["count"] = counter.get("count", 0) + 1
-                    logger.info(
-                        f"| 🧪 [{instance_id}] eval #{seq_n}: "
-                        f"f2p={report.get('fail_to_pass_resolved')}/{report.get('fail_to_pass_total')} "
-                        f"error={report.get('error_code')}")
-                tmp = response_path + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as handle:
-                    json.dump(report, handle)
-                os.chmod(tmp, 0o644)  # the container runs as another uid and must read it
-                os.replace(tmp, response_path)
-            await asyncio.sleep(2.0)
-    except asyncio.CancelledError:
-        pass
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"| ❌ [{instance_id}] eval bridge watcher stopped: {e}")
 
 
 # --------------------------------------------------------------------------- #
@@ -604,39 +670,48 @@ def _reclaim_instance_disk(workspace_dir, image_ref_str) -> None:
 # --------------------------------------------------------------------------- #
 # Workspace seeding (from /app in the image)
 # --------------------------------------------------------------------------- #
-def ensure_image(image_ref_str: str) -> None:
-    """Ensure one task image is local, retrying transient registry failures."""
-    present = subprocess.run(
-        ["docker", "image", "inspect", image_ref_str],
-        capture_output=True,
-        timeout=60,
+async def _provision_command(argv: list[str], timeout: float) -> subprocess.CompletedProcess:
+    """Keep provisioning cancellable instead of leaving an uninterruptible worker thread."""
+    process = await asyncio.create_subprocess_exec(
+        *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
     )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
+    except (asyncio.CancelledError, asyncio.TimeoutError):
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        await process.wait()
+        raise
+    return subprocess.CompletedProcess(
+        argv, process.returncode, stdout.decode(errors="replace"), stderr.decode(errors="replace"),
+    )
+
+
+async def ensure_image(image_ref_str: str) -> None:
+    """Ensure one task image is local, retrying transient registry failures."""
+    present = await _provision_command(["docker", "image", "inspect", image_ref_str], 60)
     if present.returncode == 0:
         return
 
     last = ""
     for attempt in range(1, _PULL_ATTEMPTS + 1):
         try:
-            pulled = subprocess.run(
-                ["docker", "pull", image_ref_str],
-                capture_output=True,
-                text=True,
-                timeout=_PULL_TIMEOUT_SECONDS,
-            )
+            pulled = await _provision_command(["docker", "pull", image_ref_str], _PULL_TIMEOUT_SECONDS)
             if pulled.returncode == 0:
                 return
             last = (pulled.stderr or pulled.stdout).strip()
-        except subprocess.TimeoutExpired as error:
+        except asyncio.TimeoutError as error:
             last = f"pull exceeded {_PULL_TIMEOUT_SECONDS}s: {error}"
         if attempt < _PULL_ATTEMPTS:
-            time.sleep((2 ** attempt) + random.uniform(0.0, 1.0))
+            await asyncio.sleep((2 ** attempt) + random.uniform(0.0, 1.0))
     raise RuntimeError(
         f"could not pull {image_ref_str} after {_PULL_ATTEMPTS} attempts: "
         f"{last[-1000:] or '(no Docker output)'}"
     )
 
 
-def seed_workspace(image_ref_str: str, base_commit: str, destination: str) -> None:
+async def seed_workspace_async(image_ref_str: str, base_commit: str, destination: str) -> None:
     """Copy the image's /app into destination at base_commit, the way the grader starts.
 
     Done by a throwaway root container so modes/ownership copy exactly, then handed to the
@@ -659,19 +734,21 @@ def seed_workspace(image_ref_str: str, base_commit: str, destination: str) -> No
     os.makedirs(destination, exist_ok=True)
     if not base_commit:
         raise ValueError("base_commit is required to seed a GT-safe SWE-bench Pro workspace")
-    ensure_image(image_ref_str)
+    await ensure_image(image_ref_str)
+    container_name = "agentevolver-seed-" + hashlib.sha256(os.path.abspath(destination).encode()).hexdigest()[:20]
     quoted_base = shlex.quote(base_commit)
     reset = (
-        f"git reset --hard {quoted_base} && "
-        f"git checkout -B benchmark-base {quoted_base} && "
-        "git remote | while IFS= read -r remote; do git remote remove \"$remote\"; done && "
+        f"git reset --hard {quoted_base}; "
+        f"git checkout -B benchmark-base {quoted_base}; "
+        "git remote | while IFS= read -r remote; do git remote remove \"$remote\"; done; "
         "git for-each-ref --format='%(refname)' | while IFS= read -r ref; do "
-        "[ \"$ref\" = refs/heads/benchmark-base ] || git update-ref -d \"$ref\"; done && "
-        "git reflog expire --expire=now --all && git gc --prune=now; "
+        "[ \"$ref\" = refs/heads/benchmark-base ] || git update-ref -d \"$ref\"; done; "
+        "git reflog expire --expire=now --all; git gc --prune=now; "
     )
     script = (
-        'rm -rf /seed/..?* /seed/.[!.]* /seed/* 2>/dev/null; '
-        'cp -a /app/. /seed/ && cd /seed && '
+        'set -eu; '
+        'rm -rf /seed/..?* /seed/.[!.]* /seed/*; '
+        'cp -a /app/. /seed/; cd /seed; '
         f'git config --global --add safe.directory /seed; {reset}'
         'chown -R 1000:1000 /seed'
     )
@@ -680,34 +757,27 @@ def seed_workspace(image_ref_str: str, base_commit: str, destination: str) -> No
     # ever running. The copy is bounded by disk, not by anything a shorter deadline makes
     # safer, so the deadline is the one thing here worth being generous about.
     try:
-        result = subprocess.run(
-            ["docker", "run", "--rm", "--entrypoint", "sh",
+        await _provision_command(["docker", "rm", "-f", container_name], 60)
+        result = await _provision_command(
+            ["docker", "run", "--rm", "--name", container_name, "--entrypoint", "sh",
              "-v", f"{destination}:/seed", image_ref_str, "-c", script],
-            capture_output=True, text=True, timeout=_SEED_TIMEOUT_SECONDS,
+            _SEED_TIMEOUT_SECONDS,
         )
-    except subprocess.TimeoutExpired as e:
-        # Say what it was doing. A bare TimeoutExpired names the docker command line and
-        # nothing about which of copy, reset or gc was still running when it expired.
-        tail = (e.stderr or e.stdout or b"")
-        if isinstance(tail, bytes):
-            tail = tail.decode("utf-8", "replace")
+    except asyncio.TimeoutError as e:
+        # Identify the setup stage rather than reporting an unlabelled timeout.
         raise RuntimeError(
             f"seeding the workspace from {image_ref_str} exceeded "
-            f"{_SEED_TIMEOUT_SECONDS}s (copy + reset + gc of the checkout). "
-            f"Last output: {tail.strip()[-300:] or '(none)'}"
+            f"{_SEED_TIMEOUT_SECONDS}s (copy + reset + gc of the checkout)."
         ) from e
+    finally:
+        # Killing the Docker CLI alone does not stop its daemon-owned container.
+        with contextlib.suppress(Exception):
+            await _provision_command(["docker", "rm", "-f", container_name], 60)
     if result.returncode != 0:
         raise RuntimeError(
             f"could not seed the workspace from {image_ref_str}: "
             f"{(result.stderr or result.stdout).strip()[:300]}"
         )
-
-
-async def seed_workspace_async(
-    image_ref_str: str, base_commit: str, destination: str,
-) -> None:
-    """Seed without blocking concurrent agents on the launcher's event loop."""
-    await asyncio.to_thread(seed_workspace, image_ref_str, base_commit, destination)
 
 
 def has_resumable_workspace(workspace_dir: str, base_commit: str) -> bool:
@@ -774,11 +844,86 @@ def atomic_write_json(path: str, value) -> None:
     os.replace(tmp, path)
 
 
+def load_submission(path: str, instance_id: str, base_commit: str) -> dict:
+    """A resumed grading job must use the same artifact, never launch another solution."""
+    with open(path, encoding="utf-8") as handle:
+        submission = json.load(handle)
+    if (submission.get("protocol") != EVALUATION_PROTOCOL
+            or submission.get("instance_id") != instance_id
+            or submission.get("base_commit") != base_commit
+            or not isinstance(submission.get("patch"), str)
+            or not isinstance(submission.get("agent_result"), dict)
+            or submission.get("sha256") != hashlib.sha256(submission["patch"].encode()).hexdigest()):
+        raise ValueError(f"invalid frozen submission: {path}")
+    return submission
+
+
+def freeze_submission(path: str, workspace: str, row: dict, record: dict) -> dict:
+    if os.path.exists(path):
+        return load_submission(path, row["instance_id"], row["base_commit"])
+    patch = collect_patch(workspace, row["base_commit"])
+    submission = dict(protocol=EVALUATION_PROTOCOL, instance_id=row["instance_id"],
+                      base_commit=row["base_commit"], patch=patch,
+                      sha256=hashlib.sha256(patch.encode()).hexdigest(), agent_result=record)
+    atomic_write_json(path, submission)
+    return submission
+
+
+def solver_environment(env: dict) -> dict:
+    """Do not inherit an evaluator bridge from a parent shell or another benchmark."""
+    return {key: value for key, value in env.items()
+            if key not in {"AGENTEVOLVER_EVAL_BRIDGE", "AGENTEVOLVER_EVAL_BUDGET"}}
+
+
+def validate_run_protocol(prior_state: dict, *, resume: bool, existing: bool) -> None:
+    if existing and not resume:
+        raise ValueError("existing run is preserved; use --resume or a new --out directory")
+    if existing and prior_state.get("evaluation_protocol") != EVALUATION_PROTOCOL:
+        raise ValueError("legacy feedback-based run is preserved; use a new --out and output_owner")
+
+
+def grader_fingerprint(grader_repo: str) -> str:
+    """Bind resume to the actual local grader assets, including uncommitted changes."""
+    digest = hashlib.sha256()
+    for directory, dirs, files in os.walk(grader_repo):
+        dirs[:] = sorted(d for d in dirs if d not in {".git", "__pycache__"})
+        for name in sorted(files):
+            if name != "Dockerfile" and not name.endswith((".py", ".sh")):
+                continue
+            path = path_manager.resolve_under(directory, name)
+            digest.update(os.path.relpath(path, grader_repo).encode() + b"\0")
+            with open(path, "rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def isolated_extensions(owner: str, *, resume: bool) -> str:
+    path = str(path_manager.under(path_manager.get(P.OWNER, owner=owner), P.PROJECT_EXTENSION))
+    if not resume and os.path.isdir(path) and os.listdir(path):
+        raise ValueError("fresh experiment requires an empty run extension directory")
+    return path
+
+
+def pending_submission(path: str, receipt: str, row: dict, previous: dict) -> dict | None:
+    if os.path.isfile(path):
+        submission = load_submission(path, row["instance_id"], row["base_commit"])
+        if os.path.isfile(receipt):
+            with open(receipt, encoding="utf-8") as handle:
+                if json.load(handle).get("sha256") != submission["sha256"]:
+                    raise ValueError("frozen submission does not match its grading receipt")
+        return submission
+    if os.path.exists(receipt) or previous.get("final_grade") is not None or previous.get("submission_sha256"):
+        raise ValueError("frozen submission is missing; refusing to restart an already submitted Agent")
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Inner run (inside the container)
 # --------------------------------------------------------------------------- #
 async def run_inner(args) -> int:
-    """Run the MetaAgent on one instance. Called inside the task container."""
+    """Run the MetaAgent on the host with repository tools bound to its task container."""
     from agentevolver.agent import agent_manager
     from agentevolver.connector import connector_manager
     from agentevolver.extension import extension_manager
@@ -801,6 +946,10 @@ async def run_inner(args) -> int:
 
     instance = json.loads(args.instance_json)  # already the SAFE subset (see inner_command)
     instance_id = instance["instance_id"]
+    for key in ("AGENTEVOLVER_EVAL_BRIDGE", "AGENTEVOLVER_EVAL_BUDGET"):
+        os.environ.pop(key, None)
+    if "swebench_pro_eval_tool" in config.tool_names:
+        raise ValueError("SWE Pro requires local verification only; remove swebench_pro_eval_tool")
 
     shared_extension_root = config.extension_root
     ctx = SessionContext(id=instance_id, name=f"swebench_pro_{instance_id}")
@@ -899,7 +1048,8 @@ async def run_inner(args) -> int:
     # Collect the patch (the diff from base_commit), whatever the status — an unfinished
     # attempt still has edits worth grading.
     try:
-        patch = collect_patch(CONTAINER_WORKSPACE, instance.get("base_commit", ""))
+        patch = collect_patch(os.environ.get(_TASK_WORKSPACE_ENV, CONTAINER_WORKSPACE),
+                              instance.get("base_commit", ""))
         patch_path = str(path_manager.under(fs_sandbox.project_root, P.PROJECT_PATCH))
         with open(patch_path, "w", encoding="utf-8") as handle:
             handle.write(patch)
@@ -1006,6 +1156,8 @@ async def run_launcher(args) -> int:
     if getattr(args, "resume", False) and os.path.isfile(state_path):
         with open(state_path, encoding="utf-8") as handle:
             prior_state = json.load(handle)
+    validate_run_protocol(prior_state, resume=bool(args.resume),
+                          existing=os.path.exists(state_path) or os.path.exists(results_path))
 
     # A benchmark instance may be run repeatedly with different models. Session state
     # includes memory, trajectories, prompts and grader counters, so keying it only by
@@ -1031,7 +1183,21 @@ async def run_launcher(args) -> int:
         setattr(config, "output_owner", run_namespace)
         logger.info(f"| 🧰 Isolated run namespace: {run_namespace}")
 
+    owner = str(config.get("output_owner") or config.tag)
+    extension_root = isolated_extensions(owner, resume=bool(prior_state))
+    overrides["extension_root"] = extension_root
+    args.user_cfg_options = overrides
+    config.extension_root = extension_root
+    os.environ["AGENTEVOLVER_EXTENSION_ROOT"] = extension_root
+    grader_repo = os.path.abspath(args.grader_repo)
+    if not os.path.isfile(os.path.join(grader_repo, "swe_bench_pro_eval.py")):
+        raise ValueError(f"grader repo not found: {grader_repo}")
+
     run_state = {
+        "evaluation_protocol": EVALUATION_PROTOCOL,
+        "grader_profile": getattr(args, "grader_profile", "official"),
+        "grader_fingerprint": grader_fingerprint(grader_repo),
+        "extension_root": extension_root,
         "config": os.path.abspath(args.config),
         "task_ids": args.task_ids,
         "start": args.start,
@@ -1039,19 +1205,19 @@ async def run_launcher(args) -> int:
         "output_owner": str(config.get("output_owner") or config.tag),
     }
     if prior_state:
-        for key in ("config", "task_ids", "start", "end"):
+        for key in ("config", "task_ids", "start", "end", "extension_root", "grader_profile", "grader_fingerprint"):
             if prior_state.get(key) != run_state.get(key):
                 logger.error(
                     f"| ❌ resume selection mismatch for {key}: "
                     f"state={prior_state.get(key)!r}, requested={run_state.get(key)!r}"
                 )
                 return 1
+    if not prior_state:
+        sessions = path_manager.resolve_under(
+            path_manager.get(P.OWNER, owner=run_state["output_owner"]), "sessions")
+        if os.path.isdir(sessions) and os.listdir(sessions):
+            raise ValueError("output_owner already contains sessions; use a new owner for a fresh experiment")
     atomic_write_json(state_path, run_state)
-
-    grader_repo = os.path.abspath(args.grader_repo)
-    if not os.path.isfile(os.path.join(grader_repo, "swe_bench_pro_eval.py")):
-        logger.error(f"| ❌ grader repo not found at {grader_repo} — clone scaleapi/SWE-bench_Pro-os there")
-        return 1
 
     instances = await load_instances()
     task_ids = [t.strip() for t in args.task_ids.split(",")] if args.task_ids else None
@@ -1062,6 +1228,7 @@ async def run_launcher(args) -> int:
     selection_size = len(selected)
 
     results = load_run_results(results_path) if getattr(args, "resume", False) else []
+    previous_records = {record.get("instance_id"): record for record in results}
     completed_ids = scored_instance_ids(results)
     pending = [(index, row) for index, row in enumerate(selected, start=1)
                if row["instance_id"] not in completed_ids]
@@ -1112,11 +1279,10 @@ async def run_launcher(args) -> int:
         monitor.task(instance_id, "preparing", position=index)
         logger.info(f"| ▶️ [{index}/{len(selected)}] {instance_id} (image={ref})")
         started = time.time()
-        record: dict = {"instance_id": instance_id, "status": "failed", "error": None}
+        previous = previous_records.get(instance_id, {})
+        record: dict = {"instance_id": instance_id, "status": "failed", "error": None, **previous}
         sandbox = None
-        watcher_task = None
         workspace_dir = None
-        eval_counter = {"count": 0}
         attempt_completed = False
         try:
             owner = str(config.get("output_owner") or config.tag)
@@ -1126,99 +1292,83 @@ async def run_launcher(args) -> int:
             session_path = str(path_manager.get(
                 P.SESSION, owner=owner, session_id=instance_id,
             ))
-            resuming = bool(getattr(args, "resume", False)) and has_resumable_workspace(
-                workspace_dir, row.get("base_commit", "")
-            )
-            if resuming:
-                logger.info(f"| ⏩ [{instance_id}] Reusing interrupted workspace: {workspace_dir}")
+            submission_path = str(path_manager.resolve_under(session_path, "submission.json"))
+            receipt_path = str(path_manager.resolve_under(session_path, "submission_receipt.json"))
+            submission = pending_submission(submission_path, receipt_path, row, previous)
+            if submission is not None:
                 async with provision_sem:
-                    await asyncio.to_thread(ensure_image, ref)
-                grant_to_container_user(workspace_dir)
+                    await ensure_image(ref)
+                logger.info(f"| ⏩ [{instance_id}] Regrading the frozen submission; no Agent restart")
             else:
-                async with provision_sem:
-                    await seed_workspace_async(ref, row.get("base_commit", ""), workspace_dir)
+                resuming = bool(args.resume) and has_resumable_workspace(
+                    workspace_dir, row.get("base_commit", ""))
+                if resuming:
+                    async with provision_sem:
+                        await ensure_image(ref)
+                    grant_to_container_user(workspace_dir)
+                else:
+                    async with provision_sem:
+                        await seed_workspace_async(ref, row.get("base_commit", ""), workspace_dir)
 
-            bridge_dir = str(path_manager.under(session_path, P.PROJECT_EVAL_BRIDGE))
-            os.makedirs(bridge_dir, exist_ok=True)
-            logger.info(
-                f"| {'⏩' if resuming else '🌱'} [{instance_id}] "
-                f"{'Reused' if resuming else 'Seeded'} and mounted at {CONTAINER_WORKSPACE} "
-                f"(owned by {CONTAINER_USER})"
-            )
+                sandbox = await sandbox_manager.acquire(
+                    "docker", reuse_key=instance_id, image=ref, network=False, user=CONTAINER_USER,
+                    workdir=CONTAINER_WORKSPACE, mounts={workspace_dir: CONTAINER_WORKSPACE},
+                    env={}, allow_hosts=[], deny_hosts=[],
+                    timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
+                )
+                monitor.task(instance_id, "solving", position=index)
+                logger.info(f"| 🚀 [{instance_id}] {inner_command(row, args, resume=resuming)[:160]}")
+                inner_env = solver_environment({
+                    **os.environ, **forwarded,
+                    _EXEC_CONTAINER_ENV: sandbox.container_name,
+                    _EXEC_WORKDIR_ENV: CONTAINER_WORKSPACE,
+                    _TASK_WORKSPACE_ENV: workspace_dir,
+                    "AGENTEVOLVER_HOME": root,
+                    "PYTHONPATH": root,
+                    "LITELLM_LOCAL_MODEL_COST_MAP": "True",
+                })
+                exit_code = await run_inner_process(
+                    row, args, inner_env, resume=resuming,
+                    timeout=wall_clock + _LANDING_MARGIN_SECONDS,
+                )
+                inner_result = str(path_manager.under(session_path, P.PROJECT_RESULT))
+                if os.path.isfile(inner_result):
+                    with open(inner_result, encoding="utf-8") as handle:
+                        record.update(json.load(handle))
+                else:
+                    record["error"] = f"the inner run left no result.json (process exit {exit_code})"
+                record["egress_audit"] = sandbox_manager.egress_audit(sandbox)
 
-            sandbox = await sandbox_manager.acquire(
-                "docker", reuse_key=instance_id, image=ref, network=False, user=CONTAINER_USER,
-                workdir=CONTAINER_WORKSPACE,
-                mounts={workspace_dir: CONTAINER_WORKSPACE},
-                env={},
-                allow_hosts=[],
-                deny_hosts=[],
-                timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
-            )
-            command = inner_command(row, args, resume=resuming)
-            monitor.task(instance_id, "solving", position=index)
-            logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
-            watcher_task = asyncio.create_task(
-                eval_bridge_watcher(bridge_dir, workspace_dir, row, grader_repo, _EVAL_BUDGET, eval_counter))
-            inner_env = {
-                **os.environ,
-                **forwarded,
-                _EXEC_CONTAINER_ENV: sandbox.container_name,
-                _EXEC_WORKDIR_ENV: CONTAINER_WORKSPACE,
-                _TASK_WORKSPACE_ENV: workspace_dir,
-                "AGENTEVOLVER_EVAL_BRIDGE": bridge_dir,
-                "AGENTEVOLVER_EVAL_BUDGET": str(_EVAL_BUDGET),
-                "AGENTEVOLVER_HOME": root,
-                "PYTHONPATH": root,
-                "LITELLM_LOCAL_MODEL_COST_MAP": "True",
-            }
-            exit_code = await run_inner_process(
-                row,
-                args,
-                inner_env,
-                resume=resuming,
-                timeout=wall_clock + _LANDING_MARGIN_SECONDS,
-            )
+                # Stop background repository commands before freezing the final artifact.
+                await sandbox_manager.release("docker", reuse_key=instance_id)
+                sandbox = None
+                submission = freeze_submission(submission_path, workspace_dir, row, record)
 
-            inner_result = str(path_manager.under(session_path, P.PROJECT_RESULT))
-            if os.path.isfile(inner_result):
-                with open(inner_result, encoding="utf-8") as handle:
-                    record.update(json.load(handle))
-            else:
-                record["error"] = f"the inner run left no result.json (process exit {exit_code})"
-            record["egress_audit"] = sandbox_manager.egress_audit(sandbox)
-
-            # Final leaderboard-style grade of the patch the agent left behind. Counts only,
-            # exactly as the mid-run bridge would return; the oracle never crosses back.
+            record = dict(submission["agent_result"])
+            atomic_write_json(receipt_path, {"sha256": submission["sha256"]})
+            record.update(evaluation_protocol=EVALUATION_PROTOCOL, grader_evals=0,
+                          submission_sha256=submission["sha256"],
+                          grader_profile=run_state["grader_profile"],
+                          grader_fingerprint=run_state["grader_fingerprint"])
+            if run_state["grader_profile"] != "official":
+                record["leaderboard_comparable"] = False
             monitor.task(instance_id, "grading", position=index)
-            logger.info(f"| ⚖️ [{instance_id}] final grade of the collected patch…")
-            final = await _grade_once(workspace_dir, row, grader_repo)
+            logger.info(f"| ⚖️ [{instance_id}] final grade of frozen patch {submission['sha256']}")
+            final = await _grade_once(workspace_dir, row, grader_repo, patch=submission["patch"],
+                                      profile=run_state["grader_profile"])
             record["final_grade"] = final
             record["resolved"] = bool(final.get("resolved"))
+            if final.get("leaderboard_comparable") is False:
+                record["leaderboard_comparable"] = False
             if final.get("error_code"):
                 record["error"] = f"final grader failed: {final['error_code']}"
             logger.info(f"| {'🟢 RESOLVED' if record['resolved'] else '🔴 unresolved'} "
                         f"[{instance_id}] {final}")
-            attempt_completed = not final.get("error_code") and os.path.isfile(inner_result)
+            attempt_completed = not final.get("error_code")
         except Exception as e:  # noqa: BLE001
             logger.error(f"| ❌ [{instance_id}] launcher failure: {e}", exc_info=True)
             record["error"] = str(e)
         finally:
-            if watcher_task is not None:
-                watcher_task.cancel()
-                with contextlib.suppress(Exception):
-                    await watcher_task
-            bridge_requests = []
-            if session_path:
-                bridge = str(path_manager.under(session_path, P.PROJECT_EVAL_BRIDGE))
-                with contextlib.suppress(OSError):
-                    bridge_requests = [
-                        name for name in os.listdir(bridge)
-                        if name.startswith("request-") and name.endswith(".json")
-                    ]
-            record["grader_evals"] = len(bridge_requests)
-            if bridge_requests:
-                record["leaderboard_comparable"] = False
             if sandbox is not None:
                 await sandbox_manager.release("docker", reuse_key=instance_id)
             # Bounded disk on a near-full shared volume: each instance has its own ~1GB
@@ -1300,6 +1450,8 @@ def parse_args():
     parser.add_argument("--task-file", default=DEFAULT_TASK_FILE)
     parser.add_argument("--grader-repo", default=DEFAULT_GRADER_REPO,
                         help="Path to the cloned scaleapi/SWE-bench_Pro-os checkout.")
+    parser.add_argument("--grader-profile", choices=("official", "diagnostic"), default="official",
+                        help="Official uses unchanged upstream scripts; diagnostic enables custom repairs and is non-comparable.")
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument(
         "--provision-concurrency",
@@ -1320,9 +1472,9 @@ def parse_args():
     parser.add_argument(
         "--resume", action="store_true",
         help="Resume a durable run from --out: restore its output namespace, skip every "
-             "instance with a recorded final score, and reuse a valid interrupted Git "
-             "workspace instead of seeding it again. Resolved and unresolved scores are "
-             "both terminal so recovery never becomes hidden-test retrying.",
+             "instance with a recorded final score, regrade frozen submissions without "
+             "restarting the Agent, or reuse a pre-submission interrupted workspace. "
+             "Resolved and unresolved scores are both terminal.",
     )
     parser.add_argument("--cfg-options", nargs="+", default=None,
                         help="Config overrides, e.g. model_name=llm_hub/claude-opus-5")

@@ -49,6 +49,33 @@ its read-only dashboard through `deployment_manager` by default. Use `--no-monit
 headless automation or `--monitor-port` to request a preferred host port; port conflicts
 are resolved centrally by the deploy subsystem.
 
+To display retries on top of historical progress without changing the running solver,
+place `aggregate.json` beside its `monitor.json`:
+`{"history": ["/absolute/path/to/previous/results.json"], "total": 731}`.
+The monitor merges by task ID (current results replace history), retains all recorded
+attempt costs, and labels the view cumulative retry results, not pass@1. The original
+ledgers remain untouched, so display aggregation cannot alter resume or grading behavior.
+
+The headline pass rate is passed / completed attempts (including evaluation issues),
+not passed / successfully graded attempts. The API retains the separate `scored` count
+and exposes the exact numerator and denominator in `pass_rate`. In cumulative views,
+each task contributes its latest result once. This is a conservative progress metric,
+not a certified leaderboard score. Evaluation issues remain unscored, not silently
+converted to assertion failures: `test_compatibility` flags compilation/interface failures
+whose attribution needs review, `grading_setup` covers missing fixtures/parsing/selection,
+and `evaluation` covers other unresolved execution issues. Legacy `test_build_failed`
+records receive the same display classification without rewriting their original ledger.
+Missing-fixture mentions in failed test logs are diagnostic hints only: negative tests
+can intentionally reference absent paths, so these hints never repair fixtures or change
+official grading. Test builds are not automatically treated as host infrastructure faults.
+
+SWE Pro image pulls and workspace seeding use cancellable subprocesses, not executor
+threads. A timed-out or cancelled seed removes its explicitly named temporary container;
+copy/reset/checkout failures stop initialization instead of being hidden by a later chown.
+The solver prompt asks for requirement-derived expected values and interface/type checks,
+not tests that simply confirm the implementation's assumptions. This improves verification
+discipline; it cannot guarantee compatibility with undocumented hidden-test interfaces.
+
 `exact_match` is a scorer, not a task source: it has no dataset and appears here only
 because it is registered alongside the rest.
 
@@ -96,10 +123,49 @@ places is how that index once named three HuggingFace repos no benchmark had eve
 
 ## Scoring caveats worth carrying
 
-Two of these expose the grader to the agent as a progress signal (`swebench_*` via
-`bridge.py`, `programbench` likewise). Iterating against a signal a single-shot run does
+SWE-bench Verified and ProgramBench expose the grader as a progress signal. Iterating against a signal a single-shot run does
 not have means such a score is **not comparable to a public leaderboard**; the launchers
 record how many times the tool was called so the caveat travels with the number.
+
+SWE Pro defaults to `--grader-profile official`: upstream run scripts and parsers are
+uploaded unchanged, and entry-script generation is regression-tested against the local
+upstream generator. It does not restore extra fixtures or rewrite selectors. The local
+grader asset fingerprint and profile are recorded and checked on resume. This is asset
+compatibility, not a claim that the entire custom launcher has been certified by a leaderboard.
+
+`--grader-profile diagnostic` explicitly enables bounded test-worker parallelism,
+fail-fast setup, selector/parser repairs and optional missing Go test-data restoration.
+All diagnostic results are marked `leaderboard_comparable=false`, even without restored
+files. Complete logs and parser output are retained in `eval_bridge/grader-*.{log,json}`
+(a historical directory name, no longer a live solver bridge). A compiler warning alone,
+or an expected missing-file error in an executed test, is not a harness failure.
+
+For Go tests, the grader can restore newly added non-code data files under the selected
+tests' sibling `testdata/` directories from the test revision. It never overwrites existing
+files or restores production code. Restored paths stay in the grader evidence; the result
+contains only `fixture_files_restored` and `leaderboard_comparable=false`. This repair
+changes the grading setup and must not be presented as an unmodified official evaluation.
+Already-running launchers keep their loaded protocol until restarted; editing code does
+not silently rewrite previous results.
+
+SWE Pro now uses `swe-pro-final-only-v2`: both configurations expose only local verification
+to the solver, with no hidden-grader tool, watcher or bridge environment. After the Agent
+exits, its sandbox is released and one `submission.json` containing the patch, SHA-256 and
+Agent outcome is frozen. The host grades that artifact, including submissions whose local
+tests failed or budget ran out. Scores never flow back into the solver.
+
+`--resume` skips both passing and failing completed scores. If grading failed or was
+interrupted after submission, only that same frozen artifact is regraded; the Agent does
+not run again. A separate submission receipt plus the prior result record prevents a lost
+artifact from being treated as a fresh attempt; a mismatched receipt/hash also fails closed.
+Interrupted pre-submission workspaces may resume without official feedback.
+The former `--retry-unresolved` mode is removed. Legacy feedback-based runs and their results
+are preserved, but cannot resume under the new protocol; use a new output directory and
+owner. The launcher gives each run its own initially empty `output/<owner>/extension`
+library and forwards it to every Agent, ignoring the global extension library; no old
+generated capabilities are copied. Shipped capabilities remain available. The extension
+path is locked in run state, and resume preserves that run's own evolution work. Changes to
+model/scaffold settings and cross-task adaptation still need to be disclosed/audited.
 
 The same applies to Harbor for a different reason: a leaderboard row is a specific agent
 harness on a specific model, and swapping the harness changes what is measured even when
