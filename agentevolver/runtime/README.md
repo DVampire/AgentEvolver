@@ -63,9 +63,10 @@ task success does not assert that every external resource was successfully relea
 Agent exit retries each resource release a bounded number of times. Failed Job/Terminal
 stops retain their registry entries for a later cleanup attempt; accepting cancellation
 of an asyncio task does not mark it killed before its cancellation cleanup completes.
-An OS job must own a dedicated process group before that group can be signalled. This
-does not establish control over descendants that deliberately escape the group; that
-requires an owning OS/container supervisor, not just an in-memory process table.
+An OS job must own a dedicated process group before that group can be signalled.
+Host Bash, Terminal and HostSandbox additionally use a Linux bubblewrap PID namespace,
+so descendants cannot survive by escaping the process group. Other custom subprocess
+launchers must use a managed backend to obtain this guarantee.
 
 ### Isolated child workspaces
 
@@ -106,7 +107,28 @@ rejection can release the reservation for a portable fallback. No automatic bill
 is assumed: provider-side audit evidence is required for unknown requests. Snapshots
 expose reserved tokens and unreconciled receipt IDs. Version 1 usage-only ledgers remain
 readable but cannot retroactively reveal their missing requests.
-It does not restore mailboxes, subscriptions, browser state, or external jobs.
+The budget ledger is separate from mailbox and browser recovery records described below.
+
+### Crash recovery
+
+Bound endpoints persist their envelopes, subscriptions, and completed turn text/results
+alongside the budget ledger. Resume requires the same thread/name/model/mode/standing
+brief and an exclusive OS ownership lock. The host recreates the endpoint with
+`spawn(..., resume=True)`; queued messages resume, with turn numbering preserved.
+A completed one-shot dialogue may receive a new explicit task on resume. If queued
+work remains, resume it without supplying a replacement task; neither input is discarded.
+Turn completion and its delivery acknowledgement commit atomically. Arbitrary Python
+return objects and a complete process graph are not deserialized from disk.
+Version 2 mailbox records include turn outputs; version 1 records require explicit
+migration rather than silently resetting the completed-turn count to zero.
+
+Possibly executed messages (`received`, `interrupted`, `failed`) block recovery instead
+of being replayed blindly. The host uses `Mailbox.reconcile(..., replay=..., evidence=...)`
+after checking external effects. This is not exactly-once delivery to external services.
+
+Browser checkpoints retain cookies, local storage and IndexedDB. Recovery creates a
+fresh page and reports the last URL; it does not replay navigation, in-flight actions,
+session storage or DOM state. Stale containers are reaped only with proven dead ownership.
 
 A safe point is any place the process voluntarily hands control back to the kernel. There
 are two, and that is the entire definition:
@@ -120,9 +142,10 @@ are two, and that is the entire definition:
 `Process.snapshot()["deliveries"]` exposes receipt states keyed by envelope ID:
 `queued`, `received`, `delivered`, `failed`, `unhandled`, `interrupted`, `undelivered`.
 `delivered` means the local handler/turn returned, not that a remote model obeyed it.
-Queued receipts and the most recent 128 terminal receipts are retained. Retransmitting
-an ID still in that window does not invoke the handler twice; this is not durable
-exactly-once delivery. Queued messages left on shutdown become `undelivered`.
+The snapshot retains queued receipts and the most recent 128 terminal receipts; bound
+mailboxes retain the complete durable receipt history for deduplication across resumes.
+Reusing an ID for different content is rejected. Queued messages left on shutdown become
+`undelivered` and require an explicit replay decision.
 
 `ask_parent()` accepts only a reply naming its active question and parent sender.
 `kernel.reply()` binds an omitted question ID to the current pending question, and

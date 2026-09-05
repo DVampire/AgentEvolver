@@ -7,12 +7,10 @@ new browser-environment start fail with "Network connectivity error", which
 silently emptied the environments capability list).
 
 The fix is a write-ahead ledger: a sandbox id is recorded right after its
-container is created and forgotten on clean destroy. Whatever is still in the
-ledger when a new process boots belongs to a dead run — ``reap_stale`` force-
-removes those containers before the first sandbox of the new run is created.
-
-Assumes one framework instance per tree root (the same assumption
-the port registry and deploy registry already make).
+container is created and forgotten on clean destroy. Each entry records its
+owner PID and process creation time; ``reap_stale`` removes only containers whose
+recorded owner is demonstrably gone. Other live runs and legacy entries without
+provable ownership remain untouched. Updates are cross-process locked.
 """
 
 from __future__ import annotations

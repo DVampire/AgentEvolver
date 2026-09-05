@@ -90,8 +90,9 @@ class ExtensionManagerServer(BaseModel):
         """Run admission in an OS-isolated interpreter before any live import.
 
         This evaluates loading, construction and callable contracts, not task quality.
-        Input is an immutable content-addressed copy; no credentials, host network,
-        writable repository or live registries enter the probe. Absence of isolation
+        Input is a content-addressed copy; no inherited environment credentials, host
+        network, writable repository or live registries enter the probe. Explicit
+        caller config is passed through and must not contain secrets. Absence of isolation
         fails closed. All eight families use the same boundary.
         """
         if module not in EVOLVABLE_MODULES:
@@ -100,9 +101,13 @@ class ExtensionManagerServer(BaseModel):
         paths = sorted(source.rglob("*")) if source.is_dir() else [source]
         if source.is_symlink() or any(path.is_symlink() for path in paths):
             raise ValueError("Candidate admission does not accept symlinks")
-        digest = hashlib.sha256(module.encode())
+        if source.name in {"", ".", ".."}:
+            raise ValueError("Candidate must have a concrete artifact name")
+        digest = hashlib.sha256((module + "\0" + source.name).encode())
         files = {}
         for path in paths:
+            if "__pycache__" in path.parts or path.suffix == ".pyc":
+                continue  # Only source is admitted, never stale executable bytecode.
             if path.is_file():
                 relative = str(path.relative_to(source)) if source.is_dir() else source.name
                 files[relative] = path.read_bytes()
@@ -113,8 +118,13 @@ class ExtensionManagerServer(BaseModel):
         key = digest.hexdigest()
         root = Path(self.base_dir) / ".checked" / key
         candidate = root / source.name
+        if root.parent.is_symlink() or root.is_symlink() or candidate.is_symlink():
+            raise ValueError("Candidate cache must not contain symlink roots")
         if key in self._checked:
-            intact = candidate.exists() and all(
+            cached = sorted(candidate.rglob("*")) if source.is_dir() else [candidate]
+            cached_files = {str(path.relative_to(candidate)) if source.is_dir() else source.name
+                            for path in cached if path.is_file()}
+            intact = candidate.exists() and cached_files == set(files) and not any(path.is_symlink() for path in cached) and all(
                 (candidate / relative if source.is_dir() else candidate).is_file()
                 and (candidate / relative if source.is_dir() else candidate).read_bytes() == content
                 for relative, content in files.items()
@@ -125,14 +135,26 @@ class ExtensionManagerServer(BaseModel):
         helper = shutil.which("bwrap")
         if sys.platform != "linux" or helper is None:
             raise RuntimeError("Isolated extension admission requires Linux bubblewrap; refusing live import")
-        root.mkdir(parents=True, exist_ok=True)
+        root.parent.mkdir(parents=True, exist_ok=True)
         # Construct from the exact bytes hashed above, not a second read of mutable input.
         from agentevolver.utils.file_utils import atomic_write_text
 
-        for relative, content in files.items():
-            target = candidate / relative if source.is_dir() else candidate
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(content)
+        # Never overwrite paths inside an old candidate: an imported component may
+        # have changed them into links. Build a fresh tree, then publish atomically.
+        with tempfile.TemporaryDirectory(prefix=".stage-", dir=root.parent) as staging:
+            staged_root = Path(staging) / "snapshot"
+            staged_root.mkdir()
+            staged = staged_root / source.name
+            for relative, content in files.items():
+                target = staged / relative if source.is_dir() else staged
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            async with file_lock(root):
+                if root.exists():
+                    from agentevolver.utils import make_id
+                    # Preserve prior evidence instead of deleting it on rejection.
+                    root.rename(root.with_name(key + ".previous-" + make_id()))
+                staged_root.rename(root)
         with tempfile.TemporaryDirectory(prefix="admission-") as temporary:
             repo = Path(__file__).resolve().parents[2]
             argv = [helper, "--die-with-parent", "--unshare-all", "--new-session"]
@@ -318,16 +340,16 @@ class ExtensionManagerServer(BaseModel):
                     logger.warning(f"| ⚠️ ExtensionManager: active file missing for {comp.module}:{comp.name} ({abspath}); skipping.")
                     continue
                 try:
-                    await self._load_component(comp.module, abspath, comp.name, version=comp.version, config=None)
                     self._ensure_archived(comp.module, comp.name, abspath, comp.version)
+                    await self._load_component(comp.module, abspath, comp.name, version=comp.version, config=None)
                     loaded.append(comp)
                 except Exception as e:
                     logger.error(f"| ❌ ExtensionManager: failed to load {comp.module}:{comp.name}: {e}")
-            manifest.components = loaded
-            self._write_manifest(manifest)
+            # A failed load is not an uninstall. Keep accepted version pointers
+            # so the next start cannot fall back to scanning unapproved flat files.
             logger.info(f"| ✅ ExtensionManager: loaded {len(loaded)} active extension components.")
             await self._restore_rollouts()
-            return manifest
+            return Manifest(components=loaded)
 
         # Fresh install: scan flat dirs and register whatever is present.
         manifest = await self._scan_and_load()
@@ -382,7 +404,7 @@ class ExtensionManagerServer(BaseModel):
         # add_component is the evolution-write entry point, so it enforces the
         # enable_evolving gate: overwriting an already-registered *frozen* entity is
         # refused here (rollback / reload / startup load do not pass this flag).
-        name, version = await self._load_component(
+        name, version, admitted = await self._load_component(
             module, abspath, None, version=None, config=config, return_version=True, enforce_evolvable=True
         )
         # The manifest still holds the previous accepted version. Loading necessarily
@@ -403,7 +425,7 @@ class ExtensionManagerServer(BaseModel):
                 manifest = self.read_manifest()
                 comp = self._record(module, name, abspath, manifest, version=version)
                 # STRICT archive: guarantee a rollback target BEFORE committing the manifest.
-                self._ensure_archived(module, name, abspath, comp.version)
+                self._ensure_archived(module, name, admitted, comp.version)
                 self._write_manifest(manifest)
         except Exception as e:
             logger.error(
@@ -642,6 +664,8 @@ class ExtensionManagerServer(BaseModel):
         if not os.path.isfile(archived):
             raise FileNotFoundError(archived)
 
+        archived = await self.check("tool", archived, dict(getattr(current, "config", {}) or {}))
+
         from agentevolver.dynamic import dynamic_manager
 
         cls = dynamic_manager.load_class_from_path(
@@ -871,14 +895,39 @@ class ExtensionManagerServer(BaseModel):
         adir = self._archive_dir(module, name)
         os.makedirs(adir, exist_ok=True)
         dest = os.path.join(adir, f"{version}{ext}")
-        if module in _DIR_MODULES:
-            if os.path.abspath(abspath) != os.path.abspath(dest):
-                if os.path.exists(dest):
-                    shutil.rmtree(dest)
-                shutil.copytree(abspath, dest)
-        else:
-            if os.path.abspath(abspath) != os.path.abspath(dest):
-                shutil.copyfile(abspath, dest)
+        source, archive = Path(abspath), Path(dest)
+        if source.absolute() == archive.absolute():
+            if not source.exists():
+                raise FileNotFoundError(source)
+            return
+
+        def content(path):
+            entries = sorted(path.rglob("*")) if path.is_dir() else [path]
+            if path.is_symlink() or any(entry.is_symlink() for entry in entries):
+                raise ValueError("Version archives cannot contain symlinks")
+            return {str(entry.relative_to(path)) if path.is_dir() else "": entry.read_bytes()
+                    for entry in entries if entry.is_file()
+                    and "__pycache__" not in entry.parts and entry.suffix != ".pyc"}
+
+        expected = content(source)
+        if archive.exists() or archive.is_symlink():
+            if archive.is_dir() != source.is_dir() or content(archive) != expected:
+                raise ValueError(f"Archived {module}:{name} v{version} is immutable; assign a new version")
+            return
+        # Copy to a sibling first. Neither cancellation nor a failed copy publishes
+        # a partial archive, and an existing version is never silently overwritten.
+        with tempfile.TemporaryDirectory(prefix=".archive-", dir=adir) as temporary:
+            staged = Path(temporary) / "artifact"
+            if module in _DIR_MODULES:
+                shutil.copytree(source, staged, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            else:
+                shutil.copyfile(source, staged)
+            if content(staged) != expected:
+                raise ValueError("Candidate changed while archiving; retry admission")
+            if staged.is_dir():
+                staged.rename(archive)
+            else:
+                os.link(staged, archive)  # exclusive publish; refuses existing destination
         if not os.path.exists(dest):
             raise RuntimeError(f"archiving {module}:{name} v{version} produced no file at {dest}")
 
@@ -941,6 +990,10 @@ class ExtensionManagerServer(BaseModel):
             from agentevolver.plugins import plugin_manager
             info = await plugin_manager.get_info(name)
             return getattr(info, "enable_evolving", None) if info is not None else None
+        if module == "memory":
+            from agentevolver.memory import memory_manager
+            info = await memory_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
         return None
 
     @staticmethod
@@ -963,16 +1016,20 @@ class ExtensionManagerServer(BaseModel):
         if not self._probing:
             abspath = await self.check(module, abspath, config)
         if module in _CLASS_MODULES:
-            return await self._load_class_component(module, abspath, version, config, return_version, enforce_evolvable)
-        if module == "prompt":
-            return await self._load_prompt(abspath, return_version)  # prompts carry no enable_evolving flag
-        if module == "skill":
-            return await self._load_skill(abspath, version, return_version, enforce_evolvable, config)
-        if module == "connector":
-            return await self._load_connector(abspath, version, return_version, enforce_evolvable, config)
-        if module == "workflow":
-            return await self._load_workflow(abspath, version, return_version, enforce_evolvable)
-        raise ValueError(f"Unknown extension module: {module}")
+            result = await self._load_class_component(module, abspath, version, config, return_version, enforce_evolvable)
+        elif module == "prompt":
+            result = await self._load_prompt(abspath, return_version)
+        elif module == "skill":
+            result = await self._load_skill(abspath, version, return_version, enforce_evolvable, config)
+        elif module == "connector":
+            result = await self._load_connector(abspath, version, return_version, enforce_evolvable, config)
+        elif module == "workflow":
+            result = await self._load_workflow(abspath, version, return_version, enforce_evolvable)
+        else:
+            raise ValueError(f"Unknown extension module: {module}")
+        # Carry the admitted source into archiving. The author's working copy can
+        # change while loading awaits; it is not evidence of what was installed.
+        return (*result, abspath) if return_version else result
 
     async def _load_class_component(self, module: str, abspath: str, version: Optional[str],
                                     config: Optional[dict], return_version: bool,

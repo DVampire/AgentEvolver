@@ -171,8 +171,19 @@ class Kernel:
                 if parent_proc is None:
                     proc.budget.bind(state_path, resume=resume)
                 restored = resume
-                if restored and not resident and not len(proc.mailbox):
-                    raise RuntimeError("This one-shot endpoint has no queued work to resume")
+                if restored:
+                    from agentevolver.runtime.process import MAX_REMEMBERED_TURNS
+
+                    turns = proc.mailbox.turns
+                    proc.turns = max(turns, default=0)
+                    for index in sorted(turns)[-MAX_REMEMBERED_TURNS:]:
+                        proc.turn_results[index] = turns[index]["message"]
+                        proc.turn_success[index] = turns[index]["success"]
+                if restored and not resident:
+                    if len(proc.mailbox) and (task or files):
+                        raise ValueError("Queued work exists; resume without a new task before sending another")
+                    if not len(proc.mailbox) and not (task or files):
+                        raise RuntimeError("This one-shot endpoint has no queued work or new task to resume")
             except BaseException:
                 proc.mailbox.release()
                 raise
@@ -218,6 +229,10 @@ class Kernel:
             proc._path_lease.__enter__()
         driver = None
         try:
+            if restored and not resident and not len(proc.mailbox):
+                # A completed dialogue can continue with an explicitly supplied
+                # new assignment. This is not replay of its previous operation.
+                proc.mailbox.put(first)
             if not start_idle and not restored:
                 proc.record_delivery(first, "queued")
             driver = self._serve(proc, None if start_idle or restored else first)
@@ -604,8 +619,7 @@ class Kernel:
                     started = True
 
                 proc.last_result = await self._turn(proc, envelope)
-                proc.turns += 1
-                proc.record_turn(proc.turns, proc.last_result)
+                proc.record_turn(proc.turns + 1, proc.last_result, envelope=envelope)
 
                 if not proc.resident:
                     if not proc.turn_success[proc.turns]:
@@ -656,7 +670,6 @@ class Kernel:
         except Exception:
             proc.record_delivery(envelope, "failed")
             raise
-        proc.record_delivery(envelope, "delivered")
         return result
 
     @staticmethod

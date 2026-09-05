@@ -27,10 +27,21 @@ a passing report for the exact active, archived version. This contract is indepe
 of website releases and task-specific runtime extras. Recording a rollback/unload
 decision does not execute it: use the corresponding operation explicitly.
 
-Deterministic admission checks registration and schema integrity, not functional
-quality. Non-tool candidates can still become active provisionally on registration;
-isolated functional testing and mandatory pre-activation gates for all eight families
-are not implemented. Existing measured tool rollout remains a separate mechanism.
+All eight families pass loading/construction/schema admission in a separate Linux
+bubblewrap interpreter before live import. The probe has a read-only code snapshot,
+isolated network and temporary writable directories; inherited environment credentials
+are excluded. Explicit construction config must not contain secrets. Missing isolation
+fails closed. Probe output and content digests are retained under `.checked/`; changed
+or injected cache files require rechecking, and symlink roots are rejected.
+
+Version archives preserve admitted bytes rather than a later edit of the authoring file.
+Reusing a version number with different content is rejected. A failed cold-start load
+does not erase the accepted manifest pointer or trigger an unapproved directory rescan.
+
+These are mandatory structural checks, **not functional-quality evaluation**. Candidates
+can still become provisionally active after admission and before EvaluateAgent's functional
+judgment. Mandatory isolated behavioral evaluation before activation for all eight families
+remains incomplete. Existing measured tool rollout remains a separate mechanism.
 
 | File | Responsibility |
 |---|---|

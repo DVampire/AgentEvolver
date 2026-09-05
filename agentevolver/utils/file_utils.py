@@ -77,8 +77,15 @@ class _FileLockContext:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
                 lock_path = self._path.with_suffix(self._path.suffix + ".lock")
                 self._handle = open(lock_path, "a+")
-                await asyncio.to_thread(fcntl.flock, self._handle, fcntl.LOCK_EX)
-            except Exception:
+                # A blocking flock in to_thread outlives cancellation of its
+                # awaiter. Poll nonblocking instead so shutdown owns every wait.
+                while True:
+                    try:
+                        fcntl.flock(self._handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        await asyncio.sleep(0.05)
+            except BaseException:
                 if self._handle is not None:
                     self._handle.close()
                     self._handle = None
@@ -89,7 +96,7 @@ class _FileLockContext:
     async def __aexit__(self, exc_type, exc, tb):
         if self._handle is not None:
             with contextlib.suppress(Exception):
-                await asyncio.to_thread(fcntl.flock, self._handle, fcntl.LOCK_UN)
+                fcntl.flock(self._handle, fcntl.LOCK_UN)
             self._handle.close()
             self._handle = None
         self._lock.release()

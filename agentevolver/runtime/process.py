@@ -344,13 +344,19 @@ class Process:
         """
         return self.state is ProcessState.RUNNING
 
-    def record_turn(self, index: int, result: Any) -> None:
+    def record_turn(self, index: int, result: Any, *, envelope=None) -> None:
         """Remember what one turn produced, for a parent that asks about that turn."""
         message = getattr(result, "message", None)
-        self.turn_results[index] = str(message if message is not None else (result or ""))
+        message = str(message if message is not None else (result or ""))
         success = result.get("success", True) if isinstance(result, dict) else getattr(
             result, "success", result is not None,
         )
+        if envelope is not None:
+            # Completion and output share a single durable commit. A crash cannot
+            # acknowledge a task while silently losing its turn number/result.
+            self.record_delivery(envelope, "delivered", turn=(index, message, bool(success)))
+            self.turns = index
+        self.turn_results[index] = message
         self.turn_success[index] = bool(success)
         while len(self.turn_results) > MAX_REMEMBERED_TURNS:
             oldest = min(self.turn_results)
@@ -381,8 +387,8 @@ class Process:
             # A hook may have taken real time, and a stop may have arrived during it.
             await self._honor_signals()
 
-    def record_delivery(self, envelope: Envelope, status: str) -> None:
-        self.mailbox.receipt(envelope, status)
+    def record_delivery(self, envelope: Envelope, status: str, *, turn=None) -> None:
+        self.mailbox.receipt(envelope, status, turn=turn)
         self.deliveries[envelope.id] = {"status": status, "at": time.time()}
         # Bound terminal receipts; never evict a still-queued message's receipt.
         terminal = [key for key, value in self.deliveries.items()

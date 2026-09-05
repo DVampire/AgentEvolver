@@ -212,6 +212,11 @@ class PathManagerServer:
         self._overrides.clear()
 
     @property
+    def leased(self) -> bool:
+        """Whether running processes or their cleanup still own this session."""
+        return bool(self._leases)
+
+    @property
     def session(self) -> Optional[Tuple[str, str]]:
         """``(owner, session_id)`` of the bound run, or ``None`` outside one.
 

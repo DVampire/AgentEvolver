@@ -875,3 +875,127 @@ def test_mailbox_does_not_enqueue_on_persistence_failure(tmp_path, monkeypatch):
         inbox.put(TaskEnvelope(task="must not run"))
     assert len(inbox) == 0
     inbox.release()
+
+
+def test_mailbox_turn_completion_is_atomic_on_disk_full(tmp_path, monkeypatch):
+    from agentevolver.runtime.mailbox import Mailbox
+    from agentevolver.utils import file_utils
+
+    path = tmp_path / "inbox.json"
+    inbox = Mailbox()
+    inbox.bind(path, identity={})
+    envelope = TaskEnvelope(task="make a release")
+    inbox.put(envelope)
+    inbox.take()
+    before = path.read_bytes()
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(file_utils, "atomic_write_text", fail)
+    with pytest.raises(OSError, match="disk full"):
+        inbox.receipt(envelope, "delivered", turn=(1, "finished", True))
+    assert path.read_bytes() == before
+    assert inbox.delivered(envelope.id) == "received"
+    assert inbox.turns == {}
+    inbox.release()
+
+
+@pytest.mark.asyncio
+async def test_kernel_recovers_turns_queue_and_subscriptions_after_process_crash(tmp_path, monkeypatch):
+    import os
+    import sys
+    import textwrap
+    from agentevolver.paths import path_manager
+
+    monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
+    # os._exit bypasses Python/asyncio cleanup and leaves a real queued envelope.
+    script = textwrap.dedent('''
+        import asyncio, os
+        from types import SimpleNamespace
+        from agentevolver.paths import path_manager
+        from agentevolver.runtime.kernel import Kernel
+        from agentevolver.runtime.envelopes import TaskEnvelope
+        class Agent:
+            name = "recoverable"
+            async def __call__(self, task, **kwargs):
+                return "result:" + task
+        async def main():
+            path_manager.bind_session("recovery-test", "root")
+            kernel = Kernel()
+            ctx = SimpleNamespace(id="resident", extra={"root_session_id": "root"})
+            proc = await kernel.spawn(Agent(), "standing brief", ctx=ctx,
+                                      topics=["releases"], thread_id="resident")
+            await kernel.send(proc, TaskEnvelope(task="first", id="first", at=1))
+            while proc.turns < 1:
+                await asyncio.sleep(.01)
+            await kernel.send(proc, TaskEnvelope(task="second", id="second"))
+            os._exit(23)
+        asyncio.run(main())
+    ''')
+    child = await asyncio.create_subprocess_exec(sys.executable, "-c", script,
+        env=dict(os.environ), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    output, errors = await asyncio.wait_for(child.communicate(), 30)
+    assert child.returncode == 23, (output, errors)
+    path_manager.bind_session("recovery-test", "root")
+    resumed = Kernel()
+    ctx = SimpleNamespace(id="resident", extra={"root_session_id": "root"})
+    try:
+        proc = await resumed.spawn(Steps(name="recoverable", steps=1), "standing brief", ctx=ctx,
+                                   topics=["releases"], thread_id="resident", resume=True)
+        assert proc.turns == 1
+        assert "first" in proc.turn_results[1]
+        async with asyncio.timeout(5):
+            while proc.turns < 2:
+                await asyncio.sleep(.01)
+        assert "second" in proc.turn_results[2]
+        with pytest.raises(ValueError, match="different content"):
+            await resumed.send(proc, TaskEnvelope(task="altered", id="first", at=1))
+        assert await resumed.send(proc, TaskEnvelope(task="first", id="first", at=1))
+        assert len(proc.mailbox) == 0
+        count, _, _ = await resumed.publish_scoped("releases", "ready", {"release": 3}, ctx=ctx)
+        assert count == 1
+        async with asyncio.timeout(5):
+            while proc.turns < 3:
+                await asyncio.sleep(.01)
+        assert "ready" in proc.turn_results[3]
+    finally:
+        await resumed.shutdown(timeout=5)
+        path_manager.unbind_session()
+
+
+@pytest.mark.asyncio
+async def test_cancelling_file_lock_wait_releases_local_lock_and_handle(tmp_path):
+    import fcntl
+    from agentevolver.utils.file_utils import file_lock
+
+    path = tmp_path / "manifest.json"
+    with path.with_suffix(".json.lock").open("a+") as owner:
+        fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        pending = file_lock(path)
+        task = asyncio.create_task(pending.__aenter__())
+        await asyncio.sleep(.1)
+        assert not task.done()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert pending._handle is None
+        assert not file_lock.get_lock(path).locked()
+        fcntl.flock(owner, fcntl.LOCK_UN)
+    async with asyncio.timeout(1):
+        async with file_lock(path):
+            pass
+
+
+def test_active_session_refuses_config_replacement_before_reading_or_mutating():
+    from argparse import Namespace
+    from agentevolver.config import config
+    from agentevolver.paths import path_manager
+
+    path_manager.bind_session("config-test", "active")
+    before = config.to_dict()
+    with path_manager.lease():
+        with pytest.raises(RuntimeError, match="active run"):
+            config.initialize("does-not-exist.py", Namespace(), verbose=False)
+    assert config.to_dict() == before
+    path_manager.unbind_session()

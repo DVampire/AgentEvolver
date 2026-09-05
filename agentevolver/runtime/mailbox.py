@@ -32,7 +32,7 @@ class Mailbox:
         self._owner: str = owner
         self._path = None
         self._lock = None
-        self._state = {"version": 1, "identity": {}, "topics": [], "messages": {}}
+        self._state = {"version": 2, "identity": {}, "topics": [], "messages": {}, "turns": {}}
 
     def bind(self, path, *, identity: dict, topics=(), resume=False) -> None:
         """Claim a durable endpoint. Never replay a possibly executed operation.
@@ -54,7 +54,9 @@ class Mailbox:
                 if not resume:
                     raise RuntimeError(f"Durable endpoint exists; use resume: {path}")
                 state = json.loads(path.read_text(encoding="utf-8"))
-                if state.get("version") != 1 or state.get("identity") != identity:
+                if state.get("version") == 1:
+                    raise ValueError("Legacy mailbox lacks durable turn results; explicit migration is required")
+                if state.get("version") != 2 or state.get("identity") != identity:
                     raise ValueError("Mailbox recovery identity/version mismatch")
                 messages = state["messages"]
                 if not isinstance(state["topics"], list) or any(not isinstance(t, str) for t in state["topics"]):
@@ -66,6 +68,18 @@ class Mailbox:
                         raise RuntimeError(
                             f"Uncertain delivery {record['envelope']['id']}; reconcile before resume: {path}"
                         )
+                turns = state["turns"]
+                if not isinstance(turns, dict):
+                    raise ValueError("Invalid persisted turns")
+                for key, turn in turns.items():
+                    if (not key.isdigit() or int(key) < 1 or str(int(key)) != key
+                            or not isinstance(turn, dict)
+                            or not isinstance(turn.get("message"), str)
+                            or type(turn.get("success")) is not bool
+                            or messages.get(turn.get("envelope"), {}).get("status") != "delivered"):
+                        raise ValueError("Invalid persisted turn receipt")
+                if sorted(map(int, turns)) != list(range(1, len(turns) + 1)):
+                    raise ValueError("Persisted turns must be contiguous")
                 self._state = state
             else:
                 if resume:
@@ -110,10 +124,23 @@ class Mailbox:
         topics.discard(topic) if remove else topics.add(topic)
         self._save({**self._state, "topics": sorted(topics)})
 
-    def receipt(self, envelope, status):
+    @property
+    def turns(self):
+        return {int(key): dict(value) for key, value in self._state.get("turns", {}).items()}
+
+    def receipt(self, envelope, status, *, turn=None):
         # Write before performing the corresponding in-memory transition or action.
+        self.known(envelope)
         record = {"status": status, "envelope": {"kind": type(envelope).__name__, **asdict(envelope)}}
-        self._save({**self._state, "messages": {**self._state["messages"], envelope.id: record}})
+        state = {**self._state, "messages": {**self._state["messages"], envelope.id: record}}
+        if turn is not None:
+            index, message, success = turn
+            if status != "delivered" or index != len(self._state.get("turns", {})) + 1:
+                raise ValueError("Turn completion must be delivered in sequence")
+            state["turns"] = {**self._state.get("turns", {}), str(index): {
+                "envelope": envelope.id, "message": message, "success": success,
+            }}
+        self._save(state)
 
     def delivered(self, message_id):
         return self._state["messages"].get(message_id, {}).get("status")

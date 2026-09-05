@@ -973,7 +973,9 @@ async def test_a_workflow_loaded_as_an_extension_remembers_the_file_it_came_from
     manager = ExtensionManagerServer(base_dir=str(tmp_path / "extensions"))
     name = await manager._load_component("workflow", str(path), None, None, None)
     try:
-        assert workflow_manager.get(name).source_path == str(path.resolve())
+        admitted = Path(workflow_manager.get(name).source_path)
+        assert admitted.is_relative_to(tmp_path / "extensions" / ".checked")
+        assert admitted.read_bytes() == path.read_bytes()
     finally:
         workflow_manager.unregister(name)
 

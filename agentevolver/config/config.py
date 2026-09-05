@@ -148,6 +148,8 @@ class Config(MMConfig, metaclass=Singleton):
         super(Config, self).__init__()
 
     def initialize(self, config_path: Union[str], args: Namespace, verbose: bool = True) -> None:
+        if path_manager.leased:
+            raise RuntimeError("Cannot replace configuration during an active run; stop and join it first")
         # Config files are shipped resources the user may override — resolve them in
         # home → repo → package order so this works both in a checkout and when installed.
         config_path = str(assemble_resource_path(config_path))

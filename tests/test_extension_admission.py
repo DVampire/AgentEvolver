@@ -133,6 +133,76 @@ async def test_all_families_must_pass_isolation_before_live_load(tmp_path, monke
 
 
 @pytest.mark.asyncio
+async def test_frozen_memory_cannot_be_evolved(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from agentevolver.memory import memory_manager
+
+    monkeypatch.setattr(type(memory_manager), "get_info", AsyncMock(
+        return_value=SimpleNamespace(enable_evolving=False)))
+    manager = ExtensionManagerServer(base_dir=str(tmp_path))
+    with pytest.raises(PermissionError, match="frozen"):
+        await manager._assert_evolvable("memory", "durable_memory")
+
+
+@pytest.mark.parametrize("module", ["tool", "skill"])
+def test_version_archive_never_overwrites_different_source(tmp_path, module):
+    from pathlib import Path
+
+    manager = ExtensionManagerServer(base_dir=str(tmp_path / "extensions"))
+    source = tmp_path / ("candidate.py" if module == "tool" else "candidate")
+    if module == "skill":
+        source.mkdir()
+        (source / "__pycache__").mkdir()
+        (source / "__pycache__" / "generated.pyc").write_bytes(b"runtime cache")
+    entry = source / "SKILL.md" if module == "skill" else source
+    entry.write_text("original complete source")
+    manager._ensure_archived(module, "candidate", str(source), "1")
+    if module == "skill":
+        (source / "__pycache__" / "generated.pyc").write_bytes(b"changed runtime cache")
+    manager._ensure_archived(module, "candidate", str(source), "1")  # identical is idempotent
+    entry.write_text("changed source under the same version")
+    with pytest.raises(ValueError, match="immutable"):
+        manager._ensure_archived(module, "candidate", str(source), "1")
+    archive = Path(manager._archive_dir(module, "candidate")) / ("1.py" if module == "tool" else "1/SKILL.md")
+    assert archive.read_text() == "original complete source"
+    assert not (archive.parent / "__pycache__").exists()
+
+
+@pytest.mark.asyncio
+async def test_add_archives_admitted_bytes_not_mutated_author_copy(tmp_path, monkeypatch):
+    from pathlib import Path
+    from unittest.mock import AsyncMock
+
+    manager = ExtensionManagerServer(base_dir=str(tmp_path))
+    source = tmp_path / "tool" / "candidate.py"
+    source.parent.mkdir()
+    source.write_text("admitted source")
+    checked = tmp_path / "checked.py"
+    checked.write_text(source.read_text())
+    monkeypatch.setattr(manager, "check", AsyncMock(return_value=str(checked)))
+
+    async def load(module, path, *args):
+        assert Path(path).read_text() == "admitted source"
+        source.write_text("edited while load was in flight")
+        return "candidate", "1"
+
+    monkeypatch.setattr(manager, "_load_class_component", load)
+    monkeypatch.setattr(manager, "_validate_candidate", AsyncMock())
+    await manager.add_component("tool", str(source))
+    archive = Path(manager._archive_dir("tool", "candidate")) / "1.py"
+    assert archive.read_text() == "admitted source"
+
+    # Restart must not import the modified flat file as the accepted version.
+    monkeypatch.setattr(manager, "_load_component", AsyncMock())
+    monkeypatch.setattr(manager, "_restore_rollouts", AsyncMock())
+    restored = await manager.initialize()
+    assert restored.components == []
+    manager._load_component.assert_not_awaited()
+    assert manager.read_manifest().find("tool", "candidate").version == "1"
+
+
+@pytest.mark.asyncio
 async def test_real_isolated_admission_loads_tool_without_touching_live_registry(tmp_path):
     from pathlib import Path
     from agentevolver.tool import tool_manager
@@ -144,6 +214,32 @@ async def test_real_isolated_admission_loads_tool_without_touching_live_registry
     assert admitted.read_bytes() == source.read_bytes()
     assert (admitted.parent / "result.json").exists()
     assert await tool_manager.get_info("reply_tool") == before
+
+    # A rejected/mutated cache must never become an unchecked live import, nor
+    # may repairing it follow a link and overwrite a host file.
+    sentinel = tmp_path / "sentinel"
+    sentinel.write_text("retain me")
+    admitted.unlink()
+    admitted.symlink_to(sentinel)
+    with pytest.raises(ValueError, match="symlink roots"):
+        await manager.check("tool", str(source))
+    assert sentinel.read_text() == "retain me"
+
+
+@pytest.mark.asyncio
+async def test_admission_rechecks_injected_directory_files(tmp_path):
+    from pathlib import Path
+
+    source = tmp_path / "method"
+    source.mkdir()
+    (source / "SKILL.md").write_text("---\nname: method\ndescription: A reusable method\n---\nFollow the method.\n")
+    manager = ExtensionManagerServer(base_dir=str(tmp_path / "extensions"))
+    admitted = Path(await manager.check("skill", str(source)))
+    (admitted / "injected.py").write_text("raise RuntimeError('unchecked code')")
+    checked = Path(await manager.check("skill", str(source)))
+    assert not (checked / "injected.py").exists()
+    assert checked == admitted
+    assert list(checked.parent.parent.glob(checked.parent.name + ".previous-*"))
 
 
 @pytest.mark.asyncio
@@ -243,7 +339,7 @@ async def test_a_rejected_new_candidate_is_unloaded_before_manifest_commit(
     unloaded = []
 
     async def load(*_args, **_kwargs):
-        return "candidate_tool", "1.0.0"
+        return "candidate_tool", "1.0.0", str(tmp_path / "candidate_tool.py")
 
     async def reject(*_args, **_kwargs):
         raise ValueError("bad contract")
@@ -277,7 +373,7 @@ async def test_a_rejected_evolution_restores_the_previous_version(
     restored = []
 
     async def load(*_args, **_kwargs):
-        return "candidate_tool", "1.1.0"
+        return "candidate_tool", "1.1.0", str(tmp_path / "candidate_tool.py")
 
     async def reject(*_args, **_kwargs):
         raise ValueError("bad contract")
