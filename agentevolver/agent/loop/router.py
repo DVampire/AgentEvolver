@@ -167,11 +167,12 @@ class CapabilityRouter(ToolRouter):
         try:
             from agentevolver.tool import tool_manager
 
-            info = tool_manager.get_info_sync(route[1])  # type: ignore[attr-defined]
+            info = tool_manager.peek(route[1])
+            instance = getattr(info, "instance", None)
+            mutates = instance.will_mutate(call.args) if instance is not None else None
         except Exception:  # noqa: BLE001 - unknown stays unknown
             return None
-        mutates = getattr(getattr(info, "instance", None), "mutates", None)
-        return True if mutates is False else None
+        return True if mutates is False else False if mutates is True else None
 
     # -- dispatch ------------------------------------------------------------
 
@@ -238,6 +239,17 @@ class CapabilityRouter(ToolRouter):
         self, call: ActionCall, route: Sequence[Any], ctx: Any
     ) -> ActionResult:
         from agentevolver.capability import MOUNTED_TYPES
+        from agentevolver.permission import permission_manager
+
+        if permission_manager.restrict() == "read_only":
+            from agentevolver.plan.server import declaration_of
+
+            declaration = await declaration_of(route[0], route[1])
+            if not declaration or not (
+                declaration.get("mutates") is False
+                or declaration.get("permission_mode") == "read_only"
+            ):
+                return ActionResult(call=call, error=f"{route[1]} is not verified read-only")
 
         entry = next((item for item in MOUNTED_TYPES if item.type == route[0]), None)
         if entry is None:
@@ -270,6 +282,13 @@ class CapabilityRouter(ToolRouter):
         if child is None:
             return ActionResult(call=call, error=f"Agent {route[1]!r} is not registered")
 
+        from agentevolver.permission import permission_manager
+
+        child.permission_mode = permission_manager.restrict(
+            getattr(child, "permission_mode", None), getattr(parent, "permission_mode", None),
+            getattr(getattr(parent, "proc", None), "permission_mode", None),
+        ).value
+
         from agentevolver.agent.server import validate_dispatch_input
 
         try:
@@ -278,6 +297,13 @@ class CapabilityRouter(ToolRouter):
             # The bounded handoff contract. Refused as a result, not raised, so the model
             # reads which limit it crossed and can write the specification to a file.
             return ActionResult(call=call, error=str(error))
+
+        if brief.get("model"):
+            child.model_name = brief["model"].strip()
+        if "token_budget" in brief:
+            # A delegation can narrow the host's cap, never raise it.
+            limit = getattr(child, "max_token", None)
+            child.max_token = min(limit, brief["token_budget"]) if limit is not None else brief["token_budget"]
 
         # The dispatch schema has always declared these; honouring them here is what
         # lets an agent start a *subscriber* by calling a sub-agent, with no code of its
@@ -295,15 +321,39 @@ class CapabilityRouter(ToolRouter):
         background = bool(brief.get("background") or brief.get("run_in_background")) \
             or mode is not InteractionMode.RESPONDER
 
-        proc = await kernel.spawn(
-            child,
-            str(brief["task"]).strip(),
-            mode=mode,
-            files=list(brief.get("files") or ()),
-            ctx=self._child_context(brief, parent, ctx),
-            parent=getattr(parent, "proc", None),
-            topics=topics,
-        )
+        from contextlib import ExitStack
+
+        child_ctx = self._child_context(brief, parent, ctx)
+        tree = None
+        try:
+            with ExitStack() as scope:
+                if brief.get("isolate_worktree"):
+                    import os
+                    from agentevolver.paths import path_manager
+                    from agentevolver.sandbox.worktree import IsolatedWorktree
+                    from agentevolver.utils import make_id
+
+                    roots = path_manager.session_roots()
+                    if not roots or os.getenv("AGENTEVOLVER_EXEC_CONTAINER"):
+                        raise ValueError("Worktree dispatch requires a bound host Git workspace")
+                    if set(getattr(child, "env_names", ())) - {"job"}:
+                        raise ValueError("Worktree dispatch does not relocate browser/remote environments")
+                    source = str(roots["workspace"])
+                    tree = await IsolatedWorktree.create(source, str(roots["log"]), make_id())
+                    child_ctx.extra["execution_cwd"] = str(tree.path)
+                    child_ctx.extra.setdefault("source_workspace", source)
+                    scope.enter_context(path_manager.workspace(tree.path))
+                    scope.enter_context(permission_manager.relocate(source, str(tree.path)))
+                options = {"worktree": tree} if tree is not None else {}
+                proc = await kernel.spawn(
+                    child, str(brief["task"]).strip(), mode=mode,
+                    files=list(brief.get("files") or ()), ctx=child_ctx,
+                    parent=getattr(parent, "proc", None), topics=topics, **options,
+                )
+        except BaseException:
+            if tree is not None:
+                await tree.cleanup()
+            raise
         if background:
             if topics:
                 return ActionResult(
@@ -324,13 +374,17 @@ class CapabilityRouter(ToolRouter):
                 extra={"pid": proc.pid},
             )
         result = await kernel.wait(proc)
-        body = getattr(result, "message", None) or (str(result) if result else "")
+        body = (getattr(result, "message", None) or (str(result) if result else "")
+                or getattr(proc, "error", ""))
         status = proc.exit_status.value if proc.exit_status else "unknown"
+        artifacts = dict(getattr(proc, "artifacts", {}) or {})
+        if artifacts:
+            body += "\n" + "\n".join(f"{key}: {value}" for key, value in artifacts.items())
         return ActionResult(
             call=call,
             output=f"[{route[1]} → {status}]\n{body}",
-            error="" if status == "done" else f"{route[1]} ended {status}",
-            extra={"pid": proc.pid},
+            error="" if status == "done" else f"{route[1]} ended {status}: {body}",
+            extra={"pid": proc.pid, "artifacts": artifacts},
         )
 
     # -- helpers -------------------------------------------------------------
@@ -349,17 +403,19 @@ class CapabilityRouter(ToolRouter):
 
         contract = {
             key: brief[key]
-            for key in ("read_set", "write_set", "acceptance")
+            for key in ("read_set", "write_set", "acceptance", "owner")
             if brief.get(key)
         }
         inherited = dict(getattr(ctx, "extra", None) or {})
         # Scoping the parent chose for this dispatch travels; the parent's own run state
         # does not.
         keep = {"plugin_allowlist", "workflow_allowlist", "trace_integrity_profile",
-                "source_workspace", "child_reasoning_effort"}
+                "source_workspace"}
         extra = {key: value for key, value in inherited.items() if key in keep}
         # History sharing is a grant for this dispatch, never inherited transitively.
         extra["fork"] = brief.get("fork") is True
+        if "reasoning_effort" in brief:
+            extra["child_reasoning_effort"] = brief["reasoning_effort"]
         # What the parent chose FOR THIS DISPATCH, as opposed to what it inherited. The
         # evolution roles read their target from the context, because a generate run's
         # target does not exist yet and so cannot be looked up by name. The dispatch
@@ -379,7 +435,7 @@ class CapabilityRouter(ToolRouter):
         # An empty list is a real grant and means "none of this kind", so presence is
         # what matters here, not truthiness.
         for key in ("tool_allowlist", "skill_allowlist", "connector_allowlist",
-                    "plugin_allowlist", "workflow_allowlist"):
+                    "plugin_allowlist", "workflow_allowlist", "environment_allowlist"):
             if isinstance(brief.get(key), list):
                 extra[key] = [str(item).strip() for item in brief[key] if str(item).strip()]
                 grant(extra, key)
@@ -419,9 +475,11 @@ class CapabilityRouter(ToolRouter):
         route = routing.get(call.name)
         if route is None or route[0] != "tool":
             return ""
+        from agentevolver.permission import permission_manager
+
         allow = getattr(agent, "allow_read_only", None)
         if (
-            getattr(agent, "permission_mode", "") == "read_only"
+            permission_manager.restrict(getattr(agent, "permission_mode", None)) == "read_only"
             and route[1] in READ_ONLY_DENIED
             and not (callable(allow) and allow(route[1], call.args))
         ):

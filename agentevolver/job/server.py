@@ -244,9 +244,17 @@ class JobManagerServer(metaclass=Singleton):
             if hasattr(handle, "pid") and handle.pid:
                 self._stop_process(job_id, handle)
             elif isinstance(handle, asyncio.Task):
-                handle.cancel()
+                if not handle.cancelling():
+                    handle.cancel()
+                if not handle.done():
+                    def stopped(_):
+                        job.ended_at = time.monotonic()
+                        job.status = JobStatus.KILLED
+                    handle.add_done_callback(stopped)
+                    return True  # Accepted, not yet reaped; keep it in the registry.
         except Exception as error:                                  # noqa: BLE001
             logger.warning(f"| ⚠️ Could not signal job {job_id}: {error}")
+            return False
 
         job.ended_at = time.monotonic()
         job.status = JobStatus.KILLED
@@ -270,11 +278,24 @@ class JobManagerServer(metaclass=Singleton):
             group = os.getpgid(pid)
         except (ProcessLookupError, PermissionError, OSError):
             handle.terminate()
-            _reap(handle, KILL_GRACE_SECONDS)
+            if not _reap(handle, KILL_GRACE_SECONDS):
+                handle.kill()
+                if not _reap(handle, KILL_GRACE_SECONDS):
+                    raise RuntimeError(f"Job {job_id} is still alive after termination")
             return
 
+        if group != pid:
+            # Only a dedicated process group belongs to this job. Never signal the
+            # caller's shell, SSH session, or another producer's shared group.
+            raise RuntimeError(f"Job {job_id} has no dedicated process group (pid {pid}, pgid {group})")
         os.killpg(group, signal.SIGTERM)
         if _reap(handle, KILL_GRACE_SECONDS):
+            # The shell can exit before its children. Reaping the leader alone does
+            # not establish that the owned group has stopped.
+            try:
+                os.killpg(group, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             return
 
         logger.warning(f"| ⚠️ Job {job_id} ignored SIGTERM; sending SIGKILL")
@@ -285,15 +306,20 @@ class JobManagerServer(metaclass=Singleton):
         if not _reap(handle, KILL_GRACE_SECONDS):
             # Uninterruptible sleep — a wedged mount, usually. Nothing more to send, and
             # saying so beats a log that implies the process stopped.
-            logger.warning(f"| ⚠️ Job {job_id} did not exit after SIGKILL; it is unkillable "
-                           f"from here (pid {pid})")
+            raise RuntimeError(f"Job {job_id} did not exit after SIGKILL (pid {pid})")
 
     def forget(self, session_id: str) -> None:
         """Drop a finished session's jobs. Running ones are killed first."""
+        pending = []
         for job in [j for j in self._jobs.values() if j.session_id == session_id]:
             if not job.status.is_final:
                 self.kill(job.id)
-            self._jobs.pop(job.id, None)
+            if job.status.is_final:
+                self._jobs.pop(job.id, None)
+            else:
+                pending.append(job.id)
+        if pending:
+            raise RuntimeError(f"Jobs still awaiting cleanup: {pending}")
 
     # ------------------------------------------------------------------
     # Internal

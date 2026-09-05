@@ -117,7 +117,18 @@ class HookManagerServer:
             HookResult (ALLOW if no hook is registered under ``name``).
         """
         if self.hook_context_manager is None:
-            # Graceful no-op before initialization (e.g. during tests)
+            if kwargs.get("required"):
+                # The built-in plan guard is usable before optional hook discovery.
+                # It still consults the real plan state; no permissive test-only bypass.
+                if name == "plan_mode_hook":
+                    from agentevolver.hook.default.plan_mode import PlanModeHook
+                    from agentevolver.hook.types import HookContext
+
+                    return await PlanModeHook().handle(HookContext(
+                        id=getattr(ctx, "id", ""), name=name, input=input,
+                        extra=dict(getattr(ctx, "extra", {}) or {}),
+                    ))
+                return HookResult.block(f"Required policy {name!r} is unavailable")
             return HookResult.allow()
         return await self.hook_context_manager(name, input, ctx=ctx, **kwargs)
 

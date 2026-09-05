@@ -191,6 +191,25 @@ async def test_real_prompt_keeps_references_below_all_system_rules(monkeypatch):
     ContextAssembler().build(Conversation(system=messages, task="current task"))
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["exception", "unsuccessful", "empty"])
+async def test_named_prompt_failure_cannot_silently_fall_back(monkeypatch, failure):
+    from agentevolver.prompt import prompt_manager
+
+    async def render(*args, **kwargs):
+        if failure == "exception":
+            raise OSError("template unavailable")
+        return SimpleNamespace(success=failure != "unsuccessful", message="template missing",
+                               data={"messages": [HumanMessage(content="not system instructions")]})
+    async def modules(*args):
+        return {}
+    monkeypatch.setattr(type(prompt_manager), "__call__", render)
+    monkeypatch.setattr(Agent, "prompt_modules", modules)
+    agent = Agent(prompt_name="required_rules", system="less restrictive fallback")
+    with pytest.raises(RuntimeError, match="Required prompt"):
+        await agent.system_messages(None)
+
+
 def test_legacy_archive_preserves_full_text_and_distinct_sources(tmp_path):
     from agentevolver.memory.project import ProjectMemoryStore
     store = ProjectMemoryStore(str(tmp_path))
@@ -281,3 +300,49 @@ async def test_opaque_only_compaction_does_not_discard_history(monkeypatch):
     monkeypatch.setattr(Agent, "text_checkpoint", text)
     moved, _ = await agent._fold("test")
     assert not moved and agent.conversation.turns == 2 and agent.conversation.checkpoint is None
+
+
+@pytest.mark.asyncio
+async def test_compaction_keeps_complete_immutable_source_archives(tmp_path, monkeypatch):
+    agent = Agent(retain_recent_steps=1, compact_verify=False)  # Archive mechanics, not semantic judgment.
+    agent._thread_path = tmp_path / "thread.json"
+    original = "Important original detail, never slice this. " * 300
+    agent.conversation.extend([AssistantMessage(content=original), AssistantMessage(content="recent")])
+    async def native(self, messages):
+        return None
+    async def text(self, messages):
+        return "The task is ongoing; original evidence is available in the source snapshot."
+    monkeypatch.setattr(Agent, "native_checkpoint", native)
+    monkeypatch.setattr(Agent, "text_checkpoint", text)
+    moved, _ = await agent._fold("test")
+    assert moved
+    archives = list(tmp_path.glob("thread/archive/*.json"))
+    assert len(archives) == 1
+    first = archives[0]
+    source = first.read_bytes()
+    assert json.loads(source)["items"][0]["content"] == original
+    assert str(first) in agent.conversation.checkpoint.text
+    agent.conversation.extend([AssistantMessage(content="Second body " * 600), AssistantMessage(content="latest")])
+    moved, _ = await agent._fold("test")
+    assert moved
+    archives = list(tmp_path.glob("thread/archive/*.json"))
+    assert len(archives) == 2 and first.read_bytes() == source
+    second = next(path for path in archives if path != first)
+    assert str(first) in json.loads(second.read_text())["checkpoint"]["content"]
+
+
+@pytest.mark.asyncio
+async def test_failed_compaction_archive_prevents_discard_and_model_call(tmp_path, monkeypatch):
+    agent = Agent(retain_recent_steps=1)
+    agent._thread_path = tmp_path / "thread.json"
+    agent.conversation.extend([AssistantMessage(content="old"), AssistantMessage(content="recent")])
+    before = [message.model_dump() for message in agent.conversation.items]
+    def broken(*args, **kwargs):
+        raise OSError("disk unavailable")
+    async def unexpected(*args, **kwargs):
+        pytest.fail("Must not spend tokens when source cannot be archived")
+    monkeypatch.setattr(Conversation, "save", broken)
+    monkeypatch.setattr(Agent, "native_checkpoint", unexpected)
+    moved, detail = await agent._fold("test")
+    assert not moved and "archive failed" in detail
+    assert [message.model_dump() for message in agent.conversation.items] == before

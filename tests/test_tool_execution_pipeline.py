@@ -41,6 +41,47 @@ def manager_for(tmp_path, instance=None):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode, mutates, allowed", [
+    ("workspace_write", None, False), ("workspace_write", True, False),
+    ("workspace_write", False, True), ("read_only", None, True),
+    ("read_only", True, False),
+])
+async def test_read_only_scope_rejects_tools_without_operation_contract(tmp_path, mode, mutates, allowed):
+    called = []
+    class NoIntent(EchoTool):
+        async def __call__(self, value, **kwargs):
+            called.append(value)
+            return await super().__call__(value, **kwargs)
+    tool = NoIntent(permission_mode=mode, mutates=mutates)
+    manager = manager_for(tmp_path, tool)
+    with permission_manager.scope("read_only", workspace=str(tmp_path)):
+        response = await manager(name=tool.name, input={"value": "x"})
+    assert response.success is allowed
+    assert bool(called) is allowed
+
+
+def test_real_router_reads_loaded_argument_dependent_effects(tmp_path, monkeypatch):
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.agent.loop.decision import ActionCall
+    from agentevolver.tool import tool_manager
+
+    class Mixed(EchoTool):
+        def will_mutate(self, arguments):
+            return arguments["write"]
+    manager = manager_for(tmp_path)
+    manager._tool_configs["mixed"] = SimpleNamespace(instance=Mixed())
+    monkeypatch.setattr(tool_manager, "tool_context_manager", manager)
+    router = CapabilityRouter()
+    routing = {"mixed": ("tool", "mixed")}
+    for effect, expected in ((True, False), (False, True), (None, None)):
+        call = ActionCall(id="call", name="mixed", args={"write": effect})
+        assert router.read_only(call, routing) is expected
+    monkeypatch.setattr(tool_manager, "tool_context_manager", None)
+    assert router.read_only(call, routing) is None
+    assert tool_manager.tool_context_manager is None  # No implicit initialization.
+
+
+@pytest.mark.asyncio
 async def test_identity_and_arguments_cannot_be_rewritten_by_a_guard(tmp_path):
     manager = manager_for(tmp_path)
     seen = []

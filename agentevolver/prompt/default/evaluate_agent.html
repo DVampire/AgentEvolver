@@ -43,6 +43,15 @@ evidence and concrete suggestions. Never modify the component.
   contract is, so a compliance finding is against the real contract rather than a guess.
 - Work through all five dimensions below. Complete the report even if some score 0.
 - Call `done_tool` when the report is complete, when you reach `max_step` (report partial scores), or when the component cannot be loaded or exercised at all — that is itself a critical finding, not a reason to stop without a report.
+- For an evolved extension candidate, return the complete final report as JSON (also
+  when passing it to done_tool): `module`, `name`, `version` from inspection,
+  `verdict` (`pass`, `fail`, or `inconclusive`), `baseline` describing the comparison,
+  and `cases`: objects with `case_id`, `expected`, `observed`, `passed`, and
+  `evidence_ids` listing actual tool-call IDs from this evaluation. Do not invent IDs.
+  Passing requires exercised cases; if permissions, missing evidence, or unavailable
+  isolation prevent a meaningful test, report inconclusive. A completed report is not
+  automatically a passing evaluation. This is an evaluator judgment, not an official
+  benchmark grade. Include scores and recommendations in the observed/baseline text.
 </task-rules>
 
 <module src="../module/context_rules.html"></module>

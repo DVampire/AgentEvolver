@@ -33,6 +33,8 @@ from __future__ import annotations
 
 import os
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
@@ -57,6 +59,8 @@ class PathManagerServer:
         #: Paths the layout genuinely cannot compute, keyed by the entry they stand in
         #: for. See :meth:`override`.
         self._overrides: Dict[P, Path] = {}
+        self._leases = 0
+        self._workspace: ContextVar[Optional[Path]] = ContextVar("execution_workspace", default=None)
         #: Called after every rebind. A manager that keeps a directory derived from the
         #: session subscribes here, so a session change reaches it without the caller
         #: having to name it. See :meth:`on_rebind`.
@@ -139,6 +143,10 @@ class PathManagerServer:
         """
         owner, session_id = str(owner), str(session_id)
         self._validate_components({"owner": owner, "session_id": session_id})
+        if self._leases:
+            if (owner, session_id) != self.session:
+                raise RuntimeError("Cannot rebind an active runtime session; stop and join it or use another process")
+            return
         if (owner, session_id) != (self._owner, self._session_id):
             self._overrides.clear()
         self._owner, self._session_id = owner, session_id
@@ -198,6 +206,8 @@ class PathManagerServer:
         session, so a leaked binding turns unrelated code — a bare script, the next test —
         into a run whose allowed roots belong to somebody else.
         """
+        if self._leases:
+            raise RuntimeError("Cannot unbind an active runtime session; stop and join it first")
         self._owner = self._session_id = None
         self._overrides.clear()
 
@@ -262,7 +272,31 @@ class PathManagerServer:
         Applies only to the unparameterised call — see :meth:`get`. Cleared by
         :meth:`bind_session` on a new session and by :meth:`unbind_session`.
         """
+        if self._leases:
+            raise RuntimeError("Cannot change shared path overrides while runtime processes are active")
         self._overrides[key] = Path(path)
+
+    @contextmanager
+    def lease(self):
+        """Pin shared session roots until the runtime has joined all cleanup."""
+        self._leases += 1
+        try:
+            yield
+        finally:
+            self._leases -= 1
+
+    @contextmanager
+    def workspace(self, path: str | Path):
+        """Override only the executing task's workspace, inherited by its children.
+
+        No rebind notification: log, memory backend, and registry roots remain those
+        of the parent session. This is a cwd mapping, not an OS security boundary.
+        """
+        token = self._workspace.set(Path(path).expanduser().resolve())
+        try:
+            yield
+        finally:
+            self._workspace.reset(token)
 
     # ================================================================== #
     # 3. Resolution — key + parameters to an absolute path
@@ -302,6 +336,14 @@ class PathManagerServer:
         self._validate_components(params)
 
         if self._names_the_bound_session(params):
+            workspace = self._workspace.get()
+            prefix = self._layout[P.SESSION_WORKSPACE]
+            if workspace is not None and (key == P.SESSION_WORKSPACE or template.startswith(prefix + "/")):
+                suffix = template[len(prefix):].lstrip("/")
+                required = set(_PLACEHOLDER.findall(suffix))
+                values = {**self._session_params(required), **params}
+                path = workspace / suffix.format(**values) if suffix else workspace
+                return self._materialize(path, create=create, is_file=key in FILES)
             if key in self._overrides:
                 return self._materialize(
                     self._overrides[key], create=create, is_file=key in FILES,

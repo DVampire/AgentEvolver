@@ -22,6 +22,36 @@ from agentevolver.registry import TOOL
 from agentevolver.tool.types import Tool
 
 
+def test_execution_permission_scope_cannot_be_widened(tmp_path):
+    from agentevolver.permission.server import PermissionManagerServer
+
+    manager = PermissionManagerServer()
+    manager.register("writer", mode="danger_full_access")
+    request = PermissionRequest(op=Operation.WRITE, target=str(tmp_path / "file"))
+    assert manager.check("writer", request).allowed
+    with manager.scope("read_only", workspace=str(tmp_path)):
+        with manager.scope("danger_full_access", workspace=str(tmp_path)):
+            assert not manager.check("writer", request).allowed
+            assert not manager.check_declared("direct", request, mode="danger_full_access").allowed
+    assert manager.check("writer", request).allowed
+
+
+@pytest.mark.asyncio
+async def test_permission_scopes_are_task_local(tmp_path):
+    import asyncio
+    from agentevolver.permission.server import PermissionManagerServer
+
+    manager = PermissionManagerServer()
+    request = PermissionRequest(op=Operation.WRITE, target=str(tmp_path / "file"))
+
+    async def check(mode):
+        with manager.scope(mode, workspace=str(tmp_path)):
+            await asyncio.sleep(0)
+            return manager.check_declared("direct", request, mode="danger_full_access").allowed
+
+    assert await asyncio.gather(check("read_only"), check("workspace_write")) == [False, True]
+
+
 def _declaring_tools():
     """Registered tool classes that override `permission_request`."""
     found = []

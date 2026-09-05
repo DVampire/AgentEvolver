@@ -11,7 +11,7 @@ The loop::
 
     for step in range(max_step):
         await proc.gate()          # safe point: signals, delivered messages
-        note = await on_step(step) # middleware, the only place guards live
+        note = await on_step(step) # optional policy and progress advice
         decision = await think()   # one model call
         if decision.final: return  # no tool call means the model answered
         results = await act(...)   # concurrent when provably safe
@@ -28,6 +28,8 @@ imports this module.
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import time
 from typing import Any, ClassVar, Dict, List, Optional, Sequence, Tuple
 
@@ -109,8 +111,8 @@ class Agent(BaseModel):
     #: Capability types whose evolved components join this agent's allowlist as they
     #: register, without anyone granting them.
     #:
-    #: Only meaningful for an agent that HAS an allowlist, because an empty allowlist
-    #: already means "everything". For a restricted agent the allowlist is an isolation
+    #: Only meaningful for an agent that HAS an allowlist; an absent allowlist already
+    #: means "everything". For a restricted agent the allowlist is an isolation
     #: contract stated in code — a website visitor holds one tool and must not reach the
     #: workspace — and that contract cannot be widened by a component that did not exist
     #: when it was written.
@@ -150,6 +152,7 @@ class Agent(BaseModel):
     compact_output_tokens: int = Field(
         default=2048, description="Size budget for a checkpoint summary."
     )
+    compact_verify: bool = Field(default=True, description="Audit semantic coverage before replacing history.")
     # The fold policy, declared rather than inherited. These were accepted by
     # `extra="allow"` and never read: the agent took the shared module-level assembler
     # and rebuilt it only when `compact_output_tokens` differed, so a config asking to
@@ -174,10 +177,10 @@ class Agent(BaseModel):
         default=False, description="Whether this run keeps durable memory at all."
     )
     max_token: Optional[int] = Field(
-        default=None, description="Token budget for the whole run, or None."
+        default=None, gt=0, description="Cumulative input and output token budget per assignment."
     )
     timeout: Optional[float] = Field(
-        default=None, description="Wall-clock budget for the whole run, or None."
+        default=None, gt=0, description="Wall-clock budget per assignment, or None."
     )
 
     #: Environments this agent acts in. Read before every step, so what the agent is
@@ -230,7 +233,7 @@ class Agent(BaseModel):
             )
         self.executor = ActionExecutor(self.router)
         #: Step middleware. Each is ``async (agent, step) -> str``; what it returns rides
-        #: in this step's live layer. Guards live here and nowhere else.
+        #: in this step's live layer. Mandatory resource limits are enforced by the loop.
         self.middleware: List[Any] = list(kwargs.get("middleware") or ())
 
         # -- the process handle, bound by the kernel at spawn. The agent's only door
@@ -250,10 +253,11 @@ class Agent(BaseModel):
         #: that cannot shrink further would otherwise be asked once per step for the rest
         #: of the budget, producing the same request and the same refusal each time.
         self._folds = 0
-        #: Output tokens from the last turn, waiting to be counted against the budget.
+        #: Reported tokens waiting to be forwarded to optional constraint hooks.
         #: Held rather than counted inline because the guard runs once per step and must
         #: see each turn's spend exactly once.
         self._unspent_tokens = 0
+        self._used_tokens = 0
         self._started_at = 0.0
         #: How many consecutive completion attempts a single blocker has refused. A
         #: contract gate that never opens is a protocol fault, and a run that cannot
@@ -281,7 +285,7 @@ class Agent(BaseModel):
             if name != "base_dir"
         }
         clone = type(self)(base_dir=self.base_dir, **declared)
-        clone.middleware = list(self.middleware)
+        clone.middleware = copy.deepcopy(self.middleware)
         clone.assembler = self.assembler
         return clone
 
@@ -297,8 +301,20 @@ class Agent(BaseModel):
         **kwargs: Any,
     ) -> Response:
         """Run one assignment to completion and return its result."""
+        from agentevolver.agent.loop.guards import BudgetExhausted
+
+        deadline = asyncio.timeout(self.timeout)
         try:
-            return await self.finalize(await self._run(task, files, ctx, **kwargs))
+            async with deadline:
+                try:
+                    response = await self._run(task, files, ctx, **kwargs)
+                except BudgetExhausted as spent:
+                    response = self._failed(f"Stopped by a resource budget: {spent}")
+                return await self.finalize(response)
+        except TimeoutError:
+            if not deadline.expired():
+                raise  # An unrelated tool timeout is not the assignment deadline.
+            return self._failed(f"Wall-clock budget reached ({self.timeout}s)")
         finally:
             self.save_thread()
 
@@ -319,9 +335,12 @@ class Agent(BaseModel):
         **kwargs: Any,
     ) -> Response:
         self.ctx = ctx
+        self._started_at = time.time()
+        self._used_tokens = 0
+        self._unspent_tokens = 0
+        self.step = 0
         task, files = await self.prepare_task(task, list(files or ()), ctx)
         self.task = self._task_text(task, files)
-        self._started_at = time.time()
         proc = self.proc
         continuing = bool(proc is not None and proc.resident
                           and self._thread_process == proc.pid)
@@ -370,6 +389,7 @@ class Agent(BaseModel):
 
         for step in range(self.max_step):
             self.step = step
+            self.check_budget()
             if self.proc is not None:
                 # The safe point. Signals apply here and messages are delivered here, so
                 # a suspend or a child's report never lands mid-turn.
@@ -378,7 +398,7 @@ class Agent(BaseModel):
             from agentevolver.agent.loop.guards import BudgetExhausted
             from agentevolver.hook.events import HookEvent
 
-            # The middleware runs first, and `Constraints` inside it can end the run —
+            # Optional middleware may also end the run —
             # so PRE_STEP is announced only once this step is actually going to happen.
             # Announced before the gate, an exhausted budget produced a PRE_STEP with no
             # POST_STEP and an observer had recorded a step that never ran. The action
@@ -393,9 +413,23 @@ class Agent(BaseModel):
                 ctx=ctx,
             )
             await self._fold_if_needed(live)
+            self.check_budget()
 
             decision = await self.think(step, live)
-            self._unspent_tokens += int((decision.usage or {}).get("output_tokens") or 0)
+            self.count_usage(decision.usage)
+            try:
+                self.check_budget()
+            except BudgetExhausted as spent:
+                # Keep paid-for usage and a closed protocol turn, but run no new actions.
+                skipped = [getattr(self, "_early_results", {}).get(call.id) or ActionResult(
+                    call=call, error=f"Not executed: {spent}",
+                ) for call in decision.calls]
+                if not decision.error and not decision.truncated:
+                    self.conversation.add_turn(
+                        decision.as_assistant(), [result.as_message() for result in skipped],
+                    )
+                await self._post_step(step, decision, skipped)
+                raise
 
             if decision.error:
                 # An overflow is the one model error the run can act on: the request was
@@ -510,6 +544,10 @@ class Agent(BaseModel):
                 accumulated = await accumulate_stream(stream)
         except Exception as error:  # noqa: BLE001 - a model fault is a decision, not a crash
             from agentevolver.model.pressure import ContextOverflowError
+            from agentevolver.runtime.errors import BudgetExhausted
+
+            if isinstance(error, BudgetExhausted):
+                raise
 
             logger.error(f"| ❌ [{self.name}] model call failed: {error}")
             return Decision(
@@ -590,7 +628,9 @@ class Agent(BaseModel):
         from agentevolver.tool import tool_manager
         from agentevolver.tool.default.execution.sdk import code_mode_section, sdk_for
 
-        allowed = self.capability_allowlists.get("tool")
+        allowed = (getattr(self.ctx, "extra", None) or {}).get(
+            "tool_allowlist", self.capability_allowlists.get("tool"),
+        )
         names = list(allowed) if allowed is not None else await tool_manager.list()
         if BATCH_CALL_TOOL not in names:
             return ""
@@ -716,34 +756,15 @@ class Agent(BaseModel):
 
             parent = kernel.get(parent_pid)
             conversation = getattr(getattr(parent, "agent", None), "conversation", None)
-            items = list(getattr(conversation, "items", ()) or ())
         except Exception as error:  # noqa: BLE001 - a child runs without it
             logger.debug(f"| ⚙️ [{self.name}] no parent context: {error}")
             return ""
-        if not items:
+        if conversation is None:
             return ""
-
-        lines = [
-            line for line in (
-                f"{getattr(m, 'role', '?')}: {(getattr(m, 'text', '') or '').strip()}"
-                for m in items
-            ) if line.split(": ", 1)[-1]
-        ]
-        # Bounded by complete messages, never by cutting through one or through a
-        # tool-call/result pair. The parent still holds the exact history.
-        kept: List[str] = []
-        size = 0
-        for line in reversed(lines):
-            cost = len(line) + (2 if kept else 0)
-            if kept and size + cost > INHERITED_CONTEXT_MAX:
-                break
-            kept.append(line)
-            size += cost
-        kept.reverse()
-        omitted = len(lines) - len(kept)
-        body = "\n\n".join(kept)
-        if omitted > 0:
-            body = f"[{omitted} earlier message(s) omitted]\n\n{body}"
+        body = conversation.reference(INHERITED_CONTEXT_MAX)
+        path = getattr(parent.agent, "_thread_path", None)
+        if path is not None:
+            body += f"\nFull source conversation: {path}"
         return body
 
     async def environment_state(self, ctx: Any) -> str:
@@ -754,6 +775,9 @@ class Agent(BaseModel):
         environment renders nothing and costs nothing.
         """
         names = list(getattr(self, "env_names", ()) or ())
+        allowed = (getattr(ctx, "extra", None) or {}).get("environment_allowlist")
+        if allowed is not None:
+            names = [name for name in names if name in allowed]
         if not names:
             return ""
         from agentevolver.capability import ENVIRONMENT_TYPE
@@ -781,7 +805,7 @@ class Agent(BaseModel):
         from agentevolver.paths import path_manager
 
         extra = getattr(ctx, "extra", None) or {}
-        allowed = self.capability_allowlists.get("tool")
+        allowed = extra.get("tool_allowlist", self.capability_allowlists.get("tool"))
         if allowed is not None and "bash_tool" not in allowed:
             # Browser-only participants must not learn the product's source files
             # or another actor's notes through an otherwise hidden prompt path.
@@ -809,14 +833,14 @@ class Agent(BaseModel):
         from agentevolver.memory import memory_manager
         from agentevolver.paths import path_manager
 
-        allowed = self.capability_allowlists.get("tool")
+        extra = getattr(ctx, "extra", None) or {}
+        allowed = extra.get("tool_allowlist", self.capability_allowlists.get("tool"))
         if not self.use_memory or (allowed is not None and "bash_tool" not in allowed):
             return ""
         # A host path is not a container path. Benchmark shells currently mount only
         # the task checkout; do not advertise unreachable host memory or share cases.
         if os.environ.get("AGENTEVOLVER_EXEC_CONTAINER"):
             return ""
-        extra = getattr(ctx, "extra", None) or {}
         roots = path_manager.session_roots()
         workspace = str(roots.get("workspace") or self.base_dir)
         actor = str(extra.get("memory_actor_id") or (
@@ -844,14 +868,15 @@ class Agent(BaseModel):
                     "agent_modules": {},
                 },
             )
-        except Exception as error:  # noqa: BLE001 - a run without a template still runs
-            logger.warning(f"| ⚠️ [{self.name}] prompt {self.prompt_name!r} failed: {error}")
-            return []
+        except Exception as error:  # noqa: BLE001 - preserve the renderer's cause
+            raise RuntimeError(f"Required prompt {self.prompt_name!r} could not be rendered: {error}") from error
         if not getattr(response, "success", False):
-            logger.warning(f"| ⚠️ [{self.name}] prompt {self.prompt_name!r}: {response.message}")
-            return []
+            raise RuntimeError(f"Required prompt {self.prompt_name!r} failed: {response.message}")
         messages = (response.data or {}).get("messages") or []
-        return [message for message in messages if getattr(message, "role", "") == "system"]
+        system = [message for message in messages if getattr(message, "role", "") == "system"]
+        if not any(message.text.strip() for message in system):
+            raise RuntimeError(f"Required prompt {self.prompt_name!r} returned no system instructions")
+        return system
 
     async def prompt_modules(self, ctx: Any) -> Dict[str, Any]:
         """Values a prompt template may interpolate. Override to add more."""
@@ -997,7 +1022,7 @@ class Agent(BaseModel):
         """
 
     async def on_exit(self, status: Any) -> None:
-        """After the process is marked exited. Release what the run left running.
+        """Before the process is marked exited. Release what the run left running.
 
         A backgrounded command, a PTY shell and an indexing language server outlive the
         step that started them by design; nothing outlived the *run* on purpose, and the
@@ -1014,10 +1039,17 @@ class Agent(BaseModel):
             ("attachments", self._release_attachments),
             ("capabilities", self._release_capabilities),
         ):
-            try:
-                release(session)
-            except Exception as error:  # noqa: BLE001
-                logger.warning(f"| ⚠️ [{self.name}] could not release {label}: {error}")
+            for attempt in range(3):
+                try:
+                    release(session)
+                    break
+                except Exception as error:  # noqa: BLE001
+                    if attempt < 2:
+                        await asyncio.sleep(0.05 * (attempt + 1))
+                        continue
+                    logger.warning(f"| ⚠️ [{self.name}] could not release {label}: {error}")
+                    if self.proc is not None:
+                        self.proc.cleanup_errors.append({"phase": label, "error": str(error)})
 
     @staticmethod
     def _release_jobs(session: str) -> None:
@@ -1064,8 +1096,30 @@ class Agent(BaseModel):
             "subtask_id": getattr(self.ctx, "subtask_id", None),
         }
 
+    def count_usage(self, raw: Optional[Dict[str, Any]]) -> None:
+        """Count reported input (including cache) and output once, not reasoning twice."""
+        from agentevolver.model.types import TokenUsage
+
+        usage = raw if isinstance(raw, TokenUsage) else TokenUsage.from_raw(raw)
+        if usage is not None:
+            self._used_tokens += usage.total
+            self._unspent_tokens += usage.total
+            budget = getattr(self.proc, "budget", None)
+            if budget is not None:
+                budget.record(usage)
+
+    def check_budget(self) -> None:
+        """Mandatory limit; optional middleware cannot disable it."""
+        from agentevolver.agent.loop.guards import BudgetExhausted
+
+        budget = getattr(self.proc, "budget", None)
+        if budget is not None:
+            budget.check()
+        if self.max_token is not None and self._used_tokens >= self.max_token:
+            raise BudgetExhausted(f"Token limit reached ({self._used_tokens}/{self.max_token})")
+
     def spend_step_tokens(self) -> int:
-        """Take the output tokens accumulated since the last budget check."""
+        """Take reported input/output tokens since the last optional constraint check."""
         spent, self._unspent_tokens = self._unspent_tokens, 0
         return spent
 
@@ -1182,8 +1236,18 @@ class Agent(BaseModel):
 
     async def _fold_if_needed(self, live: Sequence[str]) -> None:
         """Fold history before cost or capacity becomes a problem."""
+        from agentevolver.model import model_manager
+
+        pressure = None
+        if model_manager.get_model_config(self.model_name) is not None:
+            tools, _ = await self.router.schemas(self, self.ctx)
+            messages = self.assembler.build(
+                self.conversation, live=live, attachments=self.attachments(),
+            )
+            pressure = model_manager.measure(self.model_name, self.request_input(messages, tools))
         reason = self.assembler.fold_reason(
-            self.conversation, live=live, folds=self._folds, attachments=self.attachments()
+            self.conversation, live=live, folds=self._folds, attachments=self.attachments(),
+            request_pressure=pressure,
         )
         if not reason:
             return
@@ -1249,10 +1313,26 @@ class Agent(BaseModel):
 
         self._folds += 1  # Failed attempts cost tokens too; never retry without a bound.
 
+        archive = None
+        if self._thread_path is not None:
+            from uuid import uuid4
+            from agentevolver.paths import P, path_manager
+
+            archive = path_manager.under(
+                self._thread_path.parent, P.LOG_CONTEXT_ARCHIVE,
+                thread_id=self._thread_path.stem, digest=uuid4().hex,
+            )
+            try:
+                self.conversation.save(archive, model=self.model_name, agent=self.name)
+            except (OSError, ValueError, TypeError) as error:
+                logger.warning(f"| ⚠️ [{self.name}] compaction source archive failed: {error}")
+                return False, "source archive failed; history retained"
+
         # Native first, and its own summary counts as the readable checkpoint. Asking
         # the summariser as well would spend a second model call on text the provider
         # already wrote — the portable path exists for routes that produced none.
         native = await self.native_checkpoint(source)
+        self.check_budget()
         provider_state = (native or {}).get("provider_state") or None
         summary = str((native or {}).get("summary") or "").strip()
         if not summary:
@@ -1261,6 +1341,22 @@ class Agent(BaseModel):
             # Do not discard the only readable evidence in favour of an opaque item:
             # the next call may need a provider-neutral fallback.
             return False, "no portable checkpoint was produced; history retained"
+        if self.compact_verify:
+            from agentevolver.hook.default.compact import CompactHook
+
+            evidence = "\n".join([
+                f"Task: {self.conversation.task}",
+                self.conversation.checkpoint.text if self.conversation.checkpoint else "",
+                *(self._render_for_checkpoint(message) for message in source),
+            ])
+            audit = await CompactHook.verify(source=evidence, summary=summary, model=self.model_name, ctx=self.ctx)
+            self.count_usage(getattr(audit, "usage", None))
+            self.check_budget()
+            if not getattr(audit, "approved", False):
+                self._notes.append("Checkpoint rejected; exact history retained. Audit: " + (audit.output or "unavailable"))
+                return False, "semantic audit rejected or unavailable; history retained"
+        if archive is not None:
+            summary += f"\n\nFull pre-compaction source snapshot: {archive}"
         folded = self.assembler.fold(
             self.conversation, summary, provider_state=provider_state
         )
@@ -1305,6 +1401,7 @@ class Agent(BaseModel):
             return None
         if not result:
             return None
+        self.count_usage(result.get("usage"))
         logger.info(
             f"| 🗜️ [{self.name}] installed native {result.get('format')} checkpoint"
         )
@@ -1343,6 +1440,8 @@ class Agent(BaseModel):
         except Exception as error:  # noqa: BLE001 - failing to fold is not failing the run
             logger.warning(f"| ⚠️ [{self.name}] could not write a checkpoint: {error}")
             return ""
+        self.count_usage(getattr(result, "usage", None))
+        self.check_budget()
         return (getattr(result, "output", "") or "").strip()
 
     @staticmethod

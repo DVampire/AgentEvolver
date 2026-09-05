@@ -57,6 +57,16 @@ used.
 
 ## Evidence, compaction, and cost
 
+For disk-backed threads, each compaction attempt first archives the complete closed
+conversation, including opaque state and the previous checkpoint, under the thread's
+`archive/` directory resolved by `P.LOG_CONTEXT_ARCHIVE`. Archives have distinct names;
+the new checkpoint carries an absolute source locator. Later archives retain the
+previous locator, so successive summaries do not erase the path back to older evidence.
+Archive failure leaves history intact and spends no summarization call. These archives
+survive thread-snapshot replacement, not deletion of the containing session/output.
+In-memory calls without a bound thread have no disk-archive guarantee. Summaries remain
+lossy and are not automatically proven to preserve every acceptance condition.
+
 Notes are fallible references, never system instructions. Save reusable facts and
 their source references, not every step. A model-written `seen` counter is ignored:
 repeated failures need distinct event/attempt evidence and a documented correction.
@@ -74,6 +84,16 @@ must have a readable companion before old history is replaced; failed summarizat
 leaves history untouched and spends a bounded attempt. Cross-route opaque-state
 conversion is not implemented: explicit thread resume rejects a different model route.
 
+The Agent loop also defaults to `compact_verify=True`: after either native or portable
+summarization, the existing compact hook audits the proposed text against the full fold
+source, prior checkpoint, and task. It checks semantic omissions and contradictions,
+and requires exact source/checkpoint evidence quotes. Failure, invalid JSON, invented
+quotes, or an inconclusive audit retains the original history. The audit uses the same
+model facade and runtime budget and costs one extra call per proposed replacement;
+`compact_verify=False` is an explicit opt-out, not a silent fallback. This is model-assisted
+coverage checking, not proof of semantic completeness or an evaluation of opaque provider
+state. Standalone memory backends are not automatically covered by this Agent-loop gate.
+
 No note body is injected automatically or sliced to a character limit. The index may
 omit complete entries with a notice and directory locator. FileSystemMemory is a bounded
 recent display projection backed by Trace, not a second model context. Existing backend
@@ -82,3 +102,8 @@ registration APIs remain intact; background LLM-based memory consolidation is no
 Parent execution history is shared only when the current delegation explicitly sets
 `fork=true`. A parent's own fork grant does not pass to its children. Independent users
 and browser acceptance workers therefore start without implicit Builder history.
+Fork references include task, readable checkpoint, and complete assistant/tool groups
+with full arguments and results. Old groups may be omitted with a count and a source
+snapshot locator; unfinished tool cycles are excluded. Opaque provider state remains
+in the original conversation, not in a user-reference block pretending to be native
+replay. This is portable evidence sharing, not provider-native conversation forking.

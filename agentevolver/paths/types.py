@@ -26,6 +26,9 @@ class P(str, Enum):
     LOG_TRACE_INDEX = "log_trace_index"
     LOG_INPUTS = "log_inputs"
     LOG_MODEL_REQUEST = "log_model_request"
+    LOG_CONTEXT_ARCHIVE = "log_context_archive"
+    LOG_WORKTREE = "log_worktree"
+    LOG_WORKTREE_PATCH = "log_worktree_patch"
     LOG_COMMAND_CHECKPOINTS = "log_command_checkpoints"
     LOG_COMMAND_CHECKPOINT = "log_command_checkpoint"
     LOG_WORKSPACE_CHECKPOINT = "log_workspace_checkpoint"
@@ -90,6 +93,7 @@ class P(str, Enum):
     OWNER_PROJECT_NOTES = "owner_project_notes"
     OWNER_PRIVATE_NOTES = "owner_private_notes"
     SESSION_AGENT_CONTEXT = "session_agent_context"
+    SESSION_RUN_STATE = "session_run_state"
     IDE_EXTENSIONS = "ide_extensions"
     IDE_HOME = "ide_home"
 
@@ -156,7 +160,8 @@ class P(str, Enum):
 #: root they are joined to, not on them.
 RELATIVE: frozenset = frozenset({
     P.LOG_MODULE, P.LOG_TASKS, P.LOG_TASKS_ARCHIVE, P.LOG_TRACE_INDEX,
-    P.LOG_INPUTS, P.LOG_MODEL_REQUEST, P.LOG_RUN_MONITOR,
+    P.LOG_INPUTS, P.LOG_MODEL_REQUEST, P.LOG_RUN_MONITOR, P.LOG_CONTEXT_ARCHIVE,
+    P.LOG_WORKTREE, P.LOG_WORKTREE_PATCH,
     P.LOG_COMMAND_CHECKPOINTS, P.LOG_COMMAND_CHECKPOINT,
     P.LOG_WORKSPACE_CHECKPOINT, P.LOG_GATEWAY_TASKS,
     P.LOG_TASK_VIEW, P.LOG_BENCHMARK, P.LOG_BENCHMARK_RESULTS,
@@ -174,7 +179,8 @@ RELATIVE: frozenset = frozenset({
 #: intentionally have no suffix.
 FILES: frozenset = frozenset({
     P.LOG_TASKS, P.LOG_TASKS_ARCHIVE, P.LOG_TRACE_INDEX, P.LOG_RUN_MONITOR,
-    P.LOG_MODEL_REQUEST, P.LOG_COMMAND_CHECKPOINT, P.LOG_WORKSPACE_CHECKPOINT,
+    P.LOG_MODEL_REQUEST, P.LOG_CONTEXT_ARCHIVE, P.LOG_COMMAND_CHECKPOINT, P.LOG_WORKSPACE_CHECKPOINT,
+    P.LOG_WORKTREE_PATCH,
     P.LOG_TASK_VIEW, P.LOG_BENCHMARK_RESULT,
     P.TRACE_EVENT_LOG, P.TRACE_SQLITE, P.TRACE_INTEGRITY,
     P.TRACE_PROJECTION_WATERMARK,
@@ -182,7 +188,7 @@ FILES: frozenset = frozenset({
     P.PORTS, P.LEDGER, P.SSH_HOSTS, P.CHECKPOINT, P.STAGING_MANIFEST,
     P.CONVERSATION_EVENTS, P.CONVERSATION_META, P.SESSION_LEGACY_EVENTS,
     P.SESSION_GOALS, P.SESSION_PLAN,
-    P.OWNER_PROJECT_MEMORY, P.SESSION_AGENT_CONTEXT,
+    P.OWNER_PROJECT_MEMORY, P.SESSION_AGENT_CONTEXT, P.SESSION_RUN_STATE,
 })
 
 LAYOUT: Dict[P, str] = {
@@ -197,6 +203,9 @@ LAYOUT: Dict[P, str] = {
     P.LOG_TRACE_INDEX: "index.json",
     P.LOG_INPUTS: "inputs",
     P.LOG_MODEL_REQUEST: "model_requests/{agent_name}/{filename}",
+    P.LOG_CONTEXT_ARCHIVE: "{thread_id}/archive/{digest}.json",
+    P.LOG_WORKTREE: "worktrees/{thread_id}/workspace",
+    P.LOG_WORKTREE_PATCH: "worktrees/{thread_id}/changes.patch",
     P.LOG_COMMAND_CHECKPOINTS: "command/checkpoints",
     P.LOG_COMMAND_CHECKPOINT: "command/checkpoints/{filename}",
     P.LOG_WORKSPACE_CHECKPOINT: "workspace/checkpoints/{filename}",
@@ -244,6 +253,7 @@ LAYOUT: Dict[P, str] = {
     P.OWNER_PROJECT_NOTES: "memory/{owner}/{project_key}/shared",
     P.OWNER_PRIVATE_NOTES: "memory/{owner}/{project_key}/actors/{actor_id}",
     P.SESSION_AGENT_CONTEXT: "output/{owner}/sessions/{session_id}/log/threads/{thread_id}.json",
+    P.SESSION_RUN_STATE: "output/{owner}/sessions/{session_id}/log/runtime/{thread_id}.json",
     P.IDE_EXTENSIONS: "output/{owner}/state/ide/extensions",
     P.IDE_HOME: "output/{owner}/state/ide/home",
 

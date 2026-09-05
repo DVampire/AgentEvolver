@@ -22,6 +22,10 @@ An agent is a process, and this is its main function.
 What is deliberately absent: prompt assembly is `agent/context`, scheduling and
 messaging are `runtime`, and every per-capability special case is the router's.
 
+A configured `prompt_name` is required: renderer errors, unsuccessful responses, or
+an empty system layer stop preparation rather than silently invoking the model without
+those rules. Literal `system` instructions remain supported when no template is named.
+
 ## The loop
 
 ```python
@@ -60,12 +64,36 @@ tool keeps working where one is mounted.
 Unknown counts as effectful. The cost of the two mistakes is not symmetric: running two
 reads serially wastes a moment, while running two writes concurrently reorders externally
 visible effects and makes an approval check meaningless.
+Scheduling reads the loaded tool through `tool_manager.peek` and its argument-dependent
+`will_mutate` contract. It does not initialize tools during a synchronous effects check;
+unknown or failed declarations stay serial. Actual execution still passes the pipeline's
+permission guards, independent of this scheduling decision.
 
 A batch that stops early still returns one result per call. An assistant turn whose tool
 calls are not all answered is unsendable, so the skipped calls come back as explicit
 "not executed" results rather than as absences.
 
-## Guards are middleware, not branches
+## Resource limits and optional middleware
+
+`max_token` is enforced by the base loop without installing a hook. It counts reported
+input (including cached input) and output, including native/portable checkpoint usage
+when available. Reasoning already included in output is not added twice. Usage arrives
+after a request, so the last request can cross the limit; it is recorded, but no new
+actions or requests are started. This is not a provider-side billing cap, and unknown
+usage cannot be counted. The local assignment budget is also charged to the runtime's
+shared root/descendant ledger, so delegating or starting a new resident turn cannot
+reset the run total. Provider-internal retries without returned usage remain unknown.
+
+Before folding, registered model routes are measured through the same ModelManager
+request preparation used for submission, including tool schemas, live blocks, and
+reserved output. Compaction and model submission therefore share a capacity estimate;
+it is still an estimate, not the provider's exact tokenizer. Portable forks retain
+complete assistant/tool argument/result groups rather than slicing their strings.
+
+`timeout` covers an entire assignment, including preparation, model/tool awaits and
+finalization. Deadline cancellation is distinct from external cancellation or an
+individual tool timeout. Resident assignments get fresh local limits, not a fresh root ledger.
+Optional `Constraints` hooks can add policy, but cannot disable the base limits.
 
 Each guard is `async (agent, step) -> str`, and what it returns rides in that step's live
 layer — past the cache breakpoint, where changing it costs nothing. Adding one is a
@@ -77,7 +105,7 @@ appending to a shared list that nothing could see whole.
 | `LandingWindow` | the remaining budget is only enough to finish |
 | `NoProgress` | several turns running, every action was read-only |
 | `RepeatedActions` | the identical batch was issued again, verbatim |
-| `Constraints` | a declared budget is spent — the one guard that can end the run |
+| `Constraints` | optional host-configured constraint policy |
 | `CapabilityChanges` | something was registered mid-run and the model has not been told |
 
 The two stall guards are complementary, not redundant. `NoProgress` catches many

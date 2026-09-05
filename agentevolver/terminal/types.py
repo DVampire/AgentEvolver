@@ -131,13 +131,14 @@ class Terminal:
 
         master, slave = open_pty()
         try:
-            popen_args: dict = {}
+            from agentevolver.sandbox.process import owned_command
+
             if self.command:
-                argv, popen_args["shell"] = self.command, True
+                argv = ["/bin/sh", "-c", self.command]
             else:
                 argv = ["/bin/bash", "--norc", "--noprofile", "-i"]
             self._process = subprocess.Popen(
-                argv,
+                owned_command(argv),
                 stdin=slave, stdout=slave, stderr=slave,
                 cwd=self.cwd, env=env, close_fds=True,
                 # Its own session, then its own controlling terminal. The session is what
@@ -147,7 +148,6 @@ class Terminal:
                 # group a signal should go to does not exist.
                 start_new_session=True,
                 preexec_fn=_take_controlling_terminal,
-                **popen_args,
             )
         except BaseException:
             # Nothing else holds this end yet, and an fd nobody closes is a leak with no
@@ -202,6 +202,10 @@ class Terminal:
                     code = process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     code = None
+            if code is None:
+                # A closed PTY is not proof of process exit. Keep its handle live so
+                # session cleanup can still terminate it and retry a failed stop.
+                return
         with self._lock:
             if self.status is TerminalStatus.RUNNING:
                 self.status = TerminalStatus.EXITED
@@ -314,7 +318,23 @@ class Terminal:
         pgid = self.foreground_pgid()
         if pgid <= 0:
             raise RuntimeError(f"terminal {self.id} has no foreground process group")
-        shell_pgid = os.getpgid(self._process.pid) if self._process else -1
+        # The Popen handle is the namespace supervisor, not the interactive shell.
+        # PID 2 in that namespace is the command launched after bubblewrap's init.
+        import psutil
+
+        shell_pgid = -1
+        if self._process:
+            for child in psutil.Process(self._process.pid).children(recursive=True):
+                try:
+                    with open(f"/proc/{child.pid}/status", encoding="utf-8") as handle:
+                        ns = next(line.split()[1:] for line in handle if line.startswith("NSpid:"))
+                    if len(ns) >= 2 and ns[-1] == "2":
+                        shell_pgid = os.getpgid(child.pid)
+                        break
+                except (OSError, StopIteration):
+                    continue
+        if shell_pgid < 0 and name in ("SIGKILL", "SIGTERM", "SIGHUP"):
+            raise RuntimeError("Cannot verify the terminal shell identity; refusing destructive signal")
         if name in ("SIGKILL", "SIGTERM", "SIGHUP") and pgid == shell_pgid:
             # Nothing is running, so the signal would land on the shell itself. That is
             # not a stronger interrupt, it is closing the terminal — which has its own
@@ -341,7 +361,6 @@ class Terminal:
         """
         if self._closed:
             return False
-        self._closed = True
 
         process = self._process
         if process is not None and process.poll() is None:
@@ -359,8 +378,9 @@ class Terminal:
                 try:
                     process.wait(timeout=2.0)
                 except subprocess.TimeoutExpired:
-                    logger.warning(f"| ⚠️ Terminal {self.id} did not die after SIGKILL")
+                    raise RuntimeError(f"Terminal {self.id} did not die after SIGKILL")
 
+        self._closed = True
         if self._reader is not None:
             self._reader.join(timeout=2.0)
         if self._master >= 0:

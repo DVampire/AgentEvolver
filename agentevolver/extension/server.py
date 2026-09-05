@@ -29,6 +29,9 @@ import json
 import os
 import shutil
 import tempfile
+import hashlib
+import sys
+from pathlib import Path
 from inspect import isawaitable
 from typing import Awaitable, Callable, Dict, List, Optional
 
@@ -80,6 +83,91 @@ class ExtensionManagerServer(BaseModel):
     _rollouts: RolloutController = PrivateAttr(default_factory=RolloutController)
     _rollout_configs: Dict[str, object] = PrivateAttr(default_factory=dict)
     _capability_revision: int = PrivateAttr(default=0)
+    _probing: bool = PrivateAttr(default=False)
+    _checked: set = PrivateAttr(default_factory=set)
+
+    async def check(self, module: str, abspath: str, config=None) -> str:
+        """Run admission in an OS-isolated interpreter before any live import.
+
+        This evaluates loading, construction and callable contracts, not task quality.
+        Input is an immutable content-addressed copy; no credentials, host network,
+        writable repository or live registries enter the probe. Absence of isolation
+        fails closed. All eight families use the same boundary.
+        """
+        if module not in EVOLVABLE_MODULES:
+            return abspath
+        source = Path(abspath).absolute()
+        paths = sorted(source.rglob("*")) if source.is_dir() else [source]
+        if source.is_symlink() or any(path.is_symlink() for path in paths):
+            raise ValueError("Candidate admission does not accept symlinks")
+        digest = hashlib.sha256(module.encode())
+        files = {}
+        for path in paths:
+            if path.is_file():
+                relative = str(path.relative_to(source)) if source.is_dir() else source.name
+                files[relative] = path.read_bytes()
+                digest.update(relative.encode() + b"\0" + files[relative] + b"\0")
+        if not files:
+            raise ValueError("Candidate is empty")
+        digest.update(json.dumps(config or {}, sort_keys=True).encode())
+        key = digest.hexdigest()
+        root = Path(self.base_dir) / ".checked" / key
+        candidate = root / source.name
+        if key in self._checked:
+            intact = candidate.exists() and all(
+                (candidate / relative if source.is_dir() else candidate).is_file()
+                and (candidate / relative if source.is_dir() else candidate).read_bytes() == content
+                for relative, content in files.items()
+            )
+            if intact:
+                return str(candidate)
+            self._checked.discard(key)
+        helper = shutil.which("bwrap")
+        if sys.platform != "linux" or helper is None:
+            raise RuntimeError("Isolated extension admission requires Linux bubblewrap; refusing live import")
+        root.mkdir(parents=True, exist_ok=True)
+        # Construct from the exact bytes hashed above, not a second read of mutable input.
+        from agentevolver.utils.file_utils import atomic_write_text
+
+        for relative, content in files.items():
+            target = candidate / relative if source.is_dir() else candidate
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+        with tempfile.TemporaryDirectory(prefix="admission-") as temporary:
+            repo = Path(__file__).resolve().parents[2]
+            argv = [helper, "--die-with-parent", "--unshare-all", "--new-session"]
+            for system in ("/usr", "/bin", "/lib", "/lib64", sys.prefix):
+                if Path(system).exists():
+                    argv.extend(["--ro-bind", system, system])
+            argv += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
+                     "--ro-bind", str(repo / "agentevolver"), "/code/agentevolver",
+                     "--ro-bind", str(repo / "configs"), "/code/configs",
+                     "--ro-bind", str(root), "/candidate",
+                     "--bind", temporary, "/result", "--chdir", "/tmp"]
+            payload = json.dumps({"module": module, "path": "/candidate/" + source.name,
+                                  "config": config or {}})
+            code = "from agentevolver.extension.server import admission_probe; admission_probe()"
+            argv += ["--", sys.executable, "-c", code, payload]
+            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp/home", "PYTHONPATH": "/code",
+                   "PYTHONDONTWRITEBYTECODE": "1", "AGENTEVOLVER_HOME": "/tmp/state",
+                   "AGENTEVOLVER_EXTENSION_ROOT": "/tmp/extensions"}
+            process = await asyncio.create_subprocess_exec(
+                *argv, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            try:
+                output, _ = await asyncio.wait_for(process.communicate(), timeout=60)
+            except BaseException:
+                if process.returncode is None:
+                    process.kill()
+                await process.wait()
+                raise
+            atomic_write_text(root / "probe.log", output.decode("utf-8", "replace"))
+            if process.returncode:
+                raise ValueError(f"Isolated admission failed (exit {process.returncode}); see {root / 'probe.log'}")
+            result = json.loads((Path(temporary) / "result.json").read_text())
+            atomic_write_text(root / "result.json", json.dumps({**result, "digest": key, "module": module}))
+        self._checked.add(key)
+        return str(candidate)
 
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
@@ -92,6 +180,7 @@ class ExtensionManagerServer(BaseModel):
         os.makedirs(self.base_dir, exist_ok=True)
         self._rollouts = RolloutController()
         self._rollout_configs.clear()
+        self._checked.clear()
         self._capability_revision += 1
 
     def subscribe(self, listener: ExtensionChangeListener) -> None:
@@ -149,6 +238,35 @@ class ExtensionManagerServer(BaseModel):
 
     def _rollout_path(self) -> str:
         return str(path_manager.resolve_under(self.base_dir, ".rollouts.json"))
+
+    def record_decision(self, *, report: dict, run_id: str, decision: str, evidence: str) -> dict:
+        """Persist a generic, version-bound adoption audit; never install implicitly.
+
+        The caller authenticates the completed evaluation run. This record identifies
+        an evaluator judgment; admission and tool rollout remain separate guarantees.
+        """
+        from agentevolver.extension.types import ComponentEvaluation
+
+        evaluation = ComponentEvaluation.model_validate(report)
+        if not run_id or not evidence.strip() or decision not in {"keep", "rollback", "unload"}:
+            raise ValueError("Decision requires a run ID, evidence, and a valid outcome")
+        if evaluation.version not in self.list_component_versions(evaluation.module, evaluation.name):
+            raise ValueError("Evaluated candidate has no archived version")
+        if decision == "keep":
+            active = self.read_manifest().find(evaluation.module, evaluation.name)
+            if active is None or active.version != evaluation.version:
+                raise ValueError("Cannot keep a different or inactive candidate version")
+            if evaluation.verdict != "pass":
+                raise ValueError("Keep requires a passing, grounded evaluation")
+        record = {"run_id": run_id, "decision": decision, "evidence": evidence,
+                  "evaluation": evaluation.model_dump(), "evidence_kind": "evaluator_judgment"}
+        path = path_manager.resolve_under(self.base_dir, ".evaluations.json")
+        def append(records):
+            if record not in records:
+                records.append(record)
+            return records
+        atomic_json_update(path, append, default=[], recover_corrupt=False)
+        return record
 
     # ------------------------------------------------------------------
     # Manifest
@@ -842,6 +960,8 @@ class ExtensionManagerServer(BaseModel):
     async def _load_component(self, module: str, abspath: str, name_hint: Optional[str],
                               version: Optional[str], config: Optional[dict], return_version: bool = False,
                               enforce_evolvable: bool = False):
+        if not self._probing:
+            abspath = await self.check(module, abspath, config)
         if module in _CLASS_MODULES:
             return await self._load_class_component(module, abspath, version, config, return_version, enforce_evolvable)
         if module == "prompt":
@@ -1038,6 +1158,23 @@ class ExtensionManagerServer(BaseModel):
             from agentevolver.plugins import plugin_manager
             return plugin_manager
         raise ValueError(f"Unknown extension module: {module}")
+
+
+def admission_probe():
+    """Private subprocess entry point. Never invoked in the live runtime."""
+    async def run():
+        payload = json.loads(sys.argv[1])
+        manager = ExtensionManagerServer(base_dir="/tmp/extensions")
+        manager._probing = True
+        probe_config = dict(payload["config"])
+        if "base_dir" in probe_config:
+            probe_config["base_dir"] = "/tmp/workspace"
+        name = await manager._load_component(
+            payload["module"], payload["path"], None, version=None, config=probe_config,
+        )
+        await manager._validate_candidate(payload["module"], name)
+        Path("/result/result.json").write_text(json.dumps({"name": name, "checks": ["load", "contract"]}))
+    asyncio.run(run())
 
 
 # Global singleton

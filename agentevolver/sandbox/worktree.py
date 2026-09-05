@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from agentevolver.hook.events import HookEvent
+from agentevolver.paths import P, path_manager
 
 
 async def _git(cwd: Path, *args: str, stdin: Optional[bytes] = None) -> tuple[int, str, str]:
@@ -19,7 +19,16 @@ async def _git(cwd: Path, *args: str, stdin: Optional[bytes] = None) -> tuple[in
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await process.communicate(stdin)
+    try:
+        stdout, stderr = await process.communicate(stdin)
+    except BaseException:
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+        await process.wait()
+        raise
     return (
         process.returncode,
         stdout.decode("utf-8", errors="replace"),
@@ -36,6 +45,7 @@ class IsolatedWorktree:
     #: Source repository root, used to register/remove the linked worktree.
     repository: Path
     worktree_root: Path
+    patch_path: Path
     baseline: str = "HEAD"
 
     @classmethod
@@ -53,24 +63,23 @@ class IsolatedWorktree:
             raise RuntimeError(
                 f"workspace {source_path} is outside Git repository {repository}"
             ) from error
-        safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", token or "child")[:80]
-        parent = Path(storage_root).expanduser().resolve() / "agent-worktrees"
-        parent.mkdir(parents=True, exist_ok=True)
-        target = parent / safe
+        target = path_manager.under(storage_root, P.LOG_WORKTREE, thread_id=token)
+        target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():
             raise RuntimeError(f"isolated worktree target already exists: {target}")
 
-        code, _, error = await _git(repository, "worktree", "add", "--detach", str(target), "HEAD")
-        if code:
-            raise RuntimeError(f"could not create isolated worktree: {error.strip()}")
         execution_path = (target / relative_workspace).resolve()
         instance = cls(
             source=source_path,
             path=execution_path,
             repository=repository,
             worktree_root=target,
+            patch_path=path_manager.under(storage_root, P.LOG_WORKTREE_PATCH, thread_id=token),
         )
         try:
+            code, _, error = await _git(repository, "worktree", "add", "--detach", str(target), "HEAD")
+            if code:
+                raise RuntimeError(f"could not create isolated worktree: {error.strip()}")
             await instance._seed_working_state()
             code, revision, error = await _git(instance.worktree_root, "rev-parse", "HEAD")
             if code:
@@ -81,7 +90,7 @@ class IsolatedWorktree:
                 {"source": str(source_path), "worktree": str(target), "token": token},
             )
             return instance
-        except Exception:
+        except BaseException:
             await instance.cleanup()
             raise
 
@@ -118,7 +127,9 @@ class IsolatedWorktree:
             elif source.exists():
                 shutil.copy2(source, target)
 
-        await _git(self.path, "add", "-A", "--", ".")
+        code, _, error = await _git(self.path, "add", "-A", "--", ".")
+        if code:
+            raise RuntimeError(f"could not stage isolated baseline: {error.strip()}")
         code, _, _ = await _git(
             self.path, "diff", "--cached", "--quiet", "--", ".",
         )
@@ -137,7 +148,9 @@ class IsolatedWorktree:
     async def collect_patch(self) -> str:
         # Intent-to-add makes untracked text/binary files appear in the unified patch
         # without staging their contents into the shared repository index.
-        await _git(self.path, "add", "-N", "--", ".")
+        code, _, error = await _git(self.path, "add", "-N", "--", ".")
+        if code:
+            raise RuntimeError(f"could not stage isolated changes: {error.strip()}")
         code, output, error = await _git(
             self.path, "diff", "--binary", self.baseline, "--", ".",
         )
@@ -148,11 +161,13 @@ class IsolatedWorktree:
     async def cleanup(self) -> None:
         if not self.worktree_root.exists():
             return
+        code, _, error = await _git(
+            self.repository, "worktree", "remove", "--force", str(self.worktree_root),
+        )
+        if code or self.worktree_root.exists():
+            raise RuntimeError(f"could not remove isolated worktree {self.worktree_root}: {error.strip()}")
         await self._emit_lifecycle(
             HookEvent.WORKTREE_REMOVE, {"worktree": str(self.worktree_root)},
-        )
-        await _git(
-            self.repository, "worktree", "remove", "--force", str(self.worktree_root),
         )
 
     @staticmethod

@@ -38,6 +38,41 @@ from agentevolver.model.context import (
 # --------------------------------------------------------------------------- #
 # Backoff
 # --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_model_attempt_reserves_before_network_and_settles_once(monkeypatch):
+    from agentevolver.model import context as module
+    from agentevolver.model.types import ModelConfig, TokenUsage
+    from agentevolver.response.types import Response, ResponseType
+    from agentevolver.runtime.process import RunBudget
+    from agentevolver.runtime.errors import BudgetExhausted
+
+    manager = module.ModelContextManager()
+    config = ModelConfig(model_name="test", model_id="test", provider="openai", model_type="chat/completions")
+    monkeypatch.setattr(module, "_prepare_request_messages", lambda **kw: SimpleNamespace(
+        pressure={"estimated_tokens_after": 40, "reserved_output_tokens": 20}))
+    started, finish = asyncio.Event(), asyncio.Event()
+    calls = []
+    async def client(**kwargs):
+        calls.append(kwargs)
+        started.set()
+        await finish.wait()
+        return Response(type=ResponseType.LLM, success=True, message="ok",
+                        usage={"input_tokens": 10, "output_tokens": 5})
+    ledger = RunBudget(limit=100)
+    with ledger.scope():
+        first = asyncio.create_task(manager._call_client(client, config, [], None, None, False, None, {}))
+        try:
+            await started.wait()
+            with pytest.raises(BudgetExhausted):
+                await manager._call_client(client, config, [], None, None, False, None, {})
+        finally:
+            finish.set()
+            result = await first
+    assert len(calls) == 1 and ledger.tokens == 15 and ledger.reserved == 0
+    ledger.record(result.usage)
+    assert ledger.tokens == 15
+
+
 def test_the_wait_grows_with_each_attempt():
     """Instant retry is what made the old loop useless against a rate limit."""
     with patch("random.random", return_value=0.5):  # no jitter at the midpoint

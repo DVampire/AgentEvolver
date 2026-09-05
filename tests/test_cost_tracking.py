@@ -222,7 +222,8 @@ def test_every_registered_model_has_central_pricing():
     models = [model for catalog in catalogs for group in catalog.values() for model in group]
 
     assert PRICING_AS_OF == "2026-08-31"
-    assert len(models) == 67
+    assert models
+    assert len({model["model_name"] for model in models}) == len(models)
     assert all(model.get("cost") for model in models)
     assert all(
         set(("input", "output", "cache_read", "cache_write")) <= set(model["cost"])

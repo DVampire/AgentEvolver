@@ -211,10 +211,36 @@ def test_the_parents_history_is_bounded_by_whole_messages():
     finally:
         kernel.get = original
 
-    assert len(body) <= INHERITED_CONTEXT_MAX + 200  # the omission notice
+    assert len(body) <= INHERITED_CONTEXT_MAX + 500  # envelope and omission notice
     assert "earlier message(s) omitted" in body
     # The tail is what its decision rested on, so the last turn must survive.
     assert "turn 399" in body
+
+
+def test_fork_keeps_tool_arguments_and_complete_cycles():
+    import json
+    from agentevolver.agent.context.conversation import Conversation
+
+    conversation = Conversation(task="keep the user's constraints")
+    conversation.fold("earlier durable fact", 0)
+    command = "important " * 200
+    conversation.add_turn(
+        AssistantMessage(content="", tool_calls=[ToolCall(
+            id="a", function=Function(name="bash_tool", arguments=json.dumps({"command": command})),
+        )]),
+        [ToolMessage(tool_call_id="a", content="complete result")],
+    )
+    conversation.append(AssistantMessage(content="pending", tool_calls=[ToolCall(
+        id="b", function=Function(name="bash_tool", arguments="{}"),
+    )]))
+    body = conversation.reference(20)  # One oversized cycle stays whole.
+    record = json.loads(body)
+    assert command in body
+    assert record["task"] == "keep the user's constraints"
+    assert record["incomplete_turn_excluded"]
+    assert len(record["turns"]) == 1
+    assert len(record["turns"][0]) == 2
+    assert "complete result" in body and "pending" not in body
 
 
 def test_a_child_context_carries_lineage_and_scope_but_not_the_parents_run():
@@ -279,6 +305,155 @@ def test_dispatch_rejects_non_boolean_fork(value):
 
     with pytest.raises(ValueError, match="fork must be a boolean"):
         validate_dispatch_input({"task": "independent work", "fork": value})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("budget,expected", [(7, 7), (1000, 100)])
+async def test_dispatch_applies_model_budget_reasoning_and_environment(monkeypatch, budget, expected):
+    child = Agent(name="child", model_name="template", max_token=100)
+    captured = {}
+
+    async def build(name):
+        return child
+
+    async def spawn(agent, task, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(pid="child-pid")
+
+    router = CapabilityRouter(kernel=SimpleNamespace(spawn=spawn))
+    monkeypatch.setattr(router, "_build_child", build)
+    call = ActionCall(id="c", name="child", args={
+        "task": "go", "model": "chosen", "reasoning_effort": "high",
+        "token_budget": budget, "environment_allowlist": [], "run_in_background": True,
+    })
+    result = await router._invoke_agent(call, ("agent", "child"), Agent(), _ctx())
+    assert result.ok
+    assert child.model_name == "chosen" and child.max_token == expected
+    child.ctx = captured["ctx"]
+    assert child.request_input([], [])["reasoning_effort"] == "high"
+    assert child.ctx.extra["environment_allowlist"] == []
+    assert "environment_allowlist" in child.ctx.extra["_granted_allowlists"]
+
+
+@pytest.mark.parametrize("args", [
+    {"token_budget": True}, {"token_budget": 0}, {"model": ""},
+    {"environment_allowlist": "browser"}, {"run_in_background": "false"},
+    {"isolate_workspace": True}, {"isolate_worktree": True, "continuable": True},
+])
+def test_unsupported_or_invalid_dispatch_is_rejected(args):
+    from agentevolver.agent.server import validate_dispatch_input
+    with pytest.raises(ValueError):
+        validate_dispatch_input({"task": "go", **args})
+
+
+@pytest.mark.asyncio
+async def test_cancelled_worktree_creation_cleans_registered_tree(bound_session, monkeypatch):
+    import asyncio
+    import subprocess
+    from agentevolver.paths import P, path_manager
+    from agentevolver.sandbox import worktree as module
+
+    source = bound_session["workspace"]
+    subprocess.run(["git", "init", str(source)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(source), "-c", "user.name=Test", "-c", "user.email=test@localhost",
+                    "commit", "--allow-empty", "-m", "base"], check=True, capture_output=True)
+    original = module._git
+
+    async def interrupted(cwd, *args, **kwargs):
+        result = await original(cwd, *args, **kwargs)
+        if args[:2] == ("worktree", "add"):
+            assert result[0] == 0
+            raise asyncio.CancelledError()
+        return result
+
+    monkeypatch.setattr(module, "_git", interrupted)
+    storage = bound_session["log"]
+    with pytest.raises(asyncio.CancelledError):
+        await module.IsolatedWorktree.create(str(source), str(storage), "cancelled")
+    target = path_manager.under(storage, P.LOG_WORKTREE, thread_id="cancelled")
+    assert not target.exists()
+    code, listing, _ = await original(source, "worktree", "list", "--porcelain")
+    assert code == 0 and str(target) not in listing
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("background", [False, True])
+async def test_worktree_dispatch_keeps_parent_clean_and_archives_patch(bound_session, monkeypatch, background):
+    import subprocess
+    from pathlib import Path
+    from agentevolver.paths import P, path_manager
+    from agentevolver.permission import Operation, PermissionRequest, permission_manager
+    from agentevolver.response.types import Response, ResponseType
+    from agentevolver.runtime.kernel import Kernel
+
+    source = bound_session["workspace"]
+    subprocess.run(["git", "init", str(source)], check=True, capture_output=True)
+    (source / "file.txt").write_text("committed\n")
+    subprocess.run(["git", "-C", str(source), "add", "."], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(source), "-c", "user.name=Test", "-c", "user.email=test@localhost",
+                    "commit", "-m", "base"], check=True, capture_output=True)
+    (source / "file.txt").write_text("parent dirty\n")
+    (source / "parent-new.txt").write_text("untracked parent\n")
+    class Worker(Agent):
+        async def __call__(self, task="", files=None, ctx=None, **kwargs):
+            workspace = path_manager.get(P.SESSION_WORKSPACE)
+            assert workspace != source and str(workspace) == ctx.extra["execution_cwd"]
+            assert (workspace / "file.txt").read_text() == "parent dirty\n"
+            assert (workspace / "parent-new.txt").read_text() == "untracked parent\n"
+            allowed = permission_manager.check_declared("writer", PermissionRequest(
+                op=Operation.WRITE, target=str(workspace / "file.txt")), mode="workspace_write")
+            assert allowed.allowed, allowed.reason
+            (workspace / "file.txt").write_text("child changed\n")
+            (workspace / "child-new.txt").write_text("child new\n")
+            return Response(type=ResponseType.AGENT, success=True, message="complete")
+    kernel = Kernel()
+    parent = Agent()
+    router = CapabilityRouter(kernel=kernel)
+    async def build(name):
+        return Worker(name=name)
+    monkeypatch.setattr(router, "_build_child", build)
+    try:
+        await kernel.spawn(parent, resident=True, start_idle=True)
+        with permission_manager.scope("workspace_write", workspace=str(source)):
+            result = await router._invoke_agent(ActionCall(id="call", name="worker", args={
+                "task": "edit", "isolate_worktree": True, "background": background,
+            }), ("agent", "worker"), parent, _ctx())
+        assert result.ok, result.error
+        proc = kernel.get(result.extra["pid"])
+        await kernel.wait(proc, timeout=5)
+        assert proc.exit_status.value == "done", proc.error
+        assert not proc.cleanup_errors
+        patch = Path(proc.artifacts["patch"])
+        assert "child changed" in patch.read_text() and "child-new.txt" in patch.read_text()
+        assert (source / "file.txt").read_text() == "parent dirty\n"
+        assert not (source / "child-new.txt").exists()
+        assert not (patch.parent / "workspace").exists()
+        assert path_manager.get(P.SESSION_WORKSPACE) == source
+    finally:
+        await kernel.shutdown(timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_failed_child_reason_reaches_parent_tool_message(monkeypatch):
+    from agentevolver.runtime.states import ExitStatus
+
+    async def build(name):
+        return Agent(name=name)
+
+    async def spawn(*args, **kwargs):
+        return SimpleNamespace(pid="failed-child", exit_status=ExitStatus.FAILED)
+
+    async def wait(proc):
+        return SimpleNamespace(success=False, message="Token limit reached")
+
+    router = CapabilityRouter(kernel=SimpleNamespace(spawn=spawn, wait=wait))
+    monkeypatch.setattr(router, "_build_child", build)
+    result = await router._invoke_agent(
+        ActionCall(id="c", name="child", args={"task": "go"}),
+        ("agent", "child"), Agent(), _ctx(),
+    )
+    assert not result.ok
+    assert "Token limit reached" in result.as_message().text
 
 
 # ---------------------------------------------------------------------------

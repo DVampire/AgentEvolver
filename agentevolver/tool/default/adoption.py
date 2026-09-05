@@ -43,13 +43,14 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
 - `unload`: unregister an evolved component (its archive is kept). Args: `module`, `name`.
 - `record_workflow_evaluation`: append one version-scoped Workflow evaluation. Successful evidence requires a real terminal `run_id`; static failures require `case_id`. Args: `name`, `version`, `success`, `quality_score`, plus optional `run_id`, `case_id`, `token_cost`, `elapsed_ms`, `notes`.
 - `record_decision`: record the outcome of an evolution the agent chose to start. Args:
-  `release_number`, `decision` (`keep|rollback|unload`), `module`, `name`, `evidence`,
-  and `evaluation`. `rollback` and `unload` also require the rejected candidate's
-  `version`; perform the matching lifecycle action separately. The tool verifies that
-  the current run actually changed and evaluated the candidate. Do not call this action
-  when no evolution was started.
+  `run_id` of your completed evaluate_agent child, `decision` (`keep|rollback|unload`),
+  and `evidence` explaining the observed need and outcome. Optional `module`, `name`,
+  `version` must match the validated evaluator report. Keep requires a passing report
+  for the exact active version; perform rollback/unload separately. This is generic
+  across all eight families and does not depend on a website release or task contract.
 
-`module` is one of: tool | agent | prompt | skill | environment | connector | workflow.
+`module` is one of: tool | agent | skill | environment | connector | workflow | plugin | memory.
+The associated prompt can also be inspected/restored as an agent's supporting artifact.
 
 - Pair with `reviewer_agent`: if the reviewer's verdict is that an evolution regressed the outcome, `rollback` to the prior version (use `list_versions` first to see what to roll back to), or `unload` a brand-new component that has no prior good version.
 - Only affects `extension/` components; built-in capabilities cannot be rolled back/unloaded here.
@@ -81,6 +82,14 @@ class AdoptionTool(Tool):
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
+    def will_mutate(self, arguments: Dict[str, Any]) -> bool:
+        # Recording validated workflow evidence is observational bookkeeping, like
+        # Trace, not activation or mutation of a candidate. The workflow manager
+        # independently validates its run provenance. Lifecycle decisions still write.
+        return arguments.get("action", "list_active") not in {
+            "list_active", "list_versions", "diff", "record_workflow_evaluation",
+        }
+
     async def __call__(
         self,
         action: Literal[
@@ -104,10 +113,8 @@ class AdoptionTool(Tool):
         token_cost: int = 0,
         elapsed_ms: float = 0.0,
         notes: str = "",
-        release_number: Optional[int] = None,
         decision: Optional[Literal["keep", "rollback", "unload"]] = None,
         evidence: str = "",
-        evaluation: str = "",
         **kwargs: Any,
     ) -> Response:
         """Inspect and roll back evolved components.
@@ -123,15 +130,13 @@ class AdoptionTool(Tool):
             version_b: Comparison version for ``diff``; the live version when omitted.
             success: Whether a workflow evaluation succeeded.
             quality_score: Workflow evaluation score.
-            run_id: Terminal workflow run that produced successful evidence.
+            run_id: Completed evaluator child ID for a decision, or a terminal workflow run ID.
             case_id: Static evaluation case identifier, primarily for failed evidence.
             token_cost: Tokens consumed by a workflow evaluation.
             elapsed_ms: Workflow evaluation duration in milliseconds.
             notes: Optional workflow evaluation notes.
-            release_number: Published release whose evidence led to the evolution.
             decision: Evaluated candidate outcome: keep, rollback, or unload.
             evidence: Grounded reason for the task-scoped evolution decision.
-            evaluation: Baseline comparison supporting the decision.
             **kwargs: Runtime-only injected values, including the current context.
         """
         from agentevolver.extension import (
@@ -249,100 +254,32 @@ class AdoptionTool(Tool):
                 )
 
             if action == "record_decision":
-                if release_number is None or release_number < 1:
-                    raise KeyError("positive release_number")
-                if decision is None:
-                    raise KeyError("decision")
-                if not evidence.strip():
-                    raise KeyError("evidence")
+                from agentevolver.runtime import kernel
+                from agentevolver.agent.actor.evaluate_agent import EvaluateAgent
+
                 ctx = kwargs.get("ctx")
-                extra = getattr(ctx, "extra", None) or {}
-                contract = extra.get("website_runtime_contract")
-                if not isinstance(contract, dict):
-                    raise RuntimeError("record_decision requires a runtime evolution contract")
-                releases = list(extra.get("deployment_release_history") or [])
-                if release_number > len(releases):
-                    raise RuntimeError(f"release {release_number} has not been published")
-                collected = dict(contract.get("collected_turns") or {})
-                unread = [
-                    str(job_id)
-                    for job_id in contract.get("subscriber_job_ids") or []
-                    if int(collected.get(str(job_id)) or 0) < release_number
-                ]
-                if unread:
-                    raise RuntimeError(
-                        f"collect release {release_number} evidence before auditing: "
-                        + ", ".join(unread)
-                    )
-
-                if not module or not name or not evaluation.strip():
-                    raise KeyError("module, name, and evaluation")
-
-                candidate_version = version or ""
-                if decision == "keep":
-                    component = extension_manager.read_manifest().find(module, name)
-                    if component is None:
-                        raise RuntimeError(
-                            f"cannot keep inactive extension component {module}:{name}"
-                        )
-                    candidate_version = component.version
-                elif not candidate_version:
-                    raise KeyError("version for rollback or unload decision")
-
-                runs = list(contract.get("evolution_runs") or [])
-                changed = any(
-                    row.get("success")
-                    and row.get("agent") in {"generate_agent", "optimize_agent"}
-                    and row.get("module") == module
-                    and row.get("name") == name
-                    and row.get("version") == candidate_version
-                    for row in runs
+                caller_id = str((getattr(ctx, "extra", None) or {}).get("process_pid") or "")
+                evaluator = kernel.get(run_id) if run_id else None
+                if (not caller_id or evaluator is None
+                        or not isinstance(evaluator.agent, EvaluateAgent)
+                        or evaluator.parent_pid != caller_id
+                        or not evaluator._exited.is_set()
+                        or getattr(evaluator.exit_status, "value", "") != "done"):
+                    raise RuntimeError("Decision requires your completed independent evaluation run_id")
+                report = (getattr(evaluator.last_result, "data", None) or {}).get("evaluation")
+                if not report:
+                    raise RuntimeError("Evaluator returned no validated, version-scoped evidence")
+                for key, requested in (("module", module), ("name", name), ("version", version)):
+                    if requested is not None and requested != report.get(key):
+                        raise ValueError(f"Decision {key} differs from evaluated candidate")
+                record = extension_manager.record_decision(
+                    report=report, run_id=run_id, decision=decision, evidence=evidence,
                 )
-                evaluated = any(
-                    row.get("success")
-                    and row.get("agent") == "evaluate_agent"
-                    and row.get("module") == module
-                    and row.get("name") == name
-                    and row.get("version") == candidate_version
-                    for row in runs
-                )
-                if not changed or not evaluated:
-                    raise RuntimeError(
-                        "decision requires a successful generate/optimize and evaluate run "
-                        f"for {module}:{name} v{candidate_version}"
-                    )
-
-                record = {
-                    "release_number": release_number,
-                    "decision": decision,
-                    "module": module or "",
-                    "name": name or "",
-                    "version": candidate_version,
-                    "evidence": evidence.strip(),
-                    "evaluation": evaluation.strip(),
-                }
-                decisions = contract.setdefault("evolution_decisions", [])
-                decisions[:] = [
-                    row
-                    for row in decisions
-                    if not (
-                        int(row.get("release_number") or 0) == release_number
-                        and row.get("module") == module
-                        and row.get("name") == name
-                        and row.get("version") == candidate_version
-                    )
-                ]
-                decisions.append(record)
                 return Response(
-                    type=ResponseType.TOOL,
-                    success=True,
-                    message=(
-                        f"Recorded release {release_number} capability decision: "
-                        f"{decision}" + f" {module}:{name} v{candidate_version}"
-                    ),
+                    type=ResponseType.TOOL, success=True,
+                    message=f"Recorded {decision}: {report['module']}:{report['name']} v{report['version']}",
                     data={"decision": record},
                 )
-
             return Response(
                 type=ResponseType.TOOL, success=False, message=f"Unknown action {action!r}."
             )

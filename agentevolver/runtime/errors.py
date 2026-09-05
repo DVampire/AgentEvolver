@@ -16,6 +16,10 @@ class RuntimeKernelError(Exception):
     """Base class for errors the kernel raises at its own API boundary."""
 
 
+class BudgetExhausted(RuntimeKernelError):
+    """A process or its shared run has exhausted its declared resource budget."""
+
+
 class InvalidTransition(RuntimeKernelError):
     """A state move that is not in the transition table was requested."""
 
@@ -67,6 +71,7 @@ def describe(error: Optional[BaseException]) -> str:
 
 
 __all__ = [
+    "BudgetExhausted",
     "ControlFlowSignal",
     "InvalidTransition",
     "Killed",

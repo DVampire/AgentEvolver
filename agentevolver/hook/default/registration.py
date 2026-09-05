@@ -394,11 +394,14 @@ class RegistrationHook(Hook):
             # Before promotion, deliberately: a type that rewrites its own artifact does
             # it to the staged copy, so what gets promoted is what was validated.
             path = shape.prepare(path)
+            from agentevolver.extension import extension_manager
+
+            # Reject before replacing the previously active source on disk.
+            await extension_manager.check(module, path, shape.config(extra))
             if staged:
                 from agentevolver.hook.promotion import promote_approved_component
                 path = promote_approved_component(extension_root, path)
 
-            from agentevolver.extension import extension_manager
             name = await extension_manager.add_component(
                 module, path, config=shape.config(extra)
             )

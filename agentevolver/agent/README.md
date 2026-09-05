@@ -84,6 +84,19 @@ material must be written as workspace artifacts and passed through `files`. This
 from turning a delegation call into an unbounded generated document, makes the exact specification
 auditable, and lets multiple specialist agents consume the same source without paraphrase drift.
 
+`model` and `reasoning_effort` apply to the fresh child only; `token_budget` may narrow
+but never raise its configured cap. Capability grants include `environment_allowlist`,
+and an empty list means no access to that capability kind or its injected context.
+`read_set`/`write_set` are planning declarations, not filesystem enforcement. The current
+dispatch route rejects legacy `isolate_workspace=true`. `isolate_worktree=true` creates a
+private Git working tree for a one-shot child, in either blocking or background mode.
+It seeds the parent's tracked and untracked changes, collects the child's complete patch,
+and returns an artifact path without applying it to the parent. It currently requires a
+host Git workspace; resident/subscription endpoints, execution containers, and non-job
+environments are rejected before dispatch rather than silently sharing their state.
+Git isolation is not an OS security sandbox. Without this option, background agents still
+share their parent's workspace and need explicit coordination for writes.
+
 ## Agent versus Tool execution policy
 
 Agent still owns decisions that apply to every capability kind: assembling the visible

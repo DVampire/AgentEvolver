@@ -211,6 +211,7 @@ class TokenUsage(BaseModel):
     provider_reported_total: Optional[int] = None
     cost: Optional[float] = None
     cost_status: Literal["reported", "estimated", "unknown"] = "unknown"
+    runtime_receipt: str = ""
 
     @property
     def total(self) -> int:
@@ -233,6 +234,12 @@ class TokenUsage(BaseModel):
         """Normalize provider-specific usage dicts into TokenUsage."""
         if not raw:
             return None
+        if not any(key in raw for key in (
+            "input_tokens", "output_tokens", "context_input_tokens", "prompt_tokens",
+            "completion_tokens", "prompt_token_count", "candidates_token_count",
+            "cache_read_tokens", "cache_read_input_tokens", "cache_creation_input_tokens",
+        )):
+            return None  # Cost-only/metadata-only is not evidence of zero tokens.
         # Every surface names the cache counts differently, and a name this does not
         # know reads as "nothing was cached" rather than as "not reported" — the two
         # look identical downstream, so a provider is silently written off as
@@ -244,6 +251,7 @@ class TokenUsage(BaseModel):
         # context total so normalisation is idempotent.
         if "context_input_tokens" in raw:
             return cls(
+                runtime_receipt=str(raw.get("runtime_receipt") or ""),
                 input_tokens=int(raw.get("input_tokens") or 0),
                 context_input_tokens=int(raw.get("context_input_tokens") or 0),
                 output_tokens=int(raw.get("output_tokens") or 0),

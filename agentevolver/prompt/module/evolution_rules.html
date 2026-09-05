@@ -54,6 +54,8 @@ or frozen target or `optimize_agent` for an evolvable target. Pass `target_type`
 Dispatch `evaluate_agent` on the exact candidate version. Compare against the baseline defect
 and an independent case, including regressions and cost; an attractive score alone is not proof.
 Use `adoption_tool` to keep, rollback, or unload. Registered candidates are live but provisional:
+Record the decision with the completed evaluator's `run_id` and the observed evidence;
+a successful evaluator invocation alone is not a passing candidate verdict.
 contain their use to validation until assessed, and preserve consumer permission boundaries.
 Verify the intended consumer actually uses the adopted version on later real work. Registration
 alone does not switch a running Agent, Environment, or Memory instance; use a supported handoff

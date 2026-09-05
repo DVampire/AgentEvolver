@@ -50,6 +50,22 @@ class ModelManagerServer(BaseModel):
         """List all registered model names."""
         return self.model_context_manager.list()
 
+    def measure(self, name: str, input: Dict[str, Any]) -> Dict[str, Any]:
+        """Measure a request with the same policy as sending it, without network I/O."""
+        from agentevolver.model.context import _prepare_request_messages
+
+        model_config = self.get_model_config(name)
+        if model_config is None:
+            raise ValueError(f"Unknown model route: {name}")
+        return _prepare_request_messages(
+            messages=list(input.get("messages") or []), tools=input.get("tools"),
+            response_format=input.get("response_format"), model_config=model_config,
+            request_input=input, model_name=name, enforce=False,
+            call_kwargs={"max_output_tokens": input["max_output_tokens"]}
+            if input.get("max_output_tokens") is not None else {},
+            default_output_tokens=self.model_context_manager.max_tokens,
+        ).pressure
+
     async def alist(self) -> List[str]:
         return self.model_context_manager.list()
 

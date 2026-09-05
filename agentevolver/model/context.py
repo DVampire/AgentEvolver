@@ -5,7 +5,7 @@ Contains all model registration, client lifecycle, and invocation logic.
 
 import asyncio
 import inspect
-from contextlib import aclosing
+from contextlib import aclosing, contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -36,6 +36,7 @@ from agentevolver.model.pressure import (
 )
 from agentevolver.model.types import ModelConfig, ModelContext
 from agentevolver.response.types import Response, ResponseType
+from agentevolver.runtime.errors import BudgetExhausted
 from agentevolver.utils import hvac_client
 
 load_dotenv(verbose=True)
@@ -106,6 +107,7 @@ def _prepare_request_messages(
     default_output_tokens: int,
     call_kwargs: Optional[Dict[str, Any]] = None,
     model_name: str = "",
+    enforce: bool = True,
 ):
     """Apply the same deterministic pressure policy to buffered and streamed routes.
 
@@ -153,7 +155,7 @@ def _prepare_request_messages(
     policy = request_input.get("compaction_policy")
     if isinstance(policy, dict) and policy:
         pressure["compaction_policy"] = dict(policy)
-    if pressure.get("over_capacity"):
+    if enforce and pressure.get("over_capacity"):
         raise ContextOverflowError(
             f"The request does not fit {model_name or 'this model'}: about "
             f"{pressure['estimated_tokens_after']} tokens against an input capacity of "
@@ -1408,14 +1410,20 @@ class ModelContextManager:
             attempt=1,
             route_index=0,
         )
+        settle = None
         try:
             self.capability_registry.observe(
                 route, "compaction", CapabilityState.PROBING,
             )
-            result = await (
-                compact(messages, max_output_tokens=max_output_tokens)
-                if accepts_limit else compact(messages)
-            )
+            with self._budget_request(config, messages, kwargs={"max_output_tokens": max_output_tokens}
+                                      if max_output_tokens else {}) as settle:
+                result = await (
+                    compact(messages, max_output_tokens=max_output_tokens)
+                    if accepts_limit else compact(messages)
+                )
+                if result:
+                    from agentevolver.model.types import price_usage_dict
+                    result["usage"] = settle(price_usage_dict(result.get("usage"), config.cost))
         except Exception as error:
             status = getattr(error, "status_code", None)
             text = str(error).lower()
@@ -1434,6 +1442,8 @@ class ModelContextManager:
                 status in (400, 409, 422) and names_compaction and names_rejection
             )
             if rejected:
+                if settle is not None:
+                    settle({"input_tokens": 0, "output_tokens": 0})
                 self._disabled_route_features.setdefault(name, set()).add("compaction")
                 self.capability_registry.observe(
                     route, "compaction", CapabilityState.REJECTED, error,
@@ -1634,6 +1644,30 @@ class ModelContextManager:
             parts.append(f"caller={self._current_caller}")
         logger.info(f"| 💰 {', '.join(parts)}")
 
+    @contextmanager
+    def _budget_request(self, model_config, messages, tools=None, response_format=None, kwargs=None):
+        """One reservation per actual attempt, shared by all runtime descendants."""
+        from agentevolver.runtime.process import RunBudget
+
+        budget = RunBudget.current()
+        if budget is None:
+            yield lambda usage: usage
+            return
+        prepared = _prepare_request_messages(
+            messages=list(messages), tools=tools, response_format=response_format,
+            model_config=model_config, request_input={}, call_kwargs=kwargs or {},
+            default_output_tokens=self.max_tokens,
+            model_name=getattr(model_config, "model_name", "unknown"), enforce=False,
+        )
+        estimate = int(prepared.pressure["estimated_tokens_after"]) + int(prepared.pressure["reserved_output_tokens"])
+        with budget.request(getattr(model_config, "model_name", "unknown"), max(1, estimate)) as settle:
+            try:
+                yield settle
+            except NativeFeatureUnavailable:
+                # This typed rejection means the feature was rejected before execution.
+                settle({"input_tokens": 0, "output_tokens": 0})
+                raise
+
     async def _call_client(
         self,
         client,
@@ -1646,9 +1680,9 @@ class ModelContextManager:
         kwargs,
     ) -> Response:
         if model_config and model_config.model_type == "transcriptions":
-            return await client(messages=messages, **kwargs)
+            call_kwargs = dict(messages=messages, **kwargs)
         elif model_config and model_config.model_type == "embeddings":
-            return await client(
+            call_kwargs = dict(
                 messages=messages,
                 **{
                     k: v
@@ -1666,7 +1700,18 @@ class ModelContextManager:
             )
             if model_config and model_config.provider == "openrouter":
                 call_kwargs["plugins"] = plugins
-            return await client(**call_kwargs)
+        with self._budget_request(model_config, messages, tools, response_format, kwargs) as settle:
+            result = await client(**call_kwargs)
+            from agentevolver.model.types import TokenUsage, price_usage_dict
+
+            raw = result.usage.model_dump() if hasattr(result.usage, "model_dump") else result.usage
+            if raw is None and isinstance(result.data, dict):
+                raw = result.data.get("usage")
+            settled = settle(price_usage_dict(raw, getattr(model_config, "cost", None)))
+            result.usage = TokenUsage.from_raw(settled)
+            if isinstance(result.data, dict) and settled is not None:
+                result.data["usage"] = settled
+            return result
 
     async def __call__(
         self,
@@ -1838,7 +1883,7 @@ class ModelContextManager:
                 break
             except Exception as e:
                 from agentevolver.trace.integrity import TraceIntegrityError
-                if isinstance(e, TraceIntegrityError):
+                if isinstance(e, (TraceIntegrityError, BudgetExhausted)):
                     # Retrying or falling back cannot repair a missing source fact, and
                     # must never turn a fail-closed profile into another provider route.
                     raise
@@ -2018,7 +2063,7 @@ class ModelContextManager:
                     return result
                 except Exception as error:
                     from agentevolver.trace.integrity import TraceIntegrityError
-                    if isinstance(error, TraceIntegrityError):
+                    if isinstance(error, (TraceIntegrityError, BudgetExhausted)):
                         raise
                     if fb_client is not None and snapshot_kwargs:
                         self._observe_capability_error(
@@ -2117,19 +2162,27 @@ class ModelContextManager:
             if isinstance(client, (ResponseLLMHub, ChatAnthropic)):
                 wire_kwargs["_request_trace"] = {**(input.get("trace_context") or {}),
                                                  "session_id": session_id, "snapshot_id": snapshot_id}
-            if hasattr(client, "stream"):
-                async with aclosing(client.stream(
-                    messages=effective_messages, tools=tools, response_format=response_format, **wire_kwargs
-                )) as stream:
-                    async for ev in stream:
-                        yield _price_event(target, ev)
-            else:
-                # Providers without a stream(): buffer one call, re-emit as events.
-                resp = await client(
-                    messages=effective_messages, tools=tools, response_format=response_format, **wire_kwargs
-                )
-                async for ev in buffered_response_to_events(resp):
-                    yield _price_event(target, ev)
+            with self._budget_request(self.models.get(target), effective_messages, tools,
+                                      response_format, wire_kwargs) as settle:
+                if hasattr(client, "stream"):
+                    async with aclosing(client.stream(
+                        messages=effective_messages, tools=tools, response_format=response_format, **wire_kwargs
+                    )) as stream:
+                        async for ev in stream:
+                            ev = _price_event(target, ev)
+                            if isinstance(ev, _StreamDone):
+                                ev.usage = settle(ev.usage)
+                            yield ev
+                else:
+                    # Buffer once; do not reserve again while converting to events.
+                    resp = await client(
+                        messages=effective_messages, tools=tools, response_format=response_format, **wire_kwargs
+                    )
+                    async for ev in buffered_response_to_events(resp):
+                        ev = _price_event(target, ev)
+                        if isinstance(ev, _StreamDone):
+                            ev.usage = settle(ev.usage)
+                        yield ev
 
         model_config = self.models.get(name)
         max_retries = _resolve_max_retries(max_retries, model_config)
@@ -2212,7 +2265,7 @@ class ModelContextManager:
                     break
                 except Exception as e:
                     from agentevolver.trace.integrity import TraceIntegrityError
-                    if isinstance(e, TraceIntegrityError):
+                    if isinstance(e, (TraceIntegrityError, BudgetExhausted)):
                         raise
                     if client is not None and snapshot_kwargs:
                         self._observe_capability_error(

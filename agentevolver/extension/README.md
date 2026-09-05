@@ -13,6 +13,25 @@ Manages generated extension manifests and their promotion into the active framew
 Admission validates registry and model-facing schema contracts without calling an LLM;
 functional quality is measured by evaluation and rollout.
 
+## Version-scoped evaluation evidence
+
+All eight evolvable families use `ComponentEvaluation`: candidate identity/version,
+baseline, verdict, and cases with expected/observed results and actual evaluator call
+IDs. `EvaluateAgent` binds the initial candidate version and checks it again at the end;
+missing evidence or a changed version produces no adoptable report. This is a
+structured evaluator judgment, not independently proven semantic correctness.
+
+`adoption_tool.record_decision` accepts only the caller's completed EvaluateAgent child.
+The extension manager persists the decision in `.evaluations.json`; `keep` requires
+a passing report for the exact active, archived version. This contract is independent
+of website releases and task-specific runtime extras. Recording a rollback/unload
+decision does not execute it: use the corresponding operation explicitly.
+
+Deterministic admission checks registration and schema integrity, not functional
+quality. Non-tool candidates can still become active provisionally on registration;
+isolated functional testing and mandatory pre-activation gates for all eight families
+are not implemented. Existing measured tool rollout remains a separate mechanism.
+
 | File | Responsibility |
 |---|---|
 | `types.py` | Manifest and component contracts |

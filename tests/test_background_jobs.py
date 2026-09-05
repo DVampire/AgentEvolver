@@ -15,6 +15,39 @@ from agentevolver.job import job_manager
 from agentevolver.job.types import Job, JobStatus
 
 
+@pytest.mark.asyncio
+async def test_owned_namespace_stops_a_double_forked_setsid_child(tmp_path):
+    import shlex
+    import subprocess
+    import sys
+    from agentevolver.sandbox.process import owned_command
+
+    marker = tmp_path / "heartbeat"
+    source = (
+        "import os,time; from pathlib import Path; "
+        "pid=os.fork(); pid and os._exit(0); os.setsid(); "
+        "pid=os.fork(); pid and os._exit(0); "
+        f"p=Path({str(marker)!r}); "
+        "exec('while True:\\n p.write_text(str(time.time_ns()))\\n time.sleep(0.02)')"
+    )
+    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(source)}; sleep 60"
+    proc = subprocess.Popen(owned_command(["/bin/sh", "-c", command]), start_new_session=True)
+    try:
+        assert await _wait_until(marker.exists, timeout=5)
+        job = job_manager.register(type="bash", label="namespace-test", session_id="namespace-test", handle=proc)
+        assert job_manager.kill(job.id)
+        await asyncio.sleep(0.2)
+        stopped = marker.read_text()
+        await asyncio.sleep(0.2)
+        assert marker.read_text() == stopped
+        assert proc.poll() is not None
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=5)
+        job_manager.forget("namespace-test")
+
+
 class _Ctx:
     id = "test_session"
 
@@ -70,6 +103,49 @@ def test_a_killed_job_is_not_a_failed_one():
     job_manager.kill(job.id)
     assert job_manager.get(job.id).status is JobStatus.KILLED
     job_manager.forget("s1")
+
+
+def test_failed_stop_keeps_job_registered_for_retry(monkeypatch):
+    from types import SimpleNamespace
+
+    job = job_manager.register(type="test", label="blocked stop", session_id="retry-stop",
+                               handle=SimpleNamespace(pid=123))
+    def failed(*args):
+        raise PermissionError("cannot signal")
+    monkeypatch.setattr(job_manager, "_stop_process", failed)
+    assert job_manager.kill(job.id) is False
+    with pytest.raises(RuntimeError, match="awaiting cleanup"):
+        job_manager.forget("retry-stop")
+    assert job_manager.get(job.id) is job and not job.status.is_final
+    monkeypatch.setattr(job_manager, "_stop_process", lambda *args: None)
+    job_manager.forget("retry-stop")
+    assert job_manager.get(job.id) is None
+
+
+@pytest.mark.asyncio
+async def test_async_job_is_retained_until_cancellation_cleanup_finishes():
+    started, cleanup, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    async def work():
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleanup.set()
+            await finish.wait()
+    task = asyncio.create_task(work())
+    job = job_manager.register(type="test", label="async", session_id="cancel-cleanup", handle=task)
+    try:
+        await started.wait()
+        assert job_manager.kill(job.id)
+        await cleanup.wait()
+        with pytest.raises(RuntimeError, match="awaiting cleanup"):
+            job_manager.forget("cancel-cleanup")
+        assert not task.done() and job_manager.get(job.id) is job
+    finally:
+        finish.set()
+        await asyncio.gather(task, return_exceptions=True)
+        await asyncio.sleep(0)
+        job_manager.forget("cancel-cleanup")
 
 
 def test_the_first_verdict_stands():
@@ -235,6 +311,34 @@ async def test_an_unknown_job_id_names_the_ones_that_exist(workspace):
 # --------------------------------------------------------------------------- #
 # Disposal must reach quiescence, not request it
 # --------------------------------------------------------------------------- #
+def test_shared_process_group_is_not_signalled(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    import os
+
+    signal_group = Mock()
+    monkeypatch.setattr(os, "getpgid", lambda pid: 99)
+    monkeypatch.setattr(os, "killpg", signal_group)
+    with pytest.raises(RuntimeError, match="dedicated process group"):
+        job_manager._stop_process("shared", SimpleNamespace(pid=101))
+    signal_group.assert_not_called()
+
+
+def test_reaped_shell_still_stops_remaining_group_members(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    import os
+    import signal
+
+    signal_group = Mock()
+    monkeypatch.setattr(os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(os, "killpg", signal_group)
+    job_manager._stop_process("owned", SimpleNamespace(pid=101, wait=lambda **kw: 0))
+    assert [call.args for call in signal_group.call_args_list] == [
+        (101, signal.SIGTERM), (101, signal.SIGKILL),
+    ]
+
+
 def test_a_process_that_ignores_sigterm_is_still_stopped():
     """Sending a signal and returning is a request, not an ending.
 

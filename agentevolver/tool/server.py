@@ -176,6 +176,11 @@ class ToolManagerServer(BaseModel):
             ToolConfig: Tool configuration or None if not found
         """
         return await self._ensure_context_manager().get_info(tool_name)
+
+    def peek(self, tool_name: str) -> Optional[ToolConfig]:
+        """Inspect a loaded tool for synchronous scheduling; never initialize it."""
+        cm = self.tool_context_manager
+        return cm.peek(tool_name) if cm is not None else None
     
     async def cleanup(self):
         """Cleanup all tools"""

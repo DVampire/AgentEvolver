@@ -28,9 +28,7 @@ same kind of thing here — each is an object with a `__call__` and some optiona
 | `kernel.py` | Process table, turn driver, IPC, lifecycle |
 | `errors.py` | Kernel errors, and the two control-flow signals |
 
-`server.py`, `types.py` and `pump.py` are the previous mailbox runtime. They still drive
-`agentevolver.agent.types.Agent` and everything registered against it, and are kept whole
-so nothing that runs today stops running.
+`Kernel` drives the registered Agent implementations through their `__call__` contract.
 
 ## Six states, one exit
 
@@ -47,7 +45,68 @@ that answered the same question and could disagree. Every ending — finished, f
 stopped, killed — goes through `STOPPING`, so clean-up, the parent notification and the
 exit status exist once instead of once per outcome.
 
+A one-shot Agent's unsuccessful result yields a `FAILED` exit and a failed parent
+report, even when it returned normally rather than raising. A resident process records
+that assignment's failure in `turn_success` and remains available for later assignments.
+
 ## Safe points
+
+`wait()` joins the cleanup task as well as the turn driver. Parents stop and join their
+children before reporting their own exit. Repeated forced stops do not cancel cleanup;
+stopping a process before its driver first runs still executes its exit path.
+`shutdown(timeout=...)` returns any still-pending PIDs and retains their records; it
+does not pretend the deadline killed external resources. Another shutdown can collect
+them once cleanup finishes. New spawning is refused while shutdown remains pending.
+Cleanup exceptions are preserved in `cleanup_errors` in snapshots and exit events;
+task success does not assert that every external resource was successfully released.
+
+Agent exit retries each resource release a bounded number of times. Failed Job/Terminal
+stops retain their registry entries for a later cleanup attempt; accepting cancellation
+of an asyncio task does not mark it killed before its cancellation cleanup completes.
+An OS job must own a dedicated process group before that group can be signalled. This
+does not establish control over descendants that deliberately escape the group; that
+requires an owning OS/container supervisor, not just an in-memory process table.
+
+### Isolated child workspaces
+
+One-shot dispatch can opt into `isolate_worktree`. The runtime owns its lifetime and
+returns `artifacts.patch` on exit, including on cancellation. The patch is saved atomically
+before removing the worktree. A failed save, removal, or preceding resource cleanup keeps
+the worktree path in `artifacts.worktree` and records `cleanup_errors`; no auto-merge is
+performed. Paths use `P.LOG_WORKTREE` / `P.LOG_WORKTREE_PATCH` under the run log directory.
+
+Workspace resolution is task-local and inherited by child tasks. Permission ceilings
+are retained while the exact parent workspace fence is relocated to the private tree.
+The shared session binding is leased until runtime cleanup completes: rebinding or changing
+global path overrides during a run is rejected. This is **not** arbitrary multi-root
+concurrency in one interpreter: managers still hold session-scoped state. Use separate
+OS processes for different root sessions, or stop and join before rebinding.
+
+Every root and its descendants share a `RunBudget`, including resident turns and
+children later removed from the process table. Reported model/compaction usage
+counts cached input once, plus output; costs stay reported, estimated, or unknown.
+With a bound session, `P.SESSION_RUN_STATE` stores an atomic per-thread ledger.
+Explicit resume restores consumption and validates the whole document before use.
+An existing ledger requires resume or a new thread ID; missing/corrupt legacy ledgers
+require an explicit migration, never silently reset to zero.
+
+The runtime scopes the ledger through model and lifecycle calls. Model Manager reserves
+estimated input plus the output allowance before each framework-visible buffered,
+streamed, fallback, or native-compaction attempt. Synchronous reservation prevents
+concurrent children spending the same remaining budget. Receipt IDs prevent the Agent's
+per-turn accounting from charging a settled request twice. Reservations are estimates,
+not a provider-enforced billing cap; provider-internal activity is only as observable as
+its returned usage.
+
+Version 2 ledgers persist request receipts. Missing usage, cancellation, or a crash leaves
+an `unknown` reservation, not zero consumption; further model calls are refused until
+the host reconciles it with `budget.reconcile(receipt, usage, evidence=...)`. Reconciliation
+is idempotent and rejects conflicting totals. A definite typed pre-execution feature
+rejection can release the reservation for a portable fallback. No automatic billing API
+is assumed: provider-side audit evidence is required for unknown requests. Snapshots
+expose reserved tokens and unreconciled receipt IDs. Version 1 usage-only ledgers remain
+readable but cannot retroactively reveal their missing requests.
+It does not restore mailboxes, subscriptions, browser state, or external jobs.
 
 A safe point is any place the process voluntarily hands control back to the kernel. There
 are two, and that is the entire definition:
@@ -64,6 +123,11 @@ are two, and that is the entire definition:
 Queued receipts and the most recent 128 terminal receipts are retained. Retransmitting
 an ID still in that window does not invoke the handler twice; this is not durable
 exactly-once delivery. Queued messages left on shutdown become `undelivered`.
+
+`ask_parent()` accepts only a reply naming its active question and parent sender.
+`kernel.reply()` binds an omitted question ID to the current pending question, and
+rejects stale IDs or a child that is no longer waiting. Unrelated incoming messages
+remain observable and do not restart the question's timeout.
 
 Suspending or stopping anywhere else cuts a turn in half — the model has emitted tool
 calls whose results are not all recorded — and a conversation in that shape is rejected

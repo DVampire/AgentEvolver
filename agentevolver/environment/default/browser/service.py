@@ -228,29 +228,62 @@ class BrowserService:
         is what lets the launcher chown outputs back to the host user).
         """
 
+        errors = []
         async def _guard(label: str, coro, timeout: float = 15.0):
             try:
                 await asyncio.wait_for(coro, timeout=timeout)
+                return True
             except asyncio.TimeoutError:
+                errors.append(f"{label}: timed out")
                 logger.warning(f"| ⚠️ Browser teardown step timed out: {label}")
             except Exception as e:  # noqa: BLE001
+                errors.append(f"{label}: {e}")
                 logger.warning(f"| ⚠️ Browser teardown step failed ({label}): {e}")
+            return False
 
         for sid in list(self._sessions.keys()):
             await _guard(f"close_session {sid}", self.close_session(sid), timeout=5.0)
         if self._browser:
-            await _guard("browser.close", self._browser.close(), timeout=10.0)
+            if await _guard("browser.close", self._browser.close(), timeout=10.0):
+                self._browser = None
+                self._sessions.clear()
         if self._playwright:
-            await _guard("playwright.stop", self._playwright.stop(), timeout=10.0)
+            if await _guard("playwright.stop", self._playwright.stop(), timeout=10.0):
+                self._playwright = None
         if self._sandbox:
-            await _guard("sandbox.destroy", self._sandbox.destroy(), timeout=20.0)
-        self._sessions.clear()
-        self._browser = None
-        self._playwright = None
-        self._sandbox = None
+            if await _guard("sandbox.destroy", self._sandbox.destroy(), timeout=20.0):
+                self._sandbox = None
+        if errors:
+            raise RuntimeError("Browser teardown incomplete: " + "; ".join(errors))
         logger.info("| 🛑 BrowserService stopped")
 
     # ------------------------------------------------------------------ session management
+
+    @staticmethod
+    def _checkpoint_path(session_id):
+        from hashlib import sha256
+        from agentevolver.paths import P, path_manager
+
+        if path_manager.session is None:
+            return None
+        key = "browser-" + sha256(session_id.encode()).hexdigest()
+        return path_manager.get(P.SESSION_RUN_STATE, thread_id=key).with_suffix(".browser.json")
+
+    async def checkpoint(self, session_id):
+        """Persist storage, not live DOM or in-flight actions; never silently reset it."""
+        import json
+        from agentevolver.utils.file_utils import atomic_write_text
+
+        path = self._checkpoint_path(session_id)
+        sess = self._sessions.get(session_id)
+        if path is None or sess is None:
+            return
+        storage = await sess["context"].storage_state(indexed_db=True)
+        url = sess["page"].url
+        if url == "about:blank":
+            url = sess.get("restored_url", url)
+        atomic_write_text(path, json.dumps({"version": 1, "session": session_id,
+            "url": url, "storage": storage}, ensure_ascii=False, allow_nan=False))
 
     async def _page_for(self, session_id: str = "default") -> Optional[Page]:
         """Return the Page for a session, lazily creating an isolated context+page."""
@@ -258,8 +291,17 @@ class BrowserService:
             return None
         sess = self._sessions.get(session_id)
         if sess is None:
+            import json
+            saved = None
+            path = self._checkpoint_path(session_id)
+            if path is not None and path.exists():
+                saved = json.loads(path.read_text(encoding="utf-8"))
+                if saved.get("version") != 1 or saved.get("session") != session_id:
+                    raise ValueError("Browser checkpoint identity/version mismatch")
             try:
-                context = await self._browser.new_context(viewport=self.viewport)
+                context = await self._browser.new_context(
+                    viewport=self.viewport, **({"storage_state": saved["storage"]} if saved else {}),
+                )
             except Exception as error:
                 # Sharing a CDP default context would mix cookies, localStorage and
                 # navigation across concurrent user Agents. Isolation is part of the
@@ -269,7 +311,11 @@ class BrowserService:
                     "browser backend cannot create an isolated BrowserContext for "
                     f"session {session_id!r}"
                 ) from error
-            page = await context.new_page()
+            try:
+                page = await context.new_page()
+            except BaseException:
+                await context.close()
+                raise
             page.set_default_timeout(self.action_timeout * 1000)
             page.set_default_navigation_timeout(10000)
             sess = {
@@ -278,10 +324,15 @@ class BrowserService:
                 "owns_context": True,
                 "diagnostics": {},
                 "diagnostic_seq": 0,
+                "restored_url": saved["url"] if saved else "",
             }
             self._sessions[session_id] = sess
             self._attach_diagnostics(page, session_id)
             self._attach_dialogs(page, session_id)
+            if saved:
+                self._record_diagnostic(session_id, "recovery",
+                    "Browser storage recovered. DOM and in-flight actions were not replayed; "
+                    "inspect the last URL before continuing: " + saved["url"], saved["url"])
             try:
                 await page.goto("about:blank")
             except Exception:
@@ -291,16 +342,26 @@ class BrowserService:
 
     async def close_session(self, session_id: str = "default") -> None:
         """Close a session's page and context (if we created it)."""
-        sess = self._sessions.pop(session_id, None)
+        sess = self._sessions.get(session_id)
         if not sess:
             return
+        checkpoint_error = None
         try:
-            await sess["page"].close()
+            await asyncio.wait_for(self.checkpoint(session_id), timeout=3)
+        except Exception as error:
+            checkpoint_error = error
+        try:
             if sess.get("owns_context") and sess.get("context"):
                 await sess["context"].close()
+            else:
+                await sess["page"].close()
+            self._sessions.pop(session_id, None)
             logger.info(f"| 🧹 Browser session closed: {session_id}")
+            if checkpoint_error is not None:
+                raise RuntimeError(f"Browser closed, but its final storage checkpoint failed: {checkpoint_error}")
         except Exception as e:
             logger.warning(f"| ⚠️ Error closing session {session_id}: {e}")
+            raise  # Preserve the handle for the runtime's cleanup retry.
 
     # ------------------------------------------------------------------ helpers
 
@@ -849,6 +910,10 @@ class BrowserService:
         if not page:
             return state
         state.update(url=page.url, tabs=self._tabs(page))
+        try:
+            await asyncio.wait_for(self.checkpoint(session_id), timeout=3)
+        except Exception as error:
+            state["errors"].append(f"Browser storage checkpoint failed: {error}")
         if state["dialog"]:
             state["errors"].append("Dialog pending: use handle_dialog; screenshots and navigation are blocked until it is resolved.")
             return state

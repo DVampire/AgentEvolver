@@ -62,6 +62,7 @@ def test_reaping_names_containers_the_way_the_daemon_did_and_then_empties_the_le
     _use_home(monkeypatch, tmp_path)
     ledger.record("dead-1")
     ledger.record("sandbox-dead-2")  # already-prefixed ids are used as-is
+    monkeypatch.setattr(ledger, "_dead", lambda owner: True)
     removed: list[str] = []
 
     async def fake_remove(name: str) -> bool:
@@ -91,6 +92,7 @@ def test_a_reap_that_cannot_reach_docker_keeps_the_debt_for_the_next_boot(
     """
     _use_home(monkeypatch, tmp_path)
     ledger.record("dead-3")
+    monkeypatch.setattr(ledger, "_dead", lambda owner: True)
 
     async def broken_remove(_name: str) -> bool:
         raise FileNotFoundError("no docker socket and no CLI")
@@ -116,3 +118,28 @@ def test_exact_remove_clears_only_the_confirmed_resource(monkeypatch, tmp_path) 
     assert asyncio.run(ledger.remove("target")) is True
     assert removed == ["sandbox-target"]
     assert ledger.stale_ids() == ["other"]
+
+
+def test_live_and_unknown_owners_are_never_automatically_removed(monkeypatch, tmp_path):
+    import json
+
+    _use_home(monkeypatch, tmp_path)
+    ledger.record("live")
+
+    async def forbidden(name):
+        raise AssertionError(f"Attempted to remove live resource: {name}")
+
+    monkeypatch.setattr(ledger, "_remove_container", forbidden)
+    assert asyncio.run(ledger.reap_stale()) == []
+    assert ledger.stale_ids() == ["live"]
+    ledger._path().write_text(json.dumps(["legacy-owner-unknown"]))
+    assert asyncio.run(ledger.reap_stale()) == []
+    assert ledger.stale_ids() == ["legacy-owner-unknown"]
+
+
+def test_pid_reuse_does_not_claim_old_owner_is_alive(monkeypatch):
+    import os
+    import psutil
+
+    assert ledger._dead({"pid": os.getpid(), "created": psutil.Process().create_time() - 1})
+    assert not ledger._dead(ledger._owner())

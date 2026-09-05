@@ -69,6 +69,7 @@ class Kernel:
         #: competing consumers: without it an idle pool ties on every other key and one
         #: worker takes everything.
         self._assigned_at: Dict[str, float] = {}
+        self._closing = False
 
     # ==================================================================
     # Process lifecycle
@@ -89,6 +90,7 @@ class Kernel:
         start_idle: Optional[bool] = None,
         thread_id: str = "",
         resume: bool = False,
+        worktree: Any = None,
         **kwargs: Any,
     ) -> Process:
         """Create a process for ``agent`` and start driving it.
@@ -110,7 +112,13 @@ class Kernel:
             The live :class:`Process`. It is already running; nothing needs to be awaited
             unless the caller wants the result.
         """
-        parent_proc = self._resolve(parent, required=False) if parent else None
+        if self._closing:
+            raise RuntimeError("Kernel is shutting down; no new process may start")
+        parent_proc = self._resolve(parent) if parent else None
+        if parent_proc is not None and (not parent_proc.alive or parent_proc.signals.terminal):
+            raise RuntimeError("Cannot spawn work under a stopping or exited parent")
+        if parent_proc is not None:
+            parent_proc.budget.check()
         # One place decides what each mode means. Callers used to assemble `resident`,
         # `start_idle` and `topics` by hand, and a wrong combination raised nothing —
         # it produced a process that looked spawned and did nothing. The old flags stay
@@ -123,7 +131,16 @@ class Kernel:
         if start_idle is None:
             start_idle = shape.start_idle
 
+        from agentevolver.paths import P, path_manager
+        from hashlib import sha256
+
         pid = make_id()
+        stable_thread = thread_id or str(getattr(ctx, "id", "") or "")
+        if stable_thread and path_manager.session is not None:
+            endpoint = path_manager.get(P.SESSION_RUN_STATE, thread_id=stable_thread)
+            pid = sha256(str(endpoint).encode()).hexdigest()[:24]
+        if pid in self._procs and not self._procs[pid].exited:
+            raise RuntimeError("This durable endpoint is already running")
         proc = Process(
             pid,
             agent,
@@ -138,8 +155,32 @@ class Kernel:
             thread_id=thread_id,
             resume=resume,
         )
+        from agentevolver.paths import P, path_manager
+
+        restored = False
+        if ctx is not None and path_manager.session is not None:
+            state_path = path_manager.get(P.SESSION_RUN_STATE, thread_id=proc.thread_id)
+            try:
+                proc.mailbox.bind(
+                    state_path.with_suffix(".mailbox.json"), resume=resume,
+                    identity={"thread": proc.thread_id, "name": proc.name,
+                              "model": str(getattr(agent, "model_name", "")),
+                              "mode": mode.value, "brief": proc.brief},
+                    topics=self._scope_all(topics, ctx),
+                )
+                if parent_proc is None:
+                    proc.budget.bind(state_path, resume=resume)
+                restored = resume
+                if restored and not resident and not len(proc.mailbox):
+                    raise RuntimeError("This one-shot endpoint has no queued work to resume")
+            except BaseException:
+                proc.mailbox.release()
+                raise
         self._procs[pid] = proc
-        if topics:
+        proc.worktree = worktree
+        if restored:
+            self._topics.subscribe_many(pid, proc.mailbox.topics)
+        elif topics:
             # Scoped with the SAME function the publisher uses. Subscribing under the
             # raw name while `publish_scoped` looks up `{root}::{name}` is a silent
             # no-match: the fan-out reports 0 subscribers and every resident process
@@ -170,10 +211,27 @@ class Kernel:
             files=list(files or []),
             kwargs=dict(kwargs),
         )
-        proc._task = asyncio.create_task(
-            self._serve(proc, None if start_idle else first),
-            name=f"proc-{pid[:8]}-{proc.name}",
-        )
+        from agentevolver.paths import path_manager
+
+        if path_manager.session is not None:
+            proc._path_lease = path_manager.lease()
+            proc._path_lease.__enter__()
+        driver = None
+        try:
+            if not start_idle and not restored:
+                proc.record_delivery(first, "queued")
+            driver = self._serve(proc, None if start_idle or restored else first)
+            proc._task = asyncio.create_task(driver, name=f"proc-{pid[:8]}-{proc.name}")
+        except BaseException:
+            if driver is not None:
+                driver.close()
+            proc.mailbox.release()
+            self._topics.drop(pid)
+            self._procs.pop(pid, None)
+            if proc._path_lease is not None:
+                proc._path_lease.__exit__(None, None, None)
+                proc._path_lease = None
+            raise
         logger.info(
             f"| 🚀 [{proc.name}:{pid[:8]}] spawned"
             + (f" resident topics={list(topics)}" if topics else "")
@@ -192,8 +250,7 @@ class Kernel:
             asyncio.TimeoutError: ``timeout`` elapsed while it was still running.
         """
         proc = self._resolve(target)
-        if not proc.exited:
-            await asyncio.wait_for(proc._exited.wait(), timeout=timeout)
+        await asyncio.wait_for(proc._exited.wait(), timeout=timeout)
         return proc.last_result
 
     async def stop(
@@ -207,14 +264,21 @@ class Kernel:
         proc = self._resolve(target, required=False)
         if proc is None or proc.exited:
             return False
+        if proc._cleanup is not None:
+            return True  # Cleanup is tracked and must not be cancelled by a second stop.
         signal = Signal.KILL if force else Signal.STOP
         proc.signals.raise_signal(signal, reason)
         logger.info(
             f"| 🛑 [{proc.name}:{proc.pid[:8]}] {signal.value}"
             + (f": {reason}" if reason else "")
         )
-        if force and proc._task is not None and not proc._task.done():
+        if force and proc._started and proc._task is not None and not proc._task.done():
             proc._task.cancel()
+        elif proc._task is None:
+            proc.transition(ProcessState.STOPPING)
+            proc._cleanup = asyncio.create_task(
+                self._exit(proc, ExitStatus.CANCELLED, reason, graceful=not force)
+            )
         return True
 
     async def suspend(self, target: Target) -> bool:
@@ -243,6 +307,9 @@ class Kernel:
         if proc is None or not proc.alive:
             return False
         try:
+            known = proc.mailbox.known(envelope)
+            if known is not None:
+                return known in {"queued", "received", "delivered"}
             if envelope.id in proc.deliveries:
                 return proc.deliveries[envelope.id]["status"] in {"queued", "received", "delivered"}
             proc.mailbox.put(envelope)
@@ -257,8 +324,14 @@ class Kernel:
 
     async def reply(self, target: Target, text: str, *, in_reply_to: str = "") -> bool:
         """Unblock a child that is waiting inside :meth:`Process.ask_parent`."""
+        proc = self._resolve(target, required=False)
+        if proc is None or not proc.waiting_for:
+            return False
+        question = in_reply_to or proc.waiting_for
+        if question != proc.waiting_for:
+            return False
         return await self.send(
-            target, ReplyEnvelope(text=text, in_reply_to=in_reply_to)
+            proc, ReplyEnvelope(sender=proc.parent_pid, text=text, in_reply_to=question)
         )
 
     @staticmethod
@@ -379,11 +452,15 @@ class Kernel:
         point that skipped it would reintroduce the silent no-match this cost once.
         """
         proc = self._resolve(target)
-        return self._topics.subscribe(proc.pid, self._scope_all([topic], proc.ctx)[0])
+        scoped_topic = self._scope_all([topic], proc.ctx)[0]
+        proc.mailbox.subscribe(scoped_topic)
+        return self._topics.subscribe(proc.pid, scoped_topic)
 
     def unsubscribe(self, target: Target, topic: str) -> bool:
         proc = self._resolve(target)
-        return self._topics.unsubscribe(proc.pid, self._scope_all([topic], proc.ctx)[0])
+        scoped_topic = self._scope_all([topic], proc.ctx)[0]
+        proc.mailbox.subscribe(scoped_topic, remove=True)
+        return self._topics.unsubscribe(proc.pid, scoped_topic)
 
     def topics_of(self, pid: str) -> Sequence[str]:
         return self._topics.topics(pid)
@@ -451,23 +528,37 @@ class Kernel:
         """``ps`` for the process table."""
         return [proc.snapshot() for proc in self.list(alive_only=False)]
 
-    async def shutdown(self, *, timeout: float = KILL_GRACE_SECONDS) -> None:
-        """Stop every live process, forcefully, and wait for the table to empty."""
-        live = [proc for proc in self._procs.values() if proc.alive]
-        for proc in live:
-            await self.stop(proc, force=True, reason="kernel shutdown")
-        if live:
-            await asyncio.wait(
-                [asyncio.ensure_future(proc._exited.wait()) for proc in live],
-                timeout=timeout,
-            )
-        self._procs.clear()
+    async def shutdown(self, *, timeout: float = KILL_GRACE_SECONDS) -> List[str]:
+        """Request stop, join within the deadline, and retain/report unfinished PIDs.
+
+        A deadline limits the caller's wait, not the lifetime of tracked cleanup.
+        Calling shutdown again can collect processes which have since finished.
+        """
+        self._closing = True
+        waiters = []
+        try:
+            pending = [proc for proc in self._procs.values() if not proc._exited.is_set()]
+            for proc in pending:
+                await self.stop(proc, force=True, reason="kernel shutdown")
+            waiters = [asyncio.create_task(proc._exited.wait()) for proc in pending]
+            if waiters:
+                await asyncio.wait(waiters, timeout=max(0, timeout))
+            self.forget()
+            remaining = list(self._procs)
+            if remaining:
+                logger.warning(f"| ⚠️ shutdown still awaiting cleanup: {remaining}")
+            return remaining
+        finally:
+            for waiter in waiters:
+                waiter.cancel()
+            await asyncio.gather(*waiters, return_exceptions=True)
+            self._closing = bool(self._procs)
 
     def forget(self, *, session_id: str = "") -> int:
         """Drop exited processes from the table. Returns how many were removed."""
         gone = [
             pid for pid, proc in self._procs.items()
-            if proc.exited and (not session_id or proc.session_id == session_id)
+            if proc._exited.is_set() and (not session_id or proc.session_id == session_id)
         ]
         for pid in gone:
             self._procs.pop(pid, None)
@@ -488,7 +579,12 @@ class Kernel:
         status = ExitStatus.DONE
         reason = ""
         graceful = True
+        proc._started = True
+        budget_scope = proc.budget.scope()
+        budget_scope.__enter__()
         try:
+            if proc.signals.terminal:
+                await proc._honor_signals()
             await self._announce(proc, "start", first)
             envelope: Optional[Envelope] = first
             if envelope is None:
@@ -496,6 +592,7 @@ class Kernel:
                 envelope = await proc.recv()
             else:
                 proc.transition(ProcessState.RUNNING)
+                proc.record_delivery(envelope, "received")
                 await proc._hook("on_start", envelope.task, proc)
 
             started = first is not None
@@ -511,6 +608,9 @@ class Kernel:
                 proc.record_turn(proc.turns, proc.last_result)
 
                 if not proc.resident:
+                    if not proc.turn_success[proc.turns]:
+                        status = ExitStatus.FAILED
+                        reason = proc.turn_results[proc.turns] or "Agent returned no successful result"
                     break
                 proc.transition(ProcessState.IDLE)
                 envelope = await proc.recv()
@@ -527,17 +627,29 @@ class Kernel:
                 f"| 💥 [{proc.name}:{proc.pid[:8]}] failed: {reason}", exc_info=True
             )
         finally:
-            await self._exit(proc, status, reason, graceful=graceful)
+            proc.transition(ProcessState.STOPPING)
+            proc._cleanup = asyncio.create_task(
+                self._exit(proc, status, reason, graceful=graceful),
+                name=f"cleanup-{proc.pid}",
+            )
+            try:
+                await asyncio.shield(proc._cleanup)
+            finally:
+                budget_scope.__exit__(None, None, None)
 
     async def _turn(self, proc: Process, envelope: Envelope) -> Any:
         """Run the agent once over one input."""
+        proc.budget.check()
         task = self._input_text(proc, envelope)
         files = list(getattr(envelope, "files", ()) or ())
         kwargs = dict(getattr(envelope, "kwargs", {}) or {})
         logger.info(f"| ▶️ [{proc.name}:{proc.pid[:8]}] turn {proc.turns + 1}")
         proc.record_delivery(envelope, "received")
         try:
-            result = await proc.agent(task=task, files=files, ctx=proc.ctx, **kwargs)
+            from agentevolver.permission import permission_manager
+
+            with permission_manager.scope(proc.permission_mode), proc.budget.scope():
+                result = await proc.agent(task=task, files=files, ctx=proc.ctx, **kwargs)
         except (Stopped, Killed, asyncio.CancelledError):
             proc.record_delivery(envelope, "interrupted")
             raise
@@ -587,17 +699,16 @@ class Kernel:
     async def _exit(
         self, proc: Process, status: ExitStatus, reason: str, *, graceful: bool
     ) -> None:
-        """The single exit path: land, mark, unsubscribe, reap, notify.
+        """The single exit path: land, unsubscribe, reap, notify, then mark exited.
 
         Every ending goes through here — finished, failed, stopped, killed — so the
         clean-up and the parent notification exist once instead of once per outcome.
         """
         if proc.exited:
             return
-        # Every await below can be interrupted — a forced stop cancels this very task
-        # while it is unwinding. None of them may prevent the process from being marked
-        # exited and its waiters woken, so each is guarded and `_exited` is set in a
-        # finally. A process whose clean-up failed is still a process that ended.
+        # This is a tracked cleanup task; repeated stop calls cannot cancel it.
+        # Ordinary cleanup errors are logged while later cleanup still runs. Waiters
+        # are released only after these steps, not when the driver first stops.
         try:
             try:
                 proc.transition(ProcessState.STOPPING)
@@ -612,12 +723,13 @@ class Kernel:
 
             proc.exit_status = status
             proc.error = proc.error or (reason if status is ExitStatus.FAILED else "")
-            proc.ended_at = time.time()
-            proc.transition(ProcessState.EXITED)
             self._topics.drop(proc.pid)
             undelivered = proc.mailbox.close()
             for envelope in undelivered:
-                proc.record_delivery(envelope, "undelivered")
+                try:
+                    proc.record_delivery(envelope, "undelivered")
+                except Exception as error:
+                    proc.cleanup_errors.append({"phase": "mailbox checkpoint", "error": str(error)})
             proc.signals.clear()
             if undelivered:
                 logger.info(
@@ -626,6 +738,13 @@ class Kernel:
                 )
 
             await self._guarded(self._reap_children(proc), proc, "reaping children")
+
+            await self._guarded(proc._hook("on_exit", status), proc, "on_exit")
+            if proc.worktree is not None:
+                if proc.cleanup_errors:
+                    proc.artifacts["worktree"] = str(proc.worktree.path)
+                else:
+                    await self._guarded(self._collect_workspace(proc), proc, "collecting worktree")
 
             if proc.parent_pid:
                 await self._guarded(
@@ -642,11 +761,16 @@ class Kernel:
                     "notifying parent",
                 )
 
-            await self._guarded(proc._hook("on_exit", status), proc, "on_exit")
             await self._guarded(
                 self._announce(proc, "exit", None, status=status), proc, "exit events"
             )
         finally:
+            proc.ended_at = time.time()
+            proc.transition(ProcessState.EXITED)
+            proc.mailbox.release()
+            if proc._path_lease is not None:
+                proc._path_lease.__exit__(None, None, None)
+                proc._path_lease = None
             proc._exited.set()
             logger.info(
                 f"| 🏁 [{proc.name}:{proc.pid[:8]}] exited "
@@ -658,11 +782,24 @@ class Kernel:
     async def _guarded(awaitable: Any, proc: Process, what: str) -> None:
         """Run one clean-up step; never let it abort the rest of the exit path."""
         try:
-            await asyncio.shield(asyncio.ensure_future(awaitable))
-        except asyncio.CancelledError:
-            logger.warning(f"| ⚠️ [{proc.name}:{proc.pid[:8]}] {what} interrupted")
+            await awaitable
         except Exception as error:  # noqa: BLE001
+            proc.cleanup_errors.append({"phase": what, "error": f"{type(error).__name__}: {error}"})
             logger.warning(f"| ⚠️ [{proc.name}:{proc.pid[:8]}] {what} failed: {error}")
+
+    @staticmethod
+    async def _collect_workspace(proc: Process) -> None:
+        """Archive a patch before removing a worktree; retain source on any failure."""
+        from agentevolver.utils.file_utils import atomic_write_text
+
+        tree = proc.worktree
+        proc.artifacts["worktree"] = str(tree.path)
+        patch = await tree.collect_patch()
+        atomic_write_text(tree.patch_path, patch)
+        proc.artifacts["patch"] = str(tree.patch_path)
+        await tree.cleanup()
+        proc.artifacts.pop("worktree", None)
+        proc.worktree = None
 
     @staticmethod
     async def _announce(
@@ -707,6 +844,7 @@ class Kernel:
             )
             return
         outcome = getattr(status, "value", status)
+        body["cleanup_errors"] = [dict(error) for error in proc.cleanup_errors]
         await events.broadcast(
             HookEvent.TASK_COMPLETED,
             {**body, "status": outcome, "result": getattr(proc.last_result, "message", None)},
@@ -720,13 +858,15 @@ class Kernel:
 
     async def _reap_children(self, proc: Process) -> None:
         """Kill whatever this process dispatched. Nobody is left to collect it."""
-        for child in self.children(proc):
+        children = self.children(proc)
+        for child in children:
             if child.alive:
                 logger.info(
                     f"| 🧹 [{proc.name}:{proc.pid[:8]}] reaping child "
                     f"{child.name}:{child.pid[:8]}"
                 )
                 await self.stop(child, force=True, reason="parent exited")
+        await asyncio.gather(*(child._exited.wait() for child in children))
 
     @staticmethod
     def _final_text(proc: Process, reason: str) -> str:
@@ -736,7 +876,8 @@ class Kernel:
         if body is None and result is not None:
             body = str(result)
         head = f"{proc.name} finished with status {proc.exit_status.value}"
-        return "\n".join(part for part in (head, reason or None, body) if part)
+        artifacts = "\n".join(f"{name}: {path}" for name, path in proc.artifacts.items())
+        return "\n".join(part for part in (head, reason or None, body, artifacts) if part)
 
     # ==================================================================
     # Internals

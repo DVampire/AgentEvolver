@@ -132,6 +132,55 @@ class Conversation:
     # Reading
     # ------------------------------------------------------------------
 
+    def reference(self, max_chars: int) -> str:
+        """Portable fork evidence, bounded by whole assistant/tool cycles.
+
+        This is reference data, not native replay under a different system prompt.
+        Opaque protocol state stays in the original conversation/snapshot. Content,
+        tool arguments and results are preserved without slicing any string.
+        """
+        groups, current, pending = [], [], set()
+        has_assistant = False
+        for message in self.items:
+            if isinstance(message, (AssistantMessage, HumanMessage)) and has_assistant:
+                if pending:
+                    break
+                groups.append(current)
+                current, has_assistant = [], False
+            if isinstance(message, AssistantMessage):
+                has_assistant = True
+                pending = {call.id for call in message.tool_calls}
+            elif isinstance(message, ToolMessage):
+                if message.tool_call_id not in pending:
+                    break
+                pending.remove(message.tool_call_id)
+            current.append(message)
+        if current and not pending:
+            groups.append(current)
+
+        def encode(group):
+            return [message.model_dump(mode="json", exclude={"provider_state", "cache"},
+                                       exclude_none=True) for message in group]
+
+        kept, size = [], 0
+        for group in reversed(groups):
+            value = encode(group)
+            cost = len(json.dumps(value, ensure_ascii=False))
+            if kept and size + cost > max_chars:
+                break
+            kept.append(value)
+            size += cost
+        omitted = sum(len(group) for group in groups[:len(groups) - len(kept)])
+        document = {
+            "task": self.task,
+            "checkpoint": self.checkpoint.text if self.checkpoint is not None else "",
+            "turns": list(reversed(kept)),
+            "omitted_messages": omitted,
+            "incomplete_turn_excluded": bool(pending),
+        }
+        notice = f"[{omitted} earlier message(s) omitted as whole turns]\n" if omitted else ""
+        return notice + json.dumps(document, ensure_ascii=False)
+
     @property
     def turns(self) -> int:
         """How many assistant turns are still held exactly."""

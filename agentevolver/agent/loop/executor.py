@@ -196,20 +196,23 @@ class ActionExecutor:
         # Passed only when there is one. A router with no program transport to serve
         # never sees the argument, so a simpler implementation stays valid instead of
         # failing on an unexpected keyword.
-        bridge = self._bridge(call, agent, ctx, routing, coordinates)
-        extra = {"bridge": bridge} if bridge is not None else {}
-        try:
-            result = await self.router.invoke(
-                call, agent=agent, ctx=ctx, routing=routing, execution=coordinates,
-                **extra,
-            )
-        except Exception as error:  # noqa: BLE001 - a router fault is still a result
-            logger.error(f"| ❌ {call.name} failed: {error}")
-            result = ActionResult(call=call, error=f"{type(error).__name__}: {error}")
-        if denial and result.ok:
-            # A capability kind with no execution pipeline of its own never saw the
-            # denial; settle it here so a refused action can never take effect.
+        if denial:
+            # A denied capability must never execute, regardless of its manager kind.
             result = ActionResult(call=call, error=denial)
+        else:
+            bridge = self._bridge(call, agent, ctx, routing, coordinates)
+            extra = {"bridge": bridge} if bridge is not None else {}
+            try:
+                from agentevolver.permission import permission_manager
+
+                with permission_manager.scope(getattr(agent, "permission_mode", "workspace_write")):
+                    result = await self.router.invoke(
+                        call, agent=agent, ctx=ctx, routing=routing, execution=coordinates,
+                        **extra,
+                    )
+            except Exception as error:  # noqa: BLE001 - a router fault is still a result
+                logger.error(f"| ❌ {call.name} failed: {error}")
+                result = ActionResult(call=call, error=f"{type(error).__name__}: {error}")
         await events.emit(HookEvent.POST_ACTION, {
             **body,
             "action_result": result.output,

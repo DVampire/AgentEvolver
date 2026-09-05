@@ -47,6 +47,49 @@ def _open(**kwargs):
     return terminal_manager.open(session_id=SESSION, **kwargs)
 
 
+def test_failed_terminal_close_retains_retry_handle(monkeypatch):
+    from types import SimpleNamespace
+
+    def fail():
+        raise RuntimeError("close failed")
+    terminal = SimpleNamespace(id="retry-terminal", session_id="retry-session", started_at=0,
+                               elapsed=0, status=TerminalStatus.RUNNING, close=fail)
+    terminal_manager._terminals[terminal.id] = terminal
+    try:
+        with pytest.raises(RuntimeError, match="awaiting cleanup"):
+            terminal_manager.forget("retry-session")
+        assert terminal_manager.get(terminal.id) is terminal
+        terminal.status = TerminalStatus.EXITED
+        terminal.close = lambda: True
+        terminal_manager.forget("retry-session")
+        assert terminal_manager.get(terminal.id) is None
+    finally:
+        terminal_manager._terminals.pop(terminal.id, None)
+
+
+def test_terminal_eof_does_not_mean_process_exit():
+    import subprocess
+    import threading
+    from types import SimpleNamespace
+    from agentevolver.terminal.types import Terminal
+
+    def still_running(**kwargs):
+        raise subprocess.TimeoutExpired("shell", 5)
+
+    terminal = SimpleNamespace(
+        _process=SimpleNamespace(poll=lambda: None, wait=still_running),
+        _lock=threading.Lock(), status=TerminalStatus.RUNNING,
+        exit_code=None, ended_at=None,
+    )
+    Terminal._mark_exited(terminal)
+    assert terminal.status is TerminalStatus.RUNNING
+    assert terminal.ended_at is None
+    terminal._process.poll = lambda: 0
+    Terminal._mark_exited(terminal)
+    assert terminal.status is TerminalStatus.EXITED
+    assert terminal.exit_code == 0
+
+
 async def _alive(pid: int, deadline: float = 3.0) -> bool:
     """Whether `pid` is still there, giving it up to `deadline` seconds to die."""
     for _ in range(int(deadline / 0.1)):
@@ -243,7 +286,10 @@ async def test_closing_a_terminal_takes_what_it_started_with_it(session):
     """
     terminal = _open()
     output, _ = await terminal.send("sleep 60 & echo started-$!", timeout=SEND_TIMEOUT)
-    child_pid = int(output.rsplit("started-", 1)[1].split()[0])
+    # $! is namespace-local now. Observe the owned child using its host identity.
+    import psutil
+    child_pid = next(child.pid for child in psutil.Process(terminal.pid).children(recursive=True)
+                     if child.name() == "sleep")
     assert await _alive(child_pid, deadline=0.2)
 
     terminal_manager.close(terminal.id)

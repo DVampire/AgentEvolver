@@ -57,11 +57,16 @@ class ReplyTool(Tool):
             from agentevolver.runtime import kernel
 
             child = kernel.get(str(task_id))
+            ctx = kwargs.get("ctx")
+            caller = (getattr(ctx, "extra", None) or {}).get("process_pid")
+            if ctx is not None and (not caller or child is None or child.parent_pid != caller):
+                return Response(type=ResponseType.TOOL, success=False,
+                                message="Only the parent process may answer this child.")
             delivered = bool(child is not None and child.alive
                              and await kernel.reply(child, reply))
             msg = (f"Guidance delivered to sub-agent [{task_id}]." if delivered
                    else f"No sub-agent was waiting for [{task_id}] (already replied or timed out).")
-            return Response(type=ResponseType.TOOL, success=True, message=msg)
+            return Response(type=ResponseType.TOOL, success=delivered, message=msg)
         except Exception as e:
             logger.error(f"| ❌ reply_tool failed: {e}")
             return Response(type=ResponseType.TOOL, success=False, message=f"Reply failed: {e}")

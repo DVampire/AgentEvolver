@@ -19,6 +19,28 @@ class _BrokenHook(Hook):
 
 
 @pytest.mark.asyncio
+async def test_policy_dispatch_failure_is_closed(monkeypatch):
+    from agentevolver.agent.loop.events import EventBus
+
+    bus = EventBus()
+    async def broken(*args, **kwargs):
+        raise RuntimeError("dispatcher unavailable")
+    monkeypatch.setattr(bus, "_call", broken)
+    result = await bus.gate("plan_mode_hook", {"event": HookEvent.PRE_ACTION})
+    assert result.decision is HookDecision.BLOCK
+    await bus.emit(HookEvent.PRE_ACTION)  # Observation failure remains non-blocking.
+
+
+@pytest.mark.asyncio
+async def test_missing_required_hook_blocks():
+    manager = HookContextManager()
+    result = await manager("missing", {"event": HookEvent.PRE_ACTION}, required=True)
+    assert result.decision is HookDecision.BLOCK
+    result = await manager("optional", {"event": HookEvent.PRE_ACTION})
+    assert result.decision is HookDecision.ALLOW
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("fail_closed", "decision"),
     [(False, HookDecision.ALLOW), (True, HookDecision.BLOCK)],

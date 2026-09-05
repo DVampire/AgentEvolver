@@ -311,6 +311,8 @@ class HookContextManager:
 
         hook_config = self._hook_configs.get(name)
         if hook_config is None or not hook_config.enabled or hook_config.instance is None:
+            if kwargs.get("required"):
+                return HookResult.block(f"Required policy {name!r} is missing or disabled")
             return HookResult.allow()
 
         hook_instance = hook_config.instance

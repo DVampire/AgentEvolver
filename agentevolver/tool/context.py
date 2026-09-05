@@ -533,6 +533,10 @@ class ToolContextManager(BaseModel):
         Returns:
             ToolConfig: Tool info or None if not found
         """
+        return self.peek(tool_name)
+
+    def peek(self, tool_name: str) -> Optional[ToolConfig]:
+        """Read an already-loaded declaration without discovery, loading, or I/O."""
         return self._tool_configs.get(tool_name)
 
     async def get_version_info(
@@ -1085,6 +1089,14 @@ class ToolContextManager(BaseModel):
         def guard(execution):
             request = tool_instance.permission_request(execution.arguments, ctx)
             if request is None:
+                if permission_manager.restrict() == PermissionMode.READ_ONLY:
+                    effects = tool_instance.will_mutate(execution.arguments)
+                    if effects is not False and not (
+                        effects is None and tool_instance.permission_mode == PermissionMode.READ_ONLY
+                    ):
+                        return ToolPolicyDecision.deny(
+                            "Permission denied: tool has no verified read-only operation contract"
+                        )
                 return None
             result = permission_manager.check(
                 tool_instance.name,

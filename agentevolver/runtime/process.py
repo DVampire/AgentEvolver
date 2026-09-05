@@ -18,7 +18,12 @@ notes around an in-flight batch.
 from __future__ import annotations
 
 import asyncio
+import json
+import math
 import time
+from dataclasses import asdict, dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Callable, Dict, List, Optional
 
 from agentevolver.hook.events import HookEvent
@@ -39,6 +44,183 @@ from agentevolver.runtime.states import (
 #: Turns whose results a process keeps. Enough for a parent to look a few releases
 #: back; the complete record is Trace's job, not the process table's.
 MAX_REMEMBERED_TURNS = 32
+_BUDGET = ContextVar("run_budget", default=None)
+
+
+@dataclass
+class RunBudget:
+    """One ledger shared by a root and all descendants, across resident turns.
+
+    Tracks reported consumption and conservative per-attempt reservations.
+    Cost remains explicitly reported/estimated/unknown rather than guessed from tokens.
+    """
+    limit: Optional[int] = None
+    tokens: int = 0
+    context_input_tokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    reported_cost: float = 0.0
+    estimated_cost: float = 0.0
+    unknown_cost_calls: int = 0
+
+    def __post_init__(self):
+        self.requests = {}
+
+    @classmethod
+    def current(cls):
+        return _BUDGET.get()
+
+    @contextmanager
+    def scope(self):
+        token = _BUDGET.set(self)
+        try:
+            yield self
+        finally:
+            _BUDGET.reset(token)
+
+    @property
+    def reserved(self):
+        return sum(item["estimate"] for item in self.requests.values()
+                   if item["status"] != "settled")
+
+    @contextmanager
+    def request(self, model: str, estimate: int):
+        """Reserve synchronously before I/O; cancellation never implies zero usage."""
+        from agentevolver.runtime.errors import BudgetExhausted
+        from agentevolver.utils import make_id
+
+        self.check()
+        if isinstance(estimate, bool) or not isinstance(estimate, int) or estimate <= 0:
+            raise ValueError("Request reservation needs a positive token estimate")
+        if self.limit is not None and self.tokens + self.reserved + estimate > self.limit:
+            raise BudgetExhausted("Insufficient run budget for the next model attempt")
+        key = make_id()
+        self.requests[key] = {"model": model, "estimate": estimate, "status": "pending", "at": time.time()}
+        self.save()  # A failed durable reservation must prevent the network call.
+        try:
+            yield lambda usage: self.reconcile(key, usage, evidence="provider response")
+        finally:
+            if self.requests[key]["status"] == "pending":
+                self.requests[key]["status"] = "unknown"
+                self.save()
+
+    def reconcile(self, key: str, raw, *, evidence: str):
+        """Settle one attempt from usage evidence, idempotently; never infer a bill."""
+        from agentevolver.model.types import TokenUsage
+
+        item = self.requests[key]
+        if not evidence.strip():
+            raise ValueError("Usage reconciliation needs evidence")
+        usage = raw if isinstance(raw, TokenUsage) else TokenUsage.from_raw(raw)
+        if usage is None:
+            return raw
+        if item["status"] == "settled":
+            if item["usage"] != {**usage.model_dump(), "runtime_receipt": key}:
+                raise ValueError("Conflicting usage for an already settled request")
+            return dict(item["usage"])
+        usage.runtime_receipt = ""  # Provider data cannot choose the local receipt.
+        self.record(usage, persist=False)
+        usage.runtime_receipt = key
+        item.update(status="settled", usage=usage.model_dump(), evidence=evidence)
+        self.save()
+        return dict(item["usage"])
+
+    def bind(self, path, *, resume: bool) -> None:
+        """Restore reported consumption before a root resumes; never reset it silently."""
+        if resume:
+            document = json.loads(path.read_text(encoding="utf-8"))
+            if document.get("version") not in (1, 2):
+                raise ValueError("Unsupported run budget snapshot")
+            values = document["budget"]
+            if not isinstance(values, dict) or set(values) != set(asdict(self)):
+                raise ValueError("Invalid persisted run budget fields: incomplete or unknown fields")
+            for name, value in values.items():
+                if name == "limit" and value is None:
+                    continue
+                if (isinstance(value, bool) or not isinstance(value, (int, float))
+                        or not math.isfinite(value) or value < 0
+                        or (not name.endswith("cost") and not isinstance(value, int))):
+                    raise ValueError(f"Invalid persisted run budget field: {name}")
+            if values["tokens"] != values["context_input_tokens"] + values["output_tokens"]:
+                raise ValueError("Invalid persisted run budget token total")
+            requests = document.get("requests", {} if document["version"] == 1 else None)
+            if not isinstance(requests, dict):
+                raise ValueError("Invalid persisted request reservations")
+            settled_tokens = 0
+            for key, item in requests.items():
+                if (not isinstance(key, str) or not key or not isinstance(item, dict)
+                        or item.get("status") not in {"pending", "unknown", "settled"}
+                        or type(item.get("estimate")) is not int or item["estimate"] <= 0
+                        or not isinstance(item.get("model"), str)):
+                    raise ValueError("Invalid persisted request reservation")
+                if item["status"] == "pending":
+                    item["status"] = "unknown"  # Crash does not prove provider cancellation.
+                if item["status"] == "settled":
+                    from agentevolver.model.types import TokenUsage
+
+                    raw = item.get("usage")
+                    if (not isinstance(raw, dict) or raw.get("runtime_receipt") != key
+                            or not isinstance(item.get("evidence"), str) or not item["evidence"].strip()):
+                        raise ValueError("Invalid persisted settled request")
+                    usage = TokenUsage.from_raw(raw)
+                    if usage is None:
+                        raise ValueError("Settled request has no token usage")
+                    # Use the same validation as live accounting without changing this ledger.
+                    RunBudget().record(usage, persist=False)
+                    settled_tokens += usage.total
+            if settled_tokens > values["tokens"]:
+                raise ValueError("Settled requests exceed persisted token consumption")
+            # Validate the entire document before mutating the live ledger.
+            for name, value in values.items():
+                if name != "limit" or self.limit is None:
+                    setattr(self, name, value)
+            self.requests = requests
+        elif path.exists():
+            raise ValueError("Run budget already exists; use explicit resume or a new thread ID")
+        self._path = path
+        self.save()
+
+    def save(self) -> None:
+        from agentevolver.utils.file_utils import atomic_write_text
+
+        path = getattr(self, "_path", None)
+        if path is not None:
+            atomic_write_text(path, json.dumps({"version": 2, "budget": asdict(self), "requests": self.requests}))
+
+    def record(self, usage, *, persist=True) -> None:
+        receipt = getattr(usage, "runtime_receipt", "")
+        if receipt and self.requests.get(receipt, {}).get("status") == "settled":
+            return  # Agent statistics may consume the same model usage again.
+        counts = (usage.input_tokens, usage.output_tokens, usage.cache_read_tokens,
+                  usage.cache_write_tokens, usage.total)
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counts):
+            raise ValueError("Invalid reported token usage")
+        if usage.cost is not None and (not math.isfinite(usage.cost) or usage.cost < 0):
+            raise ValueError("Invalid reported cost")
+        self.tokens += usage.total
+        self.context_input_tokens += usage.total - usage.output_tokens
+        self.input_tokens += usage.input_tokens
+        self.output_tokens += usage.output_tokens
+        self.cache_read_tokens += usage.cache_read_tokens
+        self.cache_write_tokens += usage.cache_write_tokens
+        if usage.cost is None or usage.cost_status == "unknown":
+            self.unknown_cost_calls += 1
+        elif usage.cost_status == "reported":
+            self.reported_cost += usage.cost
+        else:
+            self.estimated_cost += usage.cost
+        if persist:
+            self.save()
+
+    def check(self) -> None:
+        from agentevolver.runtime.errors import BudgetExhausted
+
+        if any(item["status"] == "unknown" for item in self.requests.values()):
+            raise BudgetExhausted("Run has unreconciled model usage; inspect request receipts before resuming")
+        if self.limit is not None and self.tokens + self.reserved >= self.limit:
+            raise BudgetExhausted(f"Run token limit reached ({self.tokens}/{self.limit})")
 
 
 class Process:
@@ -72,6 +254,15 @@ class Process:
         self.ctx = ctx
         self.session_id = session_id or str(getattr(ctx, "id", "") or "")
         self.parent_pid = parent_pid
+        from agentevolver.permission import permission_manager
+
+        parent = kernel.get(parent_pid) if parent_pid else None
+        self.permission_mode = permission_manager.restrict(
+            getattr(agent, "permission_mode", None), getattr(parent, "permission_mode", None),
+        ).value
+        self.budget = parent.budget if parent is not None else RunBudget(
+            limit=getattr(agent, "max_token", None),
+        )
         self.resident = resident
         # A thread survives process replacement only when explicitly resumed. Agent
         # names are templates, never identities for three concurrent participants.
@@ -89,6 +280,10 @@ class Process:
         self.state: ProcessState = ProcessState.NEW
         self.exit_status: Optional[ExitStatus] = None
         self.error: str = ""
+        self.cleanup_errors: List[Dict[str, str]] = []
+        self._path_lease = None
+        self.worktree = None
+        self.artifacts: Dict[str, str] = {}
         self.resume_to: ProcessState = ProcessState.RUNNING
         self.started_at: float = time.time()
         self.ended_at: Optional[float] = None
@@ -104,6 +299,7 @@ class Process:
         self.turn_results: Dict[int, str] = {}
         #: Whether each completed turn succeeded, same keying.
         self.turn_success: Dict[int, bool] = {}
+        self.waiting_for: str = ""
 
         # -- channels
         self.mailbox = Mailbox(owner=pid)
@@ -115,6 +311,8 @@ class Process:
         # -- kernel-owned handles
         self._kernel = kernel
         self._task: Optional[asyncio.Task] = None
+        self._started = False
+        self._cleanup: Optional[asyncio.Task] = None
         self._exited: asyncio.Event = asyncio.Event()
 
     # ------------------------------------------------------------------
@@ -150,7 +348,10 @@ class Process:
         """Remember what one turn produced, for a parent that asks about that turn."""
         message = getattr(result, "message", None)
         self.turn_results[index] = str(message if message is not None else (result or ""))
-        self.turn_success[index] = bool(getattr(result, "success", result is not None))
+        success = result.get("success", True) if isinstance(result, dict) else getattr(
+            result, "success", result is not None,
+        )
+        self.turn_success[index] = bool(success)
         while len(self.turn_results) > MAX_REMEMBERED_TURNS:
             oldest = min(self.turn_results)
             self.turn_results.pop(oldest, None)
@@ -171,6 +372,7 @@ class Process:
             Killed: A forced stop was signalled.
         """
         await self._honor_signals()
+        self.budget.check()
         while True:
             envelope = self.mailbox.take()
             if envelope is None:
@@ -180,6 +382,7 @@ class Process:
             await self._honor_signals()
 
     def record_delivery(self, envelope: Envelope, status: str) -> None:
+        self.mailbox.receipt(envelope, status)
         self.deliveries[envelope.id] = {"status": status, "at": time.time()}
         # Bound terminal receipts; never evict a still-queued message's receipt.
         terminal = [key for key, value in self.deliveries.items()
@@ -226,16 +429,30 @@ class Process:
         """
         if not self.parent_pid:
             return None
+        if self.waiting_for:
+            raise RuntimeError("A process may wait for only one parent reply at a time")
         report = ReportEnvelope(sender=self.pid, text=text, blocked=True)
-        await self._kernel.send(self.parent_pid, report)
-        while True:
-            envelope = await self.recv(timeout=timeout)
-            if envelope is None:
+        self.waiting_for = report.id
+        deadline = None if timeout is None else time.monotonic() + timeout
+        try:
+            if not await self._kernel.send(self.parent_pid, report):
                 return None
-            if isinstance(envelope, ReplyEnvelope):
-                return envelope.text
-            # Anything else that arrives while blocked is still the agent's to see.
-            await self._deliver(envelope)
+            while True:
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    return None
+                envelope = await self.recv(timeout=remaining)
+                if envelope is None:
+                    return None
+                if (isinstance(envelope, ReplyEnvelope)
+                        and envelope.in_reply_to == report.id
+                        and envelope.sender == self.parent_pid):
+                    self.record_delivery(envelope, "delivered")
+                    return envelope.text
+                # Unrelated messages remain observable but cannot answer this question.
+                await self._deliver(envelope)
+        finally:
+            self.waiting_for = ""
 
     async def report(
         self, text: str, *, final: bool = False, exit_status: Optional[str] = None
@@ -370,6 +587,8 @@ class Process:
         except (Stopped, Killed):
             raise
         except Exception as error:  # noqa: BLE001
+            if name in {"on_land", "on_exit"}:
+                self.cleanup_errors.append({"phase": name, "error": f"{type(error).__name__}: {error}"})
             logger.warning(f"| ⚠️ [{self.name}:{self.pid[:8]}] {name} failed: {error}")
             return None
 
@@ -411,6 +630,11 @@ class Process:
             # `resident` and a topic list — the inference that call sites used to do by
             # hand, and got wrong.
             "mode": self.mode.value,
+            "permission_mode": self.permission_mode,
+            "run_budget": asdict(self.budget),
+            "reserved_tokens": self.budget.reserved,
+            "unreconciled_requests": [key for key, item in self.budget.requests.items()
+                                      if item["status"] == "unknown"],
             "turns": self.turns,
             "busy": self.busy,
             "queued": len(self.mailbox),
@@ -423,6 +647,8 @@ class Process:
             "started_at": self.started_at,
             "ended_at": self.ended_at,
             "error": self.error,
+            "cleanup_errors": [dict(error) for error in self.cleanup_errors],
+            "artifacts": dict(self.artifacts),
         }
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid

@@ -23,6 +23,23 @@ from agentevolver.logger import logger
 from pathlib import Path
 
 
+def owned_command(argv):
+    """Contain host descendants in a PID namespace, including setsid/double-fork.
+
+    This is lifecycle ownership, NOT filesystem/network isolation: trusted host
+    commands keep their existing access. Bubblewrap's namespace init owns reaping;
+    when its supervisor exits, the kernel kills every remaining namespace member.
+    Do not silently downgrade on Linux when the required helper is unavailable.
+    """
+    if sys.platform != "linux":
+        raise RuntimeError("Owned host execution requires Linux PID namespaces; use a container backend")
+    helper = shutil.which("bwrap")
+    if helper is None:
+        raise RuntimeError("Owned host execution requires bubblewrap (bwrap); use a container backend")
+    return [helper, "--die-with-parent", "--unshare-pid", "--bind", "/", "/",
+            "--proc", "/proc", "--", *argv]
+
+
 def _host_repo_root() -> str:
     """The repo root as the HOST sees it — the bind-mount allowlist prefix.
 

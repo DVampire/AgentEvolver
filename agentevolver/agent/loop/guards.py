@@ -1,4 +1,4 @@
-"""Step middleware — the only place a guard is allowed to live.
+"""Optional step policies and progress advice; base resource limits live in the loop.
 
 Each guard is ``async (agent, step) -> str``. What it returns rides in this step's live
 layer, past the cache breakpoint, where changing it costs nothing.
@@ -22,6 +22,7 @@ from typing import Any, List, Optional, Sequence
 from agentevolver.agent.loop.events import events
 from agentevolver.logger import logger
 from agentevolver.message.types import AssistantMessage
+from agentevolver.runtime.errors import BudgetExhausted
 
 #: Steps reserved at the end of a run for landing rather than starting.
 DEFAULT_RESERVE_STEPS = 3
@@ -247,7 +248,7 @@ class RepeatedActions:
 
 
 class Constraints:
-    """The declared resource budgets: tokens, steps, wall clock.
+    """Additional host-configured constraint policies.
 
     A policy rather than an observer — it can end a run — so it is asked by name and its
     verdict is binding. It is stateful: every call counts a step, so it runs exactly once
@@ -295,8 +296,6 @@ class Constraints:
         return render_status(getattr(verdict, "constraint_status", None) or [])
 
 
-class BudgetExhausted(Exception):
-    """A declared budget is spent. Raised by :class:`Constraints`, caught by the loop."""
 
 
 def render_status(status: Sequence[Any]) -> str:

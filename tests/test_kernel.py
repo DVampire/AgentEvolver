@@ -65,6 +65,47 @@ async def kernel():
 
 
 @pytest.mark.asyncio
+async def test_worktree_is_retained_when_patch_cannot_be_saved(kernel, tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+    from agentevolver.utils import file_utils
+
+    tree = SimpleNamespace(
+        worktree_root=tmp_path / "private", path=tmp_path / "private",
+        patch_path=tmp_path / "changes.patch",
+        collect_patch=AsyncMock(return_value="complete patch"), cleanup=AsyncMock(),
+    )
+    tree.worktree_root.mkdir()
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(file_utils, "atomic_write_text", fail)
+    proc = await kernel.spawn(Steps(), "go", worktree=tree)
+    await kernel.wait(proc)
+    tree.cleanup.assert_not_awaited()
+    assert tree.worktree_root.exists()
+    assert proc.artifacts["worktree"] == str(tree.worktree_root)
+    assert any("disk full" in str(error) for error in proc.cleanup_errors)
+
+
+@pytest.mark.asyncio
+async def test_spawn_failure_releases_session_lease(kernel, tmp_path, monkeypatch):
+    from agentevolver.paths import path_manager
+
+    path_manager.bind_session(owner="spawn-test", session_id="first")
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("cannot schedule driver")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(asyncio, "create_task", fail)
+        with pytest.raises(RuntimeError, match="cannot schedule"):
+            await kernel.spawn(Steps(), "go")
+    assert not kernel._procs
+    path_manager.unbind_session()
+
+
+@pytest.mark.asyncio
 async def test_mailbox_receipt_distinguishes_queued_and_delivered(kernel):
     from agentevolver.runtime.envelopes import ReplyEnvelope
     proc = await kernel.spawn(Steps(steps=100), "work")
@@ -77,6 +118,67 @@ async def test_mailbox_receipt_distinguishes_queued_and_delivered(kernel):
     assert proc.deliveries[envelope.id]["status"] == "delivered"
     assert proc.agent.events.count(envelope) == 1
     assert proc.snapshot()["deliveries"][envelope.id]["status"] == "delivered"
+
+
+@pytest.mark.asyncio
+async def test_failed_result_is_failed_exit_and_report(kernel):
+    class Failed(Steps):
+        async def __call__(self, **kwargs):
+            return SimpleNamespace(success=False, message="Token limit reached")
+
+    parent = await kernel.spawn(Steps(), resident=True, start_idle=True)
+    await kernel.suspend(parent)
+    child = await kernel.spawn(Failed(), "go", parent=parent)
+    result = await kernel.wait(child)
+    assert not result.success and child.exit_status is ExitStatus.FAILED
+    assert not child.turn_success[1]
+    report = parent.mailbox.take()
+    assert report.exit_status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_parent_reply_matches_active_question(kernel):
+    from agentevolver.runtime.envelopes import ReplyEnvelope
+
+    parent = await kernel.spawn(Steps(), resident=True, start_idle=True)
+    # Use a process with no mailbox consumer while testing the question protocol.
+    from agentevolver.runtime.process import Process
+    child = Process("question-child", Steps(), kernel=kernel, parent_pid=parent.pid)
+    child.transition(ProcessState.RUNNING)
+    kernel._procs[child.pid] = child
+    waiting = asyncio.create_task(child.ask_parent("current?", timeout=1))
+    await asyncio.sleep(0)
+    question = child.waiting_for
+    assert question
+    assert not await kernel.reply(child, "stale", in_reply_to="old-id")
+    await kernel.send(child, ReplyEnvelope(sender="stranger", in_reply_to=question, text="wrong"))
+    await kernel.send(child, ReplyEnvelope(sender=parent.pid, in_reply_to="old-id", text="old"))
+    assert await kernel.reply(child, "correct", in_reply_to=question)
+    assert await waiting == "correct"
+    assert not child.waiting_for
+    assert not await kernel.reply(child, "too late")
+
+
+@pytest.mark.asyncio
+async def test_unrelated_messages_do_not_reset_reply_timeout(kernel):
+    from agentevolver.runtime.process import Process
+    parent = await kernel.spawn(Steps(), resident=True, start_idle=True)
+    child = Process("timed-child", Steps(), kernel=kernel, parent_pid=parent.pid)
+    child.transition(ProcessState.RUNNING)
+    kernel._procs[child.pid] = child
+
+    async def noise():
+        for _ in range(20):
+            await asyncio.sleep(.01)
+            child.mailbox.put(TaskEnvelope(task="unrelated"))
+
+    producer = asyncio.create_task(noise())
+    try:
+        result = await asyncio.wait_for(child.ask_parent("?", timeout=.04), timeout=.15)
+        assert result is None and not child.waiting_for
+    finally:
+        producer.cancel()
+        await asyncio.gather(producer, return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -279,6 +381,248 @@ async def test_a_parent_that_exits_reaps_what_it_dispatched(kernel):
     assert agent.child.exit_status is ExitStatus.CANCELLED
 
 
+@pytest.mark.asyncio
+async def test_parent_wait_includes_child_cleanup(kernel):
+    ready, finish, cleanup = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class Child(Steps):
+        async def __call__(self, **kwargs):
+            ready.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                await cleanup.wait()
+
+    class Parent(Steps):
+        async def __call__(self, **kwargs):
+            self.child = await kernel.spawn(Child(), "work", parent=self.proc)
+            await ready.wait()
+            await finish.wait()
+
+    actor = Parent()
+    parent = await kernel.spawn(actor, "work")
+    await ready.wait()
+    finish.set()
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await kernel.wait(parent, timeout=.03)
+        assert parent.state is ProcessState.STOPPING
+        assert kernel.forget() == 0
+    finally:
+        cleanup.set()
+    await kernel.wait(parent, timeout=1)
+    assert actor.child._exited.is_set()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_retains_unfinished_cleanup(kernel):
+    ready, cleanup = asyncio.Event(), asyncio.Event()
+
+    class SlowExit(Steps):
+        async def __call__(self, **kwargs):
+            ready.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                await cleanup.wait()
+
+    proc = await kernel.spawn(SlowExit(), "work")
+    await ready.wait()
+    try:
+        assert await kernel.shutdown(timeout=.01) == [proc.pid]
+        assert kernel.get(proc.pid) is proc
+        assert not proc._exited.is_set()
+        with pytest.raises(RuntimeError, match="shutting down"):
+            await kernel.spawn(Steps(), "new work")
+    finally:
+        cleanup.set()
+    await kernel.wait(proc, timeout=1)
+    assert await kernel.shutdown(timeout=1) == []
+
+
+@pytest.mark.asyncio
+async def test_stop_before_driver_starts_and_repeated_stop(kernel):
+    actor = Steps()
+    proc = await kernel.spawn(actor, "must not run")
+    await kernel.stop(proc, force=True)
+    await kernel.stop(proc, force=True)
+    await kernel.wait(proc, timeout=1)
+    assert not any(item.startswith("step") for item in actor.log)
+    assert proc.exit_status is ExitStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_descendants_inherit_permission_ceiling(kernel):
+    from agentevolver.permission import permission_manager, PermissionRequest, Operation
+
+    class Writer(Steps):
+        permission_mode = "danger_full_access"
+        async def __call__(self, **kwargs):
+            return permission_manager.check_declared(
+                "writer", PermissionRequest(op=Operation.WRITE, target="/tmp/audit-no-write"),
+                mode=self.permission_mode,
+            ).allowed
+
+    parent_actor = Steps()
+    parent_actor.permission_mode = "read_only"
+    parent = await kernel.spawn(parent_actor, resident=True, start_idle=True)
+    child = await kernel.spawn(Writer(), "check only", parent=parent)
+    assert child.permission_mode == "read_only"
+    assert await kernel.wait(child, timeout=1) is False
+
+
+@pytest.mark.asyncio
+async def test_run_budget_survives_turns_and_child_collection(kernel):
+    from agentevolver.runtime.errors import BudgetExhausted
+    from agentevolver.model.types import TokenUsage
+
+    actor = Steps()
+    actor.max_token = 10
+    parent = await kernel.spawn(actor, resident=True, start_idle=True)
+    child = await kernel.spawn(Steps(), "work", parent=parent)
+    assert child.budget is parent.budget
+    child.budget.record(TokenUsage(input_tokens=2, cache_read_tokens=3, output_tokens=1))
+    await kernel.wait(child, timeout=1)
+    kernel.forget()
+    assert parent.budget.tokens == 6
+    parent.budget.record(TokenUsage(input_tokens=4, cost=.1, cost_status="reported"))
+    with pytest.raises(BudgetExhausted, match="Run token"):
+        await kernel.spawn(Steps(), "over budget", parent=parent)
+    assert parent.snapshot()["run_budget"]["reported_cost"] == .1
+    assert parent.budget.unknown_cost_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cleanup_failure_is_visible_without_skipping_later_cleanup(kernel):
+    class BrokenCleanup(Steps):
+        async def on_land(self, reason):
+            raise RuntimeError("could not persist landing")
+
+        async def on_exit(self, status):
+            self.log.append("exit attempted")
+            raise RuntimeError("could not close external job")
+
+    actor = BrokenCleanup()
+    proc = await kernel.spawn(actor, "work")
+    await kernel.wait(proc, timeout=1)
+    assert "exit attempted" in actor.log
+    assert proc._exited.is_set()
+    errors = proc.snapshot()["cleanup_errors"]
+    assert [item["phase"] for item in errors] == ["on_land", "on_exit"]
+    assert "external job" in errors[1]["error"]
+
+
+def test_run_budget_resume_keeps_usage_and_rejects_corruption(tmp_path):
+    import json
+    from dataclasses import asdict
+    from agentevolver.runtime.process import RunBudget
+    from agentevolver.runtime.errors import BudgetExhausted
+    from agentevolver.model.types import TokenUsage
+
+    path = tmp_path / "budget.json"
+    first = RunBudget(limit=10)
+    first.bind(path, resume=False)
+    first.record(TokenUsage(input_tokens=7, output_tokens=3))
+    resumed = RunBudget(limit=10)
+    resumed.bind(path, resume=True)
+    assert resumed.tokens == 10
+    with pytest.raises(BudgetExhausted):
+        resumed.check()
+    with pytest.raises(ValueError, match="already exists"):
+        RunBudget(limit=10).bind(path, resume=False)
+    path.write_text('{"version":1,"budget":{"tokens":-1}}')
+    with pytest.raises(ValueError, match="Invalid persisted"):
+        RunBudget(limit=10).bind(path, resume=True)
+    for field, value in (("tokens", -1), ("tokens", 0), ("estimated_cost", float("nan"))):
+        path.write_text(json.dumps({"version": 1, "budget": {**asdict(first), field: value}}))
+        untouched = RunBudget(limit=10)
+        with pytest.raises(ValueError, match="Invalid persisted"):
+            untouched.bind(path, resume=True)
+        assert untouched.tokens == 0
+
+
+def test_inflight_budget_is_reserved_and_usage_is_not_counted_twice(tmp_path):
+    from agentevolver.runtime.process import RunBudget
+    from agentevolver.runtime.errors import BudgetExhausted
+    from agentevolver.model.types import TokenUsage
+
+    ledger = RunBudget(limit=100)
+    ledger.bind(tmp_path / "budget.json", resume=False)
+    with ledger.request("first", 70) as settle:
+        assert ledger.reserved == 70
+        with pytest.raises(BudgetExhausted):
+            with ledger.request("second", 40):
+                pytest.fail("request should not start")
+        usage = settle({"input_tokens": 10, "output_tokens": 5})
+    ledger.record(TokenUsage.from_raw(usage))
+    assert ledger.tokens == 15 and ledger.reserved == 0
+
+
+def test_unknown_usage_survives_resume_until_explicit_reconciliation(tmp_path):
+    from agentevolver.runtime.process import RunBudget
+    from agentevolver.runtime.errors import BudgetExhausted
+
+    path = tmp_path / "budget.json"
+    ledger = RunBudget(limit=100)
+    ledger.bind(path, resume=False)
+    with pytest.raises(TimeoutError):
+        with ledger.request("timeout-route", 70):
+            raise TimeoutError("provider may have accepted")
+    resumed = RunBudget(limit=100)
+    resumed.bind(path, resume=True)
+    with pytest.raises(BudgetExhausted, match="unreconciled"):
+        resumed.check()
+    key = next(iter(resumed.requests))
+    usage = {"input_tokens": 20, "output_tokens": 10}
+    resumed.reconcile(key, usage, evidence="provider request audit 123")
+    resumed.reconcile(key, usage, evidence="same audit")
+    resumed.check()
+    assert resumed.tokens == 30 and resumed.reserved == 0
+    with pytest.raises(ValueError, match="Conflicting"):
+        resumed.reconcile(key, {"input_tokens": 99}, evidence="different claim")
+
+
+def test_budget_scope_is_inherited_without_leaking():
+    from agentevolver.runtime.process import RunBudget
+    outer, inner = RunBudget(), RunBudget()
+    assert RunBudget.current() is None
+    with outer.scope():
+        assert RunBudget.current() is outer
+        with inner.scope():
+            assert RunBudget.current() is inner
+        assert RunBudget.current() is outer
+    assert RunBudget.current() is None
+
+
+def test_cost_only_response_does_not_settle_token_reservation():
+    from agentevolver.runtime.process import RunBudget
+    from agentevolver.runtime.errors import BudgetExhausted
+
+    ledger = RunBudget()
+    with ledger.request("missing-tokens", 100) as settle:
+        settle({"cost": 0.5})
+    assert ledger.reserved == 100 and ledger.tokens == 0
+    with pytest.raises(BudgetExhausted, match="unreconciled"):
+        ledger.check()
+
+
+def test_run_budget_preserves_explicit_context_total(tmp_path):
+    from agentevolver.runtime.process import RunBudget
+    from agentevolver.model.types import TokenUsage
+
+    path = tmp_path / "usage.json"
+    ledger = RunBudget(limit=100)
+    ledger.bind(path, resume=False)
+    ledger.record(TokenUsage(context_input_tokens=20, input_tokens=3, output_tokens=2))
+    restored = RunBudget(limit=100)
+    restored.bind(path, resume=True)
+    assert restored.tokens == 22
+    assert restored.context_input_tokens == 20
+    with pytest.raises(ValueError, match="Invalid reported"):
+        restored.record(TokenUsage(input_tokens=-2))
+    assert restored.tokens == 22
+
+
 # ---------------------------------------------------------------------------
 # Subscription
 # ---------------------------------------------------------------------------
@@ -349,10 +693,11 @@ async def observed(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_root_process_opens_a_session_and_a_child_opens_a_subagent(kernel, observed):
     """The two were both SESSION_START, so dispatches were counted as sessions."""
-    parent = await kernel.spawn(Steps(name="parent", steps=1), "root task")
-    await kernel.wait(parent, timeout=5)
+    parent = await kernel.spawn(Steps(name="parent", steps=1), "root task", resident=True)
     child = await kernel.spawn(Steps(name="child", steps=1), "sub task", parent=parent)
     await kernel.wait(child, timeout=5)
+    await kernel.stop(parent, force=True)
+    await kernel.wait(parent, timeout=5)
 
     def names(pid):
         return [event.name for event, body in observed if body.get("task_id") == pid]
@@ -464,3 +809,69 @@ async def test_a_one_shot_dispatch_is_not_prefixed_with_anything(kernel):
     agent = Steps(name="worker", steps=1)
     proc = await kernel.spawn(agent, "do exactly this")
     assert await kernel.wait(proc, timeout=5) == "worker:do exactly this"
+def test_durable_mailbox_recovers_queue_topics_and_deduplicates(tmp_path):
+    from agentevolver.runtime.mailbox import Mailbox
+    from agentevolver.runtime.envelopes import TaskEnvelope
+
+    path = tmp_path / "endpoint.json"
+    identity = {"thread": "person-1"}
+    first = Mailbox()
+    first.bind(path, identity=identity, topics=["root::release"])
+    message = TaskEnvelope(task="complete input" * 10000)
+    first.put(message)
+    first.subscribe("root::feedback")
+    first.subscribe("root::release", remove=True)
+    # A real crash releases the OS lock without closing/draining the inbox.
+    first.release()
+    second = Mailbox()
+    second.bind(path, identity=identity, resume=True)
+    assert second.topics == ("root::feedback",)
+    assert second.take() == message
+    second.receipt(message, "delivered")
+    second.put(message)
+    assert second.take() is None
+    second.release()
+
+
+def test_uncertain_mailbox_requires_reconciliation_and_exclusive_ownership(tmp_path):
+    import pytest
+    from agentevolver.runtime.mailbox import Mailbox
+    from agentevolver.runtime.envelopes import TaskEnvelope
+
+    path = tmp_path / "endpoint.json"
+    first = Mailbox()
+    first.bind(path, identity={})
+    message = TaskEnvelope(task="deploy")
+    first.put(message)
+    assert first.take() == message
+    with pytest.raises(BlockingIOError):
+        Mailbox().bind(path, identity={}, resume=True)
+    with pytest.raises(BlockingIOError):
+        Mailbox.reconcile(path, message.id, replay=False, evidence="checked")
+    first.release()
+    with pytest.raises(RuntimeError, match="Uncertain delivery"):
+        Mailbox().bind(path, identity={}, resume=True)
+    Mailbox.reconcile(path, message.id, replay=False, evidence="Deployment registry confirms completion")
+    resumed = Mailbox()
+    resumed.bind(path, identity={}, resume=True)
+    assert resumed.take() is None
+    resumed.release()
+
+
+def test_mailbox_does_not_enqueue_on_persistence_failure(tmp_path, monkeypatch):
+    import pytest
+    from agentevolver.runtime.mailbox import Mailbox
+    from agentevolver.runtime.envelopes import TaskEnvelope
+    from agentevolver.utils import file_utils
+
+    inbox = Mailbox()
+    inbox.bind(tmp_path / "inbox.json", identity={})
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(file_utils, "atomic_write_text", fail)
+    with pytest.raises(OSError):
+        inbox.put(TaskEnvelope(task="must not run"))
+    assert len(inbox) == 0
+    inbox.release()

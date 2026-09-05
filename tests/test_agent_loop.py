@@ -401,6 +401,131 @@ async def test_a_spent_budget_stops_the_run_at_a_step_boundary():
 # Model faults
 # ---------------------------------------------------------------------------
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("usage", [
+    {"input_tokens": 12, "output_tokens": 1},
+    {"context_input_tokens": 12, "input_tokens": 2, "cache_read_tokens": 10,
+     "output_tokens": 1, "reasoning_tokens": 1},
+])
+async def test_declared_budget_is_mandatory_and_counts_input(usage):
+    decision = calls(("read", {"path": "x"}))
+    decision.usage = usage
+    agent = make([decision, Decision(text="should not run")])
+    agent.max_token = 10
+    agent.middleware = []
+    result = await agent("go")
+    assert not result.success and "Token limit" in result.message
+    assert agent._used_tokens == 13
+    assert not agent.router.invoked
+    assert agent.conversation.complete
+
+
+@pytest.mark.asyncio
+async def test_budget_is_reset_per_assignment_and_checks_final_usage():
+    agent = make([Decision(text="done", usage={"input_tokens": 5, "output_tokens": 1})])
+    agent.max_token = 7
+    assert (await agent("one")).success
+    assert (await agent("two")).success
+    agent.max_token = 6
+    assert not (await agent("three")).success
+
+
+@pytest.mark.asyncio
+async def test_wall_budget_cancels_inflight_think(monkeypatch):
+    import asyncio
+    ended = asyncio.Event()
+    agent = make([Decision(text="unused")])
+    agent.timeout = .05
+
+    async def slow(step, live=()):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            ended.set()
+
+    monkeypatch.setattr(agent, "think", slow)
+    result = await agent("go")
+    assert not result.success and "Wall-clock budget" in result.message
+    assert ended.is_set()
+
+
+@pytest.mark.asyncio
+async def test_unrelated_timeout_is_not_an_assignment_timeout(monkeypatch):
+    agent = make([Decision(text="unused")])
+    agent.timeout = 10
+
+    async def broken(step, live=()):
+        raise TimeoutError("tool connection timed out")
+
+    monkeypatch.setattr(agent, "think", broken)
+    with pytest.raises(TimeoutError, match="tool connection"):
+        await agent("go")
+
+
+def test_fresh_agents_do_not_share_stateful_guards():
+    from agentevolver.agent.actor.meta_agent import MetaAgent
+    template = MetaAgent()
+    one, two = template.fresh(), template.fresh()
+    for original, first, second in zip(template.middleware, one.middleware, two.middleware):
+        assert original is not first and first is not second
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["tool", "agent", "environment", "workflow"])
+async def test_denied_capabilities_never_execute(kind):
+    class Denied(StubRouter):
+        def denial(self, call, routing, agent):
+            return "not permitted"
+
+    router = Denied(TOOLS)
+    agent = Agent(router=router)
+    result = await agent.executor.run(
+        [ActionCall(id="c", name="read")], agent=agent, ctx=None,
+        routing={"read": (kind, "read")},
+    )
+    assert result[0].error == "not permitted"
+    assert not router.invoked
+
+
+@pytest.mark.asyncio
+async def test_empty_tool_grant_prevents_implicit_file_context():
+    from agentevolver.agent.types import AgentContext
+    agent = Agent(use_memory=True)
+    ctx = AgentContext(extra={"tool_allowlist": []})
+    assert agent.project_context(ctx) == ""
+    assert await agent.memory_context(ctx) == ""
+
+
+@pytest.mark.asyncio
+async def test_empty_environment_grant_skips_state_reads(monkeypatch):
+    from agentevolver.agent.types import AgentContext
+    agent = Agent(env_names=["browser_environment"])
+    assert await agent.environment_state(AgentContext(extra={"environment_allowlist": []})) == ""
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_usage_counts_against_same_budget(monkeypatch):
+    from types import SimpleNamespace
+    from agentevolver.model import model_manager
+    from agentevolver.hook.server import hook_manager
+
+    agent = Agent(max_token=50)
+
+    async def compact(*args, **kwargs):
+        return {"format": "test", "usage": {"input_tokens": 20, "output_tokens": 5}}
+
+    async def summary(self, **kwargs):
+        return SimpleNamespace(output="checkpoint", usage={"input_tokens": 20, "output_tokens": 5})
+
+    monkeypatch.setattr(type(model_manager), "compact_history", compact)
+    monkeypatch.setattr(type(hook_manager), "__call__", summary)
+    await agent.native_checkpoint([SystemMessage(content="history")])
+    assert agent._used_tokens == 25
+    with pytest.raises(BudgetExhausted):
+        await agent.text_checkpoint([SystemMessage(content="history")])
+    assert agent._used_tokens == 50
+
+
 
 @pytest.mark.asyncio
 async def test_repeated_model_errors_stop_the_run_and_report_the_cause():
@@ -467,6 +592,7 @@ async def test_folding_history_is_announced_before_and_after(monkeypatch):
     monkeypatch.setattr(
         agent, "text_checkpoint", lambda source: _completed("a summary of five turns")
     )
+    agent.compact_verify = False  # This test pins compaction event ordering.
     for index in range(6):
         agent.conversation.append(AssistantMessage(content=f"turn {index}", tool_calls=[]))
     agent.assembler.compact_after_turns = 1

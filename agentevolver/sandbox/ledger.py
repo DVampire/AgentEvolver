@@ -39,14 +39,39 @@ class Ledger:
         return path_manager.get(P.LEDGER, create=True)
 
     @staticmethod
-    def _clean(data) -> List[str]:
-        return [str(item) for item in data] if isinstance(data, list) else []
+    def _clean(data) -> dict:
+        if isinstance(data, list):
+            # Old entries have no provable owner. Keep them for explicit cleanup;
+            # absence of ownership is NOT evidence that a container is orphaned.
+            return {str(item): None for item in data}
+        if isinstance(data, dict):
+            return dict(data)
+        raise ValueError("Malformed sandbox ledger")
 
-    def _load(self) -> List[str]:
+    def _load(self) -> dict:
         try:
             return self._clean(json.loads(self._path().read_text(encoding="utf-8")))
-        except (OSError, ValueError):
-            return []
+        except FileNotFoundError:
+            return {}
+
+    @staticmethod
+    def _owner() -> dict:
+        import psutil
+
+        return {"pid": os.getpid(), "created": psutil.Process().create_time()}
+
+    @staticmethod
+    def _dead(owner) -> bool:
+        import psutil
+
+        if not isinstance(owner, dict) or not isinstance(owner.get("pid"), int):
+            return False
+        try:
+            return psutil.Process(owner["pid"]).create_time() != owner["created"]
+        except psutil.NoSuchProcess:
+            return True
+        except (psutil.AccessDenied, KeyError):
+            return False
 
     def record(self, sandbox_id: str) -> None:
         """Note a live sandbox container (call right after successful create).
@@ -58,9 +83,16 @@ class Ledger:
         """
         if not sandbox_id:
             return
-        atomic_json_update(self._path(),
-                           lambda ids: sorted(set([*self._clean(ids), str(sandbox_id)])),
-                           default=[])
+        owner = self._owner()
+
+        def add(data):
+            entries = self._clean(data)
+            if sandbox_id in entries and entries[sandbox_id] != owner:
+                raise RuntimeError(f"Sandbox {sandbox_id} already has a different or unknown owner")
+            entries[str(sandbox_id)] = owner
+            return entries
+
+        atomic_json_update(self._path(), add, default={}, recover_corrupt=False)
 
     def forget(self, sandbox_id: str) -> None:
         """Drop a sandbox from the ledger (call after clean destroy)."""
@@ -68,11 +100,11 @@ class Ledger:
             return
         atomic_json_update(
             self._path(),
-            lambda ids: sorted(i for i in self._clean(ids) if i != str(sandbox_id)),
-            default=[])
+            lambda ids: {i: owner for i, owner in self._clean(ids).items() if i != str(sandbox_id)},
+            default={}, recover_corrupt=False)
 
     def stale_ids(self) -> List[str]:
-        return self._load()
+        return sorted(self._load())
 
     async def _remove_container(self, name: str) -> bool:
         """Force-remove one container; True when it is gone (removed or absent).
@@ -91,8 +123,7 @@ class Ledger:
             "docker", "rm", "-f", name,
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
         )
-        await process.wait()
-        return True
+        return await process.wait() == 0
 
     async def reap_stale(self) -> List[str]:
         """Force-remove containers recorded by a previous (dead) run.
@@ -103,7 +134,8 @@ class Ledger:
         ledger when removal is impossible (e.g. no socket and no CLI) so a later
         boot can retry.
         """
-        ids = self._load()
+        entries = self._load()
+        ids = [key for key, owner in entries.items() if self._dead(owner)]
         if not ids:
             return []
         reaped: List[str] = []
@@ -127,8 +159,9 @@ class Ledger:
         cleared = {i for i in ids if i not in remaining}
         atomic_json_update(
             self._path(),
-            lambda current: sorted(i for i in self._clean(current) if i not in cleared),
-            default=[])
+            lambda current: {i: owner for i, owner in self._clean(current).items()
+                             if i not in cleared or owner != entries[i]},
+            default={}, recover_corrupt=False)
         if reaped:
             logger.warning(f"| 🧹 Reaped {len(reaped)} stale sandbox container(s) from a previous run: {', '.join(reaped)}")
         return reaped

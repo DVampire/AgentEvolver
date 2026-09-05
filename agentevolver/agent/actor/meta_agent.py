@@ -15,8 +15,8 @@ What it adds are guards, not machinery:
                       rather than left to discover the new function next turn.
 
 Everything else — decomposition, running children in parallel, collecting them, finishing
-— is the ordinary loop. Children run in parallel because the executor already runs a
-batch that way; they are collected because the kernel posts each child's final report to
+— is the ordinary loop. Independent children can run concurrently via background
+dispatch; blocking dispatches are sequential. Children are collected because the kernel posts each child's final report to
 its parent's mailbox; a blocked child is unblocked by calling ``reply_tool`` on the turn
 its question arrives.
 

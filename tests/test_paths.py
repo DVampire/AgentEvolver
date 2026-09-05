@@ -20,6 +20,44 @@ from agentevolver.paths import FILES, RELATIVE, P, path_manager
 from agentevolver.utils.path_utils import data_path, extension_root, home_dir, project_path
 
 
+def test_active_runtime_lease_prevents_global_rebind(tmp_path):
+    from agentevolver.paths.server import PathManagerServer
+
+    manager = PathManagerServer()
+    manager.bind_session("owner", "first")
+    with manager.lease():
+        manager.bind_session("owner", "first")
+        for operation in (lambda: manager.bind_session("owner", "second"),
+                          manager.unbind_session,
+                          lambda: manager.override(P.SESSION_WORKSPACE, tmp_path)):
+            with pytest.raises(RuntimeError, match="active"):
+                operation()
+    manager.bind_session("owner", "second")
+    assert manager.session == ("owner", "second")
+
+
+@pytest.mark.asyncio
+async def test_workspace_mapping_is_task_local_and_inherited(tmp_path):
+    import asyncio
+    from agentevolver.paths.server import PathManagerServer
+
+    manager = PathManagerServer()
+    manager.bind_session("owner", "run")
+    original = manager.get(P.SESSION_WORKSPACE)
+    log = manager.get(P.SESSION_LOG)
+    async def worker(name):
+        with manager.workspace(tmp_path / name):
+            await asyncio.sleep(0)
+            assert manager.get(P.SESSION_WORKSPACE) == tmp_path / name
+            assert manager.get(P.SESSION_LOG) == log
+            assert manager.get(P.SESSION_PLAN).is_relative_to(tmp_path / name)
+            async def child():
+                return manager.get(P.SESSION_WORKSPACE)
+            assert await asyncio.create_task(child()) == tmp_path / name
+    await asyncio.gather(worker("a"), worker("b"))
+    assert manager.get(P.SESSION_WORKSPACE) == original
+
+
 def test_agentevolver_home_relocates_the_whole_tree(monkeypatch, tmp_path: Path) -> None:
     """AGENTEVOLVER_HOME moves the tree root — every part of it, not just output/.
 

@@ -80,6 +80,7 @@ async def register_generated(response: Any, ctx: Any, model_name: str, *, verb: 
             "model_name": model_name,
         },
         ctx=ctx,
+        required=True,
     )
     if result.decision == HookDecision.BLOCK:
         response.success = False

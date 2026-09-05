@@ -105,10 +105,13 @@ class TerminalServer(metaclass=Singleton):
         listing invites the agent to type into something that cannot answer. A terminal
         that exited on its own stays listed — there the screen is the explanation.
         """
-        terminal = self._terminals.pop(terminal_id, None)
+        terminal = self._terminals.get(terminal_id)
         if terminal is None:
             return False
         closed = terminal.close()
+        if not terminal.status.is_final:
+            raise RuntimeError(f"Terminal {terminal_id} is still alive after close")
+        self._terminals.pop(terminal_id, None)
         logger.info(f"| 🖥️ Terminal {terminal_id} closed after {terminal.elapsed:.1f}s")
         return closed
 
@@ -119,16 +122,20 @@ class TerminalServer(metaclass=Singleton):
         process-scoped. Without it a finished run leaves its shells behind, and they are
         no longer reachable through any tool: the session that could name them is over.
         """
+        failures = []
         for terminal in self.list(session_id):
-            self._terminals.pop(terminal.id, None)
-            terminal.close()
+            try:
+                self.close(terminal.id)
+            except Exception as error:
+                failures.append(f"{terminal.id}: {error}")
+        if failures:
+            raise RuntimeError("Terminals still awaiting cleanup: " + "; ".join(failures))
 
     def close_all(self) -> None:
         """End every terminal. Last resort, wired to process exit."""
         for terminal in list(self._terminals.values()):
-            self._terminals.pop(terminal.id, None)
             try:
-                terminal.close()
+                self.close(terminal.id)
             except Exception as error:                              # noqa: BLE001
                 logger.warning(f"| ⚠️ Terminal {terminal.id} would not close: {error}")
 

@@ -28,8 +28,24 @@ MAX_DELEGATION_CONTRACT_ITEM_CHARS = 1_000
 def validate_dispatch_input(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Validate the bounded, structured agent-to-agent handoff contract."""
     value = dict(raw or {})
-    if "fork" in value and not isinstance(value["fork"], bool):
-        raise ValueError("sub-agent fork must be a boolean")
+    for name in ("fork", "background", "run_in_background", "continuable",
+                 "isolate_workspace", "isolate_worktree"):
+        if name in value and not isinstance(value[name], bool):
+            raise ValueError(f"sub-agent {name} must be a boolean")
+    if value.get("isolate_workspace"):
+        raise ValueError("sub-agent isolate_workspace is not supported; use isolate_worktree for Git copies")
+    if value.get("isolate_worktree") and (value.get("continuable") or value.get("subscription_topics")):
+        raise ValueError("isolated worktrees currently require a one-shot sub-agent")
+    if "token_budget" in value:
+        budget = value["token_budget"]
+        if isinstance(budget, bool) or not isinstance(budget, int) or budget < 1:
+            raise ValueError("sub-agent token_budget must be a positive integer")
+    if "model" in value and (not isinstance(value["model"], str) or not value["model"].strip()):
+        raise ValueError("sub-agent model must be a non-empty model route")
+    if "reasoning_effort" in value and value["reasoning_effort"] not in (
+        "none", "minimal", "low", "medium", "high", "xhigh",
+    ):
+        raise ValueError("sub-agent reasoning_effort is not supported")
     task = value.get("task")
     if not isinstance(task, str) or not task.strip():
         raise ValueError("sub-agent delegation requires a non-empty task")
@@ -53,6 +69,7 @@ def validate_dispatch_input(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         ("skill_allowlist", MAX_DELEGATION_CONTRACT_ITEMS),
         ("connector_allowlist", MAX_DELEGATION_CONTRACT_ITEMS),
         ("plugin_allowlist", MAX_DELEGATION_CONTRACT_ITEMS),
+        ("environment_allowlist", MAX_DELEGATION_CONTRACT_ITEMS),
         ("workflow_allowlist", MAX_DELEGATION_CONTRACT_ITEMS),
     ):
         items = value.get(name)
@@ -253,13 +270,13 @@ class AgentManagerServer(BaseModel):
                     "type": "array", "maxItems": MAX_DELEGATION_CONTRACT_ITEMS,
                     "items": {"type": "string", "minLength": 1,
                               "maxLength": MAX_DELEGATION_CONTRACT_ITEM_CHARS},
-                    "description": "Workspace paths this subtask may read. Declare this for safe parallel scheduling.",
+                    "description": "Expected read paths for planning; advisory, not filesystem isolation.",
                 },
                 "write_set": {
                     "type": "array", "maxItems": MAX_DELEGATION_CONTRACT_ITEMS,
                     "items": {"type": "string", "minLength": 1,
                               "maxLength": MAX_DELEGATION_CONTRACT_ITEM_CHARS},
-                    "description": "Workspace paths this subtask may modify. Parent/child paths conflict.",
+                    "description": "Expected write paths for planning. Overlapping parent/child paths conflict; this does not enforce isolation.",
                 },
                 "acceptance": {
                     "type": "array", "maxItems": MAX_DELEGATION_CONTRACT_ITEMS,
@@ -267,15 +284,14 @@ class AgentManagerServer(BaseModel):
                               "maxLength": MAX_DELEGATION_CONTRACT_ITEM_CHARS},
                     "description": "Concrete, independently checkable conditions the child must satisfy.",
                 },
-                "isolate_worktree": {"type": "boolean", "description": "Run this child in a disposable Git worktree and return its patch. Required for parallel writing children."},
-                "owner": {"type": "string", "description": "Task-graph owner responsible for this subtask; defaults to the dispatching agent."},
+                "owner": {"type": "string", "description": "Responsibility label included in the child task contract; not a permission grant."},
                 "model": {"type": "string", "description": "Registered model route to use for this child invocation only."},
                 "reasoning_effort": {"type": "string", "enum": ["none", "minimal", "low", "medium", "high", "xhigh"], "description": "Provider reasoning effort for this child invocation only."},
-                "token_budget": {"type": "integer", "minimum": 1, "description": "Hard cumulative LLM-token budget for this child invocation only."},
-                "run_in_background": {"type": "boolean", "description": "Outlive this round: return a job id now and keep working while you do other things. Collect with job__output, stop with job__kill. You do NOT need this to parallelise — dispatch calls in one turn already run together. Use it when the work is longer than you are willing to wait for, or when you want to act on something else before it finishes."},
+                "token_budget": {"type": "integer", "minimum": 1, "description": "Cumulative input + output token limit per child assignment; stops at the next reported usage boundary."},
+                "run_in_background": {"type": "boolean", "description": "Return a process id immediately. Collect with job__output, stop with job__kill. Blocking dispatches run sequentially; use background for independent concurrent work. This does not isolate shared files."},
+                "isolate_worktree": {"type": "boolean", "description": "Run a one-shot child in a private Git working copy. Return an archived patch; never auto-merge. This is not an OS sandbox."},
                 "continuable": {"type": "boolean", "description": "Background only: keep it alive between turns so send_message_tool can give it more work on the same conversation. Default false — it answers once and ends."},
                 "subscription_topics": {"type": "array", "items": {"type": "string"}, "description": "Background subscriber only: logical topics whose published events become serialized turns. Requires run_in_background=true and continuable=true. Registration is idle; the standing task brief runs only when an event arrives."},
-                "isolate_workspace": {"type": "boolean", "description": "Give this child a private scratch workspace under the current session. Use for concurrent user/reviewer agents that must not see or overwrite sibling plans or artifacts."},
                 "fork": {"type": "boolean", "description": "Let it read your conversation so far as context, instead of starting from only this task text. Use it when what you have already found is what makes the task make sense — files you ruled out, an approach that failed, a decision and why. Default false: a fresh worker on a self-contained job does not need your history and reads faster without it."},
                 "target_name": {"type": "string", "description": "ONLY for evaluator/optimizer/generator: the capability being evaluated/improved/created."},
                 "target_type": {"type": "string", "enum": ["tool", "skill", "agent", "connector", "memory", "plugin", "workflow", "environment"], "description": "ONLY for capability_generate/optimize/evaluate_agent: which kind of component to create, improve or judge. A generate run's target does not exist yet, so this cannot be looked up — unstated, the run cannot install what it built."},

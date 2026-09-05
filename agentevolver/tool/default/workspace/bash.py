@@ -198,8 +198,10 @@ def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
     except OSError:
         pass  # a size we could not set is not worth failing over
 
+    from agentevolver.sandbox.process import owned_command
+
     process = subprocess.Popen(
-        command, shell=True, stdin=slave, stdout=slave, stderr=slave,
+        owned_command(["/bin/sh", "-c", command]), stdin=slave, stdout=slave, stderr=slave,
         cwd=cwd, env=env, start_new_session=True, close_fds=True,
     )
     os.close(slave)
@@ -281,9 +283,10 @@ class BashTool(Tool):
         import subprocess
 
         from agentevolver.job import job_manager
+        from agentevolver.sandbox.process import owned_command
 
         process = subprocess.Popen(
-            command, shell=True, cwd=cwd, env=env,
+            owned_command(["/bin/sh", "-c", command]), cwd=cwd, env=env,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             # Its own process group, so `job__kill` can signal the whole tree. A
             # shell command is usually a shell that spawned the real work; signalling
@@ -541,8 +544,10 @@ class BashTool(Tool):
                           "archived": archived},
                 )
 
-            process = await asyncio.create_subprocess_shell(
-                command,
+            from agentevolver.sandbox.process import owned_command
+
+            process = await asyncio.create_subprocess_exec(
+                *owned_command(["/bin/sh", "-c", command]),
                 stdin=asyncio.subprocess.PIPE if stdin else None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

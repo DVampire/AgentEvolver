@@ -56,17 +56,16 @@ class EventBus:
     ) -> Any:
         """Ask one policy hook for a verdict. Its answer is binding.
 
-        A hook that raises is treated as ALLOW: a broken budget checker must not become
-        a run that cannot act, which is the failure mode of making policy fail closed by
-        accident rather than by declaration.
+        A failed policy dispatch blocks. Optional observations belong to emit(), not
+        gate(); an unavailable verdict must never grant permission.
         """
         from agentevolver.hook.types import HookResult
 
         try:
-            return await self._call(hook, dict(payload or {}), ctx)
+            return await self._call(hook, dict(payload or {}), ctx, required=True)
         except Exception as error:  # noqa: BLE001
             logger.warning(f"| ⚠️ policy hook {hook} failed: {error}")
-            return HookResult.allow()
+            return HookResult.block(f"Policy {hook!r} unavailable: {error}")
 
     async def broadcast(
         self, event: Any, payload: Optional[Dict[str, Any]] = None, *, ctx: Any = None
@@ -86,10 +85,10 @@ class EventBus:
             logger.warning(f"| ⚠️ broadcast of {event} failed: {error}")
 
     @staticmethod
-    async def _call(name: str, body: Dict[str, Any], ctx: Any) -> Any:
+    async def _call(name: str, body: Dict[str, Any], ctx: Any, *, required: bool = False) -> Any:
         from agentevolver.hook.server import hook_manager
 
-        return await hook_manager(name=name, input=body, ctx=ctx)
+        return await hook_manager(name=name, input=body, ctx=ctx, required=required)
 
 
 #: Shared bus. One per process, like the hook registry it fans out to.

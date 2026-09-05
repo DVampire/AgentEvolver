@@ -209,8 +209,10 @@ class BrowserAgent(Agent):
 
     async def on_exit(self, status: Any) -> None:
         """Release the page. A continuable identity keeps its memory, not its tab."""
-        await self._close_session()
-        await super().on_exit(status)
+        try:
+            await self._close_session()
+        finally:
+            await super().on_exit(status)
 
     async def _close_session(self) -> None:
         session = str(getattr(self.ctx, "id", "") or "default")
@@ -218,8 +220,9 @@ class BrowserAgent(Agent):
             environment = await environment_manager.get(self.env_name)
             if environment is not None:
                 await environment.close_session(session)
-        except Exception as error:  # noqa: BLE001 - never fail a run over a tab
+        except Exception as error:
             logger.warning(f"| ⚠️ [{self.name}] could not close {self.env_name}: {error}")
+            raise  # Runtime records cleanup failure instead of claiming the tab was released.
 
 
 __all__ = ["BrowserAgent"]

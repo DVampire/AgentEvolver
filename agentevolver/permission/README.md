@@ -21,6 +21,21 @@ It also applies size and binary-file safeguards.
 Permission authorizes a proposed operation; Tool and Sandbox remain responsible for
 executing it safely.
 
+The runtime and action executor bind coroutine-local permission ceilings through
+`permission_manager.scope`. Child modes can narrow but cannot widen parent authority;
+nested registered/declared operation checks intersect all active scopes. This does not
+mutate a shared tool's registration, so concurrent actors cannot overwrite each other's
+effective mode. Unknown effectful manager capabilities are refused in read-only runs.
+Tools returning no concrete `permission_request` do not bypass this ceiling: they
+must explicitly declare a read-only operation. An explicit mutating declaration is
+refused even if the tool's default mode says read-only. Validated workflow evidence
+recording is observational bookkeeping, not candidate activation; adoption, rollback,
+and unload remain mutating operations.
+This is framework authorization, not OS isolation: trusted host Bash and arbitrary
+extension Python still require an actual sandbox for adversarial code. A read-only
+evaluator may have to report an inconclusive result for a mutating candidate until an
+explicitly isolated evaluation environment is provided.
+
 ## Modes
 
 | Mode | Refuses |

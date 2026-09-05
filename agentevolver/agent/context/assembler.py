@@ -246,6 +246,7 @@ class ContextAssembler:
     def fold_reason(
         self, conversation: Conversation, *, live: Sequence[str] = (), folds: int = 0,
         attachments: Sequence[Message] = (),
+        request_pressure: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Why history should be folded now, or "" for not yet.
 
@@ -275,7 +276,9 @@ class ContextAssembler:
             if body >= self.compact_body_tokens:
                 reasons.append(f"body≈{body:,} tokens")
         if self.fold_at_pressure:
-            ratio = self.pressure(conversation, live=live, attachments=attachments)
+            ratio = (float(request_pressure["pressure_ratio_after"])
+                     if request_pressure is not None else
+                     self.pressure(conversation, live=live, attachments=attachments))
             if ratio >= self.fold_at_pressure:
                 reasons.append(f"capacity={ratio:.0%}")
         return ", ".join(reasons)

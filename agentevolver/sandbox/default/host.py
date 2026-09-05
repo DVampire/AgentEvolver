@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Union
 from agentevolver.logger import logger
 from agentevolver.registry import SANDBOX
 from agentevolver.sandbox.types import ExecResult, Sandbox, SandboxConfig
+from agentevolver.sandbox.process import owned_command
 
 
 @SANDBOX.register_module(name="host", force=True)
@@ -200,7 +201,7 @@ class HostSandbox(Sandbox):
             bg = stripped[:-1].strip()
             try:
                 p = subprocess.Popen(
-                    bg, shell=True, cwd=cwd, env=run_env,
+                    owned_command(["/bin/sh", "-c", bg]), cwd=cwd, env=run_env,
                     start_new_session=True,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 )
@@ -212,7 +213,7 @@ class HostSandbox(Sandbox):
         secs = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
         try:
             r = subprocess.run(
-                command, shell=True, cwd=cwd, env=run_env,
+                owned_command(["/bin/sh", "-c", command]), cwd=cwd, env=run_env,
                 capture_output=True, text=True, timeout=secs,
             )
             return ExecResult(

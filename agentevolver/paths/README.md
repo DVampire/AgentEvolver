@@ -143,13 +143,25 @@ through `override()`:
 ```python
 path_manager.override(P.SESSION_WORKSPACE, "/workspace")   # what the agent sees
 path_manager.get(P.SESSION_WORKSPACE)                      # → /workspace
-path_manager.get(P.SESSION_WORKSPACE, owner=o, session_id=s)  # → the host directory
+path_manager.get(P.SESSION_WORKSPACE, owner=o, session_id=s)  # same override if (o, s) is bound
 ```
 
-An override answers the *unparameterised* call only, because ProgramBench needs
-both answers in one process: the agent's view of its workspace, and the real
-directory the harness is about to mount there. Overrides are cleared whenever a
-new session binds, since they describe one run's environment.
+An override answers the unparameterised call and a call explicitly naming the bound
+session. Naming a different session resolves its ordinary layout. A harness needing the
+original host mount path must retain that path before overriding; explicitly repeating
+the current session ID is not a way to bypass its override. Overrides are cleared when
+a different session binds.
+
+The runtime leases the bound session until its processes finish cleanup. During a lease,
+rebinding to another session, unbinding, and changing shared overrides are refused. Set
+container mappings before spawning. Separate root sessions still need separate OS
+processes; a context variable alone cannot isolate the other singleton managers.
+
+For host Git child dispatch, `workspace(path)` temporarily maps only workspace keys in
+the current asyncio task and its children. Exiting the context restores the caller's
+mapping. Log, extension, and registry roots stay attached to the shared run, and no
+rebind listeners are invoked. This keeps private worktrees separate without moving the
+root session or implying an OS sandbox.
 
 ## Config tags are direct-run namespaces
 
