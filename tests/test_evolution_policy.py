@@ -93,6 +93,10 @@ def test_echo_task_never_requests_component_evolution():
                       "target_type", "minimum_kept_evolutions", "must evolve"):
         assert forbidden not in task
         assert all(forbidden not in path.read_text() for path in personas)
-    for outcome in ("conversation", "personal", "preview", "undo", "confirmed"):
+    # These assert the brief still names its product outcomes, not that it uses one
+    # fixed vocabulary. "preview"/"undo" were carried over from a scenario echo_ark
+    # no longer resembles — neither word appears in it before or after 53849d9b —
+    # so the round trip is checked through the words the current brief actually uses.
+    for outcome in ("conversation", "personal", "verify", "recover", "confirmed"):
         assert outcome in task.lower()
     assert "source hashes and repeated deployments" in " ".join(task.lower().split())

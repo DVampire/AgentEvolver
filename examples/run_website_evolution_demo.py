@@ -50,6 +50,7 @@ DEFAULT_USER_MODELS = [
     "llm_hub/deepseek-v4-flash-vision-exp",
 ]
 DEFAULT_ACCEPTANCE_MODEL = "llm_hub/gpt-5.6-sol"
+DEFAULT_BUILDER_MODEL = "llm_hub/claude-fable-5-1"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -443,7 +444,7 @@ def validate_local_artifacts(
     check_browser_only(acceptance, "browser_agent acceptance")
 
     expected_models = {
-        "website_builder_agent": "llm_hub/gpt-6-astra",
+        "website_builder_agent": DEFAULT_BUILDER_MODEL,
         "browser_agent": DEFAULT_ACCEPTANCE_MODEL,
         "website_user_agent": DEFAULT_USER_MODELS[0],
     }

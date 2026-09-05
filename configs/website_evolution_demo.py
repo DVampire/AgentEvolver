@@ -191,7 +191,13 @@ _USER = {
     # before `done_tool`, so the round produced no report at all. A browser round costs
     # roughly one step per interaction, and a resident participant pays it again on
     # every release.
-    "max_step": 80,
+    #
+    # 80 then broke on echo_ark (2026-09-05, session e3279065). A 3D game charges steps
+    # for locomotion, not just decisions: sailing to a landmark is a dozen keypress +
+    # screenshot pairs before any judgement happens. P03 spent all 80 on turn 1 and
+    # reported nothing; the round only produced feedback because turn 2 ran again.
+    # Canvas products need roughly double a form product's budget for the same verdict.
+    "max_step": 140,
     "timeout": 1800,
     "max_token": 1000000,
     "max_actions": 3,
@@ -211,7 +217,13 @@ browser_agent.update(
         # Acceptance is a checklist against one deployed artifact, not an open-ended
         # session, but 20 steps is under what a page with 27 interactive elements takes
         # to verify. Still bounded well below a participant's.
-        "max_step": 45,
+        #
+        # 45 was exhausted twice on echo_ark (2026-09-05, session e3279065) before the
+        # checklist finished, costing a whole acceptance turn each time. A canvas
+        # product makes every checklist item cost several steps — reaching salvage to
+        # test pickup is a voyage, not a click — so the floor scales with the product,
+        # not the element count.
+        "max_step": 90,
         "timeout": 1200,
         "max_token": 500000,
         "max_actions": 3,
@@ -222,7 +234,7 @@ browser_agent.update(
 website_builder_agent.update(
     **{
         **_AGENT_CORE,
-        "model_name": "llm_hub/gpt-6-astra",
+        "model_name": "llm_hub/claude-fable-5-1",
         "prompt_name": "website_builder_agent",
         "enable_evolving": True,
         "max_step": BUILDER_MAX_STEP,

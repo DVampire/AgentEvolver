@@ -660,7 +660,11 @@ def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
 
 def test_website_demo_model_roster_matches_launcher_and_vision_catalog():
     from mmengine import Config
-    from examples.run_website_evolution_demo import DEFAULT_USER_MODELS, DEFAULT_ACCEPTANCE_MODEL
+    from examples.run_website_evolution_demo import (
+        DEFAULT_USER_MODELS,
+        DEFAULT_ACCEPTANCE_MODEL,
+        DEFAULT_BUILDER_MODEL,
+    )
     from agentevolver.model.config import llm_hub_models
 
     cfg = Config.fromfile(str(Path(__file__).resolve().parents[1] / "configs/website_evolution_demo.py"))
@@ -669,7 +673,9 @@ def test_website_demo_model_roster_matches_launcher_and_vision_catalog():
         "llm_hub/claude-fable-5-1",
         "llm_hub/deepseek-v4-flash-vision-exp",
     ]
-    assert cfg.website_builder_agent.model_name == DEFAULT_USER_MODELS[0]
+    # The Builder no longer shares the first participant's route: it is pinned to its
+    # own constant so the two can move independently.
+    assert cfg.website_builder_agent.model_name == DEFAULT_BUILDER_MODEL == "llm_hub/claude-fable-5-1"
     assert cfg.website_user_agent.model_name == DEFAULT_USER_MODELS[0]
     assert cfg.browser_agent.model_name == DEFAULT_ACCEPTANCE_MODEL == "llm_hub/gpt-5.6-sol"
     assert cfg.model_name == cfg.generate_agent.model_name == "llm_hub/claude-opus-5"

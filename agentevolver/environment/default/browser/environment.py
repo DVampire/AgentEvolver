@@ -351,6 +351,12 @@ class BrowserEnvironment(Environment):
             '- Fill an input: await page.fill("input[name=\'q\']", "query")\n'
             '- Read data back: return await page.locator(".price").all_inner_texts()\n'
             '- Run JS in page: return await page.evaluate("document.title")\n'
+            '- Canvas/WebGL product (game, map, editor): the DOM holds almost no text, so '
+            'querySelector returns null and reading .innerText on it throws a TypeError that '
+            'costs you a step. Guard every lookup and read the app\'s own state instead: '
+            'return await page.evaluate("window.game?.state ?? document.querySelector(\'#hud\')?.innerText ?? null")\n'
+            '- Held input (driving, movement, camera): a click does nothing; press and release '
+            'explicitly. await page.keyboard.down("KeyW"); await page.wait_for_timeout(800); await page.keyboard.up("KeyW")\n'
             '- Wait for an element: await page.wait_for_selector("#result", timeout=5000)'
         ),
         read_only=False,
