@@ -22,6 +22,28 @@ ROUTES = {
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("arm, enabled", [("swebench_pro_agent", True),
+                                         ("swebench_pro_agent_baseline", False)])
+async def test_shipped_swe_roster_enables_only_evolution_arm(arm, enabled, bound_session):
+    """A loadable benchmark config must also satisfy the runtime policy gate."""
+    import argparse
+    import contextlib
+    import io
+    from agentevolver.config import config
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        config.initialize(config_path=str(ROOT / "configs" / f"{arm}.py"),
+                          args=argparse.Namespace())
+    routes = {name: (kind, name) for kind, names in (
+        ("agent", config.agent_names), ("tool", config.tool_names),
+        ("skill", config.skill_names)) for name in names}
+    agent = MetaAgent(**config.meta_agent)
+    agent.router = SimpleNamespace(schemas=AsyncMock(return_value=([], routes)))
+    values = await agent.prompt_modules(SimpleNamespace(id=f"shipped-{arm}", extra={}))
+    assert values["evolution_enabled"] is enabled
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("cls", [MetaAgent, WebsiteBuilderAgent])
 @pytest.mark.parametrize("deferred", [False, True])
 async def test_policy_reaches_real_prompt_without_evolution_task(cls, deferred, bound_session):

@@ -9,19 +9,14 @@ fresh. These tests pin that gate.
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import subprocess
 
-_SPEC = importlib.util.spec_from_file_location(
-    "rpb_for_resume_tests",
-    os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples", "run_programbench.py"),
-)
-rpb = importlib.util.module_from_spec(_SPEC)
-_SPEC.loader.exec_module(rpb)
+from agentevolver.benchmark.default.programbench import ProgramBenchmark
+rpb = ProgramBenchmark()
 
-has_resumable_work = rpb.has_resumable_work
-REFERENCE_COPY = rpb.REFERENCE_COPY  # "reference_executable"
+has_resumable_work = rpb._has_resumable_work
+REFERENCE_COPY = rpb.reference_copy  # "reference_executable"
 
 
 def _git(ws, *args):

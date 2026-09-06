@@ -17,3 +17,7 @@ logic belong in the owning module; new helpers should not create hidden global r
 
 The stable convenience exports are listed in `__init__.py`. Import a specialized helper from
 its source module when it is intentionally not part of that public surface.
+
+Benchmark-specific workspace permissions and submission artifacts belong to the benchmark
+module and are accessed through `benchmark_manager`. Agent execution and configuration
+remain in `examples/run_*.py`; there is no separate benchmark runner utility.

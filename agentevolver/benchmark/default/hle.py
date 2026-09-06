@@ -43,8 +43,6 @@ class HLEBenchmark(Benchmark):
     hf_repo_id: str = Field(default="cais/hle", description="HuggingFace repo to download the dataset from when it is missing locally.")
 
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
-    _index: int = PrivateAttr(default=0)
-    _tasks: List[Task] = PrivateAttr(default_factory=list)
     _tags: Dict[str, List[str]] = PrivateAttr(default_factory=dict)
 
     system_prompt: Optional[str] = Field(default=SYSTEM_PROMPT, description="The system prompt for the benchmark")
@@ -52,7 +50,7 @@ class HLEBenchmark(Benchmark):
     def __init__(self, base_dir: Optional[str] = None, start: Optional[int] = None, end: Optional[int] = None, **kwargs):
         super().__init__(base_dir=base_dir, start=start, end=end, **kwargs)
 
-    async def initialize(self):
+    async def _initialize(self):
         # Created on first use, not at construction: the registry builds every
         # benchmark at startup, before any session is bound, so doing it in
         # __init__ scaffolded empty directories under the unbound root.
@@ -68,21 +66,16 @@ class HLEBenchmark(Benchmark):
 
         os.makedirs(self.base_dir, exist_ok=True)
         local_path = pathlib.Path(ensure_dataset(os.path.basename(self.path), self.hf_repo_id))
-        dataset = load_dataset(str(local_path), split="test")
+        dataset = load_dataset(str(local_path), split=self.split)
         self._data_records = self._apply_slice(list(dataset))
         tags_path = local_path / "data" / "tags.json"
         if tags_path.exists():
             import json
             with open(tags_path) as f:
                 self._tags = json.load(f)
-        await self.reset()
 
-    async def reset(self) -> Optional[Task]:
-        self._index = 0
-        self._tasks = []
-        return await self.step()
 
-    async def step(self) -> Optional[Task]:
+    async def _step(self) -> Optional[Task]:
         if self._index >= len(self._data_records):
             return None
 
@@ -141,7 +134,12 @@ class HLEBenchmark(Benchmark):
             extra=extra,
         )
 
-    async def eval(self, task: Task) -> Optional[Task]:
+    async def _prepare(self, task, ctx, options):
+        image = (task.extra or {}).get("image")
+        if image:
+            ctx.payload["files"] = [image]
+
+    async def _eval(self, task: Task) -> Task:
         result = str(task.result).strip() if task.result is not None else ""
         ground_truth = str(task.ground_truth).strip() if task.ground_truth is not None else ""
 
@@ -150,15 +148,13 @@ class HLEBenchmark(Benchmark):
 
         if self.model_name:
             task.score = await self.llm_judge(task)
-            self._tasks.append(task)
             return task
 
         task.score = 1.0 if result and is_same(result, ground_truth) else 0.0
 
-        self._tasks.append(task)
         return task
 
-    async def stats(self) -> Optional[Stats]:
+    async def _stats(self) -> Stats:
         total = len(self._data_records)
         attempted = len(self._tasks)
         correct = sum(1 for r in self._tasks if r.score and r.score >= 1.0)

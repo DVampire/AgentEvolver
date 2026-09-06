@@ -23,22 +23,20 @@ from agentevolver.benchmark.default.swebench import (
     _grade_report,
     _parser_with_fail_boundaries,
     _restore_test_fixtures,
-    grader_fingerprint,
+    _grader_fingerprint,
 )
-from examples.run_swebench_pro import (
-    EVALUATION_PROTOCOL,
-    atomic_write_json,
-    collect_patch,
-    freeze_submission,
-    has_resumable_workspace,
-    load_run_results,
-    load_submission,
-    parse_cfg_options,
-    pending_submission,
-    scored_instance_ids,
-    solver_environment,
-    validate_run_protocol,
-)
+from agentevolver.benchmark import BenchmarkManager
+from agentevolver.benchmark.default.swebench import SWEBenchProBenchmark
+from agentevolver.utils.file_utils import atomic_json_update
+from examples.run_swebench_pro import load_run_results, parse_cfg_options, solver_environment
+runner = SWEBenchProBenchmark()
+collect_patch = runner._collect_patch
+has_resumable_workspace = runner._has_resumable_workspace
+EVALUATION_PROTOCOL = runner.submission_protocol
+
+def atomic_write_json(path, value):
+    atomic_json_update(path, lambda _: value)
+
 
 
 def _git(repo, *args):
@@ -240,25 +238,14 @@ def test_official_entryscript_matches_upstream_generator(tmp_path):
 def test_grader_fingerprint_detects_changed_and_added_assets(tmp_path):
     script = tmp_path / "run_script.sh"
     script.write_text("first")
-    first = grader_fingerprint(str(tmp_path))
+    first = _grader_fingerprint(str(tmp_path))
     script.write_text("second")
-    second = grader_fingerprint(str(tmp_path))
+    second = _grader_fingerprint(str(tmp_path))
     assert second != first
     (tmp_path / "parser.py").write_text("new")
-    assert grader_fingerprint(str(tmp_path)) != second
+    assert _grader_fingerprint(str(tmp_path)) != second
 
 
-@pytest.mark.parametrize("receipt,previous", [
-    (True, {}), (False, {"final_grade": {"error_code": "timeout"}}),
-    (False, {"submission_sha256": "known"}),
-])
-def test_missing_frozen_submission_cannot_restart_solver(tmp_path, receipt, previous):
-    marker = tmp_path / "submission_receipt.json"
-    if receipt:
-        marker.write_text('{"sha256":"known"}')
-    with pytest.raises(ValueError, match="refusing to restart"):
-        pending_submission(str(tmp_path / "submission.json"), str(marker),
-                           {"instance_id": "sample", "base_commit": "base"}, previous)
 
 
 def test_grader_fixture_repair_is_disclosed_without_leaking_names():
@@ -429,34 +416,8 @@ def test_cfg_options_are_a_mapping_before_config_initialization():
     }
 
 
-def test_resume_ledger_treats_any_real_final_score_as_terminal(tmp_path):
-    path = tmp_path / "results.json"
-    records = [
-        {"instance_id": "resolved", "final_grade": {"resolved": True}},
-        {"instance_id": "unresolved", "final_grade": {"resolved": False}},
-        {"instance_id": "grader-failed", "final_grade": {"error_code": "timeout"}},
-        {"instance_id": "interrupted", "status": "failed"},
-    ]
-
-    atomic_write_json(str(path), records)
-
-    assert load_run_results(str(path)) == records
-    assert scored_instance_ids(records) == {"resolved", "unresolved"}
 
 
-def test_submission_is_frozen_and_tampering_is_rejected(tmp_path, monkeypatch):
-    path = str(tmp_path / "submission.json")
-    row = {"instance_id": "sample", "base_commit": "base"}
-    monkeypatch.setattr(swebench_pro, "collect_patch", lambda *_: "original patch")
-    original = freeze_submission(path, "unused", row, {"status": "failed"})
-    monkeypatch.setattr(swebench_pro, "collect_patch", lambda *_: pytest.fail("must not recollect"))
-    assert freeze_submission(path, "unused", row, {}) == original
-    assert original["agent_result"]["status"] == "failed"
-    with pytest.raises(ValueError):
-        load_submission(path, "other-instance", "base")
-    atomic_write_json(path, {**original, "patch": "changed after submission"})
-    with pytest.raises(ValueError):
-        load_submission(path, "sample", "base")
 
 
 def test_solver_does_not_inherit_grader_access():
@@ -466,19 +427,12 @@ def test_solver_does_not_inherit_grader_access():
     assert "AGENTEVOLVER_EVAL_BRIDGE" in env  # caller environment is unchanged
 
 
-def test_legacy_and_existing_results_cannot_be_overwritten():
-    with pytest.raises(ValueError, match="legacy"):
-        validate_run_protocol({}, resume=True, existing=True)
-    with pytest.raises(ValueError, match="existing run"):
-        validate_run_protocol({}, resume=False, existing=True)
-    validate_run_protocol({}, resume=False, existing=False)
-    validate_run_protocol({"evaluation_protocol": EVALUATION_PROTOCOL}, resume=True, existing=True)
 
 
 @pytest.mark.asyncio
-async def test_empty_submission_is_a_failure_not_a_retryable_harness_error():
+async def test_diagnostic_empty_submission_is_a_failure_not_a_retryable_harness_error():
     report = await grading._grade_pro(
-        "unused", {"fail_to_pass": ["target"], "instance_id": "empty"}, "unused", patch="")
+        "unused", {"fail_to_pass": ["target"], "instance_id": "empty"}, "unused", patch="", profile="diagnostic")
     assert report["resolved"] is False
     assert "error_code" not in report
 
@@ -551,24 +505,23 @@ async def test_launcher_grades_after_exit_and_resume_never_restarts_submitted_ag
     monkeypatch.setattr(swebench_pro, "path_manager", Paths())
     monkeypatch.setattr(visual_module, "BenchmarkMonitor", Monitor)
     monkeypatch.setattr(sandbox_module, "sandbox_manager", types.SimpleNamespace(
-        acquire=AsyncMock(return_value=types.SimpleNamespace(container_name="test")),
+        acquire=AsyncMock(return_value=types.SimpleNamespace(container_name="test", start=AsyncMock())),
         release=release, egress_audit=lambda _: {},
     ))
-    for name in ["check_shared_roots_readable", "restore_ownership", "grant_to_container_user"]:
-        monkeypatch.setattr(swebench_pro, name, lambda *args: None)
-    monkeypatch.setattr(swebench_pro, "image_ref", lambda _: "test-image")
-    monkeypatch.setattr(swebench_pro, "load_instances", AsyncMock(return_value=[row]))
-    monkeypatch.setattr(swebench_pro, "ensure_image", AsyncMock())
-    monkeypatch.setattr(swebench_pro, "seed_workspace_async", AsyncMock())
+    manager = BenchmarkManager()
+    monkeypatch.setattr(swebench_pro, "benchmark_manager", manager)
+    async def initialize(self):
+        self._data_records = [row]
+    monkeypatch.setattr(SWEBenchProBenchmark, "_initialize", initialize)
+    monkeypatch.setattr(SWEBenchProBenchmark, "_image_ref", lambda self, _: "test-image")
+    monkeypatch.setattr(SWEBenchProBenchmark, "_seed_workspace_async", AsyncMock())
+    monkeypatch.setattr(SWEBenchProBenchmark, "_grant_workspace", AsyncMock())
+    monkeypatch.setattr(SWEBenchProBenchmark, "_restore_workspace_owner", AsyncMock())
+    monkeypatch.setattr(SWEBenchProBenchmark, "_collect_patch", lambda self, *args: collect(*args))
     monkeypatch.setattr(swebench_pro, "run_inner_process", solve)
-    monkeypatch.setattr(swebench_pro, "collect_patch", collect)
-    async def evaluate(name, task):
-        assert name == "swebench_pro"
-        report = await grade(patch=task.result["patch"], profile=task.extra["grader_profile"])
-        task.evaluation = EvaluationResult.from_report(report)
-        task.score = task.evaluation.score
-        return task
-    monkeypatch.setattr(swebench_pro.benchmark_manager, "eval", evaluate)
+    async def evaluate(self, row, patch, options):
+        return await grade(patch=patch, profile=options["grader_profile"])
+    monkeypatch.setattr(SWEBenchProBenchmark, "_evaluate", evaluate)
 
     assert await swebench_pro.run_launcher(args) == 1  # grader failure, artifact survives
     args.resume = True
@@ -589,8 +542,8 @@ async def test_launcher_grades_after_exit_and_resume_never_restarts_submitted_ag
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("profile", ["official", "diagnostic"])
-async def test_grader_profile_controls_uploaded_scripts(tmp_path, monkeypatch, profile):
+async def test_diagnostic_grader_controls_uploaded_scripts(tmp_path, monkeypatch):
+    profile = "diagnostic"
     import agentevolver.sandbox as sandbox_module
     scripts = {"run_script.sh": "python bin/ansible-test units -v\n",
                "parser.py": 'if line.startswith("PASS"):\n    pass\n'}
@@ -620,14 +573,9 @@ async def test_grader_profile_controls_uploaded_scripts(tmp_path, monkeypatch, p
         {"instance_id": "sample", "base_commit": "base", "fail_to_pass": ["target"]},
         str(tmp_path), patch="test-patch", profile=profile)
     assert sandbox_module.sandbox_manager.acquire.call_args.kwargs["reuse_key"] != first_key
-    if profile == "official":
-        assert writes["/workspace/run_script.sh"] == scripts["run_script.sh"]
-        assert writes["/workspace/parser.py"] == scripts["parser.py"]
-        assert "restore_fixtures" not in writes["/workspace/entryscript.sh"]
-    else:
-        assert "--num-workers 2" in writes["/workspace/run_script.sh"]
-        assert '"FAIL"' in writes["/workspace/parser.py"]
-        assert report["leaderboard_comparable"] is False
+    assert "--num-workers 2" in writes["/workspace/run_script.sh"]
+    assert '"FAIL"' in writes["/workspace/parser.py"]
+    assert report["leaderboard_comparable"] is False
 
 
 def test_valid_git_checkout_can_resume_even_before_it_has_edits(tmp_path):
@@ -658,10 +606,10 @@ async def test_workspace_seeding_does_not_block_the_event_loop(monkeypatch):
             await asyncio.Event().wait()
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    monkeypatch.setattr(swebench_pro, "ensure_image", AsyncMock())
-    monkeypatch.setattr(swebench_pro, "_provision_command", command)
+    monkeypatch.setattr(runner, "_ensure_image", AsyncMock())
+    monkeypatch.setattr(runner, "_provision_command", command)
     monkeypatch.setattr(swebench_pro.os, "makedirs", lambda *a, **kw: None)
-    task = asyncio.create_task(swebench_pro.seed_workspace_async("image", "commit", "/workspace"))
+    task = asyncio.create_task(runner._seed_workspace_async("image", "commit", "/workspace"))
     await asyncio.wait_for(started.wait(), 1)
 
     await asyncio.sleep(0)
@@ -684,7 +632,7 @@ async def test_provision_command_cancellation_reaps_client(monkeypatch):
     monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=process))
     killed = []
     monkeypatch.setattr(swebench_pro.os, "killpg", lambda *args: killed.append(args))
-    task = asyncio.create_task(swebench_pro._provision_command(["docker", "pull", "image"], 10))
+    task = asyncio.create_task(runner._provision_command(["docker", "pull", "image"], 10))
     await asyncio.wait_for(started.wait(), 1)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -699,9 +647,9 @@ async def test_seed_reset_failure_cannot_be_hidden_by_chown(monkeypatch, tmp_pat
     async def command(argv, timeout):
         commands.append(argv)
         return subprocess.CompletedProcess(argv, 0, "", "")
-    monkeypatch.setattr(swebench_pro, "ensure_image", AsyncMock())
-    monkeypatch.setattr(swebench_pro, "_provision_command", command)
-    await swebench_pro.seed_workspace_async("image", "base", str(tmp_path))
+    monkeypatch.setattr(runner, "_ensure_image", AsyncMock())
+    monkeypatch.setattr(runner, "_provision_command", command)
+    await runner._seed_workspace_async("image", "base", str(tmp_path))
     script = next(argv[-1] for argv in commands if argv[1] == "run")
     # Stub every mutating command. Verify shell failure propagation without touching Docker.
     stub = 'rm() { :; }; cp() { :; }; git() { if [ "$1" = reset ]; then return 17; fi; }; chown() { echo UNEXPECTED; }; '

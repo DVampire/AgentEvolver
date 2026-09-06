@@ -153,6 +153,37 @@ async def test_monitor_deploys_through_deployment_manager(monkeypatch, tmp_path)
     assert request.runtime == "custom"
     assert {"benchmark.py", "index.html", "benchmark.css", "benchmark.js"} == set(request.files)
     assert json.loads(Path(monitor.path).read_text())["monitor_url"].startswith("http://localhost:9876/s/benchmark-")
+    monitor.close()
+
+
+@pytest.mark.parametrize("change, alive", [({}, True), ({"observed_at": 900}, False),
+    ({"pid": 999}, False), ({"start": 999}, False), ({"alive": False}, False)])
+def test_isolated_monitor_uses_fresh_matching_host_observation(tmp_path, monkeypatch, change, alive):
+    from agentevolver.visual.benchmark import server
+
+    monitor = BenchmarkMonitor(str(tmp_path), "demo", 1, 1)
+    heartbeat = {"pid": monitor.state["launcher_pid"], "start": monitor.state["launcher_start"],
+                 "pid_namespace": "host", "observed_at": 995, "alive": True, **change}
+    (tmp_path / "launcher_heartbeat.json").write_text(json.dumps(heartbeat))
+    monkeypatch.setattr(server, "_pid_namespace", lambda: "sandbox")
+    monkeypatch.setattr(server, "_process_start", lambda _: None)
+    monkeypatch.setattr(server.time, "time", lambda: 1000)
+    snapshot = build_snapshot(monitor.path)
+    assert snapshot["launcher"]["alive"] is alive
+    assert snapshot["status"] == ("running" if alive else "interrupted")
+
+
+def test_host_monitor_does_not_override_dead_process_with_heartbeat(tmp_path, monkeypatch):
+    from agentevolver.visual.benchmark import server
+
+    monitor = BenchmarkMonitor(str(tmp_path), "demo", 1, 1)
+    (tmp_path / "launcher_heartbeat.json").write_text(json.dumps({
+        "pid": monitor.state["launcher_pid"], "start": monitor.state["launcher_start"],
+        "pid_namespace": "host", "observed_at": 995, "alive": True,
+    }))
+    monkeypatch.setattr(server, "_pid_namespace", lambda: "host")
+    monkeypatch.setattr(server, "_process_start", lambda _: None)
+    assert build_snapshot(monitor.path)["status"] == "interrupted"
 
 
 def test_cumulative_scores_replace_history_but_keep_attempt_costs(tmp_path, monkeypatch):

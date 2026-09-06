@@ -310,3 +310,46 @@ __all__ = [
     "TraceStats",
     "TraceStatsProjector",
 ]
+
+
+def summarise_session_spend(session_root: str, instance_id: str) -> dict:
+    """Compatibility projection for benchmark result.json, across a task's trace files.
+
+    Only step agent_call events are billable here; agent_end contains a second,
+    cumulative view. Reuse the canonical TokenUsage reducer for token/cost fields.
+    """
+    from pathlib import Path
+    root = Path(session_root)
+    paths = sorted({p.resolve() for p in root.glob("**/trace/*.jsonl")})
+    if not paths:
+        paths = sorted({p.resolve() for p in root.glob(f"**/{instance_id}.jsonl")})
+    total = TokenUsage()
+    calls, milliseconds, priced = 0, 0.0, False
+    seen = set()
+    for path in paths:
+        try:
+            with path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    if event.get("event_type") != "agent_call" or not isinstance(event.get("usage"), dict):
+                        continue
+                    identity = (event.get("session_id"), event.get("seq_no"))
+                    if all(value is not None for value in identity):
+                        if identity in seen:
+                            continue
+                        seen.add(identity)
+                    usage = event["usage"]
+                    total = TraceStatsProjector._add_usage(total, usage)
+                    calls += 1
+                    milliseconds += float(event.get("duration_ms") or 0)
+                    priced = priced or usage.get("cost") is not None
+        except OSError:
+            continue
+    return {"n_llm_calls": calls, "input_tokens": total.input_tokens,
+            "output_tokens": total.output_tokens, "cache_read_tokens": total.cache_read_tokens,
+            "cache_write_tokens": total.cache_write_tokens,
+            "total_cost_usd": round(total.cost or 0.0, 6) if priced else None,
+            "cost_is_estimated": True, "llm_seconds": round(milliseconds / 1000, 1)}

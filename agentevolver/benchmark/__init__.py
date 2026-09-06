@@ -1,19 +1,9 @@
-from .types import Benchmark, BenchmarkConfig
+"""Public benchmark facade. Concrete implementations are registered internally."""
+from .types import Benchmark, BenchmarkInfo, BenchmarkTaskContext, BenchmarkConfig, Task, Stats, EvaluationResult
 from .server import benchmark_manager, BenchmarkManager
-from .default import *
+from . import default as _default  # Register built-ins without exporting implementations.
 
 __all__ = [
-    "Benchmark",
-    "BenchmarkConfig",
-    "benchmark_manager",
-    "BenchmarkManager",
-    "AIME24Benchmark",
-    "AIME25Benchmark",
-    "GPQABenchmark",
-    "LeetCodeBenchmark",
-    "GSM8kBenchmark",
-    "HLEBenchmark",
-    "DeepWebBenchmark",
-    "ProgramBenchmark",
-    "ExactMatchBenchmark",
+    "Benchmark", "BenchmarkInfo", "BenchmarkTaskContext", "BenchmarkConfig", "Task", "Stats", "EvaluationResult",
+    "benchmark_manager", "BenchmarkManager",
 ]

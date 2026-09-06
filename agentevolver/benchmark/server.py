@@ -1,4 +1,5 @@
 """Benchmark Manager implementation"""
+import json
 from typing import Any, Dict, List, Optional, Union, Type
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -6,8 +7,9 @@ from agentevolver.paths import P, path_manager
 from agentevolver.config import config
 from agentevolver.utils import assemble_workspace_path
 from agentevolver.logger import logger
-from agentevolver.benchmark.types import BenchmarkConfig, Benchmark, Task, Stats, EvaluationResult
+from agentevolver.benchmark.types import BenchmarkConfig, Benchmark, BenchmarkInfo, Task, Stats, EvaluationResult
 from agentevolver.benchmark.context import BenchmarkContextManager
+from agentevolver.benchmark.types import BenchmarkTaskContext
 
 class BenchmarkManager(BaseModel):
     """Benchmark Manager for managing benchmark registration and lifecycle"""
@@ -39,54 +41,99 @@ class BenchmarkManager(BaseModel):
         """Initialize benchmarks."""
         self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="benchmark"))
         
-        self.benchmark_context_manager = BenchmarkContextManager(
-            base_dir=self.base_dir,
-        )
-        await self.benchmark_context_manager.initialize(benchmark_names=benchmark_names)
+        await self._ensure_context_manager().initialize(benchmark_names=benchmark_names)
         logger.info("| ✅ Benchmark systems initialization completed")
+
+    async def configure(self, name: str, **settings: Any) -> BenchmarkInfo:
+        """Construct/configure by registered name; the implementation stays manager-owned."""
+        await self._ensure_context_manager().configure(name, settings)
+        return await self.get_info(name)
+
+    async def prepare(self, name: str, task: Task, *, context: Optional[Dict[str, Any]] = None) -> BenchmarkTaskContext:
+        return await self._ensure_context_manager().prepare(name, task, context=context)
+
+    async def submit(self, name: str, task: Task, *, output: Any = None) -> Task:
+        return await self._ensure_context_manager().submit(name, task, output=output)
 
     async def register(self, 
                        benchmark: Union[Benchmark, Type[Benchmark]], 
                        *, 
                        override: bool = False, 
-                       **kwargs: Any) -> BenchmarkConfig:
+                       **kwargs: Any) -> BenchmarkInfo:
         """Register a benchmark system asynchronously."""
         benchmark_config = await self._ensure_context_manager().register(benchmark, override=override, **kwargs)
         self._registered_benchmarks[benchmark_config.name] = benchmark_config
-        return benchmark_config
+        return await self.get_info(benchmark_config.name)
 
     async def update(self, 
                      benchmark_name: str, 
                      benchmark: Union[Benchmark, Type[Benchmark]], 
                      new_version: Optional[str] = None, 
                      description: Optional[str] = None,
-                     **kwargs: Any) -> BenchmarkConfig:
+                     **kwargs: Any) -> BenchmarkInfo:
         """Update an existing benchmark system."""
         benchmark_config = await self._ensure_context_manager().update(benchmark_name, benchmark, new_version, description, **kwargs)
         self._registered_benchmarks[benchmark_config.name] = benchmark_config
-        return benchmark_config
+        return await self.get_info(benchmark_config.name)
 
-    async def get_info(self, benchmark_name: str) -> Optional[BenchmarkConfig]:
-        """Get benchmark configuration by name."""
-        return self._ensure_context_manager()._benchmark_configs.get(benchmark_name)
+    async def get_info(self, benchmark_name: str, *, evaluation_options: Optional[Dict] = None,
+                       expected_evaluation: Optional[Dict] = None) -> Optional[BenchmarkInfo]:
+        """Detached metadata and benchmark-owned resume validation; no raw instance."""
+        context = self._ensure_context_manager()
+        try:
+            entry = context._resolve(benchmark_name)
+        except ValueError as error:
+            if str(error).startswith("Unknown benchmark"):
+                return None
+            raise
+        info = await entry.instance.info(evaluation_options=evaluation_options)
+        info.version = entry.version
+        info.config = json.loads(json.dumps(entry.config or {}))
+        info.metadata = json.loads(json.dumps(entry.metadata or {}))
+        if expected_evaluation is not None:
+            for key, value in info.evaluation.items():
+                if expected_evaluation.get(key) != value:
+                    raise ValueError(f"Benchmark evaluation mismatch for {key}: "
+                                     f"saved={expected_evaluation.get(key)!r}, current={value!r}")
+        return info.model_copy(deep=True)
 
     async def list(self) -> List[str]:
         """List all registered benchmarks."""
         return list(self._ensure_context_manager()._benchmark_configs.keys())
 
-    async def get(self, name: str) -> Optional[Benchmark]:
-        """Get benchmark instance by name."""
-        return await self._ensure_context_manager().get(name)
+    def catalog(self) -> List[BenchmarkInfo]:
+        """Dataset discovery as plain metadata, without loading implementations."""
+        from agentevolver.registry import BENCHMARK
+        return [BenchmarkInfo(
+            name=cls.model_fields["name"].default,
+            description=(cls.__doc__ or "").strip(),
+            config={key: cls.model_fields[key].default
+                    for key in ("path", "hf_repo_id", "split", "subset") if key in cls.model_fields},
+        ) for cls in BENCHMARK.module_dict.values()]
 
-    async def reset(self, name: str, split: Optional[str] = None) -> Optional[Task]:
+    async def is_loaded(self, name: str) -> bool:
+        """Check readiness without handing the caller an implementation object."""
+        instance = await self._ensure_context_manager().get(name)
+        return instance is not None and (await instance.info()).initialized
+
+    def task_payload(self, name: str, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Project solver-visible input using the managed benchmark's policy; no I/O."""
+        entry = self._ensure_context_manager()._resolve(name)
+        return json.loads(json.dumps(entry.instance.task_payload(record)))
+
+    async def reset(self, name: str, split: Optional[str] = None, *, resume: bool = False) -> Optional[Task]:
         """Reset benchmark progress."""
-        return await self._ensure_context_manager().reset(name, split)
+        return await self._ensure_context_manager().reset(name, split, resume=resume)
 
     async def step(self, name: str) -> Optional[Task]:
         """Get next benchmark task."""
         return await self._ensure_context_manager().step(name)
 
-    async def eval(self, name: str, task: Task) -> Optional[Task]:
+    async def llm_judge(self, name: str, task: Task) -> float:
+        """Explicit LLM judging; does not record an evaluation or change stats."""
+        return await self._ensure_context_manager().llm_judge(name, task)
+
+    async def eval(self, name: str, task: Task) -> Task:
         """Evaluate a benchmark task."""
         try:
             return await self._ensure_context_manager().eval(name, task)
@@ -97,20 +144,20 @@ class BenchmarkManager(BaseModel):
             task.score = None
             return task
 
-    async def stats(self, name: str) -> Optional[Stats]:
+    async def stats(self, name: str) -> Stats:
         """Get benchmark statistics."""
         return await self._ensure_context_manager().stats(name)
 
-    async def restore(self, name: str, version: str) -> Optional[BenchmarkConfig]:
+    async def restore(self, name: str, version: str) -> Optional[BenchmarkInfo]:
         """Restore a specific version of a benchmark."""
         benchmark_config = await self._ensure_context_manager().restore(name, version)
         if benchmark_config:
             self._registered_benchmarks[name] = benchmark_config
-        return benchmark_config
+        return await self.get_info(name) if benchmark_config else None
 
     async def __call__(self, benchmark_name: str, results: List[Dict[str, str]], concurrency: int = 10) -> float:
         """Batch evaluation entry point"""
-        benchmark = await self.get(benchmark_name)
+        benchmark = await self._ensure_context_manager().get(benchmark_name)
         if not benchmark:
             raise RuntimeError(f"Benchmark {benchmark_name} not initialized.")
             
@@ -152,10 +199,8 @@ class BenchmarkManager(BaseModel):
         logger.info(f"| ✅ Batch evaluation for '{benchmark_name}' completed. Avg score: {avg_score:.4f}")
         return avg_score
 
-    async def cleanup(self):
-        """Cleanup all benchmarks using context manager."""
-        if hasattr(self, 'benchmark_context_manager'):
-            await self._ensure_context_manager().cleanup()
+    async def cleanup(self, name: Optional[str] = None, task: Optional[Task] = None, *, reclaim: bool = False):
+        await self._ensure_context_manager().cleanup(name=name, task=task, reclaim=reclaim)
 
 # Global instance
 benchmark_manager = BenchmarkManager()

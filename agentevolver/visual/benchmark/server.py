@@ -62,6 +62,43 @@ def _process_start(pid: int) -> int | None:
         return None
 
 
+def _pid_namespace() -> str | None:
+    try:
+        return os.readlink("/proc/self/ns/pid")
+    except OSError:
+        return None
+
+
+def _watch_launcher(state_path: Path, pid: int, start: int, stop: threading.Event) -> None:
+    """Publish host observations for a monitor in a different PID namespace."""
+    namespace = _pid_namespace()
+    while not stop.is_set():
+        alive = _process_start(pid) == start
+        try:
+            _write_json(state_path.with_name("launcher_heartbeat.json"), {
+                "pid": pid, "start": start, "pid_namespace": namespace,
+                "observed_at": time.time(), "alive": alive,
+            })
+        except OSError:
+            return
+        if not alive:
+            return
+        stop.wait(5)
+
+
+def _launcher_alive(state_path: Path, state: dict[str, Any]) -> bool:
+    pid = int(state.get("launcher_pid") or 0)
+    start = state.get("launcher_start")
+    heartbeat = _read_json(state_path.with_name("launcher_heartbeat.json"), {})
+    namespace = heartbeat.get("pid_namespace")
+    if namespace and namespace != _pid_namespace():
+        age = time.time() - float(_number(heartbeat.get("observed_at"), float))
+        return bool(pid and start is not None and heartbeat.get("pid") == pid
+                    and heartbeat.get("start") == start and 0 <= age < 30
+                    and heartbeat.get("alive") is True)
+    return bool(pid and start is not None and _process_start(pid) == start)
+
+
 def _elapsed(started_at: str | None) -> int | None:
     if not started_at:
         return None
@@ -307,7 +344,7 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
         100 * telemetry["cache_read_tokens"] / cache_base if cache_base else 0.0
     )
     pid = int(state.get("launcher_pid") or 0)
-    alive = bool(pid and _process_start(pid) == state.get("launcher_start"))
+    alive = _launcher_alive(state_path, state)
     status = state.get("status", "unknown")
     if status == "running" and not alive:
         status = "interrupted"
@@ -365,6 +402,7 @@ class BenchmarkMonitor:
         from agentevolver.paths import path_manager
 
         self.run_dir = Path(run_dir).resolve()
+        self._heartbeat_stop = threading.Event()
         self.path = Path(path_manager.resolve_under(self.run_dir, STATE_FILE))
         existing = _read_json(self.path, {})
         self.state = {
@@ -414,6 +452,7 @@ class BenchmarkMonitor:
         self.publish()
 
     def close(self, status: str = "completed") -> None:
+        self._heartbeat_stop.set()
         self.state["status"] = status
         self.state["active"] = {}
         self.state["finished_at"] = _now()
@@ -424,6 +463,12 @@ class BenchmarkMonitor:
         from agentevolver.deploy import DeployRequest, deployment_manager
         from agentevolver.gateway.sites import ensure_site_gateway
 
+        threading.Thread(
+            target=_watch_launcher,
+            args=(self.path, self.state["launcher_pid"], self.state["launcher_start"],
+                  self._heartbeat_stop),
+            daemon=True,
+        ).start()
         await ensure_site_gateway()
         slug = _SAFE_ID.sub("-", self.state["benchmark"].lower()).strip("-") or "benchmark"
         digest = hashlib.sha256(str(self.run_dir).encode()).hexdigest()[:10]

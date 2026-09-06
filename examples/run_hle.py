@@ -135,7 +135,10 @@ async def _answer_all(tasks, agent_name, max_concurrency, monitor=None):
                 monitor.task(task.task_id, "solving", position=position)
             t0 = time.time()
             try:
+                prepared = await benchmark_manager.prepare("hle", task)
                 payload = {"task": task.input}
+                if prepared.payload.get("files"):
+                    payload["files"] = prepared.payload["files"]
                 resp = await agent_manager(
                     agent_name,
                     input=payload,
@@ -182,6 +185,8 @@ async def main():
                 hb["end"] = args.end
 
     await _bootstrap(args)
+    out_path = _results_path(args)
+    await benchmark_manager.configure("hle", base_dir=os.path.splitext(out_path)[0] + "_state")
 
     # Collect every task (reset yields the first, step the rest).
     tasks = []
@@ -190,7 +195,6 @@ async def main():
         tasks.append(t)
         t = await benchmark_manager.step("hle")
     logger.info(f"| 🧪 HLE: {len(tasks)} question(s) to evaluate")
-    out_path = _results_path(args)
     from agentevolver.visual import BenchmarkMonitor
 
     monitor = BenchmarkMonitor(
@@ -230,7 +234,12 @@ async def main():
     records = []
     for position, tk in enumerate(tasks, start=1):
         monitor.task(tk.task_id, "grading", position=position)
-        await benchmark_manager.eval("hle", tk)
+        await benchmark_manager.prepare("hle", tk)
+        try:
+            await benchmark_manager.submit("hle", tk, output=tk.result)
+            await benchmark_manager.eval("hle", tk)
+        finally:
+            await benchmark_manager.cleanup("hle", tk)
         records.append(tk.model_dump())
         _write_results(out_path, records, {})
         monitor.finish_task(tk.task_id)
@@ -239,6 +248,7 @@ async def main():
     summary = stats.model_dump() if hasattr(stats, "model_dump") else (stats or {})
     _write_results(out_path, records, summary)
     monitor.close()
+    await benchmark_manager.cleanup("hle")
 
     acc = summary.get("accuracy", 0.0) if isinstance(summary, dict) else 0.0
     total = summary.get("total", len(tasks)) if isinstance(summary, dict) else len(tasks)

@@ -278,7 +278,7 @@ async def test_a_task_with_no_ground_truth_does_not_grade_as_correct(benchmark, 
 def test_a_task_needs_only_an_id():
     """A task is created before it has been answered, so every result field starts empty."""
     task = Task(task_id="t")
-    assert task.score == 0.0
+    assert task.score is None
     assert task.result is None
     assert task.ground_truth is None
 

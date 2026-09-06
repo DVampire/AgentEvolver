@@ -1,8 +1,9 @@
 """Run SWE-bench Verified tasks and submit frozen patches to BenchmarkManager.
 
-The launcher owns task scheduling and agent lifecycle. SWEBenchVerifiedBenchmark
+The launcher owns task scheduling and agent lifecycle. The benchmark manager
 owns the host-side official harness; hidden grading never returns to an agent.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -11,101 +12,72 @@ import contextlib
 import json
 import os
 import shlex
-import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
-from agentevolver.benchmark.default.swebench import SWEBenchVerifiedBenchmark
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from agentevolver.benchmark import benchmark_manager
 from agentevolver.benchmark.types import Task
-from examples.run_swebench_pro import collect_patch, freeze_submission, load_submission
 from agentevolver.config import config
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
+from agentevolver.trace.stats import summarise_session_spend
 
-# Reuse the proven, benchmark-agnostic host machinery from the ProgramBench launcher rather
-# than duplicate it. Importing is safe: its main() is guarded by __main__, and module-level
-# code only computes paths/constants.
-from examples.run_programbench import (  # noqa: E402
-    _LANDING_MARGIN_SECONDS,
-    CONTAINER_USER,
-    _summarise_spend,
-    bind_task_workspace,
-    check_shared_roots_readable,
-    grant_to_container_user,
-    host_repo_root,
-    interpreter_prefix,
-    restore_ownership,
-)
-
-root = host_repo_root()
-
-# --------------------------------------------------------------------------- #
-# Constants
-# --------------------------------------------------------------------------- #
-#: HuggingFace dataset — the NEW-org SWE-bench Verified (500 instances, all Python) that the
-#: swebench>=5 harness consumes: it ships the per-instance ``image`` name, ``eval_script``,
-#: ``log_parser`` and ``eval_type`` that grading needs, so no separate grader checkout exists.
-HF_DATASET = "SWE-bench/SWE-bench_Verified"
-
-#: The repository lives at /testbed in every instance image, installed editable into the
-#: image's ``testbed`` conda env — so the agent must edit *there* for a local test run to see
-#: its change, and the grader (image-native) resets and tests there too.
-CONTAINER_APP = "/testbed"
+LANDING_MARGIN_SECONDS = 1800
 CONTAINER_REPO = "/AgentEvolver"
 
-DEFAULT_TASK_FILE = os.path.join(root, "examples", "tasks", "swebench_verified_resolution.html")
 
+root = os.environ.get("AGENTEVOLVER_HOST_ROOT") or str(Path(__file__).resolve().parents[1])
+
+DEFAULT_TASK_FILE = os.path.join(root, "examples", "tasks", "swebench_verified_resolution.html")
 
 #: The ONLY instance fields that may enter the container. Everything else in the row is the
 #: answer key or host-side scoring metadata and is withheld. Order fixes the task-doc slots.
 #: SWE-bench Verified carries no requirements/interface — problem_statement is the whole spec.
-#: Derived from the benchmark class rather than restated here. Which fields may
-#: enter a container IS the GT-safety design, and a second copy of that list is a
-#: second thing to keep in step.
-_SAFE_FIELDS = SWEBenchVerifiedBenchmark.model_fields["safe_fields"].default
+#: Solver-visible fields are selected by benchmark_manager.task_payload().
 
 _FORWARDED_ENV = (
-    "OPENAI_API_KEY", "OPENAI_API_BASE",
-    "ANTHROPIC_API_KEY", "ANTHROPIC_API_BASE",
-    "GOOGLE_API_KEY", "GOOGLE_API_BASE",
-    "OPENROUTER_API_KEY", "OPENROUTER_API_BASE",
-    "LLM_HUB_API_KEY", "LLM_HUB_API_BASE",
+    "OPENAI_API_KEY",
+    "OPENAI_API_BASE",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_API_BASE",
+    "GOOGLE_API_KEY",
+    "GOOGLE_API_BASE",
+    "OPENROUTER_API_KEY",
+    "OPENROUTER_API_BASE",
+    "LLM_HUB_API_KEY",
+    "LLM_HUB_API_BASE",
 )
-
 
 # --------------------------------------------------------------------------- #
 # Dataset + GT-safe field filtering
 # --------------------------------------------------------------------------- #
-def _benchmark():
-    """The one loader for this dataset, shared with the benchmark registry.
-
-    This used to call `load_dataset` here, which put the rows in the HuggingFace cache
-    instead of under `datasets/` where every other benchmark keeps its data — and stated
-    a second time, in this file, which fields an agent may see. That list is the whole
-    GT-safety design, and a copy of it is a copy that can drift.
-    """
-    return SWEBenchVerifiedBenchmark(base_dir="output/benchmark/swebench_verified")
 
 
-async def load_instances() -> list:
-    """Load the SWE-bench Verified split as a list of dict rows (full, incl. oracle)."""
+async def load_instances(*, base_dir=None, resume=False, history_path=None) -> list:
+    """Load the SWE-bench Verified split through the public task iterator (no oracle fields)."""
 
-    benchmark = _benchmark()
-    await benchmark.initialize()
-    await benchmark_manager.register(benchmark, override=True)
-    return benchmark.instances()
+    await benchmark_manager.configure(
+        "swebench_verified",
+        base_dir=base_dir or "output/benchmark/swebench_verified",
+        resume=resume,
+        history_path=history_path,
+    )
+    instances = []
+    task = await benchmark_manager.reset("swebench_verified", resume=resume)
+    while task is not None:
+        instances.append(dict(task.extra or {}))
+        task = await benchmark_manager.step("swebench_verified")
+    return instances
 
 
 def _safe_instance(row: dict) -> dict:
     """The subset of a row the container may see — never the gold patch or the tests."""
-    return {key: row.get(key, "") for key in _SAFE_FIELDS}
-
-
-def image_ref(row: dict) -> str:
-    """The instance's eval image, straight from the dataset (swebench/sweb.eval.x86_64.…)."""
-    return row["image"]
+    return benchmark_manager.task_payload("swebench_verified", row)
 
 
 def select_instances(instances, task_ids=None, start=None, end=None):
@@ -127,7 +99,7 @@ def select_instances(instances, task_ids=None, start=None, end=None):
 def build_task_content(instance_full: dict, task_file=None, task_log_root=None):
     """Resolve the task document, substituting the SAFE fields only.
 
-    ``instance_full`` may be the full row; only ``_SAFE_FIELDS`` are read from it, so the
+    ``instance_full`` may be the full row; only manager-approved solver fields are read from it, so the
     oracle can never reach the document by accident.
     """
     from agentevolver.task import load_task_document
@@ -152,106 +124,18 @@ def build_task_content(instance_full: dict, task_file=None, task_log_root=None):
         html_body = doc.html_body
         for key, value in slots.items():
             html_body = html_body.replace(key, value)
-        view_path = str(path_manager.under(
-            task_log_root,
-            P.LOG_TASK_VIEW,
-            filename=f"task_view_{safe.get('instance_id', 'task')}.html",
-        ))
+        view_path = str(
+            path_manager.under(
+                task_log_root,
+                P.LOG_TASK_VIEW,
+                filename=f"task_view_{safe.get('instance_id', 'task')}.html",
+            )
+        )
         os.makedirs(task_log_root, exist_ok=True)
         render_task_page(html_body, view_path, title=doc.title)
         metadata["task_view"] = view_path
 
     return content, [doc.source_path], metadata
-
-
-# --------------------------------------------------------------------------- #
-# Patch collection + grading (host side — has the oracle)
-# --------------------------------------------------------------------------- #
-
-
-# --------------------------------------------------------------------------- #
-# Per-instance disk reclaim (for large runs on a full volume)
-# --------------------------------------------------------------------------- #
-def _reclaim_instance_disk(workspace_dir, image_ref_str) -> None:
-    """Free one graded instance's disk: its seeded workspace and its (unique) image.
-
-    Runs in a worker thread. The workspace is container-uid-owned, so its contents are
-    removed through a throwaway root container before the (host-owned) top dir is dropped.
-    The image's dockerhub_tag is unique to the instance, so ``docker rmi`` frees it without
-    affecting any other in-flight instance. Best-effort — never raises.
-    """
-    if workspace_dir and os.path.isdir(workspace_dir):
-        with contextlib.suppress(Exception):
-            subprocess.run(
-                ["docker", "run", "--rm", "-v", f"{workspace_dir}:/w", "alpine", "sh", "-c",
-                 "rm -rf /w/..?* /w/.[!.]* /w/* 2>/dev/null; true"],
-                capture_output=True, timeout=300,
-            )
-        with contextlib.suppress(Exception):
-            shutil.rmtree(workspace_dir, ignore_errors=True)
-    if image_ref_str:
-        with contextlib.suppress(Exception):
-            subprocess.run(["docker", "rmi", "-f", image_ref_str], capture_output=True, timeout=180)
-
-
-# --------------------------------------------------------------------------- #
-# Workspace seeding (from /app in the image)
-# --------------------------------------------------------------------------- #
-def seed_workspace(image_ref_str: str, base_commit: str, destination: str) -> None:
-    """Copy the image's /app into destination at base_commit, the way the grader starts.
-
-    Done by a throwaway root container so modes/ownership copy exactly, then handed to the
-    container uid so the agent can edit it. A pre-existing dir is emptied first (root-owned).
-
-    The setup mirrors the official grader's tree — ``git reset --hard`` then ``git checkout``
-    at base_commit, and *no* ``git clean``. It additionally removes every ref except a fresh
-    benchmark-base branch and prunes unreachable objects. Some published instance images
-    retain later upstream commits, including the gold fix; leaving those objects addressable
-    lets an agent recover answer metadata or the complete patch with ``git show``. Keeping the
-    base commit and its ancestors preserves normal repository history without exposing future
-    commits. Remotes are removed as a second line of defence behind the network policy.
-
-    ``git clean -fdx`` is deliberately avoided: these images carry a baked-in index quirk
-    where a tracked, present file (e.g. ``test/files/toobig.jpg``) reads as deleted, and clean
-    would wrongly remove it. Any binary noise that still lands in the diff is dropped by
-    ``strip_binary_hunks`` at grade time, again matching the official harness
-    (swe_bench_pro_eval.py: assemble_workspace_files).
-    """
-    os.makedirs(destination, exist_ok=True)
-    if not base_commit:
-        raise ValueError("base_commit is required to seed a GT-safe SWE-bench Pro workspace")
-    quoted_base = shlex.quote(base_commit)
-    reset = (
-        f"git reset --hard {quoted_base} && "
-        f"git checkout -B benchmark-base {quoted_base} && "
-        "git remote | while IFS= read -r remote; do git remote remove \"$remote\"; done && "
-        "git for-each-ref --format='%(refname)' | while IFS= read -r ref; do "
-        "[ \"$ref\" = refs/heads/benchmark-base ] || git update-ref -d \"$ref\"; done && "
-        "git reflog expire --expire=now --all && git gc --prune=now; "
-    )
-    script = (
-        'rm -rf /seed/..?* /seed/.[!.]* /seed/* 2>/dev/null; '
-        'cp -a /testbed/. /seed/ && cd /seed && '
-        f'git config --global --add safe.directory /seed; {reset}'
-        'chown -R 1000:1000 /seed'
-    )
-    result = subprocess.run(
-        ["docker", "run", "--rm", "--entrypoint", "sh",
-         "-v", f"{destination}:/seed", image_ref_str, "-c", script],
-        capture_output=True, text=True, timeout=900,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"could not seed the workspace from {image_ref_str}: "
-            f"{(result.stderr or result.stdout).strip()[:300]}"
-        )
-
-
-async def seed_workspace_async(
-    image_ref_str: str, base_commit: str, destination: str,
-) -> None:
-    """Seed without blocking concurrent agents on the launcher's event loop."""
-    await asyncio.to_thread(seed_workspace, image_ref_str, base_commit, destination)
 
 
 # --------------------------------------------------------------------------- #
@@ -290,7 +174,9 @@ async def run_inner(args) -> int:
         shared_extension_root=shared_extension_root,
     )
     bind_session_roots(config, fs_sandbox)
-    bind_task_workspace(ctx, fs_sandbox)
+    task_workspace = os.environ["AGENTEVOLVER_TASK_WORKSPACE"]
+    config.workspace_root = task_workspace
+    path_manager.override(P.SESSION_WORKSPACE, task_workspace)
 
     extension_manager.set_base_dir(shared_extension_root)
     logger.initialize(config=config)
@@ -298,6 +184,7 @@ async def run_inner(args) -> int:
     logger.info(f"| 🧱 [{instance_id}] Working directory: {config.workspace_root}")
 
     from agentevolver.config import validate_assembly
+
     for problem in validate_assembly(config):
         logger.warning(f"| ⚠️ Config: {problem}")
 
@@ -339,20 +226,30 @@ async def run_inner(args) -> int:
             category=TaskCategory.USER,
             priority=TaskPriority.HIGH,
             files=task_files,
-            metadata={"instance_id": instance_id, "repository": instance.get("repo", ""),
-                      "language": instance.get("repo_language", ""), **task_meta},
+            metadata={
+                "instance_id": instance_id,
+                "repository": instance.get("repo", ""),
+                "language": instance.get("repo_language", ""),
+                **task_meta,
+            },
             session_id=instance_id,
         )
         while True:
             record = await task_manager.get(task_id)
-            if record and record.task.status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED):
+            if record and record.task.status in (
+                TaskStatus.DONE,
+                TaskStatus.FAILED,
+                TaskStatus.CANCELLED,
+            ):
                 break
             await asyncio.sleep(1)
 
         data = getattr(record.result, "data", None) or {}
         exhausted = bool(data.get("stopped_by_constraint"))
         result.update(
-            status="done" if (record.task.status == TaskStatus.DONE or exhausted) else record.task.status.value,
+            status="done"
+            if (record.task.status == TaskStatus.DONE or exhausted)
+            else record.task.status.value,
             error=record.error,
             steps=data.get("step"),
             max_step=data.get("max_step"),
@@ -362,23 +259,9 @@ async def run_inner(args) -> int:
         logger.error(f"| ❌ [{instance_id}] run failed: {e}", exc_info=True)
         result["error"] = str(e)
 
-    # Collect the patch (the diff from base_commit), whatever the status — an unfinished
-    # attempt still has edits worth grading.
-    try:
-        patch = collect_patch(CONTAINER_APP, instance.get("base_commit", ""))
-        patch_path = str(path_manager.under(fs_sandbox.project_root, P.PROJECT_PATCH))
-        with open(patch_path, "w", encoding="utf-8") as handle:
-            handle.write(patch)
-        result["patch_path"] = patch_path
-        result["patch_bytes"] = len(patch)
-        result["has_patch"] = bool(patch.strip())
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"| ⚠️ [{instance_id}] could not collect the patch: {e}")
-        result["patch_error"] = str(e)
-
     result["time_seconds"] = round(time.time() - started, 1)
     result["session_path"] = str(fs_sandbox.project_root)
-    result["spend"] = _summarise_spend(str(fs_sandbox.project_root), instance_id)
+    result["spend"] = summarise_session_spend(str(fs_sandbox.project_root), instance_id)
 
     result_path = path_manager.under(fs_sandbox.project_root, P.PROJECT_RESULT)
     with open(result_path, "w", encoding="utf-8") as handle:
@@ -390,8 +273,10 @@ async def run_inner(args) -> int:
         except Exception as e:  # noqa: BLE001
             logger.warning(f"| ⚠️ {label}: {e}")
 
-    logger.info(f"| {'✅' if result['status'] == 'done' else '❌'} [{instance_id}] {result['status']} "
-                f"in {result['time_seconds']}s, {result.get('steps')} steps")
+    logger.info(
+        f"| {'✅' if result['status'] == 'done' else '❌'} [{instance_id}] {result['status']} "
+        f"in {result['time_seconds']}s, {result.get('steps')} steps"
+    )
     return 0 if result["status"] == "done" else 1
 
 
@@ -401,9 +286,12 @@ def inner_command(row: dict, args) -> str:
     parts = [
         shlex.quote(sys.executable),
         shlex.quote(f"{CONTAINER_REPO}/examples/run_swebench_verified.py"),
-        "--instance-json", shlex.quote(payload),
-        "--config", shlex.quote(args.config.replace(root, CONTAINER_REPO)),
-        "--task-file", shlex.quote(args.task_file.replace(root, CONTAINER_REPO)),
+        "--instance-json",
+        shlex.quote(payload),
+        "--config",
+        shlex.quote(args.config.replace(root, CONTAINER_REPO)),
+        "--task-file",
+        shlex.quote(args.task_file.replace(root, CONTAINER_REPO)),
     ]
     overrides = getattr(args, "user_cfg_options", None) or {}
     if overrides:
@@ -415,51 +303,91 @@ def inner_command(row: dict, args) -> str:
 # --------------------------------------------------------------------------- #
 # Launcher (host) — one container per instance
 # --------------------------------------------------------------------------- #
-async def run_launcher(args) -> int:
-    from agentevolver.sandbox import sandbox_manager
-    from agentevolver.visual import BenchmarkMonitor
+async def run_worker_command(command, container_name, timeout):
+    import signal
 
-    check_shared_roots_readable()
+    process = await asyncio.create_subprocess_exec(
+        "docker",
+        "exec",
+        container_name,
+        "sh",
+        "-lc",
+        command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
+    except BaseException:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        await process.wait()
+        raise
+    return subprocess.CompletedProcess(
+        command,
+        process.returncode,
+        stdout.decode(errors="replace"),
+        stderr.decode(errors="replace"),
+    )
+
+
+async def run_launcher(args) -> int:
+    from agentevolver.visual import BenchmarkMonitor
 
     # A benchmark instance may be run repeatedly with different models. Session state
     # includes memory, trajectories, prompts and grader counters, so keying it only by
     # instance_id can leak an earlier model's work into a later run. Give every launcher
     # invocation its own owner namespace unless the caller deliberately supplied one.
     overrides = dict(getattr(args, "user_cfg_options", None) or {})
+    if args.resume and not overrides.get("output_owner"):
+        raise ValueError("--resume requires the original output_owner in --cfg-options")
     if not overrides.get("output_owner"):
-        run_namespace = f"{config.get('tag') or 'swebench_verified'}_{time.strftime('%Y%m%d_%H%M%S')}"
+        run_namespace = (
+            f"{config.get('tag') or 'swebench_verified'}_{time.strftime('%Y%m%d_%H%M%S')}"
+        )
         overrides["output_owner"] = run_namespace
         args.user_cfg_options = overrides
         setattr(config, "output_owner", run_namespace)
         logger.info(f"| 🧰 Isolated run namespace: {run_namespace}")
 
-
-    instances = await load_instances()
+    instances = await load_instances(
+        base_dir=str(
+            path_manager.get(P.OWNER, owner=str(config.get("output_owner") or config.tag))
+            / "benchmark"
+        ),
+        resume=args.resume,
+    )
     task_ids = [t.strip() for t in args.task_ids.split(",")] if args.task_ids else None
     selected = select_instances(instances, task_ids=task_ids, start=args.start, end=args.end)
     if not selected:
         logger.error("| ❌ no instances selected")
         return 1
-    logger.info(f"| 📋 SWE-bench Verified: {len(selected)} instance(s), concurrency={args.concurrency}")
+    logger.info(
+        f"| 📋 SWE-bench Verified: {len(selected)} instance(s), concurrency={args.concurrency}"
+    )
 
     wall_clock = int(getattr(config, "WALL_CLOCK", 7200) or 7200)
     forwarded = {k: os.environ[k] for k in _FORWARDED_ENV if os.environ.get(k)}
-    prefix = interpreter_prefix()
+    prefix = sys.base_prefix if sys.base_prefix != sys.prefix else sys.prefix
     mounts = {root: CONTAINER_REPO, prefix: prefix}
 
     # The shared extension library lives inside the mounted repo at
     # ``/AgentEvolver/extension``; the inner run writes its manifest there as the
     # container user. Grant it once here (not per instance — concurrent instances
     # would chown it under one another); ``restore_ownership`` below hands it back.
-    grant_to_container_user(str(path_manager.get(P.EXTENSION)))
 
     results: list = []
     results_lock = asyncio.Lock()
-    out_dir = args.out or str(path_manager.under(
-        config.project_root,
-        P.PROJECT_RESULT_RUN,
-        run_id=time.strftime("run_%Y%m%d_%H%M%S"),
-    ))
+    out_dir = args.out or str(
+        path_manager.under(
+            config.project_root,
+            P.PROJECT_RESULT_RUN,
+            run_id=time.strftime("run_%Y%m%d_%H%M%S"),
+        )
+    )
     os.makedirs(out_dir, exist_ok=True)
     results_path = str(path_manager.resolve_under(out_dir, "results.json"))
     owner = str(config.get("output_owner") or config.tag)
@@ -485,94 +413,91 @@ async def run_launcher(args) -> int:
 
     async def _run_one_instance(index, row):
         instance_id = row["instance_id"]
-        ref = image_ref(row)
-        monitor.task(instance_id, "preparing", position=index)
-        logger.info(f"| ▶️ [{index}/{len(selected)}] {instance_id} (image={ref})")
+        previous = {}
+        record = {"instance_id": instance_id, "status": "failed", "error": None, **previous}
+        task = Task(task_id=instance_id, extra=dict(row))
         started = time.time()
-        record: dict = {"instance_id": instance_id, "status": "failed", "error": None}
-        sandbox = None
-        workspace_dir = None
+        prepared = None
+        monitor.task(instance_id, "preparing", position=index)
         try:
             owner = str(config.get("output_owner") or config.tag)
-            workspace_dir = str(path_manager.get(
-                P.SESSION_WORKSPACE, owner=owner, session_id=instance_id,
-            ))
-            session_path = str(path_manager.get(
-                P.SESSION, owner=owner, session_id=instance_id,
-            ))
-            submission_path = os.path.join(session_path, "submission.json")
-            if os.path.exists(submission_path):
-                submission = load_submission(submission_path, instance_id, row["base_commit"])
-                record.update(submission.get("agent_result") or {})
-            else:
-                await seed_workspace_async(ref, row.get("base_commit", ""), workspace_dir)
-
-                grant_to_container_user(session_path)
-                logger.info(f"| 🌱 [{instance_id}] Seeded and mounted at {CONTAINER_APP} (owned by {CONTAINER_USER})")
-
-                sandbox = await sandbox_manager.acquire(
-                    "docker", reuse_key=instance_id, image=ref, network=False, user=CONTAINER_USER,
-                    workdir=CONTAINER_APP,
-                    mounts={**mounts, workspace_dir: CONTAINER_APP},
-                    env={
-                        "PYTHONPATH": CONTAINER_REPO,
-                        "AGENTEVOLVER_HOME": CONTAINER_REPO,
-                        "LITELLM_LOCAL_MODEL_COST_MAP": "True",
-                        **forwarded,
-                    },
-                    timeout_minutes=(wall_clock + _LANDING_MARGIN_SECONDS) // 60,
+            session_path = str(path_manager.get(P.SESSION, owner=owner, session_id=instance_id))
+            workspace_dir = str(
+                path_manager.get(P.SESSION_WORKSPACE, owner=owner, session_id=instance_id)
+            )
+            options = {
+                "session_dir": session_path,
+                "workspace_dir": workspace_dir,
+                "output_dir": out_dir,
+                "resume": bool(args.resume),
+                "previous": previous,
+                "timeout": wall_clock + LANDING_MARGIN_SECONDS,
+                "agent_on_host": False,
+                "mounts": mounts,
+                "writable_paths": [config.extension_root],
+                "env": {
+                    "PYTHONPATH": CONTAINER_REPO,
+                    "AGENTEVOLVER_HOME": CONTAINER_REPO,
+                    "LITELLM_LOCAL_MODEL_COST_MAP": "True",
+                    **forwarded,
+                },
+            }
+            prepared = await benchmark_manager.prepare("swebench_verified", task, context=options)
+            if prepared.completed:
+                saved = (await benchmark_manager.stats("swebench_verified")).extra["evaluations"][
+                    instance_id
+                ]
+                saved_result = saved.get("result") or {}
+                record.update(saved_result.get("agent_result") or {"status": "historical"})
+                record.update(
+                    final_grade=saved["evaluation"]["details"], resolved=saved["score"] == 1
                 )
-                command = inner_command(row, args)
+                return record
+            if prepared.submission is None:
                 monitor.task(instance_id, "solving", position=index)
-                logger.info(f"| 🚀 [{instance_id}] {command[:160]}")
-                execution = await sandbox.run_command(
-                    command, workspace_root=CONTAINER_REPO, timeout=wall_clock + _LANDING_MARGIN_SECONDS)
+                execution = await run_worker_command(
+                    inner_command(row, args),
+                    prepared.container_name,
+                    wall_clock + LANDING_MARGIN_SECONDS,
+                )
+                exit_code = execution.returncode
                 if execution.stdout:
                     print(execution.stdout)
                 if execution.stderr:
                     print(execution.stderr, file=sys.stderr)
-
                 inner_result = str(path_manager.under(session_path, P.PROJECT_RESULT))
                 if os.path.isfile(inner_result):
                     with open(inner_result, encoding="utf-8") as handle:
                         record.update(json.load(handle))
                 else:
-                    record["error"] = f"the inner run left no result.json (container exit {execution.exit_code})"
-                record["egress_audit"] = sandbox_manager.egress_audit(sandbox)
-
-                await sandbox_manager.release("docker", reuse_key=instance_id)
-                sandbox = None
-            submission = freeze_submission(submission_path, workspace_dir, row, record)
+                    record["error"] = f"inner worker left no result.json (exit {exit_code})"
+            task = await benchmark_manager.submit("swebench_verified", task, output=record)
+            submission = task.result
+            record.update(submission.get("agent_result") or {})
+            task.time = time.time() - started
+            task.extra.update({"workspace_dir": workspace_dir})
             monitor.task(instance_id, "grading", position=index)
-            evaluated = await benchmark_manager.eval("swebench_verified", Task(
-                task_id=instance_id, result=submission, extra={"workspace_dir": workspace_dir}))
-            final = evaluated.evaluation.details
-            record.update(evaluation_protocol="swe-final-only-v1", grader_evals=0,
-                          submission_sha256=submission["sha256"])
-            if final.get("error_code"):
-                record["error"] = final["error_code"]
-            record["final_grade"] = final
-            record["resolved"] = bool(final.get("resolved"))
-            logger.info(f"| {'🟢 RESOLVED' if record['resolved'] else '🔴 unresolved'} "
-                        f"[{instance_id}] {final}")
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"| ❌ [{instance_id}] launcher failure: {e}", exc_info=True)
-            record["error"] = str(e)
+            evaluated = await benchmark_manager.eval("swebench_verified", task)
+            record.update(
+                final_grade=evaluated.evaluation.details,
+                resolved=evaluated.evaluation.status == "passed",
+                grader_evals=0,
+                submission_sha256=submission["sha256"],
+            )
+            if evaluated.evaluation.status == "error":
+                record["error"] = evaluated.evaluation.details.get("error_code")
+        except Exception as error:
+            record["error"] = str(error)
+            logger.error(f"| ❌ [{instance_id}] {error}", exc_info=True)
         finally:
-            if sandbox is not None:
-                await sandbox_manager.release("docker", reuse_key=instance_id)
-            # Bounded disk on a near-full shared volume: each instance has its own ~1GB
-            # image and a seeded repo workspace. Reclaim both once graded — result.json and
-            # agent.patch live in the session root (not the workspace), so scores survive.
-            if getattr(args, "reclaim_disk", True):
-                await asyncio.to_thread(_reclaim_instance_disk, workspace_dir, ref)
-
-        record.setdefault("time_seconds", round(time.time() - started, 1))
-        logger.info(f"| {'✅' if record['status'] == 'done' else '❌'} [{index}/{len(selected)}] "
-                    f"{instance_id} → {record['status']} in {record['time_seconds']}s")
-        async with results_lock:
-            results.append(record)
-            _write_results()
+            await benchmark_manager.cleanup(
+                "swebench_verified", task, reclaim=getattr(args, "reclaim_disk", False)
+            )
+            record.setdefault("time_seconds", round(time.time() - started, 1))
+            async with results_lock:
+                results[:] = [item for item in results if item.get("instance_id") != instance_id]
+                results.append(record)
+                _write_results()
             monitor.finish_task(instance_id)
         return record
 
@@ -598,52 +523,92 @@ async def run_launcher(args) -> int:
     finally:
         if not completed:
             monitor.close("interrupted")
-        for shared in (str(path_manager.get(P.OUTPUT)), config.extension_root):
-            with contextlib.suppress(Exception):
-                restore_ownership(shared)
+        summary = await benchmark_manager.stats("swebench_verified")
+        await benchmark_manager.cleanup("swebench_verified")
 
     done = sum(1 for r in results if r.get("status") == "done")
-    monitor.close("completed")
-    logger.info(f"| ✅ SWE-bench Pro run done: {done}/{len(selected)} completed. Results: {out_dir}")
-    return 0
+    monitor.close("completed_with_errors" if summary.errors else "completed")
+    logger.info(
+        f"| ✅ SWE-bench Pro run done: {done}/{len(selected)} completed. Results: {out_dir}"
+    )
+    return 1 if summary.errors else 0
 
 
 # --------------------------------------------------------------------------- #
 # Args + main
 # --------------------------------------------------------------------------- #
-def parse_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Run AgentEvolver on SWE-bench Pro.")
-    parser.add_argument("--instance-json", default=None,
-                        help="Inner mode: the SAFE instance subset as JSON. Omit for launcher mode.")
+    parser.add_argument(
+        "--instance-json",
+        default=None,
+        help="Inner mode: the SAFE instance subset as JSON. Omit for launcher mode.",
+    )
     parser.add_argument("--task-ids", default=None, help="Comma-separated instance_ids.")
     parser.add_argument("--start", type=int, default=None, help="Start index (inclusive).")
     parser.add_argument("--end", type=int, default=None, help="End index (exclusive).")
-    parser.add_argument("--config", default=os.path.join(root, "configs", "swebench_pro_agent.py"),
-                        help="Config file (evolution arm by default; use ..._baseline.py for the control).")
+    parser.add_argument(
+        "--config",
+        default=os.path.join(root, "configs", "swebench_pro_agent.py"),
+        help="Config file (evolution arm by default; use ..._baseline.py for the control).",
+    )
     parser.add_argument("--task-file", default=DEFAULT_TASK_FILE)
     parser.add_argument("--concurrency", type=int, default=1)
-    parser.add_argument("--reclaim-disk", dest="reclaim_disk", action="store_true", default=True,
-                        help="After each instance is graded, delete its seeded workspace and its "
-                             "docker image to bound disk on a full volume (default on).")
-    parser.add_argument("--no-reclaim-disk", dest="reclaim_disk", action="store_false",
-                        help="Keep each instance's workspace and image (needs ~1GB per instance).")
+    parser.add_argument(
+        "--reclaim-disk",
+        dest="reclaim_disk",
+        action="store_true",
+        default=True,
+        help="After each instance is graded, delete its seeded workspace and its "
+        "docker image to bound disk on a full volume (default on).",
+    )
+    parser.add_argument(
+        "--no-reclaim-disk",
+        dest="reclaim_disk",
+        action="store_false",
+        help="Keep each instance's workspace and image (needs ~1GB per instance).",
+    )
+    parser.add_argument(
+        "--resume", action="store_true", help="Resume the same output_owner and frozen submissions."
+    )
     parser.add_argument("--out", default=None, help="Results output directory.")
-    parser.add_argument("--no-monitor", action="store_true",
-                        help="Do not deploy the live benchmark monitor (enabled by default).")
-    parser.add_argument("--monitor-port", type=int, default=8765,
-                        help="Preferred monitor port; deploy allocates another when busy.")
-    parser.add_argument("--cfg-options", nargs="+", default=None,
-                        help="Config overrides, e.g. model_name=llm_hub/claude-opus-5")
-    return parser.parse_args()
+    parser.add_argument(
+        "--no-monitor",
+        action="store_true",
+        help="Do not deploy the live benchmark monitor (enabled by default).",
+    )
+    parser.add_argument(
+        "--monitor-port",
+        type=int,
+        default=8765,
+        help="Preferred monitor port; deploy allocates another when busy.",
+    )
+    parser.add_argument(
+        "--cfg-options",
+        nargs="+",
+        default=None,
+        help="Config overrides, e.g. model_name=llm_hub/claude-opus-5",
+    )
+    args = parser.parse_args(argv)
+    if args.concurrency < 1:
+        parser.error("--concurrency must be positive")
+    return args
 
 
 def parse_cfg_options(items) -> dict[str, str]:
     """Normalize repeatable ``key=value`` CLI overrides before config loading."""
-    return dict(item.split("=", 1) for item in (items or []) if "=" in item)
+    return (
+        dict(items)
+        if isinstance(items, dict)
+        else dict(item.split("=", 1) for item in (items or []) if "=" in item)
+    )
 
 
-async def main() -> int:
-    args = parse_args()
+async def main(argv=None) -> int:
+    args = parse_args(argv)
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(root, ".env"))
     overrides = parse_cfg_options(args.cfg_options)
     # Config.initialize expects a mapping, while argparse collects repeatable options
     # as a list. Normalize before crossing that boundary.
@@ -663,6 +628,8 @@ async def main() -> int:
 if __name__ == "__main__":
     import signal
 
-    with contextlib.suppress(Exception):
-        signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt("SIGTERM")))
+    def _terminate_via_exception(signum, _frame):
+        raise KeyboardInterrupt(f"terminated by signal {signum}")
+
+    signal.signal(signal.SIGTERM, _terminate_via_exception)
     sys.exit(asyncio.run(main()))

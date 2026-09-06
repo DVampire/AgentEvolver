@@ -31,6 +31,7 @@ def test_hidden_evaluation_tools_and_request_watchers_are_removed():
 @pytest.mark.parametrize("cls", [SWEBenchProBenchmark, SWEBenchVerifiedBenchmark])
 async def test_swe_evaluation_uses_frozen_patch_and_keeps_errors_unscored(tmp_path, monkeypatch, cls):
     benchmark = cls(base_dir=str(tmp_path))
+    monkeypatch.setattr(benchmark, "_initialize", AsyncMock())
     benchmark._data_records = [{"instance_id": "task", "base_commit": "base", "patch": "secret"}]
     evaluate = AsyncMock(return_value={"error_code": "timeout"})
     monkeypatch.setattr(benchmark, "_evaluate", evaluate)
@@ -86,6 +87,7 @@ def test_program_submission_is_digest_bound_and_attempts_are_isolated(tmp_path):
 @pytest.mark.asyncio
 async def test_program_grader_runs_asynchronously_and_preserves_failure_evidence(tmp_path, monkeypatch):
     benchmark = ProgramBenchmark(base_dir=str(tmp_path / "benchmark"))
+    monkeypatch.setattr(benchmark, "_initialize", AsyncMock())
     benchmark._instances = {"task": {}}
     artifact = tmp_path / "submission.tar.gz"
     artifact.write_bytes(b"frozen")

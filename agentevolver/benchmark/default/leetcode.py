@@ -14,7 +14,7 @@ load_dotenv(verbose=True)
 
 from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
-from agentevolver.benchmark.types import Benchmark, Task, Stats
+from agentevolver.benchmark.types import Benchmark, Task, Stats, EvaluationResult
 from agentevolver.registry import BENCHMARK
 from agentevolver.utils import file_lock
 
@@ -168,6 +168,7 @@ class CodeSubmitter:
                 "task_id": task.task_id,
                 "prediction": task.extra.get("prediction"),
                 "score": task.score,
+                "evaluation": task.evaluation.model_dump() if task.evaluation else None,
                 "metrics": task.extra.get("metrics"),
                 "start_time": task.extra.get("start_time"),
                 "end_time": task.extra.get("end_time"),
@@ -722,13 +723,8 @@ class CodeSubmitter:
 @BENCHMARK.register_module(force=True)
 class LeetCodeBenchmark(Benchmark):
     """
-    LeetCode Benchmark with Resume Capability and Batch Evaluation.
-    
-    批量评测模式：
-    - 每 BATCH_SIZE (默认5) 个任务为一组
-    - 批量写入文件并一次性 git push
-    - 然后依次在 Codespace 中评测
-    - 最后不满 BATCH_SIZE 的也算一组
+    LeetCode with resumable results and internal batching of concurrent evaluations.
+    Every eval call waits for its verdict, including an incomplete final batch.
     """
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
@@ -736,7 +732,7 @@ class LeetCodeBenchmark(Benchmark):
     path: str = Field(default="datasets/leetcode", description="The path to the benchmark dataset")
     hf_repo_id: Optional[str] = Field(default=None, description="HuggingFace repo to download the dataset from when missing locally. None: LeetCode data is sourced live via the browser, not HF.")
     language: str = Field(default="python3", description="Programming language for LeetCode (e.g., python3, cpp, java)")
-    batch_size: int = Field(default=5, description="Number of tasks to batch before pushing to GitHub")
+    batch_size: int = Field(default=5, ge=1, description="Maximum concurrent evaluations grouped in one GitHub push")
     
     system_prompt: Optional[str] = Field(default=SYSTEM_PROMPT, description="The system prompt for the benchmark")
     
@@ -745,8 +741,6 @@ class LeetCodeBenchmark(Benchmark):
     _submitter_started: bool = PrivateAttr(default=False)
     
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
-    _index: int = PrivateAttr(default=0)
-    _tasks: List[Task] = PrivateAttr(default_factory=list)
     
     # 批量队列相关
     _pending_queue: List[Task] = PrivateAttr(default_factory=list)  # 等待批量提交的任务队列
@@ -779,14 +773,13 @@ class LeetCodeBenchmark(Benchmark):
         self._submitter_started = False
         self._queue_lock = asyncio.Lock()  # 初始化队列锁
 
-    async def initialize(self):
+    async def _initialize(self):
         """Initialize the benchmark by loading dataset, filtering finished tasks, and starting browser."""
         try:
             self._submitter = CodeSubmitter(headless=False, base_dir=self.base_dir)
 
             if self.hf_repo_id:
                 from agentevolver.benchmark.utils import ensure_dataset
-                import os
                 ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
             from agentevolver.data.leetcode import LeetCodeDataset
             # 1. 加载数据集
@@ -848,29 +841,13 @@ class LeetCodeBenchmark(Benchmark):
                 
             logger.info(f"[{self.name}] Index built: {len(self._id_to_record_map)} records mapped.")
             
-            # ================= [新增：提前初始化浏览器] =================
-            # 在 benchmark 初始化阶段就启动浏览器，而不是等到第一次 eval
-            # 这样多个并发任务可以共享同一个浏览器实例
-            if not self._submitter_started and self._data_records:
-                logger.info(f"| 🚀 Pre-initializing browser for concurrent evaluation...")
-                try:
-                    await self._submitter.initialize()
-                    self._submitter_started = True
-                    logger.info(f"| ✅ Browser initialized successfully, ready for concurrent tasks")
-                except Exception as e:
-                    logger.error(f"| ❌ Failed to initialize browser during benchmark init: {e}")
-                    # 不抛出异常，允许后续尝试
-            # ================= [逻辑结束] =================
-            
+            # The evaluator initializes its browser lazily in _flush_eval_queue.
+
         except ImportError:
             logger.error(f"[{self.name}] Failed to import LeetCodeDataset")
-            
-    async def reset(self) -> Optional[Task]:
-        self._index = 0
-        self._tasks = []
-        return await self.step()
+            raise
 
-    async def step(self) -> Optional[Task]:
+    async def _step(self) -> Optional[Task]:
         if self._index >= len(self._data_records):
             return None
         
@@ -919,58 +896,7 @@ Template:
             }
         )
 
-    def get_queue_size(self) -> int:
-        """获取当前队列中的任务数量"""
-        return len(self._pending_queue)
-    
-    async def save_error_result_directly(self, task: Task, prediction: str = "response_error") -> None:
-        """
-        直接保存错误结果，不入队列。用于推理失败的任务。
-        
-        Args:
-            task: 失败的任务
-            prediction: 错误类型（如 response_error, inference_error）
-        """
-        task.score = 0.0
-        task.extra["submit_time"] = 0.0
-        task.extra["spend_time"] = task.extra.get("inference_time", 0.0)
-        self._tasks.append(task)
-        
-        task.extra["prediction"] = prediction
-        task.extra["metrics"] = {"inference_time": task.extra.get("inference_time", 0.0), "submit_time": 0.0}
-        task.extra["start_time"] = task.extra.get("inference_start_time", time.time())
-        task.extra["end_time"] = time.time()
-        task.extra["spend_time"] = task.extra.get("inference_time", 0.0)
-        await self._submitter.save_result(task)
-        logger.info(f"| 💾 [Task {task.task_id}] Error result saved directly (prediction: {prediction})")
-
-    async def queue_for_eval(self, task: Task) -> bool:
-        """
-        将任务加入评测队列。当队列达到 batch_size 时自动触发批量评测。
-        使用锁确保同一时间只有一个 task 入队列。
-        
-        Args:
-            task: 已完成推理的任务
-            
-        Returns:
-            是否触发了批量评测
-        """
-        async with self._queue_lock:
-            self._pending_queue.append(task)
-            queue_size = len(self._pending_queue)
-            
-            # 实时打印队列状态
-            print(f"\r📊 Queue: {queue_size}/{self.batch_size} tasks", end="", flush=True)
-            logger.info(f"| 📥 [Task {task.task_id}] Added to queue ({queue_size}/{self.batch_size})")
-            
-            # 当队列达到 batch_size 时，自动触发批量评测
-            if queue_size >= self.batch_size:
-                print()  # 换行
-                await self.flush_eval_queue()
-                return True
-            return False
-    
-    async def flush_eval_queue(self) -> List[Task]:
+    async def _flush_eval_queue(self) -> List[Task]:
         """
         刷新评测队列：批量 push 代码并依次评测。
         
@@ -996,7 +922,6 @@ Template:
                         task.score = 0.0
                         task.extra["submit_time"] = 0.0
                         task.extra["spend_time"] = task.extra.get("inference_time", 0.0)
-                        self._tasks.append(task)
                         
                         # 保存错误结果
                         task.extra["prediction"] = "browser_init_error"
@@ -1004,15 +929,14 @@ Template:
                         task.extra["start_time"] = task.extra.get("inference_start_time", time.time())
                         task.extra["end_time"] = time.time()
                         task.extra["spend_time"] = task.extra.get("inference_time", 0.0)
-                        await self._submitter.save_result(task)
                     
                     result = self._pending_queue.copy()
                     self._pending_queue.clear()
                     return result
             
             # 2. 准备批量写入的文件
-            batch_tasks = self._pending_queue.copy()
-            self._pending_queue.clear()
+            batch_tasks = self._pending_queue[:self.batch_size]
+            del self._pending_queue[:len(batch_tasks)]
             
             file_contents = []
             valid_tasks = []  # 有代码的任务
@@ -1025,7 +949,6 @@ Template:
                     task.score = 0.0
                     task.extra["submit_time"] = 0.0
                     task.extra["spend_time"] = task.extra.get("inference_time", 0.0)
-                    self._tasks.append(task)
                     
                     # 保存错误结果
                     task.extra["prediction"] = "response_error"
@@ -1033,7 +956,6 @@ Template:
                     task.extra["start_time"] = task.extra.get("inference_start_time", time.time())
                     task.extra["end_time"] = time.time()
                     task.extra["spend_time"] = task.extra.get("inference_time", 0.0)
-                    await self._submitter.save_result(task)
                 else:
                     file_name = f"{task.extra['file_name']}.{task.extra['file_ext']}"
                     file_contents.append({"filename": file_name, "code": code_content, "task": task})
@@ -1061,13 +983,11 @@ Template:
                     task.score = 0.0
                     task.extra["submit_time"] = 0.0
                     task.extra["spend_time"] = task.extra.get("inference_time", 0.0)
-                    self._tasks.append(task)
                     
                     task.extra["prediction"] = "push_failed"
                     task.extra["metrics"] = {"error": "Git push failed after 3 retries", "inference_time": task.extra.get("inference_time", 0.0), "submit_time": 0.0}
                     task.extra["start_time"] = task.extra.get("inference_start_time", time.time())
                     task.extra["end_time"] = time.time()
-                    await self._submitter.save_result(task)
                     logger.info(f"| 💾 [Task {task.task_id}] Saved as push_failed")
                 
                 logger.info(f"| ⏭️ Skipped {len(valid_tasks)} tasks due to push failure")
@@ -1099,7 +1019,6 @@ Template:
                     task.extra["spend_time"] = spend_time
                     task.extra["result"] = result_dict
                     task.score = self._parse_result_score(result_dict)
-                    self._tasks.append(task)
                     
                     # 添加时间到 metrics
                     result_dict["inference_time"] = inference_time
@@ -1109,7 +1028,6 @@ Template:
                     task.extra["metrics"] = result_dict
                     task.extra["start_time"] = task.extra.get("inference_start_time", submit_start_time)
                     task.extra["end_time"] = submit_end_time
-                    await self._submitter.save_result(task)
                     
                     logger.info(f"| ✅ [Task {task_id}] Score: {task.score:.2f} (inference: {inference_time:.2f}s, submit: {submit_time:.2f}s)")
                     
@@ -1127,51 +1045,44 @@ Template:
                     task.extra["start_time"] = task.extra.get("inference_start_time", submit_start_time)
                     task.extra["end_time"] = submit_end_time
                     task.extra["spend_time"] = inference_time + submit_time
-                    await self._submitter.save_result(task)
                     
                     task.score = 0.0
-                    self._tasks.append(task)
             
             logger.info(f"| 🔓 Batch evaluation complete, releasing lock")
             return batch_tasks
 
-    async def eval(self, task: Task) -> Optional[Task]:
-        """
-        评测任务 - 现在使用批量队列模式。
-        
-        将任务加入队列，当队列满时自动批量评测。
-        调用方需要在所有任务完成后调用 flush_eval_queue() 处理剩余任务。
-        
-        时间记录：
-        - inference_time: 推理耗时（由调用方设置）
-        - submit_time: 浏览器提交耗时
-        - spend_time: 总处理时间 = inference_time + submit_time
-        """
-        await self.queue_for_eval(task)
-        
-        # 检查任务是否已被评测（队列满时会自动触发评测）
-        if task in self._tasks:
-            return task
-        
-        # 任务还在队列中，返回未评测状态
+    async def _eval(self, task: Task) -> Task:
+        """Finish grading before returning; no caller-side queue management."""
+        task.extra = task.extra or {}
+        self._pending_queue.append(task)
+        # Coalesce concurrent callers, but never wait for a full batch to arrive.
+        try:
+            await asyncio.sleep(0)
+            async with self._queue_lock:
+                while any(queued is task for queued in self._pending_queue):
+                    await self._flush_eval_queue()
+        except asyncio.CancelledError:
+            self._pending_queue = [queued for queued in self._pending_queue if queued is not task]
+            raise
+        prediction = task.extra.get("prediction")
+        if prediction in {"browser_init_error", "push_failed", "system_error", "Unknown", "Error", "Timeout"}:
+            task.evaluation = EvaluationResult.from_report({
+                "error_code": prediction,
+                "error_details": task.extra.get("metrics", {}),
+            })
+            task.score = None
+        elif task.score is not None:
+            task.evaluation = EvaluationResult.from_report({}, score=task.score)
+        else:
+            raise RuntimeError("LeetCode returned no final verdict")
+        await self._submitter.save_result(task)
         return task
+
+    async def _reset(self) -> None:
+        self._pending_queue.clear()
         
-    async def stats(self) -> Optional[Stats]:
-        total = len(self._data_records)
-        attempted = len(self._tasks)
-        correct = sum(1 for r in self._tasks if r.score and r.score >= 1.0)
-        
-        task_times = {r.task_id: r.time for r in self._tasks if r.time is not None}
-        avg_time = sum(task_times.values()) / len(task_times) if task_times else 0.0
-        
-        return Stats(
-            accuracy=correct / attempted if attempted > 0 else 0.0,
-            total=total,
-            correct=correct,
-            wrong=attempted - correct,
-            times=task_times,
-            average_time=avg_time
-        )
+    async def _stats(self) -> Stats:
+        return Stats(total=len(self._data_records))
 
     def _parse_result_score(self, result: Dict[str, Any]) -> float:
         """
@@ -1196,7 +1107,7 @@ Template:
         # Compile Error 或其他无法解析的情况，给 0.0
         return 0.0
     
-    async def cleanup(self):
+    async def _cleanup(self):
         """Cleanup benchmark resources (close browser)."""
         if self._submitter_started and self._submitter:
             try:
@@ -1205,11 +1116,3 @@ Template:
                 logger.info(f"| [{self.name}] 🚪 Browser closed successfully")
             except Exception as e:
                 logger.warning(f"| [{self.name}] ⚠️ Error during browser cleanup: {e}")
-
-    def __del__(self):
-        if hasattr(self, '_submitter') and self._submitter_started:
-            try:
-                if hasattr(self._submitter, 'close'):
-                    self._submitter.close()
-            except Exception:
-                pass

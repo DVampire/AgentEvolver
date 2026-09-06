@@ -306,8 +306,8 @@ def test_shipped_entry_configs_do_not_override_the_tag_namespace() -> None:
 def test_swebench_launcher_has_no_local_session_owner_literal() -> None:
     """Host and inner launch paths both derive the namespace from the loaded config."""
     root = Path(__file__).resolve().parents[1]
-    programbench = (root / "examples" / "run_programbench.py").read_text(encoding="utf-8")
-    swebench = (root / "examples" / "run_swebench_pro.py").read_text(encoding="utf-8")
+    programbench = (root / "examples/run_programbench.py").read_text(encoding="utf-8")
+    swebench = (root / "examples/run_swebench_pro.py").read_text(encoding="utf-8")
 
     assert 'SESSION_OWNER = "local"' not in programbench
     assert "SESSION_OWNER" not in swebench

@@ -6,7 +6,7 @@ value MUST stay in sync (see test_shipped_configs):
 
 | field         | agent arm                                  | this baseline        |
 | `agent_names` | meta_agent + generate/optimize/evaluate    | meta_agent           |
-| `tool_names`  | bash + done + adoption                     | bash + done          |
+| `tool_names`  | bash + done + inspect + adoption           | bash + done + inspect |
 | `skill_names` | self_evolving_skill                        | none                 |
 
 The comparison is only meaningful while the two arms run the same model, the same
@@ -42,6 +42,7 @@ agent_names = [
 tool_names = [
     "bash_tool",
     "done_tool",
+    "inspect_tool",  # Same read-only capability discovery as the evolution arm.
 ]
 # No self_evolving_skill here — that is the evolution arm's alone.
 skill_names = []

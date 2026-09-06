@@ -823,7 +823,7 @@ class WorkflowRuntime:
             results = results if isinstance(results, list) else []
             # Build the target benchmark on first use (startup only inits the
             # dataset-free evaluators; a heavier one is materialized on demand).
-            if await benchmark_manager.get(target) is None:
+            if not await benchmark_manager.is_loaded(target):
                 await benchmark_manager.initialize(benchmark_names=[target])
             score = await benchmark_manager(
                 benchmark_name=target, results=results,

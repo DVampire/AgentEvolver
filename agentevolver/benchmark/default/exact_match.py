@@ -22,21 +22,20 @@ class ExactMatchBenchmark(Benchmark):
     name: str = "exact_match"
     description: str = "Evaluate {prediction, ground_truth} pairs by numeric/exact match."
 
-    _tasks: List[Task] = PrivateAttr(default_factory=list)
 
-    async def initialize(self):
+    async def _initialize(self):
         """No dataset to load."""
         self._tasks = []
 
-    async def reset(self) -> Optional[Task]:
-        self._tasks = []
+
+    async def _step(self) -> Optional[Task]:
         return None
 
-    async def step(self) -> Optional[Task]:
-        return None
-
-    async def eval(self, task: Task) -> Optional[Task]:
+    async def _eval(self, task: Task) -> Task:
         """1.0 when the prediction equals the ground truth (numeric or string)."""
+        if self.model_name:
+            task.score = await self.llm_judge(task)
+            return task
         pred = str(task.result).strip() if task.result is not None else ""
         gt = str(task.ground_truth).strip() if task.ground_truth is not None else ""
         score = 0.0
@@ -46,11 +45,7 @@ class ExactMatchBenchmark(Benchmark):
             except (TypeError, ValueError):
                 score = 1.0 if pred == gt else 0.0
         task.score = score
-        self._tasks.append(task)
         return task
 
-    async def stats(self) -> Optional[Stats]:
-        total = len(self._tasks)
-        correct = sum(1 for task in self._tasks if (task.score or 0.0) >= 1.0)
-        return Stats(accuracy=(correct / total if total else 0.0), total=total,
-                     correct=correct, wrong=total - correct)
+    async def _stats(self) -> Stats:
+        return Stats(total=len(self._tasks))

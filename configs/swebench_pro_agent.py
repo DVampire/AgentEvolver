@@ -7,7 +7,7 @@ resolves the issue, not a reconstructed program). Only the task and the grader
 differ; the roster is identical.
 
 The roster, deliberately minimal:
-- **Only `bash_tool` + `done_tool`.** The agent reads, edits and diffs the repo
+- **`bash_tool` + `done_tool`, with read-only `inspect_tool`.** The agent reads, edits and diffs the repo
   through the shell; that is the whole toolset the reference SWE agents
   (SWE-agent / mini-SWE-agent) use, and the score comes from the model reasoning
   over the codebase, not from a wide tool surface.
@@ -67,6 +67,7 @@ agent_names = [
 tool_names = [
     "bash_tool",
     "done_tool",
+    "inspect_tool",  # Required by the shared evolution policy; also present in baseline.
     "adoption_tool",
 ]
 skill_names = [

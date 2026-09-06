@@ -1,6 +1,7 @@
 """SWE-bench datasets and host-only final evaluators; never exposed as agent tools."""
 
 import os
+import asyncio
 import ast
 import contextlib
 import hashlib
@@ -9,6 +10,10 @@ import json
 import re
 import shlex
 import tempfile
+import random
+import signal
+import shutil
+import subprocess
 from typing import Dict, List, Optional, Tuple
 
 from pydantic import ConfigDict, Field, PrivateAttr
@@ -18,6 +23,7 @@ from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.registry import BENCHMARK
 from agentevolver.utils import dedent
+from agentevolver.utils.file_utils import atomic_write_text
 
 SYSTEM_PROMPT = dedent("""
     You are an expert software engineer working inside a real repository at a known
@@ -48,46 +54,342 @@ class SWEBenchBenchmark(Benchmark):
     system_prompt: Optional[str] = Field(default=SYSTEM_PROMPT)
 
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
-    _index: int = PrivateAttr(default=0)
-    _evaluated: Dict[str, Task] = PrivateAttr(default_factory=dict)
 
-    def __init__(self, base_dir: Optional[str] = None, start: Optional[int] = None,
-                 end: Optional[int] = None, **kwargs):
+    container_workspace: str = "/workspace"
+    image_workspace: str = "/app"
+    submission_protocol: str = "swe-pro-final-only-v2"
+    pull_attempts: int = 4
+    pull_timeout: int = 2700
+    seed_timeout: int = 2700
+
+    def _collect_patch(self, workspace: str, base_commit: str) -> str:
+        """The agent's change as a git patch: everything the tree differs from base_commit.
+
+        Both committed and uncommitted edits are captured — the agent is told to commit, but a
+        forgotten commit must not lose the work. Returns '' when the tree is unchanged. This is
+        the raw agent patch, exactly like an SWE-agent ``.pred``; binary noise from the image's
+        baked-in git quirks is dropped later by ``strip_binary_hunks`` at grade time, matching the
+        official harness.
+        """
+        git_dir = os.path.join(workspace, ".git")
+
+        def _git(*args, env=None):
+            return subprocess.run(
+                ["git", f"--git-dir={git_dir}", f"--work-tree={workspace}", *args],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=env,
+            )
+
+        with tempfile.TemporaryDirectory(prefix="agentevolver-patch-index-") as tmp_dir:
+            env = os.environ.copy()
+            env["GIT_INDEX_FILE"] = os.path.join(tmp_dir, "index")
+            object_dir = os.path.join(tmp_dir, "objects")
+            os.makedirs(object_dir)
+            env["GIT_OBJECT_DIRECTORY"] = object_dir
+            env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = os.path.join(git_dir, "objects")
+            initialized = _git("read-tree", "HEAD", env=env)
+            if initialized.returncode != 0:
+                raise RuntimeError(
+                    f"git read-tree failed while collecting patch: {initialized.stderr.strip()}"
+                )
+            staged = _git("add", "-A", "-N", env=env)
+            if staged.returncode != 0:
+                raise RuntimeError(
+                    f"git add -N failed while collecting patch: {staged.stderr.strip()}"
+                )
+            diff = _git("diff", "--binary", base_commit, env=env)
+            if diff.returncode != 0:
+                raise RuntimeError(f"git diff failed while collecting patch: {diff.stderr.strip()}")
+            return diff.stdout
+
+    def _reclaim_instance_disk(self, workspace_dir, image_ref_str) -> None:
+        """Free one graded instance's disk: its seeded workspace and its (unique) image.
+
+        Runs in a worker thread. The workspace is container-uid-owned, so its contents are
+        removed through a throwaway root container before the (host-owned) top dir is dropped.
+        The image's dockerhub_tag is unique to the instance, so ``docker rmi`` frees it without
+        affecting any other in-flight instance. Best-effort — never raises.
+        """
+        if workspace_dir and os.path.isdir(workspace_dir):
+            with contextlib.suppress(Exception):
+                subprocess.run(
+                    [
+                        "docker",
+                        "run",
+                        "--rm",
+                        "-v",
+                        f"{workspace_dir}:/w",
+                        "alpine",
+                        "sh",
+                        "-c",
+                        "rm -rf /w/..?* /w/.[!.]* /w/* 2>/dev/null; true",
+                    ],
+                    capture_output=True,
+                    timeout=300,
+                )
+            with contextlib.suppress(Exception):
+                shutil.rmtree(workspace_dir, ignore_errors=True)
+        if image_ref_str:
+            with contextlib.suppress(Exception):
+                subprocess.run(
+                    ["docker", "rmi", "-f", image_ref_str], capture_output=True, timeout=180
+                )
+
+    async def _provision_command(
+        self, argv: list[str], timeout: float
+    ) -> subprocess.CompletedProcess:
+        """Keep provisioning cancellable instead of leaving an uninterruptible worker thread."""
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
+        try:
+            (stdout, stderr) = await asyncio.wait_for(process.communicate(), timeout)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            await process.wait()
+            raise
+        return subprocess.CompletedProcess(
+            argv,
+            process.returncode,
+            stdout.decode(errors="replace"),
+            stderr.decode(errors="replace"),
+        )
+
+    async def _ensure_image(self, image_ref_str: str) -> None:
+        """Ensure one task image is local, retrying transient registry failures."""
+        present = await self._provision_command(["docker", "image", "inspect", image_ref_str], 60)
+        if present.returncode == 0:
+            return
+        last = ""
+        for attempt in range(1, self.pull_attempts + 1):
+            try:
+                pulled = await self._provision_command(
+                    ["docker", "pull", image_ref_str], self.pull_timeout
+                )
+                if pulled.returncode == 0:
+                    return
+                last = (pulled.stderr or pulled.stdout).strip()
+            except asyncio.TimeoutError as error:
+                last = f"pull exceeded {self.pull_timeout}s: {error}"
+            if attempt < self.pull_attempts:
+                await asyncio.sleep(2**attempt + random.uniform(0.0, 1.0))
+        raise RuntimeError(
+            f"could not pull {image_ref_str} after {self.pull_attempts} attempts: {last[-1000:] or '(no Docker output)'}"
+        )
+
+    async def _seed_workspace_async(
+        self, image_ref_str: str, base_commit: str, destination: str
+    ) -> None:
+        """Copy the image's /app into destination at base_commit, the way the grader starts.
+
+        Done by a throwaway root container so modes/ownership copy exactly, then handed to the
+        container uid so the agent can edit it. A pre-existing dir is emptied first (root-owned).
+
+        The setup mirrors the official grader's tree — ``git reset --hard`` then ``git checkout``
+        at base_commit, and *no* ``git clean``. It additionally removes every ref except a fresh
+        benchmark-base branch and prunes unreachable objects. Some published instance images
+        retain later upstream commits, including the gold fix; leaving those objects addressable
+        lets an agent recover answer metadata or the complete patch with ``git show``. Keeping the
+        base commit and its ancestors preserves normal repository history without exposing future
+        commits. Remotes are removed as a second line of defence behind the network policy.
+
+        ``git clean -fdx`` is deliberately avoided: these images carry a baked-in index quirk
+        where a tracked, present file (e.g. ``test/files/toobig.jpg``) reads as deleted, and clean
+        would wrongly remove it. Any binary noise that still lands in the diff is dropped by
+        ``strip_binary_hunks`` at grade time, again matching the official harness
+        (swe_bench_pro_eval.py: assemble_workspace_files).
+        """
+        os.makedirs(destination, exist_ok=True)
+        if not base_commit:
+            raise ValueError("base_commit is required to seed a GT-safe SWE-bench Pro workspace")
+        await self._ensure_image(image_ref_str)
+        container_name = (
+            "agentevolver-seed-"
+            + hashlib.sha256(os.path.abspath(destination).encode()).hexdigest()[:20]
+        )
+        quoted_base = shlex.quote(base_commit)
+        reset = f"""git reset --hard {quoted_base}; git checkout -B benchmark-base {quoted_base}; git remote | while IFS= read -r remote; do git remote remove "$remote"; done; git for-each-ref --format='%(refname)' | while IFS= read -r ref; do [ "$ref" = refs/heads/benchmark-base ] || git update-ref -d "$ref"; done; git reflog expire --expire=now --all; git gc --prune=now; """
+        script = f"set -eu; rm -rf /seed/..?* /seed/.[!.]* /seed/*; cp -a {self.image_workspace}/. /seed/; cd /seed; git config --global --add safe.directory /seed; {reset}chown -R {self.container_user} /seed"
+        try:
+            await self._provision_command(["docker", "rm", "-f", container_name], 60)
+            result = await self._provision_command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--name",
+                    container_name,
+                    "--entrypoint",
+                    "sh",
+                    "-v",
+                    f"{destination}:/seed",
+                    image_ref_str,
+                    "-c",
+                    script,
+                ],
+                self.seed_timeout,
+            )
+        except asyncio.TimeoutError as e:
+            raise RuntimeError(
+                f"seeding the workspace from {image_ref_str} exceeded {self.seed_timeout}s (copy + reset + gc of the checkout)."
+            ) from e
+        finally:
+            with contextlib.suppress(Exception):
+                await self._provision_command(["docker", "rm", "-f", container_name], 60)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"could not seed the workspace from {image_ref_str}: {(result.stderr or result.stdout).strip()[:300]}"
+            )
+
+    def _has_resumable_workspace(self, workspace_dir: str, base_commit: str) -> bool:
+        """Whether ``workspace_dir`` is a usable checkout for an interrupted instance.
+
+        A resume is intentionally coarse-grained: completed instances are skipped from the
+        durable run ledger, while an in-flight instance reuses its checkout and starts a fresh
+        agent turn over the existing edits.  Requiring both a valid HEAD and the benchmark base
+        object avoids building on a half-copied or corrupted seed after a host failure.
+        """
+        git_dir = os.path.join(workspace_dir, ".git")
+        if not base_commit or not os.path.isdir(git_dir):
+            return False
+
+        def _git(*items):
+            return subprocess.run(
+                ["git", f"--git-dir={git_dir}", f"--work-tree={workspace_dir}", *items],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+        try:
+            head = _git("rev-parse", "--verify", "HEAD^{commit}")
+            base = _git("cat-file", "-e", f"{base_commit}^{{commit}}")
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return head.returncode == 0 and base.returncode == 0
+
+    def _instance(self, task: Task) -> Dict:
+        row = next((r for r in self._data_records if r["instance_id"] == task.task_id), None)
+        if row is None:
+            raise ValueError("unknown benchmark task")
+        return row
+
+    def _image_ref(self, row: Dict) -> str:
+        raise NotImplementedError
+
+    async def _prepare(self, task, ctx, options):
+        row = self._instance(task)
+        ctx.image = self._image_ref(row)
+        await self._prepare_runtime_mounts(options)
+        ctx.resumed = bool(options.get("resume")) and self._has_resumable_workspace(
+            ctx.workspace_dir, row["base_commit"]
+        )
+        if ctx.resumed:
+            await self._ensure_image(ctx.image)
+        else:
+            await self._seed_workspace_async(ctx.image, row["base_commit"], ctx.workspace_dir)
+        ctx.permissions_changed = True
+        await self._grant_workspace(
+            ctx.workspace_dir if options.get("agent_on_host", True) else ctx.session_dir
+        )
+        await self._acquire_task_sandbox(ctx, options)
+
+    async def _collect_submission(self, task, ctx, output):
+        row = self._instance(task)
+        patch = await self._blocking(self._collect_patch, ctx.workspace_dir, row["base_commit"])
+        patch_path = str(path_manager.under(ctx.session_dir, P.PROJECT_PATCH))
+        atomic_write_text(patch_path, patch)
+        output = {
+            **(output or {}),
+            "patch_path": patch_path,
+            "patch_bytes": len(patch),
+            "has_patch": bool(patch.strip()),
+        }
+        return {
+            "protocol": self.submission_protocol,
+            "instance_id": task.task_id,
+            "base_commit": row["base_commit"],
+            "patch": patch,
+            "sha256": hashlib.sha256(patch.encode()).hexdigest(),
+            "agent_result": {**(output or {}), "egress_audit": ctx.egress_audit},
+        }
+
+    def _validate_submission(self, task, submission):
+        row = self._instance(task)
+        if (
+            submission.get("protocol") != self.submission_protocol
+            or submission.get("instance_id") != task.task_id
+            or submission.get("base_commit") != row["base_commit"]
+            or not isinstance(submission.get("patch"), str)
+            or not isinstance(submission.get("agent_result"), dict)
+            or submission.get("sha256") != hashlib.sha256(submission["patch"].encode()).hexdigest()
+        ):
+            raise ValueError("invalid frozen submission identity or digest")
+
+    def _apply_submission(self, task, submission):
+        task.result = submission
+
+    async def _cleanup_task(self, ctx, *, reclaim=False):
+        await self._stop_task_resources(ctx)
+        terminal = any(
+            t.task_id == ctx.task_id and t.evaluation and t.evaluation.status != "error"
+            for t in self._tasks
+        )
+        if reclaim and terminal:
+            await self._blocking(self._reclaim_instance_disk, ctx.workspace_dir, ctx.image)
+
+    def _historical_task(self, record):
+        grade = record.get("final_grade")
+        if isinstance(grade, dict) and record.get("instance_id"):
+            evaluation = EvaluationResult.from_report(grade)
+            return Task(
+                task_id=record["instance_id"],
+                score=evaluation.score,
+                evaluation=evaluation,
+                extra={"spend": record.get("spend", {}), "historical": True},
+            )
+        return super()._historical_task(record)
+
+    def __init__(
+        self,
+        base_dir: Optional[str] = None,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+        **kwargs,
+    ):
         super().__init__(base_dir=base_dir, start=start, end=end, **kwargs)
 
-    async def initialize(self):
+    async def _initialize(self):
         # Built on first use rather than at construction: the registry instantiates every
         # benchmark at startup, before a session is bound, so doing this in __init__
         # scaffolded empty directories under the unbound root.
-        from agentevolver.benchmark.utils import ensure_dataset
+        from agentevolver.benchmark.utils import ensure_dataset, _dir_has_content
         from datasets import load_dataset
 
         os.makedirs(self.base_dir, exist_ok=True)
-        local = ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
-        dataset = load_dataset(local, split=self.split)
+        local = (
+            self.path
+            if os.path.isfile(self.path) or _dir_has_content(self.path)
+            else ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
+        )
+        if os.path.isfile(local) and local.endswith(".parquet"):
+            dataset = load_dataset("parquet", data_files={self.split: local}, split=self.split)
+        else:
+            dataset = load_dataset(local, split=self.split)
         self._data_records = self._apply_slice(list(dataset))
         logger.info(f"| 📚 {self.name}: {len(self._data_records)} instance(s) from {local}")
-        await self.reset()
 
-    def instances(self) -> List[Dict]:
-        """Every loaded row, oracle fields included — for the host-side grader only.
-
-        The launcher needs `patch`, `test_patch` and the two test lists to grade, and it
-        runs on the host where the answer key already lives. Nothing that reaches a
-        container may come from here; use `safe_instance` for that.
-        """
-        return list(self._data_records)
-
-    def safe_instance(self, row: Dict) -> Dict:
+    def _task_payload(self, row: Dict) -> Dict:
         """The subset of a row a container may see — never the gold patch or the tests."""
         return {key: row.get(key, "") for key in self.safe_fields}
 
-    async def reset(self) -> Optional[Task]:
-        self._index = 0
-        self._evaluated.clear()
-        return await self.step()
-
-    async def step(self) -> Optional[Task]:
+    async def _step(self) -> Optional[Task]:
         if self._index >= len(self._data_records):
             return None
         record = self._data_records[self._index]
@@ -100,35 +402,38 @@ class SWEBenchBenchmark(Benchmark):
             # may consult. Carrying it on the Task would put it one attribute access away
             # from whatever renders a prompt.
             ground_truth=None,
-            extra=self.safe_instance(record),
+            extra={
+                **self.task_payload(record),
+                **{key: record[key] for key in ("image", "dockerhub_tag") if key in record},
+            },
         )
 
-    async def eval(self, task: Task) -> Task:
-        row = next((item for item in self._data_records if item["instance_id"] == task.task_id), None)
+    async def _eval(self, task: Task) -> Task:
+        row = next(
+            (item for item in self._data_records if item["instance_id"] == task.task_id), None
+        )
         submission = task.result
         try:
             if row is None:
                 raise ValueError("unknown benchmark task")
             if not isinstance(submission, dict) or not isinstance(submission.get("patch"), str):
                 raise ValueError("a frozen patch submission is required")
-            if (submission.get("instance_id") != task.task_id or
-                    submission.get("base_commit") != row["base_commit"] or
-                    submission.get("sha256") != hashlib.sha256(submission["patch"].encode()).hexdigest()):
+            if (
+                submission.get("instance_id") != task.task_id
+                or submission.get("base_commit") != row["base_commit"]
+                or submission.get("sha256")
+                != hashlib.sha256(submission["patch"].encode()).hexdigest()
+            ):
                 raise ValueError("submission identity or digest mismatch")
             report = await self._evaluate(row, submission["patch"], task.extra or {})
         except Exception as error:
             report = {"error_code": "evaluation_failed", "error_details": str(error)}
         task.evaluation = EvaluationResult.from_report(report)
         task.score = task.evaluation.score
-        self._evaluated[task.task_id] = task
         return task
 
-    async def stats(self) -> Stats:
-        scored = [task for task in self._evaluated.values() if task.score is not None]
-        correct = sum(task.score >= 1.0 for task in scored)
-        return Stats(total=len(self._data_records), correct=correct, wrong=len(scored) - correct,
-                     accuracy=correct / len(scored) if scored else 0.0,
-                     extra={"evaluation_errors": len(self._evaluated) - len(scored)})
+    async def _stats(self) -> Stats:
+        return Stats(total=len(self._data_records))
 
     async def _evaluate(self, row: Dict, patch: str, options: Dict) -> Dict:
         raise NotImplementedError
@@ -138,6 +443,8 @@ class SWEBenchBenchmark(Benchmark):
 class SWEBenchVerifiedBenchmark(SWEBenchBenchmark):
     """SWE-bench Verified — 500 human-validated Python issues from 12 repositories."""
 
+    image_workspace: str = "/testbed"
+    container_workspace: str = "/testbed"
     name: str = Field(default="swebench_verified")
     path: str = Field(default="datasets/SWE-bench_Verified")
     hf_repo_id: str = Field(default="SWE-bench/SWE-bench_Verified")
@@ -145,6 +452,9 @@ class SWEBenchVerifiedBenchmark(SWEBenchBenchmark):
     safe_fields: Tuple[str, ...] = Field(
         default=("instance_id", "repo", "base_commit", "problem_statement")
     )
+
+    def _image_ref(self, row: Dict) -> str:
+        return row["image"]
 
     async def _evaluate(self, row: Dict, patch: str, options: Dict) -> Dict:
         return await _grade_verified(options["workspace_dir"], row, patch=patch)
@@ -157,6 +467,26 @@ class SWEBenchProBenchmark(SWEBenchBenchmark):
     name: str = Field(default="swebench_pro")
     path: str = Field(default="datasets/SWE-bench_Pro")
     hf_repo_id: str = Field(default="ScaleAI/SWE-bench_Pro")
+
+    def _image_ref(self, row: Dict) -> str:
+        return pro_image_ref(row)
+
+    async def _evaluation_info(self, options: Dict) -> Dict:
+        if not options:
+            return {}
+        profile = options.get("grader_profile", "official")
+        if profile not in {"official", "diagnostic"}:
+            raise ValueError(f"Unknown SWE Pro grader profile: {profile}")
+        repo = os.path.abspath(options["grader_repo"])
+        if not os.path.isfile(os.path.join(repo, "swe_bench_pro_eval.py")):
+            raise ValueError(f"grader repo not found: {repo}")
+        return {
+            "grader_profile": profile,
+            "grader_implementation": (
+                OFFICIAL_PRO_GRADER_PROTOCOL if profile == "official" else "swe-pro-diagnostic-v1"
+            ),
+            "grader_fingerprint": _grader_fingerprint(repo),
+        }
     # Pro adds a written requirements list and an interface spec to the issue text.
     safe_fields: Tuple[str, ...] = Field(
         default=("instance_id", "repo", "repo_language", "base_commit",
@@ -171,10 +501,114 @@ class SWEBenchProBenchmark(SWEBenchBenchmark):
 _GRADE_TIMEOUT_SECONDS = 1800
 _GRADER_WORKERS = 2
 _GRADER_EVIDENCE = ("stdout.log", "stderr.log", "output.json", "status.json", "fixtures.json")
+OFFICIAL_PRO_GRADER_PROTOCOL = "swe-pro-upstream-local-docker-v1"
 
 
 def pro_image_ref(row: dict) -> str:
     return f"jefzda/sweap-images:{row['dockerhub_tag']}"
+
+
+def _official_pro_image_ref(row: dict) -> str:
+    """Port of upstream helper_code/image_uri.py::get_dockerhub_image_uri."""
+    uid, repo = row["instance_id"], row["repo"]
+    repo_base, repo_name = repo.lower().split("/")
+    hsh = uid.replace("instance_", "")
+    if uid == "instance_element-hq__element-web-ec0f940ef0e8e3b61078f145f34dc40d1938e6c5-vnan":
+        repo_name = "element-web"
+    elif "element-hq" in repo.lower() and "element-web" in repo.lower():
+        repo_name = "element"
+        if hsh.endswith("-vnan"):
+            hsh = hsh[:-5]
+    elif hsh.endswith("-vnan"):
+        hsh = hsh[:-5]
+    return f"jefzda/sweap-images:{f'{repo_base}.{repo_name}-{hsh}'[:128]}"
+
+
+def _official_pro_report(results, row: dict) -> dict:
+    """Upstream main's set-membership score, without diagnostic overrides.
+
+    A wrapper reported PASSED by the upstream parser remains PASSED here, even if
+    its log mentions skipped subtests or another package failed compilation.
+    Such evidence is retained for auditing, not used to change the official score.
+    """
+    available = isinstance(results, dict) and isinstance(results.get("tests"), list)
+    passed = {test["name"] for test in results["tests"] if test["status"] == "PASSED"} if available else set()
+    f2p, p2p = set(_as_list(row, "fail_to_pass")), set(_as_list(row, "pass_to_pass"))
+    return {
+        "fail_to_pass_resolved": len(f2p & passed), "fail_to_pass_total": len(f2p),
+        "pass_to_pass_preserved": len(p2p & passed), "pass_to_pass_total": len(p2p),
+        "resolved": available and (f2p | p2p) <= passed,
+        "official_output_available": available,
+        "grader_profile": "official", "grader_protocol": OFFICIAL_PRO_GRADER_PROTOCOL,
+    }
+
+
+def _run_official_pro(workspace_dir: str, row: dict, grader_repo: str, patch: str) -> dict:
+    """Upstream eval_with_docker migrated into the benchmark implementation.
+
+    Reference: scaleapi/SWE-bench_Pro-os, ca10a60a5fcae51e6948ffe1485d4153d421e6c5.
+    The only integration changes are a per-invocation evidence directory and returning
+    Benchmark's count fields. Image selection, pull/local fallback, bind mount,
+    entrypoint, scripts, inherited image environment, container wait and scoring match
+    the upstream local-Docker path. No launcher process or second result ledger.
+    """
+    import platform
+    from pathlib import Path
+
+    evidence_root = Path(workspace_dir).resolve().parent / "evaluation"
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    artifact = Path(tempfile.mkdtemp(prefix="official-", dir=evidence_root))
+    mounted = artifact / "workspace"
+    mounted.mkdir()
+    results = None
+    try:
+        import docker
+
+        iid = row["instance_id"]
+        files = {
+            "patch.diff": strip_binary_hunks(patch),
+            "run_script.sh": _load_script(grader_repo, iid, "run_script.sh"),
+            "parser.py": _load_script(grader_repo, iid, "parser.py"),
+            "entryscript.sh": _build_entryscript(row, grader_repo, profile="official"),
+        }
+        for name, content in files.items():
+            (mounted / name).write_text(content, encoding="utf-8")
+        (artifact / "submitted.patch").write_text(patch, encoding="utf-8")
+        image = _official_pro_image_ref(row)
+        docker_platform = "linux/amd64" if platform.machine().lower() in {"arm64", "aarch64"} else None
+        client = docker.from_env()
+        try:
+            try:
+                client.images.pull(image, **({"platform": docker_platform} if docker_platform else {}))
+            except Exception:
+                client.images.get(image)  # Same fallback to an existing image as upstream.
+            kwargs = {
+                "volumes": {str(mounted): {"bind": "/workspace", "mode": "rw"}},
+                "detach": True, "remove": True, "entrypoint": "/bin/bash",
+                "command": ["-c", "bash /workspace/entryscript.sh"],
+            }
+            if docker_platform:
+                kwargs["platform"] = docker_platform
+            container = client.containers.run(image, **kwargs)
+            result = container.wait()
+            # Upstream still reads output.json after a nonzero container exit.
+            (artifact / "execution.json").write_text(json.dumps(result), encoding="utf-8")
+            for name in ("stdout.log", "stderr.log"):
+                source = mounted / name
+                (artifact / name).write_text(source.read_text() if source.exists() else "", encoding="utf-8")
+            results = json.loads((mounted / "output.json").read_text(encoding="utf-8"))
+            (artifact / "output.json").write_text(json.dumps(results), encoding="utf-8")
+            (artifact / "entryscript.sh").write_text(files["entryscript.sh"], encoding="utf-8")
+        finally:
+            client.close()
+        report = _official_pro_report(results, row)
+    except Exception as error:
+        # Upstream main scores evaluator exceptions/missing output as False.
+        (artifact / "exception.log").write_text(f"{type(error).__name__}: {error}", encoding="utf-8")
+        report = _official_pro_report(None, row)
+    report["evidence_path"] = str(artifact)
+    (artifact / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return report
 
 
 def strip_binary_hunks(patch: str) -> str:
@@ -200,7 +634,6 @@ def strip_binary_hunks(patch: str) -> str:
     return "".join(kept)
 
 
-
 def _as_list(row: dict, field: str) -> list:
     v = row.get(field, "")
     try:
@@ -219,11 +652,9 @@ def _as_list(row: dict, field: str) -> list:
         return []
 
 
-
 def _load_script(grader_repo: str, instance_id: str, name: str) -> str:
     with open(os.path.join(grader_repo, "run_scripts", instance_id, name), encoding="utf-8") as h:
         return h.read()
-
 
 
 def _argv_safe_run_script(script: str) -> str:
@@ -244,7 +675,6 @@ fi'''
     # images. Bound that inner parallelism independently from benchmark concurrency.
     return re.sub(r"(\bansible-test\s+units\b)(?![^\n]*--num-workers)",
                   rf"\1 --num-workers {_GRADER_WORKERS}", script)
-
 
 
 def _restore_test_fixtures(repo: str, base: str, before: str, *, match_revision: bool = False) -> list[str]:
@@ -302,7 +732,6 @@ def _restore_test_fixtures(repo: str, base: str, before: str, *, match_revision:
     return restored
 
 
-
 def _parser_with_fail_boundaries(script: str) -> str:
     """Keep Jest FAIL sections from being attributed to the preceding PASS file.
 
@@ -319,7 +748,6 @@ def _parser_with_fail_boundaries(script: str) -> str:
         'not lines[i].strip().startswith("PASS")',
         'not lines[i].strip().startswith(("PASS", "FAIL"))',
     )
-
 
 
 def _build_entryscript(row: dict, grader_repo: str, *, profile: str = "diagnostic") -> str:
@@ -390,7 +818,6 @@ stage=complete
 """
 
 
-
 def _counts(results, fail_to_pass: list, pass_to_pass: list) -> dict:
     """Per-test {name,status} → COUNTS ONLY (no names cross back to the agent)."""
     status = {}
@@ -405,7 +832,6 @@ def _counts(results, fail_to_pass: list, pass_to_pass: list) -> dict:
         "pass_to_pass_preserved": p2p, "pass_to_pass_total": len(pass_to_pass),
         "resolved": (f2p == len(fail_to_pass) and p2p == len(pass_to_pass) and len(fail_to_pass) > 0),
     }
-
 
 
 async def _save_grader_evidence(sbx, workspace_dir: str, run) -> dict:
@@ -434,7 +860,6 @@ async def _save_grader_evidence(sbx, workspace_dir: str, run) -> dict:
                 with open(os.path.join(dest, f"grader-{seq}.{name}"), "w", encoding="utf-8") as h:
                     h.write(data if isinstance(data, str) else str(data))
     return evidence
-
 
 
 def _grade_report(results, row: dict, evidence: dict, *, profile: str = "diagnostic") -> dict:
@@ -515,10 +940,12 @@ def _grade_report(results, row: dict, evidence: dict, *, profile: str = "diagnos
     return counts
 
 
-
 async def _grade_pro(workspace_dir: str, row: dict, grader_repo: str, *, patch: str,
                       profile: str = "official") -> dict:
     """Grade a frozen submission; never collect a mutable workspace or call an agent."""
+    if profile == "official":
+        return await asyncio.to_thread(_run_official_pro, workspace_dir, row, grader_repo, patch)
+
     from agentevolver.sandbox import sandbox_manager
 
     instance_id = row["instance_id"]
@@ -587,8 +1014,7 @@ async def _grade_pro(workspace_dir: str, row: dict, grader_repo: str, *, patch: 
                 await sandbox_manager.release("docker", reuse_key=reuse)
 
 
-
-def grader_fingerprint(grader_repo: str) -> str:
+def _grader_fingerprint(grader_repo: str) -> str:
     """Bind resume to the actual local grader assets, including uncommitted changes."""
     digest = hashlib.sha256()
     for directory, dirs, files in os.walk(grader_repo):

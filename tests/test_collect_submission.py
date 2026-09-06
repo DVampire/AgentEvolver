@@ -20,22 +20,17 @@ The rules, from the function's own contract:
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import subprocess
 import tarfile
 
 import pytest
 
-_SPEC = importlib.util.spec_from_file_location(
-    "rpb_for_submission_tests",
-    os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples", "run_programbench.py"),
-)
-rpb = importlib.util.module_from_spec(_SPEC)
-_SPEC.loader.exec_module(rpb)
+from agentevolver.benchmark.default.programbench import ProgramBenchmark
+rpb = ProgramBenchmark()
 
-collect_submission = rpb.collect_submission
-REFERENCE_COPY = rpb.REFERENCE_COPY  # "reference_executable"
+collect_submission = rpb._package_submission
+REFERENCE_COPY = rpb.reference_copy  # "reference_executable"
 
 
 def _git(workspace, *args):

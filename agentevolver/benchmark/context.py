@@ -47,6 +47,34 @@ class BenchmarkContextManager(BaseModel):
         self._benchmark_history_versions: Dict[str, Dict[str, BenchmarkConfig]] = {}
         
         self._cleanup_registered = False
+
+    def _resolve(self, name: str) -> BenchmarkConfig:
+        """Own construction of implementations; external callers receive metadata."""
+        entry = self._benchmark_configs.get(name)
+        if entry is None:
+            cls = next((cls for cls in BENCHMARK.module_dict.values()
+                        if cls.model_fields["name"].default == name), None)
+            if cls is None:
+                raise ValueError(f"Unknown benchmark '{name}'")
+            settings = dict(config.get(inflection.underscore(cls.__name__), {}) or {})
+            entry = BenchmarkConfig(name=name, description=cls.__doc__ or "", cls=cls, config=settings)
+            self._benchmark_configs[name] = entry
+        if entry.instance is None:
+            entry.instance = entry.cls(**(entry.config or {}))
+        return entry
+
+    async def configure(self, name: str, settings: Dict[str, Any]) -> BenchmarkConfig:
+        """Configure one managed implementation without replacing other benchmarks."""
+        if settings.get("name", name) != name:
+            raise ValueError("configure cannot rename a registered benchmark")
+        entry = self._resolve(name)
+        merged = {**(entry.config or {}), **settings}
+        if merged != entry.config:
+            replacement = entry.cls(**merged)
+            await entry.instance.cleanup()
+            entry.instance = replacement
+            entry.config = merged
+        return entry
     
     async def initialize(self, benchmark_names: Optional[List[str]] = None):
         """Initialize the benchmark context manager."""
@@ -285,6 +313,7 @@ class BenchmarkContextManager(BaseModel):
         if config.name in self._benchmark_configs:
             existing = self._benchmark_configs[config.name]
             if existing.instance is not None:
+                await existing.instance.initialize()
                 return existing
         
         try:
@@ -292,8 +321,7 @@ class BenchmarkContextManager(BaseModel):
                 raise ValueError(f"No class provided for {config.name}")
             
             instance = config.cls(**config.config) if config.config else config.cls()
-            if hasattr(instance, "initialize"):
-                await instance.initialize()
+            await instance.initialize()
             
             config.instance = instance
             self._benchmark_configs[config.name] = config
@@ -317,7 +345,7 @@ class BenchmarkContextManager(BaseModel):
             logger.warning(f"| ⚠️ Version {version} not found for benchmark {name}")
             return None
         
-        restored_config = BenchmarkConfig(**version_config.model_dump())
+        restored_config = version_config.model_copy(update={"instance": None})
         self._benchmark_configs[name] = restored_config
         
         version_history = await version_manager.get_version_history("benchmark", name)
@@ -334,31 +362,43 @@ class BenchmarkContextManager(BaseModel):
         logger.info(f"| 🔄 Restored benchmark {name} to version {version}")
         return restored_config
 
-    async def cleanup(self):
-        """Cleanup active benchmarks."""
-        for name, config in self._benchmark_configs.items():
-            if config.instance is not None and hasattr(config.instance, "cleanup"):
+    async def prepare(self, name, task, *, context=None):
+        return await self._resolve(name).instance.prepare(task, context=context)
+
+    async def submit(self, name, task, *, output=None):
+        return await self._resolve(name).instance.submit(task, output=output)
+
+    async def cleanup(self, name=None, task=None, *, reclaim=False):
+        if name is not None:
+            await self._resolve(name).instance.cleanup(task, reclaim=reclaim)
+            return
+        errors = []
+        for benchmark_name, entry in self._benchmark_configs.items():
+            if entry.instance is not None:
                 try:
-                    await config.instance.cleanup()
-                except Exception as e:
-                    logger.warning(f"| ⚠️ Error during benchmark {name} cleanup: {e}")
-        
+                    await entry.instance.cleanup()
+                except Exception as error:
+                    errors.append(f"{benchmark_name}: {error}")
+        if errors:
+            raise RuntimeError("benchmark cleanup incomplete: " + "; ".join(errors))
+
         self._benchmark_configs.clear()
         self._benchmark_history_versions.clear()
         logger.info("| 🧹 Benchmark context manager cleaned up")
 
-    async def reset(self, name: str, split: Optional[str] = None) -> Optional[Task]:
+    async def reset(self, name: str, split: Optional[str] = None, *, resume: bool = False) -> Optional[Task]:
         """Reset benchmark progress (delegates to benchmark instance)."""
         instance = await self.get(name)
         if instance is None:
             raise ValueError(f"Benchmark '{name}' not found")
-        # Update split if provided
-        if split is not None and hasattr(instance, 'split'):
-            instance.split = split
-            # Re-initialize benchmark with new split
-            if hasattr(instance, "initialize"):
-                await instance.initialize()
-        return await instance.reset()
+        return await instance.reset(split=split, resume=resume)
+
+    async def llm_judge(self, name: str, task: Task) -> float:
+        """Score through the same public interface as direct benchmark callers."""
+        instance = await self.get(name)
+        if instance is None:
+            raise ValueError(f"Benchmark '{name}' not found")
+        return await instance.llm_judge(task)
 
     async def step(self, name: str) -> Optional[Task]:
         """Get next benchmark task (delegates to benchmark instance)."""
@@ -367,14 +407,14 @@ class BenchmarkContextManager(BaseModel):
             raise ValueError(f"Benchmark '{name}' not found")
         return await instance.step()
 
-    async def eval(self, name: str, task: Task) -> Optional[Task]:
+    async def eval(self, name: str, task: Task) -> Task:
         """Evaluate a benchmark task (delegates to benchmark instance)."""
         instance = await self.get(name)
         if instance is None:
             raise ValueError(f"Benchmark '{name}' not found")
         return await instance.eval(task)
 
-    async def stats(self, name: str) -> Optional[Stats]:
+    async def stats(self, name: str) -> Stats:
         """Get benchmark statistics (delegates to benchmark instance)."""
         instance = await self.get(name)
         if instance is None:

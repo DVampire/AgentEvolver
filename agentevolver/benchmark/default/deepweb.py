@@ -31,15 +31,13 @@ class DeepWebBenchmark(Benchmark):
     hf_repo_id: str = Field(default="deepweb-bench-anon/deepweb-bench", description="HuggingFace repo to download the dataset from when it is missing locally.")
 
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
-    _index: int = PrivateAttr(default=0)
-    _tasks: List[Task] = PrivateAttr(default_factory=list)
 
     system_prompt: Optional[str] = Field(default=SYSTEM_PROMPT, description="The system prompt for the benchmark")
 
     def __init__(self, base_dir: Optional[str] = None, start: Optional[int] = None, end: Optional[int] = None, **kwargs):
         super().__init__(base_dir=base_dir, start=start, end=end, **kwargs)
 
-    async def initialize(self):
+    async def _initialize(self):
         # Created on first use, not at construction: the registry builds every
         # benchmark at startup, before any session is bound, so doing it in
         # __init__ scaffolded empty directories under the unbound root.
@@ -49,14 +47,9 @@ class DeepWebBenchmark(Benchmark):
         local_dir = ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
         dataset = DeepWebDataset(path=local_dir)
         self._data_records = self._apply_slice(dataset.data)
-        await self.reset()
 
-    async def reset(self) -> Optional[Task]:
-        self._index = 0
-        self._tasks = []
-        return await self.step()
 
-    async def step(self) -> Optional[Task]:
+    async def _step(self) -> Optional[Task]:
         if self._index >= len(self._data_records):
             return None
 
@@ -80,7 +73,7 @@ class DeepWebBenchmark(Benchmark):
             extra=extra,
         )
 
-    async def eval(self, task: Task) -> Optional[Task]:
+    async def _eval(self, task: Task) -> Task:
         result = str(task.result).strip() if task.result is not None else ""
         ground_truth = str(task.ground_truth).strip() if task.ground_truth is not None else ""
 
@@ -89,27 +82,11 @@ class DeepWebBenchmark(Benchmark):
 
         if self.model_name:
             task.score = await self.llm_judge(task)
-            self._tasks.append(task)
             return task
 
         # Deep-research answers are long-form; exact match is only a coarse fallback.
         task.score = 1.0 if result and is_same(result, ground_truth) else 0.0
-        self._tasks.append(task)
         return task
 
-    async def stats(self) -> Optional[Stats]:
-        total = len(self._data_records)
-        attempted = len(self._tasks)
-        correct = sum(1 for r in self._tasks if r.score and r.score >= 1.0)
-
-        task_times = {r.task_id: r.time for r in self._tasks if r.time is not None}
-        avg_time = sum(task_times.values()) / len(task_times) if task_times else 0.0
-
-        return Stats(
-            accuracy=correct / attempted if attempted > 0 else 0.0,
-            total=total,
-            correct=correct,
-            wrong=attempted - correct,
-            times=task_times,
-            average_time=avg_time,
-        )
+    async def _stats(self) -> Stats:
+        return Stats(total=len(self._data_records))

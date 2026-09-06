@@ -6,9 +6,7 @@ never double-counts cached tokens, and that a task's spend rolls up from its tra
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import os
 
 from agentevolver.model.config import (
     anthropic_models,
@@ -17,20 +15,11 @@ from agentevolver.model.config import (
     openai_models,
     openrouter_models,
 )
+from agentevolver.trace.stats import summarise_session_spend as summarise_spend
 from agentevolver.model.pricing import PRICING_AS_OF
 from agentevolver.model.types import TokenUsage, compute_cost, price_usage_dict
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OPUS_PRICE = {"input": 5e-6, "output": 2.5e-5, "cache_write": 6.25e-6, "cache_read": 5e-7}
-
-
-def _load_launcher():
-    spec = importlib.util.spec_from_file_location(
-        "rpb_cost", os.path.join(ROOT, "examples", "run_programbench.py")
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 # --------------------------------------------------------------------------- pricing
@@ -261,7 +250,6 @@ def _write_trace(tmp_path, lines):
 
 
 def test_summarise_spend_rolls_up_the_trace(tmp_path):
-    launcher = _load_launcher()
     root = _write_trace(
         tmp_path,
         [
@@ -283,7 +271,7 @@ def test_summarise_spend_rolls_up_the_trace(tmp_path):
             {"event_type": "tool_call"},  # no usage → not a call
         ],
     )
-    s = launcher._summarise_spend(root, "inst")
+    s = summarise_spend(root, "inst")
     assert s["n_llm_calls"] == 2
     assert s["input_tokens"] == 3000 and s["output_tokens"] == 600
     assert s["total_cost_usd"] == 0.03
@@ -291,19 +279,30 @@ def test_summarise_spend_rolls_up_the_trace(tmp_path):
 
 
 def test_summarise_spend_reports_none_cost_when_never_priced(tmp_path):
-    launcher = _load_launcher()
     root = _write_trace(
         tmp_path,
         [
             {"event_type": "agent_call", "usage": {"input_tokens": 10, "output_tokens": 5}},
         ],
     )
-    s = launcher._summarise_spend(root, "inst")
+    s = summarise_spend(root, "inst")
     assert s["n_llm_calls"] == 1
     assert s["total_cost_usd"] is None  # no price table anywhere → don't imply a real $0
 
 
 def test_summarise_spend_never_raises_on_a_missing_trace(tmp_path):
-    launcher = _load_launcher()
-    s = launcher._summarise_spend(str(tmp_path), "inst")
+    s = summarise_spend(str(tmp_path), "inst")
     assert s["n_llm_calls"] == 0 and s["input_tokens"] == 0
+
+
+def test_task_spend_includes_child_sessions_and_deduplicates_events(tmp_path):
+    for index, session in enumerate(['parent','child']):
+        folder = tmp_path / session / 'trace'
+        folder.mkdir(parents=True)
+        event = {'event_type':'agent_call','session_id':session,'seq_no':0,
+                 'usage':{'input_tokens':10,'output_tokens':2,'cost':0.1},'duration_ms':1000}
+        (folder / f'{session}.jsonl').write_text(json.dumps(event)+'\n'+json.dumps(event)+'\n')
+    summary=summarise_spend(str(tmp_path),'parent')
+    assert summary['n_llm_calls']==2
+    assert summary['input_tokens']==20
+    assert summary['total_cost_usd']==0.2

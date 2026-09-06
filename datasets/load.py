@@ -30,7 +30,7 @@ class Shape(NamedTuple):
     """What a benchmark class does not carry: how to count it, and what to expect.
 
     Where the data comes from and where it lands are the benchmark's own fields, read
-    straight off the registered class. Restating them here is how this file came to name
+    through the benchmark manager catalog. Restating them here is how this file came to name
     three HuggingFace repos that no benchmark had ever used.
     """
 
@@ -72,7 +72,7 @@ SHAPES: Dict[str, Shape] = {
 
 
 class Source(NamedTuple):
-    """One dataset, assembled from the benchmark class plus its shape."""
+    """One dataset, assembled from manager metadata plus its shape."""
 
     name: str
     directory: str
@@ -85,26 +85,24 @@ class Source(NamedTuple):
 
 
 def sources() -> Dict[str, Source]:
-    """Every benchmark that reads a dataset, with its location taken from its own class.
+    """Every dataset-backed benchmark, discovered through the manager catalog.
 
     A benchmark with no `path` (`exact_match` scores answers it is handed) has no dataset
     and is left out.
     """
-    import agentevolver.benchmark.default  # noqa: F401  (registers the built-ins)
-    from agentevolver.registry import BENCHMARK
+    from agentevolver.benchmark import benchmark_manager
 
     found: Dict[str, Source] = {}
-    for class_name in BENCHMARK.module_dict:
-        fields = BENCHMARK.module_dict[class_name].model_fields
-        name = fields["name"].default
-        path = (fields["path"].default if "path" in fields else "") or ""
+    for info in benchmark_manager.catalog():
+        name = info.name
+        path = info.config.get("path") or ""
         if not path:
             continue
         shape = SHAPES.get(name, Shape())
         found[name] = Source(
             name=name,
             directory=os.path.basename(path.rstrip("/")),
-            hf_repo_id=(fields["hf_repo_id"].default if "hf_repo_id" in fields else "") or "",
+            hf_repo_id=info.config.get("hf_repo_id") or "",
             split=shape.split,
             expected=shape.expected,
             note=shape.note,
