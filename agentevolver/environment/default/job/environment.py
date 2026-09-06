@@ -158,13 +158,24 @@ class JobEnvironment(Environment):
         from agentevolver.runtime import kernel
 
         ref = kernel.get(job_id)
-        if ref is None or not ref.alive or ref.turns < 1:
+        if ref is None or ref.turns < 1:
             return 0
         completed_turn = int(turn or ref.turns)
         if completed_turn < 1 or completed_turn > ref.turns:
             return 0
         if turn is None and (ref.busy or len(ref.mailbox)):
             return 0
+        if completed_turn not in ref.turn_results:
+            return 0
+        from hashlib import sha256
+        from agentevolver.plan.server import read_plan
+
+        # Preserve the plan that existed at the first full read, even if the same
+        # report is read again after replanning. This detects stale plans, not quality.
+        contract.setdefault("feedback_plan_baselines", {}).setdefault(
+            f"{job_id}:{completed_turn}",
+            sha256(read_plan(str(getattr(ctx, "id", "") or "")).encode()).hexdigest(),
+        )
         collected = contract.setdefault("collected_turns", {})
         collected[job_id] = max(
             int(collected.get(job_id) or 0),
@@ -307,8 +318,10 @@ class JobEnvironment(Environment):
         read_only=True,
         description=(
             "Wait efficiently for background work without spending model turns polling. "
-            "For long-lived sub-agents use condition='idle_after_turn' and set min_turns "
-            "to the release turn each must have completed. The call returns early if all "
+            "For long-lived sub-agents use condition='idle_after_turn'. Use "
+            "min_turns_by_job for different execution counts after retries; a release "
+            "number is not a job turn. min_turns is the fallback for unspecified jobs. "
+            "The call returns early if all "
             "targets are ready, any target ends unexpectedly, or timeout expires."
         ),
     )
@@ -318,6 +331,7 @@ class JobEnvironment(Environment):
         condition: Literal["idle_after_turn", "finished"] = "idle_after_turn",
         min_turns: int = 1,
         timeout: float = 600.0,
+        min_turns_by_job: Optional[Dict[str, int]] = None,
         ctx=None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
@@ -331,6 +345,12 @@ class JobEnvironment(Environment):
             return _fail("condition must be 'idle_after_turn' or 'finished'")
         if min_turns < 0:
             return _fail("min_turns must be non-negative")
+        targets = dict(min_turns_by_job or {})
+        if set(targets) - set(ids) or any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in targets.values()
+        ):
+            return _fail("min_turns_by_job must map requested job ids to non-negative integers")
         if timeout <= 0 or timeout > 3600:
             return _fail("timeout must be greater than 0 and at most 3600 seconds")
 
@@ -359,6 +379,7 @@ class JobEnvironment(Environment):
                     "status": job.status.value,
                     "ready": False,
                     "turns": int(getattr(ref, "turns", 0) or 0),
+                    "required_turns": targets.get(job.id, min_turns),
                     "alive": bool(ref and ref.alive),
                     "busy": bool(ref and ref.busy),
                     "queued": len(ref.mailbox) if ref is not None else 0,
@@ -372,7 +393,7 @@ class JobEnvironment(Environment):
                     row["error"] = job.error or "sub-agent ended before reaching the requested turn"
                     terminal_failure = True
                 else:
-                    row["ready"] = ref.turns >= min_turns and not ref.busy and not len(ref.mailbox)
+                    row["ready"] = ref.turns >= row["required_turns"] and not ref.busy and not len(ref.mailbox)
                 all_ready = all_ready and bool(row["ready"])
                 rows.append(row)
             return rows, all_ready, terminal_failure

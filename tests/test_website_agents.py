@@ -358,6 +358,8 @@ def test_full_job_output_read_acknowledges_one_subscriber_turn(monkeypatch):
         busy=False,
         turns=2,
         mailbox=(),
+        turn_results={2: "Full participant report"},
+        turn_success={2: True},
     )
     monkeypatch.setattr(
         kernel, "get", lambda pid: ref if pid == "user-job" else None
@@ -697,20 +699,20 @@ def test_website_demo_model_roster_matches_launcher_and_vision_catalog():
     assert cfg.website_user_models == DEFAULT_USER_MODELS == [
         "llm_hub/gpt-6-astra",
         "llm_hub/claude-fable-5-1",
-        "llm_hub/deepseek-v4-flash-vision-exp",
+        "llm_hub/gemini-3.8-flash",
     ]
     # The Builder no longer shares the first participant's route: it is pinned to its
     # own constant so the two can move independently.
     assert cfg.website_builder_agent.model_name == DEFAULT_BUILDER_MODEL == "llm_hub/claude-fable-5-1"
     assert cfg.website_user_agent.model_name == DEFAULT_USER_MODELS[0]
-    assert cfg.browser_agent.model_name == DEFAULT_ACCEPTANCE_MODEL == "llm_hub/gpt-5.6-sol"
+    assert cfg.browser_agent.model_name == DEFAULT_ACCEPTANCE_MODEL == "llm_hub/gemini-3.8-flash"
     assert cfg.model_name == cfg.generate_agent.model_name == "llm_hub/claude-opus-5"
     catalog = llm_hub_models(max_tokens=2048, default_temperature=0.0, default_timeout=30.0)
     specs = {entry["model_name"]: entry for group in catalog.values() for entry in group}
     assert all(specs[name].get("supports_vision", True) for name in DEFAULT_USER_MODELS)
     vision = specs[DEFAULT_USER_MODELS[2]]
-    assert vision["reasoning"] == {"thinking": {"type": "enabled"}, "reasoning_effort": "high"}
-    assert vision["persisted_reasoning"]
+    assert vision["model_id"] == "gemini-3.8-flash"
+    assert not vision.get("reasoning")
     assert not vision.get("native_compaction", False)
     assert not specs["llm_hub/deepseek-v4-flash"]["supports_vision"]
 
@@ -759,7 +761,7 @@ def test_website_task_manifest_routes_independent_acceptance(tmp_path):
 
     assert manifest["release_acceptance"] == {
         "agent": "browser_agent",
-        "model": "llm_hub/gpt-5.6-sol",
+        "model": "llm_hub/gemini-3.8-flash",
         "after_initial_build": True,
         "after_each_optimization": True,
         "exact_deployed_url_only": True,

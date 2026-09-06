@@ -235,6 +235,18 @@ def llm_hub_models(*, max_tokens, default_temperature, default_timeout):
             "timeout": default_timeout,
         },
         {
+            "model_name": "llm_hub/gemini-3.8-flash",
+            "model_id": "gemini-3.8-flash",
+            "model_type": "chat/completions",
+            # Verified on LLM Hub: image input, tool calls, tool-result replay,
+            # and streaming. Keep unverified native features disabled.
+            "supports_vision": True,
+            # Conservative local budget until the relay publishes context limits.
+            "context_window": 128_000,
+            "max_completion_tokens": min(max_tokens, 32_768),
+            "timeout": default_timeout,
+        },
+        {
             "model_name": "llm_hub/deepseek-v4-flash-vision-exp",
             "model_id": "deepseek-v4-flash-vision-exp",
             "model_type": "chat/completions",

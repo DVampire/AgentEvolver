@@ -99,6 +99,10 @@ class Agent(BaseModel):
         default=False,
         description="Project sub-agents into the roster. This is what makes an orchestrator.",
     )
+    use_plan: bool = Field(
+        default=False,
+        description="Read and maintain this session's plan.md during automatic planning.",
+    )
     defer_capabilities_after: int = Field(
         default=40, description="Roster size past which schemas are loaded on demand."
     )
@@ -1224,8 +1228,15 @@ class Agent(BaseModel):
 
     async def _live_blocks(self, step: int) -> List[str]:
         """This step's volatile layer: notes carried in, plus middleware output."""
+        from agentevolver.plan.server import plan_manager
+
         blocks = list(self._notes)
         self._notes = []
+        planning = plan_manager.context(
+            str(getattr(self.ctx, "id", "") or ""), enabled=self.use_plan,
+        )
+        if planning:
+            blocks.append(planning)
         state = await self.environment_state(self.ctx)
         if state:
             blocks.append(state)

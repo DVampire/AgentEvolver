@@ -322,6 +322,10 @@ class DeployTool(Tool):
             "runtime": rec.runtime,
             "url": rec.url,
             "source_revision": rec.source_revision,
+            "subscriber_min_turns": {
+                job_id: floor + 1
+                for job_id, floor in contract["release_turn_floor"][str(release_number)].items()
+            },
             **DeployTool._access_urls(rec),
             "deployed_at": rec.updated_at,
         }

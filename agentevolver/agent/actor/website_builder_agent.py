@@ -359,9 +359,11 @@ def public_manifest(
         "subscriber_job_ids": contract["subscriber_job_ids"],
         "collection": (
             "After each successful deploy, call job__wait for these ids with "
-            "condition=idle_after_turn and min_turns equal to that release number; "
-            "then call job__output with turn equal to that release number before "
-            "choosing the next change."
+            "condition=idle_after_turn and min_turns_by_job from the deploy receipt's "
+            "subscriber_min_turns or the live website-feedback context. Then call "
+            "job__output for every id using its actual completed turn from the wait "
+            "result, without tail, before choosing the next change. Retries mean "
+            "different subscribers have different turns for the same release."
         ),
         "initial_step_budget": contract["initial_step_budget"],
         "iteration_step_budget": contract["iteration_step_budget"],
@@ -421,8 +423,78 @@ class WebsiteBuilderAgent(MetaAgent):
         # The orchestrator's guards, plus this agent's own iteration budget.
         self.middleware = [
             *self.middleware,
+            lambda agent, step: agent.feedback_progress(step),
             lambda agent, step: agent.iteration_budget(step),
         ]
+
+    async def feedback_progress(self, step: int) -> str:
+        """Keep unread feedback and stale plans visible before the next decision.
+
+        The runtime reports facts and exact collection targets. It neither invents
+        participant feedback nor marks a report read merely because it is available.
+        """
+        from hashlib import sha256
+        from agentevolver.runtime import kernel
+        from agentevolver.plan.server import plan_manager, read_plan
+        from agentevolver.plan.types import PlanMode
+
+        extra = getattr(self.ctx, "extra", None) or {}
+        contract = extra.get("website_runtime_contract")
+        history = extra.get("deployment_release_history") or []
+        if not isinstance(contract, dict) or not history:
+            return ""
+        release = len(history)
+        floors = (contract.get("release_turn_floor") or {}).get(str(release), {})
+        collected = contract.get("collected_turns") or {}
+        baselines = contract.get("feedback_plan_baselines") or {}
+        plan_digest = sha256(read_plan(str(self.ctx.id)).encode()).hexdigest()
+        rows, targets, stale = [], {}, []
+        for job_id in contract.get("subscriber_job_ids") or []:
+            job_id = str(job_id)
+            proc = kernel.get(job_id)
+            floor = floors.get(job_id)
+            completed = int(getattr(proc, "turns", 0))
+            # Never guess release N == turn N for a legacy contract without a floor.
+            target = int(floor) + 1 if floor is not None else None
+            if target is not None:
+                targets[job_id] = target
+            available = bool(
+                target is not None and completed >= target
+                and completed in (getattr(proc, "turn_results", None) or {})
+            )
+            read = available and int(collected.get(job_id) or 0) >= completed
+            busy = bool(proc and (proc.busy or len(proc.mailbox)))
+            rows.append({
+                "job_id": job_id, "required_turn": target,
+                "completed_turn": completed, "busy": busy,
+                "alive": bool(proc and proc.alive),
+                "feedback": "collected" if read else ("unread" if available else "pending"),
+                "read_turn": completed if available else None,
+            })
+            if read and baselines.get(f"{job_id}:{completed}") == plan_digest:
+                stale.append(job_id)
+        instructions = (
+            "Collect the full current-release report from every subscriber before choosing "
+            "or implementing the next iteration. Wait with job__wait(condition='idle_after_turn', "
+            "min_turns_by_job=the map below), then read job__output(job_id, turn=the actual "
+            "completed turn), without tail. Pending or unread feedback is not user confirmation. "
+            "If a job ended, read its available report and report the missing scope honestly."
+        )
+        if self.use_plan and plan_manager.mode(str(self.ctx.id)) is not PlanMode.OFF:
+            instructions += (
+                " Before product edits, revise plan.md with each reported need, selected/deferred "
+                "decision and reason, implementation steps and a user re-test. After verification "
+                "update statuses and retain unresolved wishes. A changed file alone proves "
+                "neither adequate planning nor user acceptance."
+            )
+            if stale:
+                instructions += " PLAN UNCHANGED SINCE FEEDBACK READ: " + ", ".join(stale) + "."
+        return "<website-feedback>\n" + instructions + "\n" + json.dumps({
+            "release_number": release,
+            "source_revision": history[-1].get("source_revision"),
+            "release_url": history[-1].get("release_url") or history[-1].get("url"),
+            "min_turns_by_job": targets, "subscribers": rows,
+        }, ensure_ascii=False) + "\n</website-feedback>"
 
     async def act(self, decision):
         """Run the batch, then note any evolution work in the task contract.

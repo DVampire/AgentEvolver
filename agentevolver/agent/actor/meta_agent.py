@@ -61,6 +61,8 @@ class MetaAgent(Agent):
     enable_evolving: bool = Field(default=False)
     #: The one line that makes this an orchestrator.
     include_agents: bool = Field(default=True)
+    # Builder subclasses inherit the same plan lifecycle; leaf workers stay opt-out.
+    use_plan: bool = Field(default=True)
 
     def __init__(self, base_dir: str = "", **kwargs: Any) -> None:
         super().__init__(base_dir=base_dir, **kwargs)

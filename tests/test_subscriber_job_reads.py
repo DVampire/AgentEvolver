@@ -108,7 +108,8 @@ async def test_wait_accepts_a_subscriber(subscriber):
     proc, environment_manager = subscriber
     result = await environment_manager(
         name="job", action="wait",
-        input={"job_ids": [proc.pid], "condition": "idle_after_turn", "timeout": 10},
+        input={"job_ids": [proc.pid], "condition": "idle_after_turn", "timeout": 1,
+               "min_turns": 99, "min_turns_by_job": {proc.pid: 1}},
         ctx=_parent_ctx(proc.pid),
     )
     assert result.success, result.message

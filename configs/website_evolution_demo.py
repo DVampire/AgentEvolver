@@ -45,12 +45,12 @@ model_roles = dict(
     summarize=model_name,
 )
 agent_model_policy = "per_agent"
-# Every participant needs vision for browser screenshots. DeepSeek's experimental
-# visual route is distinct from the text-only Flash 0731 alias.
+# Every participant needs vision for browser screenshots. Keep three model families;
+# Gemini's LLM Hub route was verified with images and tool-result replay.
 website_user_models = [
     "llm_hub/gpt-6-astra",
     "llm_hub/claude-fable-5-1",
-    "llm_hub/deepseek-v4-flash-vision-exp",
+    "llm_hub/gemini-3.8-flash",
 ]
 
 memory_names = ["file_system_memory"]
@@ -210,8 +210,7 @@ website_user_agent.update(**_USER)
 browser_agent.update(
     **{
         **_AGENT_CORE,
-        # Use the visual route: the text-only Flash alias cannot inspect screenshots.
-        "model_name": "llm_hub/deepseek-v4-flash-vision-exp",
+        "model_name": "llm_hub/gemini-3.8-flash",
         "prompt_name": "browser_agent",
         "env_name": "browser_environment",
         "use_memory": False,

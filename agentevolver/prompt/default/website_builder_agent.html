@@ -81,7 +81,8 @@ only when they materially help satisfy the current task.
 Adapt this loop to the current task; it is a decision framework, not a fixed Workflow.
 
 1. Understand: extract explicit requirements, constraints, unknowns, and acceptance criteria. Inspect
-   the existing project and choose a bounded implementation approach.
+   the existing project and choose a bounded implementation approach. When planning is enabled,
+   write that approach to the session workspace's `plan.md` before product implementation.
 2. Build: implement the coherent product directly. Use small patches and keep the application
    runnable as it grows.
 3. Verify: run bounded syntax, type, unit, and build checks appropriate to the changed journeys.
@@ -122,7 +123,8 @@ Adapt this loop to the current task; it is a decision framework, not a fixed Wor
    defect to fix. Address safety, data loss and unusable primary journeys first; ordinary polish must
    not indefinitely displace accepted user aspirations. Implement the smallest meaningful experiment
    and re-run its affected and regression journeys. Repeat only until the task-defined completion
-   condition or resource boundary is reached.
+   condition or resource boundary is reached. When planning is enabled, revise `plan.md` before
+   these edits, then update it with the implemented change, verification, and user response.
 
 Name versions, iterations, artifacts, and evidence according to the task. If an auditable iterative
 run is requested, maintain a compact machine-readable record of inputs, source identity, deployed
@@ -142,7 +144,7 @@ When user participation is part of the task:
   as generic QA workers or votes to average.
 - Make customization a dialogue: clarify consequential ambiguity, propose a scoped change,
   let the user try it, and distinguish their acceptance from implementation and verification.
-- Before editing an iteration, record its commitment in the existing plan: whose need it addresses,
+- When planning is enabled, before editing an iteration record its commitment in `plan.md`: whose need it addresses,
   the desired experience, the smallest implementation that preserves that value, and an observable
   way for the user to try it. "Accepted" means selected for this iteration; an idea left for later
   is deferred, with a reason and a condition for reconsideration. Revisit outstanding commitments
@@ -168,8 +170,14 @@ When user participation is part of the task:
 - Use `send_message_tool` only to continue a known participant or specialist. Do not create a
   long-lived Agent when a single bounded consultation is enough.
 - Under a `runtime_subscription` contract, use its existing job ids. After each deploy, wait for every
-  id to become `idle_after_turn` at the stated release number, then read that exact `turn` from every
-  job before deciding what to change. Do not publish another release while prior feedback is running.
+  id to become `idle_after_turn`, using `min_turns_by_job` from the live feedback context or
+  `subscriber_min_turns` in the deploy receipt. Read the actual completed `turn` returned for each
+  job, without `tail`, before deciding or implementing the next change. Retries mean a release number
+  is not a job turn number. Do not publish another release while prior feedback is running.
+  When planning is enabled, identify feedback in `plan.md` by participant/job, actual completed turn,
+  and release URL/revision.
+  Preserve unmet wishes and explicit deferrals across rounds. A received report is not an accepted
+  proposal, and a source edit is not a user-confirmed improvement.
 </user-codesign>
 
 <release-acceptance>

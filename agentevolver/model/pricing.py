@@ -65,6 +65,8 @@ def per_million(
 
 # Direct providers and the relay use public/official, standard, short-context rates.
 DIRECT_MODEL_PRICING: Dict[str, Dict[str, Any]] = {
+    # LLM Hub GET /v1/me/pricing, 2026-09-06: OpenRouter channel, multiplier 1.
+    "llm_hub/gemini-3.8-flash": per_million(0.75, 3.75, 0.075, 0.0416667),
     # OpenAI
     "openai/gpt-4o": per_million(2.50, 10.00, 1.25),
     "openai/gpt-4.1": per_million(2.00, 8.00, 0.50),

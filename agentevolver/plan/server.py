@@ -107,8 +107,19 @@ AUTO_MODE_NOTICE = (
     "the plan there before you start — the goal, the steps, and anything you had to "
     "guess — and revise it as what you learn changes it. It is rendered back to you "
     "every step and the person watching reads the same file, so it is how the two of "
-    "you stay agreed on where this is going. A single-step task does not need one."
+    "you stay agreed on where this is going. A single-step task does not need one. "
+    "Use this one document as the working plan, not a second plan in memory. "
+    "Record the goal, constraints, chosen approach, ordered steps with status, and "
+    "observable acceptance checks. Before implementing a change prompted by a worker "
+    "report or user feedback, update the plan: cite the source, distinguish observations "
+    "from proposals, select or defer each material need with a reason, and specify the "
+    "next experiment and how to verify it. Preserve outstanding commitments when "
+    "replanning. After execution, record evidence and distinguish implemented, "
+    "technically verified, and user-confirmed. Delegate bounded assignments from the "
+    "plan; workers report results to you and need not maintain their own plans."
 )
+
+PLAN_CONTEXT_MAX_CHARS = 16_000
 
 
 def plan_path(session_id: str = "", *, owner: str = ""):
@@ -210,6 +221,35 @@ class PlanManagerServer(metaclass=Singleton):
     def mode(self, session_id: str) -> PlanMode:
         """Which stance this run is under. `AUTO` for a run nobody has set."""
         return self.state(session_id).mode
+
+    def context(self, session_id: str, *, enabled: bool = False) -> str:
+        """Project the current document into the volatile layer, never cached history.
+
+        Coordinators opt in to automatic planning. A worker gets no automatic plan
+        obligation; an explicitly active review gate still explains its way out.
+        Read from disk on every call so edits and feedback-driven revisions are visible
+        after history compaction as well as on the next ordinary step.
+        """
+        from html import escape
+
+        state = self.state(session_id)
+        if state.mode is PlanMode.OFF or (not enabled and not state.active):
+            return ""
+        path = plan_path(session_id)
+        text = read_plan(session_id)
+        if len(text) > PLAN_CONTEXT_MAX_CHARS:
+            text = text[:PLAN_CONTEXT_MAX_CHARS] + (
+                "\n[Plan excerpt truncated. Read the full plan.md before revising it; "
+                "keep the current plan concise and link detailed evidence separately.]"
+            )
+        notice = PLAN_MODE_NOTICE if state.active else AUTO_MODE_NOTICE
+        if not text.strip():
+            text = "No plan.md exists yet."
+        return (
+            f'<plan-context mode="{state.mode.value}" '
+            f'active="{str(state.active).lower()}" path="{escape(str(path), quote=True)}">\n'
+            f"{notice}\n\n<current-plan>\n{text}\n</current-plan>\n</plan-context>"
+        )
 
     def set_mode(self, session_id: str, mode: PlanMode) -> PlanState:
         """Move a run between stances.

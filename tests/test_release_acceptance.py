@@ -141,3 +141,4 @@ async def test_feedback_round_does_not_overwrite_artifact_version(monkeypatch):
     assert receipt["release_number"] == 1
     assert receipt["version_number"] == record.release_number == 7
     assert ctx.extra["website_runtime_contract"]["release_turn_floor"]["1"] == {"sub-a": 3, "sub-b": 3}
+    assert receipt["subscriber_min_turns"] == {"sub-a": 4, "sub-b": 4}

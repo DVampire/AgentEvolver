@@ -47,9 +47,9 @@ ITERATION_STEP_BUDGET = 30
 DEFAULT_USER_MODELS = [
     "llm_hub/gpt-6-astra",
     "llm_hub/claude-fable-5-1",
-    "llm_hub/deepseek-v4-flash-vision-exp",
+    "llm_hub/gemini-3.8-flash",
 ]
-DEFAULT_ACCEPTANCE_MODEL = "llm_hub/gpt-5.6-sol"
+DEFAULT_ACCEPTANCE_MODEL = "llm_hub/gemini-3.8-flash"
 DEFAULT_BUILDER_MODEL = "llm_hub/claude-fable-5-1"
 
 
@@ -83,8 +83,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--plan-mode",
         choices=["off", "auto", "plan"],
-        default="off",
-        help="Forwarded to run_meta_agent.py (default: off for an unattended demo).",
+        default="auto",
+        help="Planning stance: auto maintains plan.md without approval; plan requires human review.",
     )
     parser.add_argument(
         "--model",
