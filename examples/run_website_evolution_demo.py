@@ -39,7 +39,7 @@ from typing import Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENARIO_ROOT = ROOT / "examples" / "tasks" / "website_evolution"
-DEFAULT_SCENARIO_DIR = SCENARIO_ROOT / "echo_ark"
+DEFAULT_SCENARIO_DIR = SCENARIO_ROOT / "arkbound_game"
 DEFAULT_CONFIG = ROOT / "configs" / "website_evolution_demo.py"
 OPTIMIZATION_CYCLES = 5
 INITIAL_STEP_BUDGET = 36

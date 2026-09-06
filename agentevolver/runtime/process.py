@@ -53,6 +53,7 @@ class RunBudget:
 
     Tracks reported consumption and conservative per-attempt reservations.
     Cost remains explicitly reported/estimated/unknown rather than guessed from tokens.
+    Unknown usage keeps its reservation; it does not prevent work within the remainder.
     """
     limit: Optional[int] = None
     tokens: int = 0
@@ -101,10 +102,18 @@ class RunBudget:
         self.save()  # A failed durable reservation must prevent the network call.
         try:
             yield lambda usage: self.reconcile(key, usage, evidence="provider response")
+        except BaseException as error:
+            if self.requests[key]["status"] == "pending":
+                self.requests[key]["error_type"] = type(error).__name__
+            raise
         finally:
             if self.requests[key]["status"] == "pending":
                 self.requests[key]["status"] = "unknown"
                 self.save()
+                logger.warning(
+                    f"| ⚠️ Model usage unavailable for {model} (receipt {key}); "
+                    f"keeping {estimate} tokens reserved, remaining budget can still be used"
+                )
 
     def reconcile(self, key: str, raw, *, evidence: str):
         """Settle one attempt from usage evidence, idempotently; never infer a bill."""
@@ -217,10 +226,14 @@ class RunBudget:
     def check(self) -> None:
         from agentevolver.runtime.errors import BudgetExhausted
 
-        if any(item["status"] == "unknown" for item in self.requests.values()):
-            raise BudgetExhausted("Run has unreconciled model usage; inspect request receipts before resuming")
+        # Missing usage is an accounting uncertainty, not proof of exhaustion. Keep
+        # its full reservation in the limit check while allowing bounded retries and
+        # sibling work. Only explicit reconciliation releases this reservation.
         if self.limit is not None and self.tokens + self.reserved >= self.limit:
-            raise BudgetExhausted(f"Run token limit reached ({self.tokens}/{self.limit})")
+            raise BudgetExhausted(
+                f"Run token limit reached ({self.tokens} reported + "
+                f"{self.reserved} reserved / {self.limit})"
+            )
 
 
 class Process:

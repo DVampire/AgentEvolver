@@ -775,12 +775,13 @@ def test_website_task_manifest_routes_independent_acceptance(tmp_path):
     assert "configures the Agent experiment, not website features" in task
 
 
-def test_echo_brief_reaches_builder_without_private_personas():
+@pytest.mark.parametrize("scenario_name", ["arkbound_game", "commonspace_forum", "lumen_museum", "orbital_simulator"])
+def test_scenario_brief_reaches_builder_without_private_personas(scenario_name):
     from agentevolver.task.context import load_task_document
     from examples.run_website_evolution_demo import build_task_text
 
     root = Path(__file__).resolve().parents[1]
-    scenario = root / "examples/tasks/website_evolution/echo_ark"
+    scenario = root / "examples/tasks/website_evolution" / scenario_name
     document = load_task_document(str(scenario / "scenario.html"))
     personas = [scenario / f"persona_{index:02d}.html" for index in range(1, 4)]
     task = build_task_text(scenario / "scenario.html", personas)

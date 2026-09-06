@@ -41,7 +41,8 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, deferred):
         assert "Do not wait for a task to mention evolution" in message.text
         assert "Repeated cost or inconsistency" in message.text
         for opportunity in ("Reusable learning", "Expected reuse", "Better method",
-                            "Missing capability", "repeated failure is not required"):
+                            "Missing capability", "New experience",
+                            "before implementation fails", "repeated failure is not required"):
             assert opportunity in rendered
         for guard in ("preserve consumer permission boundaries", "exact candidate version",
                       "completed evaluator's `run_id`", "roll back or unload",
@@ -121,20 +122,19 @@ def test_worker_instructions_support_bounded_verified_improvements():
             assert expected in text
 
 
-def test_echo_task_never_requests_component_evolution():
+@pytest.mark.parametrize("scenario_name", ["arkbound_game", "commonspace_forum", "lumen_museum", "orbital_simulator"])
+def test_product_task_leaves_evolution_to_shared_policy(scenario_name):
     from examples.run_website_evolution_demo import build_task_text
 
-    scenario = ROOT / "examples/tasks/website_evolution/echo_ark"
+    scenario = ROOT / "examples/tasks/website_evolution" / scenario_name
     personas = [scenario / f"persona_{index:02d}.html" for index in range(1, 4)]
     task = build_task_text(scenario / "scenario.html", personas)
     for forbidden in ("self_evolving_skill", "generate_agent", "optimize_agent",
                       "target_type", "minimum_kept_evolutions", "must evolve"):
         assert forbidden not in task
         assert all(forbidden not in path.read_text() for path in personas)
-    # These assert the brief still names its product outcomes, not that it uses one
-    # fixed vocabulary. "preview"/"undo" were carried over from a scenario echo_ark
-    # no longer resembles — neither word appears in it before or after 53849d9b —
-    # so the round trip is checked through the words the current brief actually uses.
-    for outcome in ("conversation", "personal", "verify", "recover", "confirmed"):
-        assert outcome in task.lower()
+    # Product design remains open while the brief supplies an observable contract.
+    source = (scenario / "scenario.html").read_text()
+    for section in ("product-intent", "creative-freedom", "open-horizons", "quality-evidence"):
+        assert f'id="{section}"' in source
     assert "source hashes and repeated deployments" in " ".join(task.lower().split())

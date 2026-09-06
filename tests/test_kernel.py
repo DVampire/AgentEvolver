@@ -570,14 +570,19 @@ def test_unknown_usage_survives_resume_until_explicit_reconciliation(tmp_path):
             raise TimeoutError("provider may have accepted")
     resumed = RunBudget(limit=100)
     resumed.bind(path, resume=True)
-    with pytest.raises(BudgetExhausted, match="unreconciled"):
-        resumed.check()
+    resumed.check()
+    assert resumed.reserved == 70 and resumed.tokens == 0
+    with pytest.raises(BudgetExhausted, match="Insufficient"):
+        with resumed.request("too-large-retry", 31):
+            pytest.fail("unknown reservation must still count against the limit")
+    with resumed.request("bounded-retry", 20) as settle:
+        settle({"input_tokens": 4, "output_tokens": 1})
     key = next(iter(resumed.requests))
     usage = {"input_tokens": 20, "output_tokens": 10}
     resumed.reconcile(key, usage, evidence="provider request audit 123")
     resumed.reconcile(key, usage, evidence="same audit")
     resumed.check()
-    assert resumed.tokens == 30 and resumed.reserved == 0
+    assert resumed.tokens == 35 and resumed.reserved == 0
     with pytest.raises(ValueError, match="Conflicting"):
         resumed.reconcile(key, {"input_tokens": 99}, evidence="different claim")
 
@@ -596,14 +601,14 @@ def test_budget_scope_is_inherited_without_leaking():
 
 def test_cost_only_response_does_not_settle_token_reservation():
     from agentevolver.runtime.process import RunBudget
-    from agentevolver.runtime.errors import BudgetExhausted
 
     ledger = RunBudget()
     with ledger.request("missing-tokens", 100) as settle:
         settle({"cost": 0.5})
     assert ledger.reserved == 100 and ledger.tokens == 0
-    with pytest.raises(BudgetExhausted, match="unreconciled"):
-        ledger.check()
+    ledger.check()
+    receipt = next(iter(ledger.requests.values()))
+    assert receipt["status"] == "unknown" and "usage" not in receipt
 
 
 def test_run_budget_preserves_explicit_context_total(tmp_path):

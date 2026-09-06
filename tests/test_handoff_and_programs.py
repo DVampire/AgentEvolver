@@ -309,8 +309,10 @@ def test_dispatch_rejects_non_boolean_fork(value):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("budget,expected", [(7, 7), (1000, 100)])
-async def test_dispatch_applies_model_budget_reasoning_and_environment(monkeypatch, budget, expected):
-    child = Agent(name="child", model_name="template", max_token=100)
+@pytest.mark.parametrize("allow_override", [True, False])
+async def test_dispatch_applies_model_budget_reasoning_and_environment(monkeypatch, budget, expected, allow_override):
+    child = Agent(name="child", model_name="template", max_token=100,
+                  allow_token_budget_override=allow_override)
     captured = {}
 
     async def build(name):
@@ -328,7 +330,8 @@ async def test_dispatch_applies_model_budget_reasoning_and_environment(monkeypat
     })
     result = await router._invoke_agent(call, ("agent", "child"), Agent(), _ctx())
     assert result.ok
-    assert child.model_name == "chosen" and child.max_token == expected
+    assert child.model_name == "chosen"
+    assert child.max_token == (expected if allow_override else 100)
     child.ctx = captured["ctx"]
     assert child.request_input([], [])["reasoning_effort"] == "high"
     assert child.ctx.extra["environment_allowlist"] == []

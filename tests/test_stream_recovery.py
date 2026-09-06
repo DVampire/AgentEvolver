@@ -25,6 +25,12 @@ from agentevolver.model.context import ModelContextManager
 from agentevolver.model.types import ModelConfig, ModelContext, StreamDone, TextDelta
 
 
+@pytest.fixture(autouse=True)
+def no_retry_wait(monkeypatch):
+    # Backoff timing is covered in test_model_retry; these tests cover attempt state.
+    monkeypatch.setattr("agentevolver.model.context._retry_delay", lambda attempt: 0)
+
+
 class _Stream:
     """A model client whose stream fails after `emit` events.
 
@@ -166,3 +172,92 @@ async def test_a_fallback_is_not_tried_once_output_has_been_emitted():
         await _drain(manager, retries=2)
 
     assert spare.attempts == 0, "fell back after the caller had already received output"
+
+
+@pytest.mark.asyncio
+async def test_signature_error_retries_with_shared_budget_and_preserves_unknown_usage(monkeypatch):
+    """The website failure: a pre-output APIError must not poison the root ledger."""
+    import httpx
+    from openai import APIError
+    from unittest.mock import AsyncMock
+    from agentevolver.runtime.process import RunBudget
+
+    class Flaky(_Stream):
+        async def stream(self, **kwargs):
+            self.attempts += 1
+            if self.attempts == 1:
+                raise APIError(
+                    "Corrupted thought signature.",
+                    request=httpx.Request("POST", "https://example.invalid/chat/completions"),
+                    body={"code": 400, "message": "Corrupted thought signature."},
+                )
+            yield TextDelta(text="recovered")
+            yield StreamDone(stop_reason="end_turn", usage={"input_tokens": 10, "output_tokens": 5})
+
+    record = AsyncMock()
+    monkeypatch.setattr("agentevolver.model.context._record_retry", record)
+    manager = _manager()
+    manager.model_clients["main"] = client = Flaky()
+    ledger = RunBudget(limit=100_000)
+    with ledger.scope():
+        events = await _drain(manager, retries=3)
+        # The parent's next safe point and a sibling's request also remain usable.
+        ledger.check()
+        with ledger.request("sibling", 20) as settle:
+            settle({"input_tokens": 4, "output_tokens": 1})
+    assert client.attempts == 2
+    assert [e.text for e in events if isinstance(e, TextDelta)] == ["recovered"]
+    unknown = [r for r in ledger.requests.values() if r["status"] == "unknown"]
+    assert len(unknown) == 1 and unknown[0]["error_type"] == "APIError"
+    assert ledger.reserved == unknown[0]["estimate"] and "usage" not in unknown[0]
+    assert ledger.tokens == 20
+    record.assert_awaited_once()
+    assert "Corrupted thought signature" in record.call_args.kwargs["error"]
+    assert record.call_args.kwargs["attempt"] == 1
+
+
+@pytest.mark.asyncio
+async def test_unknown_usage_does_not_remove_retry_limit_or_original_error():
+    from agentevolver.runtime.process import RunBudget
+
+    manager = _manager()
+    manager.model_clients["main"] = client = _Stream()
+    ledger = RunBudget(limit=100_000)
+    with ledger.scope(), pytest.raises(RuntimeError, match="connection reset"):
+        await _drain(manager, retries=3)
+    assert client.attempts == 3
+    assert len(ledger.requests) == 3
+    assert all(r["status"] == "unknown" and "usage" not in r for r in ledger.requests.values())
+    assert ledger.tokens == 0 and ledger.reserved > 0
+
+
+@pytest.mark.asyncio
+async def test_retry_cannot_spend_an_unknown_reservation(monkeypatch):
+    from types import SimpleNamespace
+    from agentevolver.runtime.process import RunBudget
+    from agentevolver.runtime.errors import BudgetExhausted
+
+    manager = _manager()
+    manager.model_clients["main"] = client = _Stream()
+    monkeypatch.setattr("agentevolver.model.context._prepare_request_messages", lambda **kw: SimpleNamespace(
+        messages=kw["messages"], pressure={"estimated_tokens_after": 40, "reserved_output_tokens": 20},
+    ))
+    ledger = RunBudget(limit=100)
+    with ledger.scope(), pytest.raises(BudgetExhausted, match="Insufficient"):
+        await _drain(manager, retries=3)
+    assert client.attempts == 1 and ledger.reserved == 60
+
+
+@pytest.mark.asyncio
+async def test_partial_stream_keeps_reservation_but_is_not_replayed():
+    from agentevolver.runtime.process import RunBudget
+
+    manager = _manager(fallback="spare")
+    manager.model_clients["main"] = client = _Stream(emit=1)
+    manager.model_clients["spare"] = spare = _Stream(fail=False)
+    ledger = RunBudget(limit=100_000)
+    with ledger.scope(), pytest.raises(RuntimeError, match="connection reset"):
+        await _drain(manager, retries=3)
+    assert client.attempts == 1 and spare.attempts == 0
+    assert ledger.tokens == 0 and ledger.reserved > 0
+    ledger.check()

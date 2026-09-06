@@ -300,10 +300,15 @@ class CapabilityRouter(ToolRouter):
 
         if brief.get("model"):
             child.model_name = brief["model"].strip()
-        if "token_budget" in brief:
+        if "token_budget" in brief and getattr(child, "allow_token_budget_override", True):
             # A delegation can narrow the host's cap, never raise it.
             limit = getattr(child, "max_token", None)
             child.max_token = min(limit, brief["token_budget"]) if limit is not None else brief["token_budget"]
+        elif "token_budget" in brief:
+            logger.info(
+                f"{route[1]} retains configured token budget {child.max_token}; "
+                f"dispatch override {brief['token_budget']} is disabled for this role"
+            )
 
         # The dispatch schema has always declared these; honouring them here is what
         # lets an agent start a *subscriber* by calling a sub-agent, with no code of its

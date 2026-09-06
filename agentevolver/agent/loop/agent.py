@@ -183,6 +183,9 @@ class Agent(BaseModel):
     max_token: Optional[int] = Field(
         default=None, gt=0, description="Cumulative input and output token budget per assignment."
     )
+    allow_token_budget_override: bool = Field(
+        default=True, description="Allow a delegating agent to narrow this role's token budget."
+    )
     timeout: Optional[float] = Field(
         default=None, gt=0, description="Wall-clock budget per assignment, or None."
     )

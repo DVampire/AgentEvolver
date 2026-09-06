@@ -137,15 +137,15 @@ file_system_memory.update(
 EVOLUTION_MAX_STEP = 60
 #: The builder's budget. 180 was not enough: a measured run spent 171 steps and was cut
 #: off still producing ~3k output tokens a step, so it ended `FAILED: Reached the step
-#: budget` rather than landing its own work. The cost of raising it is bounded by
-#: `max_token` and `timeout`, which stop a runaway long before the step count does; the
-#: cost of leaving it low is a run that throws away everything it could not persist.
+#: budget` rather than landing its own work. Steps, wall-clock time, and cumulative
+#: token consumption are configured separately below.
 BUILDER_MAX_STEP = 320
 WALL_CLOCK = 28800
 # Cumulative input (including cache) + output per assignment, not context size or
-# per-response output. Keep the worker and orchestrator budgets separate.
-WORKER_MAX_TOKEN = 1000000
-BUILDER_MAX_TOKEN = 3000000
+# per-response output. Both role budgets are intentionally generous; the runtime
+# also shares the root Builder budget across its descendants.
+WORKER_MAX_TOKEN = 100_000_000
+BUILDER_MAX_TOKEN = 100_000_000
 
 # Every role uses the same cache-aware context policy as the SWE-bench MetaAgent.  Native
 # compaction is selected by the configured memory model when supported and otherwise falls
@@ -153,6 +153,8 @@ BUILDER_MAX_TOKEN = 3000000
 # compaction off globally. The Builder uses GPT-6; support workers retain Opus 5,
 # while the co-design panel spans three model families.
 _AGENT_CORE = dict(
+    # Honor the operator's role budget even when a Builder proposes a smaller child cap.
+    allow_token_budget_override=False,
     memory_name=memory_names[0],
     enable_evolving=False,
     use_memory=True,

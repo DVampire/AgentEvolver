@@ -14,7 +14,7 @@ ssh_agent = dict(
     # in more, smaller steps — launch, check the log, check it again — and running out of
     # steps mid-job leaves something running with nobody watching it.
     max_step = 40,
-    max_token = 1000000,
+    max_token = 100_000_000,
     timeout = 3600,
     review_steps = 5,
     log_max_length = 1000,

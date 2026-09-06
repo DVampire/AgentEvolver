@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
 description: Turn a concrete reusable improvement opportunity into a small verified framework capability change. Use for learning from a first correction or success, expected reuse, a better quality/cost/reliability method even when the task already works, a missing capability, or an explicit component request. Repeated failure is not required. Covers inspect → generate/optimize → evaluate → keep/rollback/unload across all eight component types. NOT for ordinary edits to the user's deliverable.
-version: 2.2.0
+version: 2.3.0
 license: N/A
 type: [orchestrator]
 category: meta
@@ -45,6 +45,15 @@ and close a detected opportunity; task wording or a component quota is not execu
 Do not apply a second, stricter trigger gate here. A first correction, successful discovery,
 expected reuse, or better method can justify an experiment even if direct task work could
 succeed. Repeated failure and a broken baseline are not required.
+
+A new product experience can begin this investigation before any failure. Translate the
+chosen experience into a concrete operation or observation, inspect existing capabilities
+and relevant documentation, and use a bounded authorized probe when it resolves uncertainty.
+For example, a media interaction or external data integration may reveal a reusable method
+for building or verifying the experience. The desired feature is evidence of demand, not
+proof that a new component is necessary: establish the consumer, expected reuse and benefit.
+Do not require the user to name a Tool or Connector, and do not count a product-only API
+integration as framework evolution. Preserve the same evaluation and adoption loop below.
 
 Prepare four short facts in the existing work record, then proceed to inspection:
 

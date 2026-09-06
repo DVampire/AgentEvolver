@@ -99,10 +99,19 @@ per-turn accounting from charging a settled request twice. Reservations are esti
 not a provider-enforced billing cap; provider-internal activity is only as observable as
 its returned usage.
 
+A role's `allow_token_budget_override` defaults to true: a dispatch `token_budget` can
+narrow its configured `max_token`, never raise it. Set it to false to retain the role's
+configured cap even when a delegating model proposes a smaller budget. The website demo
+uses this setting for its roles; shared run accounting still applies.
+
 Version 2 ledgers persist request receipts. Missing usage, cancellation, or a crash leaves
-an `unknown` reservation, not zero consumption; further model calls are refused until
-the host reconciles it with `budget.reconcile(receipt, usage, evidence=...)`. Reconciliation
-is idempotent and rejects conflicting totals. A definite typed pre-execution feature
+an `unknown` reservation, not zero consumption. Its full estimate continues to count
+against the shared limit, but retries and sibling work may use the remaining budget.
+It stays unknown across resume until the host reconciles it with
+`budget.reconcile(receipt, usage, evidence=...)`. Reconciliation is idempotent and
+rejects conflicting totals. Unknown usage never becomes reported tokens or a guessed bill.
+The stream retry loop records the original error and backs off between bounded attempts;
+it does not replay a stream that already emitted output. A definite typed pre-execution feature
 rejection can release the reservation for a portable fallback. No automatic billing API
 is assumed: provider-side audit evidence is required for unknown requests. Snapshots
 expose reserved tokens and unreconciled receipt IDs. Version 1 usage-only ledgers remain

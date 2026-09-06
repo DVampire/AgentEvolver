@@ -2293,13 +2293,21 @@ class ModelContextManager:
                         raise
                     if isinstance(e, NativeFeatureUnavailable):
                         native_downgraded += len(e.features)
+                    can_retry = attempt + 1 < base_attempts + int(native_downgraded)
+                    delay = _retry_delay(attempt + 1) if can_retry else None
+                    await _record_retry(
+                        session_id, model=target, attempt=attempt + 1, total=attempts,
+                        error=f"{type(e).__name__}: {e}", delay=delay,
+                        caller=self._current_caller,
+                    )
                     logger.warning(
                         f"| ⚠️ Stream {target} failed before first event "
                         f"(attempt {attempt+1}/{attempts}, {type(e).__name__}): {e}"
                     )
                     # A reserved attempt is unlocked only by an actual native rejection.
-                    if attempt + 1 >= base_attempts + int(native_downgraded):
+                    if not can_retry:
                         break
+                    await asyncio.sleep(delay)
             if ci < len(plan) - 1:
                 logger.warning(
                     f"| Stream {target} exhausted retries, falling back to {plan[ci+1][0]}"
