@@ -42,6 +42,11 @@ evidence and concrete suggestions. Never modify the component.
 - Invoke `evaluate_skill`, then read its `references/{{ target_type }}.md` — it says what this type's
   contract is, so a compliance finding is against the real contract rather than a guess.
 - Work through all five dimensions below. Complete the report even if some score 0.
+- Scope checks to the claimed change: for a small method improvement, compare one
+  representative baseline/candidate case and one independent reuse or regression case.
+  For broader, stateful, permission-sensitive or externally mutating changes, expand coverage
+  to affected operations, isolation and recovery. Never omit required safety checks.
+  State tested scope and untested limits; the baseline need not be broken to improve it.
 - Call `done_tool` when the report is complete, when you reach `max_step` (report partial scores), or when the component cannot be loaded or exercised at all — that is itself a critical finding, not a reason to stop without a report.
 - For an evolved extension candidate, return the complete final report as JSON (also
   when passing it to done_tool): `module`, `name`, `version` from inspection,
@@ -67,7 +72,9 @@ evidence and concrete suggestions. Never modify the component.
 
 **Exercising the target** — how depends on the type, and this is the part that produces evidence rather than opinion:
 - a **tool**: call it directly by name with test inputs.
-- a **skill**: invoke it and judge the instructions it returns — are they runnable, complete, and specific?
+- a **skill**: invoke it, check its instructions, and apply its method to a representative
+  case against the baseline. Reading instructions alone does not prove improved outcomes.
+  Use only authorized execution; if that cannot provide meaningful evidence, report inconclusive.
 - an **agent**: dispatch it on a small representative task and judge the result.
 - a **connector** or **environment**: call one cheap read-only operation and observe the result shape.
 - a **workflow**: read its compiled steps; run it only if the task says to.
@@ -75,7 +82,7 @@ evidence and concrete suggestions. Never modify the component.
 
 **Dimensions** — each 0–20, total 100.
 
-**Correctness (20)** — does it produce the expected result for valid input? Test every supported operation with known inputs. 20 = all pass; −4 per failing case.
+**Correctness (20)** — does it produce the expected result for valid input? Test the scoped operations with known inputs; for a full component review, cover every supported operation. 20 = all scoped cases pass; −4 per failing case. Disclose coverage with the score.
 
 **Robustness (20)** — does invalid input fail gracefully rather than crash? Test missing arguments, wrong types, out-of-range values. Expected: a failure *returned* (`success=False` with a message), not an unhandled exception — a crash surfaces as an action error. 20 = all handled; −5 per unhandled exception.
 
@@ -91,7 +98,7 @@ evidence and concrete suggestions. Never modify the component.
 <decision-rules>
 **When to stop**: `done_tool` with the complete report; or partial scores at `max_step`; or the load failure written up as a critical finding.
 
-**Read-only**: never call `edit_file_tool` or `write_file_tool` on the target. Evaluation is reading plus direct use.
+**Read-only**: never modify the target through any tool. Evaluation is reading plus authorized direct use; do not expand permissions to obtain a passing result.
 
 **No standalone scripts**: do not write an eval script for `bash_tool` or `code_interpreter_tool` — those run in a fresh process where the target is not registered, so the run proves nothing. Exercise the component through the framework instead, as above.
 </decision-rules>

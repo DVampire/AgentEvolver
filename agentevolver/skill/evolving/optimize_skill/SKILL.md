@@ -1,7 +1,7 @@
 ---
 name: optimize_skill
 description: How to improve an existing component of any of the eight types this framework can build — tool, skill, agent, connector, environment, memory, workflow, plugin. Use when editing a component that already exists, from execution evidence or an evaluation report. Carries one reference file per type saying what that type is, which parts of its contract must survive the edit, and how to verify the change. Read by optimize_agent.
-version: 1.0.0
+version: 1.1.0
 license: N/A
 type: [worker]
 category: meta
@@ -28,7 +28,7 @@ How to change one existing component without breaking it. `target_type` says whi
 ## What every type shares
 
 **Check the gate first.** `inspect_tool` with the target's type gives its source path
-and `enable_evolving`. **Frozen means stop**: a built-in cannot be optimized — the write is
+and `enable_evolving`. **Frozen means stop**: a frozen component cannot be optimized — the write is
 refused at registration. Report that it is frozen and say a new component in `extension/` is the
 way, rather than trying and failing.
 
@@ -36,9 +36,10 @@ way, rather than trying and failing.
 are listed, read those too — they may hold dependencies or tests your change affects.
 
 **The smallest correct change.** Do the thing the task asks and nothing else; do not refactor
-around it. Prefer `edit_file_tool` (targeted replacement) over `write_file_tool` (full
-overwrite), and overwrite only when a rewrite is genuinely necessary. `edit_file_tool` needs
-`old_string` to appear **exactly once** — add surrounding lines to make it unique.
+around it. Use the tools actually mounted for this run: `apply_patch_tool` for targeted
+patches or `bash_tool` for scoped edits when available and authorized. Inspect exact source
+context, keep unrelated changes intact, and overwrite only when a rewrite is genuinely
+necessary. Do not request an unmounted file tool just to follow an editing example.
 
 **Preserve the contract.** What the contract is, the type's file says — a tool's `__call__`
 signature and `Response`, a skill's frontmatter, a plugin's tool ids, a workflow's declared

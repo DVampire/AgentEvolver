@@ -21,8 +21,18 @@ Read the SKILL.md and score it on: instruction clarity, completeness, structure/
 
 The heart of quantitative evaluation is: does the skill help versus not having it? In this framework there is no `claude -p` subprocess and no browser viewer — **MetaAgent runs the comparison by dispatching agents** (see Orchestration). Concretely, for each test prompt:
 
-- **with-skill run**: dispatch `general_agent` on the prompt with the target skill made available (its `skill_allowlist` pinned to `[target_skill]`).
-- **baseline run**: dispatch `general_agent` on the same prompt with `skill_allowlist: []` (no skill).
+- **with-skill run**: use an available, authorized bounded consumer with the target skill
+  made available (`skill_allowlist` pinned to `[target_skill]`). Do not assume a particular
+  agent such as `general_agent` is mounted.
+- **baseline run**: use an equivalent fresh consumer on the same prompt with the prior
+  skill version or without the new skill (`skill_allowlist: []`). Keep the model, task,
+  other capabilities and budget comparable; never pretend previously learned instructions
+  have been removed from a continuing conversation.
+
+For a small change, one representative comparison and one independent reuse or regression
+case are sufficient when they cover the affected behavior. Larger changes require broader
+coverage. If the required consumer or permissions are unavailable, report the missing evidence
+as inconclusive; do not fabricate a comparison from reading the skill.
 
 Organize outputs under `{skill_dir}/evals/iteration-N/eval-<id>/{with_skill,baseline}/`. Then grade.
 

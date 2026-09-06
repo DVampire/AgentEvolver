@@ -36,9 +36,17 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, deferred):
         assert values["evolution_enabled"] is True
         cfg = parse_prompt_file(str(ROOT / "agentevolver/prompt/default" / f"{agent.name}.html"))
         message = await cfg.to_prompt().get_system_message(values, reload=True)
+        rendered = " ".join(message.text.split())
         assert message.text.count("<self-evolution-rules>") == 1
         assert "Do not wait for a task to mention evolution" in message.text
         assert "Repeated cost or inconsistency" in message.text
+        for opportunity in ("Reusable learning", "Expected reuse", "Better method",
+                            "Missing capability", "repeated failure is not required"):
+            assert opportunity in rendered
+        for guard in ("preserve consumer permission boundaries", "exact candidate version",
+                      "completed evaluator's `run_id`", "roll back or unload",
+                      "At CRITICAL, start no new experiment"):
+            assert guard in rendered
         for kind in COMPONENT_TYPE_NAMES:
             assert kind.lower() in message.text.lower()
     finally:
@@ -81,6 +89,36 @@ def test_orchestrators_use_one_shared_policy():
         assert "<capability-evolution>" not in source
     builder = (ROOT / "agentevolver/prompt/default/website_builder_agent.html").read_text()
     assert "does not require the task to request evolution" in builder
+
+
+def test_evolution_skill_has_no_second_failure_or_memory_gate():
+    source = (ROOT / "agentevolver/skill/evolving/self_evolving_skill/SKILL.md").read_text()
+    assert "shared `evolution_rules` system-prompt module owns the detection policy" in source
+    for expected in ("Do not apply a second, stricter trigger gate", "expected reuse",
+                     "writing a memory file is not a prerequisite", "hypotheses",
+                     "action steps, not separate product releases"):
+        assert expected in source
+    for obsolete in ("Your conversation starts empty every turn", "≥2×",
+                     "Do not evolve** on a first-time fixable defect",
+                     "when the budget is TIGHT or CRITICAL", "no promotion step"):
+        assert obsolete not in source
+    for guard in ("enable_evolving", "exact candidate version", "adoption_tool",
+                  "rollback", "unload", "inconclusive", "necessary permissions"):
+        assert guard in source
+
+
+def test_worker_instructions_support_bounded_verified_improvements():
+    skills = ROOT / "agentevolver/skill/evolving"
+    optimize = (skills / "optimize_skill/SKILL.md").read_text()
+    assert "apply_patch_tool" in optimize and "bash_tool" in optimize
+    assert "edit_file_tool" not in optimize and "write_file_tool" not in optimize
+    assert "enable_evolving" in optimize and "Frozen means stop" in optimize
+    for path in (skills / "evaluate_skill/SKILL.md",
+                 ROOT / "agentevolver/prompt/default/evaluate_agent.html"):
+        text = path.read_text()
+        for expected in ("independent reuse or regression case", "required safety checks",
+                         "untested limits", "inconclusive", "Reading instructions alone"):
+            assert expected in text
 
 
 def test_echo_task_never_requests_component_evolution():

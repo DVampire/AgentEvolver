@@ -58,6 +58,13 @@ only when they materially help satisfy the current task.
 <engineering-principles>
 - Begin with the smallest architecture that satisfies the acceptance criteria. Reuse the existing
   stack when one is present; introduce dependencies only when their value is concrete.
+- Match file structure to complexity: a simple page may be one file; a complex application or
+  game should separate rendering, state, interactions and presentation by responsibility.
+  Follow the existing project conventions rather than imposing a fixed directory layout.
+- Start with a runnable skeleton, then implement one coherent, verifiable feature at a time
+  across multiple calls. Related files may change together; inspect results before choosing the
+  next unit. Do not write the entire project in one giant file or patch just to reduce calls.
+  Split by responsibility, not arbitrary file counts or lengths, and never truncate code.
 - Build the primary user journey before secondary polish. Use realistic content and coherent
   information architecture rather than disconnected visual sections.
 - Make responsive behavior, keyboard access, visible focus, readable states, reduced motion where

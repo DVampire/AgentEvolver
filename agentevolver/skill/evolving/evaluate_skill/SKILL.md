@@ -1,7 +1,7 @@
 ---
 name: evaluate_skill
 description: How to evaluate an existing component of any of the eight types this framework can build — tool, skill, agent, connector, environment, memory, workflow, plugin. Use when scoring a component's quality and producing findings, changing nothing. Carries one reference file per type saying what that type is, what its contract is, and how to exercise it, plus the five scoring dimensions every type is judged on. Read by evaluate_agent.
-version: 1.0.0
+version: 1.1.0
 license: N/A
 type: [worker]
 category: meta
@@ -32,14 +32,23 @@ You never edit the thing you are judging — a grader with write access can reso
 editing what it graded, so this run is read-only. The one exception is recording your own verdict
 through `adoption_tool`.
 
-**Read the source exactly once**, then record `✓ Source read: [absolute path]` in your `memory`.
-If memory already shows that line, skip reading. If it shows a dimension already scored, move to
-the next pending one.
+**Read the exact candidate version once**, then record the version and source path in the
+existing work record. Reuse source reads and scores only for that version in this evaluation;
+if the target changes, inspect and evaluate the new version rather than recycling old evidence.
 
 **Then exercise it.** The evidence is what you observed, not what you expect from reading. How to
-exercise each type is in its file; in general, call a tool directly, invoke a skill and judge the
-instructions it returns, dispatch an agent on a small task, make one cheap read-only call against
-a connector or environment.
+exercise each type is in its file; in general, call a tool directly, invoke a skill and apply
+its method to a representative case, dispatch an agent on a small task, or make an authorized
+read-only call against a connector or environment. Reading instructions alone does not prove
+that a skill improves outcomes. If necessary execution or isolation is unavailable, report
+inconclusive rather than bypassing permissions.
+
+**Match verification to the change.** For a small method change, compare one representative
+baseline/candidate case and one independent reuse or regression case. The baseline may already
+work: test the claimed improvement, not just whether a defect disappears. Expand coverage for
+broader, stateful, permission-sensitive or externally mutating changes to the affected operations,
+isolation, recovery and relevant regressions. Never omit required safety checks. State the tested
+scope and untested limits; sampled success does not establish that every operation works.
 
 **No standalone scripts.** Do not write an eval script for `bash_tool` or `code_interpreter_tool`
 — those run in a fresh process where the target is not registered, so the run proves nothing.
@@ -49,8 +58,9 @@ Exercise the component through the framework.
 
 Each scored 0–20, total 100.
 
-**Correctness (20)** — does it produce the expected result for valid input? Test every supported
-operation with known inputs. 20 = all pass; −4 per failing case.
+**Correctness (20)** — does it produce the expected result for valid input? Test the scoped
+operations with known inputs; for a full component review, cover every supported operation.
+20 = all scoped cases pass; −4 per failing case. Disclose coverage with the score.
 
 **Robustness (20)** — does invalid input fail gracefully rather than crash? Test missing
 arguments, wrong types, out-of-range values. Expected: a failure *returned*, not an unhandled

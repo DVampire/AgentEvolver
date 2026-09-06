@@ -12,6 +12,8 @@ the system message is cached for the life of the agent, so a prompt rewritten by
 evolution step keeps serving its old text until something explicitly reloads it.
 """
 
+from pathlib import Path
+
 import pytest
 
 from agentevolver.prompt.types import (
@@ -404,3 +406,22 @@ def test_null_collections_serialise_as_empty_ones():
 def test_a_prompt_context_needs_nothing_to_be_constructed():
     """Callers build it incrementally, so every field has to have a usable default."""
     assert PromptContext().input == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["meta_agent", "website_builder_agent"])
+async def test_development_rules_render_incremental_work_without_truncation(name):
+    path = Path(__file__).resolve().parents[1] / "agentevolver/prompt/default" / f"{name}.html"
+    prompt = parse_prompt_file(str(path)).to_prompt()
+    message = await prompt.get_system_message({"max_actions": 3}, reload=True)
+    text = " ".join(message.text.split())
+    assert text.count("<action-batching-rules>") == 1
+    for rule in ("up to 3 actions", "not to minimize turn count at any cost",
+                 "never as concurrent actions", "Do not truncate source or tool arguments",
+                 "no one-file-per-call rule", "requires interpreting output"):
+        assert rule in text
+    assert "not the number of actions" not in text
+    if name == "website_builder_agent":
+        for rule in ("a simple page may be one file", "separate rendering, state",
+                     "runnable skeleton", "across multiple calls", "never truncate code"):
+            assert rule in text

@@ -4,18 +4,20 @@
   <meta charset="UTF-8">
   <meta name="name" content="echo_ark">
   <meta name="description" content="An original real-time 3D ocean adventure: pilot, explore, salvage and grow your own floating ark">
-  <meta name="version" content="6.0.0">
+  <meta name="version" content="7.0.0">
   <title>ECHO — Arkbound</title>
 </head>
 <body><main>
   <h1>ECHO — Arkbound</h1>
   <section id="product-intent">
-    <h2>A little ark on an ocean worth exploring</h2>
+    <h2>A personal ark on a vast ocean worth exploring</h2>
     <p>Build a fancy, genuinely playable 3D browser game about piloting and improving a
-    small floating ark on a beautiful ocean. ECHO is its fictional companion and guide.
+    small floating ark on a vast, beautiful ocean. Aim for the visual finish, responsive
+    controls and sustained play of a polished independent game, not a website with a
+    token game canvas or a technical prototype. ECHO is its fictional companion and guide.
     The pleasure is steering through waves toward a distant discovery, bringing useful
     things aboard, and seeing your fragile vessel become your own capable floating home.</p>
-    <p>Capture the appeal of raft-survival and seafaring adventures in an original, small
+    <p>Capture the appeal of raft-survival and seafaring adventures in an original
     game, not a copy of another game's assets, characters, interface or progression. This
     is not the previous ship-interior puzzle: remove the grid, discrete turns, airlock
     extraction and recorded-action echo mechanic. ECHO names the companion, not a required
@@ -35,6 +37,14 @@
     obstacles. Light buoyancy and a wake should make it feel afloat without disorienting
     camera motion. Choose the engine and physics approach; photorealistic simulation is
     not required.</p>
+    <p>The ocean must support a long voyage, not a tiny arena: target roughly 20–30 minutes
+    of meaningful first-time exploration at normal cruising speed across distinct places.
+    This is a design target to demonstrate, not a required playtest duration for every check.
+    Avoid an early invisible wall, immediate wraparound, or repeatedly circling the same
+    small island. Do not achieve duration by slowing the boat, stretching empty water or
+    repeating identical scenery. Use an authored archipelago, procedural regions, streaming,
+    or another approach of your choice. A coherent horizon, recognizable distant landmarks
+    and a readable navigation aid should make distance and discovery tangible.</p>
     <p>Use continuous keyboard controls, such as WASD or arrows, and reachable on-screen
     touch controls. Held inputs must release on key-up, blur, pause and lost touch so the
     boat cannot run away. Pause should actually pause dangerous simulation; returning to
@@ -56,23 +66,31 @@
     and a way to recover. Reefs, a rough-water passage or another authored obstacle can
     work; constant hunger meters, combat and punishing survival timers are not required.
     Rewards should support exploration or building, not only raise an abstract score.</p>
+    <p>Sustain several voyages with places that offer different decisions and activities,
+    not just new coordinates for the same pickup. Let discoveries, useful upgrades and
+    changing sailing conditions open appealing routes beyond the starting waters. Make
+    nearby activity available early and distant destinations genuinely worth reaching;
+    the player should have reasons both to keep sailing and to return with a better ark.</p>
   </section>
   <section id="scope">
-    <h2>A polished little sea, not an unfinished huge game</h2>
-    <p>First deliver one complete sailing-and-upgrade loop in a bounded, visually composed
-    ocean region with a few distinct landmarks and room to steer freely. Make getting
-    underway quick and understandable, with short contextual help rather than a manual.
-    Do not spend the first release constructing an enormous empty map.</p>
+    <h2>A complete opening voyage in an expansive playable world</h2>
+    <p>First deliver a complete sailing-and-upgrade loop and a navigable world that already
+    extends beyond the starting region, with distinct destinations and room for long voyages.
+    Polish the opening route most deeply, then expand depth through player feedback; a tiny
+    fenced demonstration area is not an acceptable substitute for the larger world.
+    Make getting underway quick and understandable, with short contextual help rather than
+    a manual. Prioritize a few strong interconnected systems over a long unfinished checklist.</p>
     <p>A walkable deck, island landings, fishing, changing weather or more construction
     could be later directions if players want them. They are not an initial checklist.
-    Multiplayer, procedural infinity, complex crafting trees and a cinematic campaign
-    are out of scope until the small game is demonstrably enjoyable. Keep the core game
+    Multiplayer, infinite terrain, complex crafting trees and a cinematic campaign are
+    optional, not prerequisites for a large enjoyable sea. Keep the core game
     playable without an LLM request per action or a paid external service.</p>
   </section>
   <section id="art-direction">
     <h2>A scene you want to sail into</h2>
     <p>Make the game world fill the main view, with a restrained HUD rather than a dashboard
-    surrounding a tiny canvas. Use an expressive, cohesive stylized 3D art direction:
+    surrounding a tiny canvas. Choose a cohesive, high-finish 3D art direction, whether
+    stylized, painterly or more realistic. The presentation should feel like a complete game:
     readable vessel silhouettes, inviting islands, water with animated surface detail,
     believable lighting, a horizon with atmosphere, and satisfying wakes and pickup effects.
     Choose the palette, materials and setting; it need not be dark science fiction.</p>
@@ -81,6 +99,12 @@
     remaining a collection of unexplained placeholder cubes. Original procedural geometry
     and properly licensed assets are both acceptable. Avoid overengineering water effects
     at the expense of steering, clarity or frame rate.</p>
+    <p>Compose near, middle and far scenery with varied coastlines, convincing scale,
+    materials, light and atmosphere. Give the ark crafted detail and the sea depth, motion
+    and a wake that responds to travel. Integrate readable HUD, transitions and optional sound
+    into that art direction. Do not accept a flat plane with a few primitive islands, default
+    debug styling or decorative screenshots as finished game quality. Visual richness must
+    survive actual navigation, not only one carefully framed opening shot.</p>
     <p>Keep a stable horizon, readable contrast and visible focus. Start sound off; offer
     reduced camera motion without removing navigation feedback. Provide a usable narrow-screen
     layout and adjustable rendering quality. Measure responsiveness and frame pacing on the
@@ -105,6 +129,11 @@
     upgrade, encounter and recover from a setback, pause/resume, and reload saved progress.
     Check camera comfort, collision behavior, missing assets and browser errors. Do not
     teleport the player or modify inventory in the console and call that a successful playtest.</p>
+    <p>Also sail beyond the starting waters to a distinct destination using ordinary controls.
+    Record route, elapsed travel time, speed setting and encountered activities, with views
+    from the opening, open sea and the destination. Check boundaries and performance away
+    from spawn. Report measured travel separately from estimated total exploration time;
+    world coordinates, a large map label or an FPS counter alone do not prove scale or quality.</p>
     <p>A technical PASS establishes working interactions, not fun or visual quality.
     Separately show what made sailing satisfying, why a route or upgrade was worth choosing,
     and what gives a second voyage value. Compare like-for-like screenshots and play sequences
