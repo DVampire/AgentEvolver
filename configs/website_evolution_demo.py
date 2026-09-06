@@ -142,7 +142,10 @@ EVOLUTION_MAX_STEP = 60
 #: cost of leaving it low is a run that throws away everything it could not persist.
 BUILDER_MAX_STEP = 320
 WALL_CLOCK = 28800
-MAX_TOKEN = 10000000
+# Cumulative input (including cache) + output per assignment, not context size or
+# per-response output. Keep the worker and orchestrator budgets separate.
+WORKER_MAX_TOKEN = 1000000
+BUILDER_MAX_TOKEN = 3000000
 
 # Every role uses the same cache-aware context policy as the SWE-bench MetaAgent.  Native
 # compaction is selected by the configured memory model when supported and otherwise falls
@@ -154,14 +157,11 @@ _AGENT_CORE = dict(
     enable_evolving=False,
     use_memory=True,
     retain_recent_steps=4,
-    compact_after_steps=18,
-    # Fold at 60k rather than 100k. Cache reads are charged per request, so a working
-    # context that sits at 80-120k is paid for on every step that follows: measured over
-    # 171 builder steps, the 57 steps spent above 80k cost $2.48 in reads alone against
-    # $1.89 for the 82 steps between 40k and 80k. Folding sooner trades a few more
-    # checkpoint calls — 8% of the cache-write bill, $0.79 across the whole run — for a
-    # smaller prefix on every step after each fold.
-    compact_body_tokens=60000,
+    # Use token pressure, not turn count: 18 turns was triggering repeated folds
+    # even for 20-30k browser histories. Smaller model windows still fold earlier
+    # via the measured request pressure (including tools/images/output headroom).
+    compact_after_steps=0,
+    compact_body_tokens=100000,
     fold_at_pressure=0.85,
 )
 
@@ -170,7 +170,7 @@ _EVOLUTION_WORKER = {
     "model_name": model_name,
     "max_step": EVOLUTION_MAX_STEP,
     "timeout": WALL_CLOCK,
-    "max_token": MAX_TOKEN,
+    "max_token": WORKER_MAX_TOKEN,
 }
 generate_agent.update(**_EVOLUTION_WORKER)
 optimize_agent.update(**_EVOLUTION_WORKER)
@@ -199,7 +199,7 @@ _USER = {
     # Canvas products need roughly double a form product's budget for the same verdict.
     "max_step": 140,
     "timeout": 1800,
-    "max_token": 1000000,
+    "max_token": WORKER_MAX_TOKEN,
     "max_actions": 3,
     "max_screenshots": 2,
 }
@@ -210,7 +210,8 @@ website_user_agent.update(**_USER)
 browser_agent.update(
     **{
         **_AGENT_CORE,
-        "model_name": "llm_hub/gpt-5.6-sol",
+        # Use the visual route: the text-only Flash alias cannot inspect screenshots.
+        "model_name": "llm_hub/deepseek-v4-flash-vision-exp",
         "prompt_name": "browser_agent",
         "env_name": "browser_environment",
         "use_memory": False,
@@ -225,7 +226,7 @@ browser_agent.update(
         # not the element count.
         "max_step": 90,
         "timeout": 1200,
-        "max_token": 500000,
+        "max_token": WORKER_MAX_TOKEN,
         "max_actions": 3,
         "max_screenshots": 2,
     }
@@ -239,7 +240,7 @@ website_builder_agent.update(
         "enable_evolving": True,
         "max_step": BUILDER_MAX_STEP,
         "timeout": WALL_CLOCK,
-        "max_token": MAX_TOKEN,
+        "max_token": BUILDER_MAX_TOKEN,
         "initial_step_budget": initial_step_budget,
         "iteration_step_budget": iteration_step_budget,
     }
