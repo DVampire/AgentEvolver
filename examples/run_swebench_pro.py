@@ -57,6 +57,7 @@ from agentevolver.utils.file_utils import atomic_json_update
 from agentevolver.trace.stats import summarise_session_spend
 
 LANDING_MARGIN_SECONDS = 1800
+INNER_STOP_GRACE_SECONDS = 10
 CONTAINER_REPO = "/AgentEvolver"
 
 
@@ -133,6 +134,33 @@ def select_instances(instances, task_ids=None, start=None, end=None):
             logger.warning(f"| ⚠️ Unknown instance_ids ignored: {unknown}")
         return [by_id[t] for t in task_ids if t in by_id]
     return list(instances[start:end])
+
+
+async def run_priority_batches(pending, priority_ids, worker):
+    """Finish the priority attempt batch before admitting any remaining tasks."""
+    priority_ids = set(priority_ids)
+    batches = (
+        [item for item in pending if item[1]["instance_id"] in priority_ids],
+        [item for item in pending if item[1]["instance_id"] not in priority_ids],
+    )
+    for label, batch in zip(("priority retries", "remaining tasks"), batches):
+        if not batch:
+            continue
+        logger.info(f"| 📋 Starting {label}: {len(batch)} instances")
+        tasks = [asyncio.create_task(worker(index, row)) for index, row in batch]
+        try:
+            await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                if not task.done() and not task.cancelling():
+                    task.cancel()
+            cleanup = asyncio.gather(*tasks, return_exceptions=True)
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    continue
+            raise
 
 
 # --------------------------------------------------------------------------- #
@@ -405,7 +433,7 @@ async def run_inner_process(row: dict, args, env: dict, resume: bool, timeout: i
         with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGTERM)
         try:
-            await asyncio.wait_for(process.wait(), timeout=10)
+            await asyncio.wait_for(process.wait(), timeout=INNER_STOP_GRACE_SECONDS)
         except asyncio.TimeoutError:
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGKILL)
@@ -414,11 +442,20 @@ async def run_inner_process(row: dict, args, env: dict, resume: bool, timeout: i
     try:
         return await asyncio.wait_for(process.wait(), timeout=timeout)
     except asyncio.TimeoutError:
-        await stop()
         return 124
-    except asyncio.CancelledError:
-        await stop()
-        raise
+    finally:
+        if process.returncode is None:
+            # A second cancellation must not interrupt TERM/wait/KILL and leave
+            # a model worker running after its launcher and sandbox have exited.
+            cleanup = asyncio.create_task(stop())
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    continue
+            cleanup.result()
+            if asyncio.current_task().cancelling():
+                raise asyncio.CancelledError
 
 
 # --------------------------------------------------------------------------- #
@@ -498,12 +535,13 @@ async def run_launcher(args) -> int:
         "extension_root": extension_root,
         "config": os.path.abspath(args.config),
         "task_ids": args.task_ids,
+        "priority_task_ids": getattr(args, "priority_task_ids", None),
         "start": args.start,
         "end": args.end,
         "output_owner": str(config.get("output_owner") or config.tag),
     }
     if prior_state:
-        for key in ("config", "task_ids", "start", "end", "extension_root"):
+        for key in ("config", "task_ids", "priority_task_ids", "start", "end", "extension_root"):
             if prior_state.get(key) != run_state.get(key):
                 logger.error(
                     f"| ❌ resume selection mismatch for {key}: "
@@ -531,6 +569,13 @@ async def run_launcher(args) -> int:
         logger.error("| ❌ no instances selected")
         return 1
     selection_size = len(selected)
+    priority_ids = {
+        item.strip() for item in (getattr(args, "priority_task_ids", None) or "").split(",")
+        if item.strip()
+    }
+    unknown_priority = priority_ids - {row["instance_id"] for row in selected}
+    if unknown_priority:
+        raise ValueError(f"priority tasks must belong to the selection: {sorted(unknown_priority)}")
 
     results = load_run_results(results_path) if getattr(args, "resume", False) else []
     previous_records = {record.get("instance_id"): record for record in results}
@@ -583,10 +628,13 @@ async def run_launcher(args) -> int:
     async def _run_one_instance(index, row):
         instance_id = row["instance_id"]
         previous = previous_records.get(instance_id, {})
-        record = {"instance_id": instance_id, "status": "failed", "error": None, **previous}
+        record = {"instance_id": instance_id, "status": "running", "error": None,
+                  "attempt_status": "running", "started_at": time.time()}
         task = Task(task_id=instance_id, extra=dict(row))
         started = time.time()
         prepared = None
+        stage = "prepare"
+        session_path = None
         monitor.task(instance_id, "preparing", position=index)
         try:
             owner = str(config.get("output_owner") or config.tag)
@@ -602,6 +650,10 @@ async def run_launcher(args) -> int:
                 "previous": previous,
                 "timeout": wall_clock + LANDING_MARGIN_SECONDS,
                 "agent_on_host": True,
+                # Model calls run on the host. The repository container is fully
+                # offline and needs neither a model relay nor a framework mount.
+                "allow_hosts": [],
+                "deny_hosts": [],
             }
             async with provision_sem:
                 prepared = await benchmark_manager.prepare("swebench_pro", task, context=options)
@@ -612,10 +664,12 @@ async def run_launcher(args) -> int:
                 saved_result = saved.get("result") or {}
                 record.update(saved_result.get("agent_result") or {"status": "historical"})
                 record.update(
-                    final_grade=saved["evaluation"]["details"], resolved=saved["score"] == 1
+                    final_grade=saved["evaluation"]["details"], resolved=saved["score"] == 1,
+                    attempt_status="completed",
                 )
                 return record
             if prepared.submission is None:
+                stage = "solve"
                 monitor.task(instance_id, "solving", position=index)
                 inner_env = solver_environment(
                     {
@@ -642,6 +696,7 @@ async def run_launcher(args) -> int:
                         record.update(json.load(handle))
                 else:
                     record["error"] = f"inner worker left no result.json (exit {exit_code})"
+            stage = "submit"
             task = await benchmark_manager.submit("swebench_pro", task, output=record)
             submission = task.result
             record.update(submission.get("agent_result") or {})
@@ -654,6 +709,7 @@ async def run_launcher(args) -> int:
                 }
             )
             monitor.task(instance_id, "grading", position=index)
+            stage = "eval"
             evaluated = await benchmark_manager.eval("swebench_pro", task)
             record.update(
                 final_grade=evaluated.evaluation.details,
@@ -662,16 +718,34 @@ async def run_launcher(args) -> int:
                 submission_sha256=submission["sha256"],
             )
             record.update(benchmark_info.evaluation)
+            record["attempt_status"] = "completed"
             if evaluated.evaluation.status == "error":
                 record["error"] = evaluated.evaluation.details.get("error_code")
+                record["failure_stage"] = "eval"
+                record["attempt_status"] = "error"
+        except asyncio.CancelledError:
+            record.update(status="cancelled", attempt_status="interrupted", error=None,
+                          interrupted_stage=stage)
+            raise
         except Exception as error:
-            record["error"] = str(error)
+            record.update(status="failed", attempt_status="error", failure_stage=stage,
+                          error=str(error))
             logger.error(f"| ❌ [{instance_id}] {error}", exc_info=True)
         finally:
-            await benchmark_manager.cleanup(
-                "swebench_pro", task, reclaim=getattr(args, "reclaim_disk", False)
-            )
-            record.setdefault("time_seconds", round(time.time() - started, 1))
+            try:
+                await benchmark_manager.cleanup(
+                    "swebench_pro", task, reclaim=getattr(args, "reclaim_disk", False)
+                )
+            except Exception as error:
+                record["cleanup_error"] = str(error)
+                if not record.get("final_grade"):
+                    record.update(status="failed", attempt_status="error",
+                                  failure_stage="cleanup", error=str(error))
+            record["finished_at"] = time.time()
+            record["time_seconds"] = round(time.time() - started, 1)
+            if session_path:
+                record["session_path"] = session_path
+                record["spend"] = summarise_session_spend(session_path, instance_id)
             async with results_lock:
                 results[:] = [item for item in results if item.get("instance_id") != instance_id]
                 results.append(record)
@@ -698,7 +772,7 @@ async def run_launcher(args) -> int:
                 return record
 
     try:
-        await asyncio.gather(*[_bounded(i, row) for i, row in pending])
+        await run_priority_batches(pending, priority_ids, _bounded)
     except BaseException:
         monitor.close("interrupted")
         raise
@@ -744,6 +818,12 @@ def parse_args(argv=None):
         help="Inner mode: the SAFE instance subset as JSON. Omit for launcher mode.",
     )
     parser.add_argument("--task-ids", default=None, help="Comma-separated instance_ids.")
+    parser.add_argument(
+        "--priority-task-ids", default=None,
+        help="Comma-separated selected IDs whose entire pending batch must finish before "
+        "other tasks start. This controls scheduling; it does not override frozen submissions "
+        "or rerun scores within a resumed attempt.",
+    )
     parser.add_argument("--start", type=int, default=None, help="Start index (inclusive).")
     parser.add_argument("--end", type=int, default=None, help="End index (exclusive).")
     parser.add_argument(
@@ -851,10 +931,23 @@ async def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    import signal
+    async def run_cli():
+        loop = asyncio.get_running_loop()
+        task = asyncio.current_task()
+        stopping = False
 
-    def _terminate_via_exception(signum, _frame):
-        raise KeyboardInterrupt(f"terminated by signal {signum}")
+        def terminate():
+            nonlocal stopping
+            if not stopping:
+                stopping = True
+                task.cancel()
 
-    signal.signal(signal.SIGTERM, _terminate_via_exception)
-    sys.exit(asyncio.run(main()))
+        loop.add_signal_handler(signal.SIGTERM, terminate)
+        try:
+            return await main()
+        except asyncio.CancelledError:
+            return 128 + signal.SIGTERM
+        finally:
+            loop.remove_signal_handler(signal.SIGTERM)
+
+    sys.exit(asyncio.run(run_cli()))

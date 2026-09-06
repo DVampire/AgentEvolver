@@ -28,7 +28,7 @@
 
     <section class="hero-grid">
       <article class="card progress-card">
-        <div class="card-label">Overall progress</div>
+        <div class="card-label">Evaluated tasks</div>
         <div class="progress-value"><span id="completed">—</span><small id="total">/ —</small></div>
         <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
         <div class="split-meta">
@@ -53,6 +53,7 @@
         <div class="runtime-detail">
           <span><b id="active-count">—</b> / <b id="concurrency">—</b> slots active</span>
           <span id="launcher-pid">PID —</span>
+          <span id="attempt-summary">No execution issues</span>
         </div>
       </article>
     </section>
@@ -92,7 +93,7 @@
       <div class="panel-head">
         <div>
           <p class="eyebrow">Latest results</p>
-          <h2>Recently completed</h2>
+          <h2>Recent attempts</h2>
         </div>
         <span id="error-summary" class="pill muted">No runtime errors</span>
       </div>

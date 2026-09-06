@@ -5,7 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -122,6 +122,80 @@ async def test_legacy_history_counts_pass_fail_and_error_without_rewriting(tmp_p
     assert set(stats.extra["completed_task_ids"]) == {"pass", "fail"}
     assert (await manager.prepare("swebench_pro", Task(task_id="pass"))).completed
     assert history.read_bytes() == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cls,name", [
+    (SWEBenchProBenchmark, "swebench_pro"),
+    (SWEBenchVerifiedBenchmark, "swebench_verified"),
+])
+async def test_failed_patch_collection_preserves_checkout_and_recovers_through_manager(
+    tmp_path, monkeypatch, cls, name
+):
+    import subprocess
+
+    workspace = tmp_path / "host-session" / "workspace"
+    workspace.mkdir(parents=True)
+
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(workspace), *args], text=True).strip()
+
+    git("init", "-q")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "Test")
+    source = workspace / "answer.txt"
+    source.write_text("before\n")
+    git("add", ".")
+    git("commit", "-qm", "base")
+    row = {"instance_id": "one", "base_commit": git("rev-parse", "HEAD")}
+    source.write_text("after\n")
+
+    async def initialize(self):
+        self._data_records = [row]
+
+    collect = cls._collect_patch
+    failure = Mock(side_effect=RuntimeError("git read-tree failed while collecting patch"))
+    reclaim = Mock()
+    monkeypatch.setattr(cls, "_initialize", initialize)
+    monkeypatch.setattr(cls, "_prepare", AsyncMock())
+    monkeypatch.setattr(cls, "_collect_patch", failure)
+    monkeypatch.setattr(cls, "_reclaim_instance_disk", reclaim)
+    grade = AsyncMock(return_value={"resolved": True})
+    monkeypatch.setattr(cls, "_evaluate", grade)
+    # The collector must use the host checkout, even with a container path in the environment.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENTEVOLVER_TASK_WORKSPACE", "/workspace")
+    manager = BenchmarkManager()
+    await manager.configure(name, base_dir=str(tmp_path / "state"))
+    task = Task(task_id="one")
+    options = {"session_dir": str(workspace.parent), "workspace_dir": str(workspace)}
+    ctx = await manager.prepare(name, task, context=options)
+    with pytest.raises(RuntimeError, match="git read-tree"):
+        await manager.submit(name, task, output={"status": "done"})
+    await manager.cleanup(name, task, reclaim=True)
+    reclaim.assert_not_called()
+    grade.assert_not_awaited()
+    assert source.read_text() == "after\n" and (workspace / ".git").is_dir()
+    assert not Path(ctx.submission_path).exists()
+    assert (await manager.stats(name)).errors == 1
+
+    monkeypatch.setattr(cls, "_collect_patch", collect)
+    await manager.prepare(name, task, context={**options, "resume": True})
+    await manager.submit(name, task, output={"status": "done"})
+    frozen = Path(ctx.submission_path).read_bytes()
+    submission = json.loads(frozen)
+    assert "-before\n+after" in submission["patch"]
+    assert submission["sha256"] == hashlib.sha256(submission["patch"].encode()).hexdigest()
+    # Evaluation uses the frozen artifact, not later task/workspace mutations.
+    task.result = None
+    source.write_text("later edits\n")
+    result = await manager.eval(name, task)
+    assert result.evaluation.status == "passed"
+    assert grade.call_args.args[1] == submission["patch"]
+    assert (await manager.stats(name)).errors == 0
+    await manager.cleanup(name, task, reclaim=True)
+    reclaim.assert_called_once()
+    assert Path(ctx.submission_path).read_bytes() == frozen
 
 
 @pytest.mark.asyncio

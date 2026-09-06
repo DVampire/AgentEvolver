@@ -48,10 +48,10 @@ function renderResults(rows) {
   body.replaceChildren();
   for (const row of rows) {
     const tr = document.createElement("tr");
-    const mark = row.outcome === "passed" ? "✓" : row.outcome === "failed" ? "×" : row.outcome === "completed" ? "·" : "!";
-    const markClass = row.outcome === "failed" ? "failed" : row.outcome === "error" ? "error" : "";
+    const mark = row.outcome === "passed" ? "✓" : row.outcome === "failed" ? "×" : row.outcome === "interrupted" ? "Ⅱ" : row.outcome === "completed" ? "·" : "!";
+    const markClass = row.outcome === "failed" ? "failed" : ["error", "execution_error"].includes(row.outcome) ? "error" : "";
     const detail = row.failure ? `${row.failure.kind}: ${row.failure.code || "unknown"} — ${row.failure.details || "Review required"}` : row.outcome;
-    const provenance = row.retry_phase ? `Previous result · Retrying: ${row.retry_phase}` : row.attempt_source === "history" ? "Previous result" : "Current attempt";
+    const provenance = (row.retry_phase ? `Retrying: ${row.retry_phase}` : row.attempt_source === "history" ? "Previous attempt" : "Current attempt") + (row.previous_evaluation ? ` · Prior evaluation: ${row.previous_evaluation}` : "");
     tr.innerHTML = `<td><span class="result-mark ${markClass}" title="${escapeHtml(detail)}">${mark}</span></td><td class="instance" title="${escapeHtml(row.task_id)}">${escapeHtml(shortName(row.task_id))}<div class="slot-time">${escapeHtml(provenance)}</div></td><td>${duration(row.time_seconds)}</td><td>${number.format(row.calls || 0)}</td><td>${money.format(row.cost_usd || 0)}</td>`;
     body.appendChild(tr);
   }
@@ -66,14 +66,14 @@ function render(data) {
 
   document.title = `${data.title} · Live`;
   $("title").textContent = data.title;
-  $("run-name").textContent = data.run_id + (data.score_mode === "cumulative_retry" ? ` · Cumulative retries (not pass@1) · ${data.current_attempt?.completed || 0} completed in this attempt` : "");
+  $("run-name").textContent = data.run_id + (data.score_mode === "cumulative_retry" ? ` · Cumulative retries (not pass@1) · ${data.current_attempt?.completed || 0} evaluated in this attempt` : "");
   $("completed").textContent = number.format(progress.completed);
   $("total").textContent = `/ ${number.format(progress.total)}`;
   $("progress-fill").style.width = `${Math.max(0, Math.min(100, percent))}%`;
   $("progress-percent").textContent = `${percent.toFixed(2)}%`;
   $("eta").textContent = data.eta_seconds == null ? "Waiting for samples to estimate ETA" : `Time remaining: ${duration(data.eta_seconds)}`;
   $("score").textContent = score == null ? "—" : `${score.toFixed(1)}%`;
-  $("score").title = `${progress.passed} passed / ${progress.completed} completed, including evaluation issues. ${progress.scored} have valid scores.`;
+  $("score").title = `${progress.passed} passed / ${data.pass_rate?.denominator ?? progress.completed} attempted, including failures. ${progress.scored} have valid scores. Execution interruptions do not replace previous evaluations.`;
   $("resolved").textContent = number.format(progress.passed);
   $("unresolved").textContent = number.format(progress.failed);
   $("harness-errors").textContent = number.format(progress.errors);
@@ -81,6 +81,7 @@ function render(data) {
   $("active-count").textContent = launcher.active.length;
   $("concurrency").textContent = launcher.concurrency;
   $("launcher-pid").textContent = launcher.pid ? `PID ${launcher.pid}` : "PID —";
+  $("attempt-summary").textContent = `${data.current_attempt?.execution_errors || 0} execution issues · ${data.current_attempt?.interrupted || 0} interrupted`;
   const phases = launcher.active.reduce((counts, item) => {
     counts[item.phase] = (counts[item.phase] || 0) + 1;
     return counts;
@@ -95,7 +96,7 @@ function render(data) {
   $("data-path").textContent = data.results_path;
   const labels = {test_compatibility: "test compatibility", grading_setup: "grading setup", evaluation: "other evaluation"};
   const issueSummary = Object.entries(data.issue_counts || {}).map(([kind, count]) => `${count} ${labels[kind] || kind}`).join(" · ");
-  $("error-summary").textContent = issueSummary || (progress.errors ? `${progress.errors} evaluation issues` : "No evaluation issues");
+  $("error-summary").textContent = [issueSummary || "No evaluation issues", `${progress.execution_errors || 0} execution issues`, `${progress.interrupted || 0} interrupted`].join(" · ");
   $("error-summary").title = issueSummary;
   $("harness-errors").parentElement.title = $("error-summary").title;
 

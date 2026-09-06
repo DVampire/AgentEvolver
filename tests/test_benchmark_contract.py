@@ -109,6 +109,44 @@ def test_custom_public_methods_and_sync_hooks_are_rejected():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('cls', CLASSES, ids=lambda cls: cls.__name__)
+async def test_every_builtin_evaluates_and_restores_through_manager_without_agents(
+    cls, monkeypatch, tmp_path
+):
+    stub_sources(monkeypatch, tmp_path)
+    name = cls.model_fields['name'].default
+
+    async def grade(self, task):
+        if task.result == 'broken grader':
+            raise RuntimeError('controlled evaluator failure')
+        task.score = float(task.result)
+        return task
+
+    # Replace the external scorer boundary, keeping manager dispatch, base wrappers,
+    # persistence, failure recovery and stats real. No agent may be initialized.
+    monkeypatch.setattr(cls, '_eval', grade)
+    forbidden = AsyncMock(side_effect=AssertionError('evaluation must never run an Agent'))
+    monkeypatch.setattr('agentevolver.agent.agent_manager.initialize', forbidden)
+    monkeypatch.setattr('agentevolver.task.task_manager.submit', forbidden)
+    manager = BenchmarkManager()
+    await manager.configure(name, base_dir=str(tmp_path / 'state'))
+    result = await manager.eval(name, Task(task_id='same', result='broken grader'))
+    assert result.evaluation.status == 'error' and result.score is None
+    assert (await manager.stats(name)).errors == 1
+    result = await manager.eval(name, Task(task_id='same', result=0))
+    assert result.evaluation.status == 'failed' and result.score == 0
+    assert (await manager.stats(name)).errors == 0
+    await manager.eval(name, Task(task_id='passed', result=1))
+    await manager.cleanup(name)
+    restored = BenchmarkManager()
+    await restored.configure(name, base_dir=str(tmp_path / 'state'), resume=True)
+    stats = await restored.stats(name)
+    assert (stats.attempted, stats.scored, stats.correct, stats.wrong, stats.errors) == (2, 2, 1, 1, 0)
+    forbidden.assert_not_awaited()
+    await restored.cleanup(name)
+
+
+@pytest.mark.asyncio
 async def test_manager_forwards_reset_split_judge_and_stats(tmp_path):
     from agentevolver.benchmark.default.exact_match import ExactMatchBenchmark
     bench = ExactMatchBenchmark(base_dir=str(tmp_path))

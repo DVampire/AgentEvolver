@@ -712,6 +712,7 @@ class Benchmark(BaseModel):
             mounts={**options.get("mounts", {}), ctx.workspace_dir: ctx.container_workspace},
             env={**options.get("env", {}), "AGENTEVOLVER_TASK_WORKSPACE": ctx.container_workspace},
             timeout_minutes=max(1, int(options.get("timeout", 7200)) // 60),
+            **{key: options[key] for key in ("allow_hosts", "deny_hosts") if key in options},
         )
         self._resources[ctx.task_id] = handle
         # Register ownership before starting: cancellation during start must be recoverable.

@@ -22,6 +22,7 @@ def test_dashboard_preserves_the_original_live_layout():
     )
     html = (visual / "index.html").read_text()
     # Translation changes copy, not the original markup or visual layout.
+    html = re.sub(r'\s*<span id="attempt-summary">[^<]*</span>', '', html)
     assert re.findall(r"<[^>]+>", html) == re.findall(
         r"<[^>]+>", expected.replace('lang="zh-CN"', 'lang="en-US"')
     )
@@ -65,8 +66,8 @@ def test_monitor_publishes_progress_and_live_activity(tmp_path):
     snapshot = build_snapshot(monitor.path)
 
     assert snapshot["progress"] == {
-        "completed": 3, "total": 5, "scored": 2,
-        "passed": 1, "failed": 1, "errors": 1,
+        "completed": 2, "total": 5, "scored": 2,
+        "passed": 1, "failed": 1, "errors": 0, "execution_errors": 1, "interrupted": 0,
     }
     assert snapshot["launcher"]["active"][0]["step"] == 3
     assert snapshot["launcher"]["active"][0]["requests"] == 1
@@ -104,9 +105,10 @@ def test_monitor_reads_wrapped_result_ledgers(tmp_path):
     monitor = BenchmarkMonitor(str(run), "programbench", 2, 1, results_path=str(results))
 
     progress = build_snapshot(monitor.path)["progress"]
-    assert progress["completed"] == 2
+    assert progress["completed"] == 1
     assert progress["scored"] == 0
-    assert progress["errors"] == 1
+    assert progress["errors"] == 0
+    assert progress["execution_errors"] == 1
 
 
 def test_resumed_monitor_uses_current_results_as_eta_baseline(tmp_path):
@@ -204,6 +206,7 @@ def test_cumulative_scores_replace_history_but_keep_attempt_costs(tmp_path, monk
     ]))
     monitor = BenchmarkMonitor(str(run), "demo", 5, 2, owner_dir=str(tmp_path / "owner"))
     monitor.state["initial_completed"] = 0
+    monitor.state["initial_results"] = {}
     monitor.task("error", "solving")
     monitor.task("retry", "grading")  # Published result; do not double count its live cost.
     (run / "aggregate.json").write_text(json.dumps({
@@ -213,13 +216,15 @@ def test_cumulative_scores_replace_history_but_keep_attempt_costs(tmp_path, monk
     monkeypatch.setattr(server, "_elapsed", lambda _: 100)
     snapshot = build_snapshot(monitor.path)
     assert snapshot["progress"] == {
-        "completed": 4, "total": 6, "scored": 3, "passed": 2, "failed": 1, "errors": 1,
+        "completed": 3, "total": 6, "scored": 3, "passed": 2, "failed": 1, "errors": 0,
+        "execution_errors": 1, "interrupted": 0,
     }
     assert snapshot["telemetry"]["cost_usd"] == 15.5
     assert snapshot["score_mode"] == "cumulative_retry"
     assert snapshot["eta_seconds"] == 150
     assert [row["task_id"] for row in snapshot["recent"]] == ["new", "retry", "error", "passed"]
-    assert snapshot["current_attempt"] == {"completed": 2, "total": 5}
+    assert snapshot["current_attempt"] == {"completed": 2, "total": 5,
+        "evaluated_since_start": 2, "execution_errors": 0, "interrupted": 0}
     assert snapshot["recent"][0]["attempt_source"] == "current"
     assert snapshot["recent"][2]["attempt_source"] == "history"
     assert snapshot["recent"][2]["retry_phase"] == "solving"
@@ -242,7 +247,7 @@ def test_evaluation_issues_do_not_inflate_pass_rate(tmp_path):
     assert snapshot["progress"]["scored"] == 2
     assert snapshot["pass_rate"] == {
         "numerator": 1, "denominator": 4, "percent": 25.0,
-        "basis": "completed_including_errors",
+        "basis": "attempted_including_errors",
     }
     assert snapshot["issue_counts"] == {"test_compatibility": 1, "grading_setup": 1}
     assert snapshot["recent"][1]["failure"]["kind"] == "test_compatibility"
@@ -252,3 +257,78 @@ def test_evaluation_issues_do_not_inflate_pass_rate(tmp_path):
 def test_empty_run_has_no_pass_rate(tmp_path):
     monitor = BenchmarkMonitor(str(tmp_path), "demo", 4, 1)
     assert build_snapshot(monitor.path)["pass_rate"]["percent"] is None
+
+
+def test_setup_failure_and_interrupted_retry_do_not_replace_historical_grades(tmp_path):
+    history = tmp_path / "history.json"
+    history.write_text(json.dumps([
+        {"instance_id": "retry", "resolved": False},
+        {"instance_id": "interrupted", "final_grade": {"error_code": "test_build_failed"}},
+        {"instance_id": "passed", "resolved": True},
+    ]))
+    current = tmp_path / "results.json"
+    current.write_text(json.dumps([
+        {"instance_id": "retry", "status": "failed", "failure_stage": "prepare", "error": "container setup"},
+        {"instance_id": "interrupted", "status": "cancelled", "attempt_status": "interrupted"},
+    ]))
+    original = current.read_bytes()
+    (tmp_path / "aggregate.json").write_text(json.dumps({"history": [str(history)], "total": 5}))
+    monitor = BenchmarkMonitor(str(tmp_path), "demo", 4, 1)
+    monitor.task("retry", "solving")
+    snapshot = build_snapshot(monitor.path)
+    assert snapshot["progress"] == {"completed": 3, "total": 5, "scored": 2,
+        "passed": 1, "failed": 1, "errors": 1, "execution_errors": 1, "interrupted": 1}
+    assert snapshot["current_attempt"]["completed"] == 0
+    assert snapshot["current_attempt"]["execution_errors"] == 1
+    assert snapshot["eta_seconds"] is None
+    recent = {r["task_id"]: r for r in snapshot["recent"]}
+    assert recent["retry"]["outcome"] == "execution_error"
+    assert recent["retry"]["previous_evaluation"] == "failed"
+    assert recent["retry"]["failure"]["code"] == "prepare"
+    assert recent["retry"]["retry_phase"] == "solving"
+    assert current.read_bytes() == original
+
+
+def test_retried_task_with_stale_result_keeps_live_usage_and_eta(tmp_path, monkeypatch):
+    from agentevolver.visual.benchmark import server
+    results = tmp_path / "results.json"
+    results.write_text(json.dumps([{"instance_id": "retry", "status": "failed", "error": "setup",
+        "spend": {"n_llm_calls": 3, "total_cost_usd": 1}}]))
+    monitor = BenchmarkMonitor(str(tmp_path), "demo", 2, 1, owner_dir=str(tmp_path / "owner"))
+    monitor.task("retry", "solving")
+    monkeypatch.setattr(server, "_live_usage", lambda _: {"calls": 5, "cost_usd": 2})
+    snapshot = build_snapshot(monitor.path)
+    assert snapshot["telemetry"]["calls"] == 5
+    assert snapshot["telemetry"]["cost_usd"] == 2
+    assert snapshot["current_attempt"]["completed"] == 0
+    # Replacing an existing failed row, without increasing ledger length, is throughput.
+    results.write_text(json.dumps([{"instance_id": "retry", "resolved": True,
+        "spend": {"n_llm_calls": 5, "total_cost_usd": 2}}]))
+    snapshot = build_snapshot(monitor.path)
+    assert snapshot["telemetry"]["cost_usd"] == 2
+    assert snapshot["current_attempt"]["evaluated_since_start"] == 1
+
+
+@pytest.mark.parametrize("status", ["failed", "cancelled"])
+def test_valid_official_failure_is_scored_even_when_solver_failed(tmp_path, status):
+    (tmp_path / "results.json").write_text(json.dumps([{
+        "instance_id": "x", "status": status, "error": "local test failed",
+        "final_grade": {"resolved": False}, "resolved": False}]))
+    monitor = BenchmarkMonitor(str(tmp_path), "demo", 1, 1)
+    snapshot = build_snapshot(monitor.path)
+    assert snapshot["progress"]["failed"] == 1
+    assert snapshot["progress"]["errors"] == snapshot["progress"]["execution_errors"] == 0
+
+
+def test_stopped_monitor_freezes_elapsed_time_and_clears_active_slots(tmp_path, monkeypatch):
+    from agentevolver.visual.benchmark import server
+
+    monitor = BenchmarkMonitor(str(tmp_path), "demo", 2, 1)
+    monitor.task("x", "solving")
+    monitor.state.update(started_at="2026-09-06T15:58:49+00:00",
+                         finished_at="2026-09-06T16:02:22+00:00", status="interrupted")
+    monitor.path.write_text(json.dumps(monitor.state))
+    monkeypatch.setattr(server, "_process_start", lambda _: None)
+    snapshot = build_snapshot(monitor.path)
+    assert snapshot["launcher"]["elapsed_seconds"] == 213
+    assert snapshot["launcher"]["active"] == []

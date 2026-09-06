@@ -34,6 +34,84 @@ collect_patch = runner._collect_patch
 has_resumable_workspace = runner._has_resumable_workspace
 EVALUATION_PROTOCOL = runner.submission_protocol
 
+
+@pytest.mark.asyncio
+async def test_priority_batch_finishes_before_remaining_tasks_start():
+    started = []
+    ready = asyncio.Event()
+    release = {name: asyncio.Event() for name in ("retry-a", "retry-b")}
+
+    async def worker(index, row):
+        name = row["instance_id"]
+        started.append(name)
+        if len(started) == 2:
+            ready.set()
+        if name in release:
+            await release[name].wait()
+
+    pending = list(enumerate(
+        [{"instance_id": name} for name in ("new", "retry-a", "retry-b")], 1
+    ))
+    run = asyncio.create_task(swebench_pro.run_priority_batches(pending, release, worker))
+    await asyncio.wait_for(ready.wait(), timeout=2)
+    assert set(started) == set(release)
+    release["retry-a"].set()
+    await asyncio.sleep(0)
+    assert "new" not in started
+    release["retry-b"].set()
+    await asyncio.wait_for(run, timeout=2)
+    assert started[-1] == "new"
+
+
+@pytest.mark.asyncio
+async def test_priority_batch_cancellation_stops_workers_and_remaining_batch():
+    started, stopped = asyncio.Event(), asyncio.Event()
+    async def worker(index, row):
+        assert row["instance_id"] == "retry"
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+    run = asyncio.create_task(swebench_pro.run_priority_batches(
+        [(1, {"instance_id": "retry"}), (2, {"instance_id": "new"})], {"retry"}, worker
+    ))
+    await asyncio.wait_for(started.wait(), timeout=2)
+    run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run
+    assert stopped.is_set()
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancellation_reaps_actual_solver_process(tmp_path, monkeypatch):
+    import os
+    pidfile = tmp_path / "pid"
+    script = (
+        "import os,signal,time,pathlib; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+        f"pathlib.Path({str(pidfile)!r}).write_text(str(os.getpid())); time.sleep(60)"
+    )
+    monkeypatch.setattr(swebench_pro, "inner_argv", lambda *args, **kwargs: [sys.executable, "-c", script])
+    monkeypatch.setattr(swebench_pro, "INNER_STOP_GRACE_SECONDS", 0.1)
+    run = asyncio.create_task(swebench_pro.run_inner_process({}, None, dict(os.environ), False, 60))
+    for _ in range(200):
+        if pidfile.exists():
+            break
+        await asyncio.sleep(0.01)
+    assert pidfile.exists()
+    pid = int(pidfile.read_text())
+    try:
+        run.cancel()
+        await asyncio.sleep(0.02)
+        run.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(run, timeout=3)
+        assert not Path(f"/proc/{pid}").exists()
+    finally:
+        if Path(f"/proc/{pid}").exists():
+            import signal
+            os.killpg(pid, signal.SIGKILL)
+
 def atomic_write_json(path, value):
     atomic_json_update(path, lambda _: value)
 
@@ -524,6 +602,10 @@ async def test_launcher_grades_after_exit_and_resume_never_restarts_submitted_ag
     monkeypatch.setattr(SWEBenchProBenchmark, "_evaluate", evaluate)
 
     assert await swebench_pro.run_launcher(args) == 1  # grader failure, artifact survives
+    sandbox_options = sandbox_module.sandbox_manager.acquire.call_args.kwargs
+    assert sandbox_options["network"] is False
+    assert sandbox_options["allow_hosts"] == sandbox_options["deny_hosts"] == []
+    assert sandbox_options["mounts"] == {str(workspace): "/workspace"}
     args.resume = True
     artifact = session / "submission.json"
     frozen = artifact.read_text()

@@ -206,8 +206,10 @@ def _outcome(record: dict[str, Any]) -> str:
     grade = record.get("final_grade")
     if isinstance(grade, dict) and grade.get("error_code"):
         return "error"
-    if record.get("error") and record.get("status") not in {"done", "completed"}:
-        return "error"
+    if isinstance(grade, dict) and isinstance(grade.get("resolved"), bool):
+        return "passed" if grade["resolved"] else "failed"
+    if record.get("attempt_status") == "interrupted" or record.get("status") in {"cancelled", "interrupted"}:
+        return "interrupted"
     if record.get("resolved") is not None:
         return "passed" if record.get("resolved") is True else "failed"
     if record.get("score") is not None:
@@ -215,12 +217,19 @@ def _outcome(record: dict[str, Any]) -> str:
             return "passed" if float(record["score"]) > 0 else "failed"
         except (TypeError, ValueError):
             pass
-    return "completed" if record.get("status") in {"done", "completed"} else "error"
+    if record.get("error") or record.get("attempt_status") == "error":
+        return "execution_error"
+    return "completed" if record.get("status") in {"done", "completed"} else "execution_error"
 
 
 def _failure(record: dict[str, Any]) -> dict[str, Any]:
     """Explain an issue without turning uncertain test failures into host faults."""
     grade = record.get("final_grade") or {}
+    if not grade:
+        interrupted = _outcome(record) == "interrupted"
+        return {"kind": "interrupted" if interrupted else "execution",
+                "code": record.get("failure_stage") or record.get("interrupted_stage"),
+                "details": record.get("error") or ("Run interrupted" if interrupted else "No evaluation was produced")}
     code = grade.get("error_code")
     # Legacy records predate failure_kind. Interpret them without rewriting their ledger.
     kind = grade.get("failure_kind") or (
@@ -231,6 +240,21 @@ def _failure(record: dict[str, Any]) -> dict[str, Any]:
         } else "evaluation"
     )
     return {"kind": kind, "code": code, "details": grade.get("error_details") or record.get("error")}
+
+
+def _record_id(record: dict[str, Any]) -> str:
+    return str(record.get("instance_id") or record.get("task_id") or "")
+
+
+def _record_digest(record: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(record, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _record_usage(record: dict[str, Any]) -> dict[str, Any]:
+    spend = record.get("spend") or {}
+    return {"cost_usd": spend.get("total_cost_usd"), "calls": spend.get("n_llm_calls"),
+            **{key: spend.get(key) for key in ("input_tokens", "output_tokens",
+                                               "cache_read_tokens", "cache_write_tokens")}}
 
 
 def _activity(owner_dir: Path | None, task: dict[str, Any]) -> dict[str, Any]:
@@ -286,32 +310,32 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
     history = [record for path in sources for record in _records(_read_json(Path(path), []))]
     attempts = history + current
     latest = {}
+    evaluations = {}
     for index, record in enumerate(attempts):
         key = record.get("instance_id") or record.get("task_id") or ("anonymous", index)
         # Move replaced records to the end so 'recent' reflects the new attempt.
         latest.pop(key, None)
         latest[key] = record
-    records = list(latest.values())
+        # Only an evaluation can replace an earlier evaluation. A failed setup or
+        # cancelled retry is execution evidence, not a changed benchmark score.
+        if _outcome(record) not in {"execution_error", "interrupted"}:
+            evaluations[key] = record
+    records = list(evaluations.values())
     outcomes = [_outcome(record) for record in records]
     telemetry = _empty_usage()
     # Failed attempts still cost money, even after a later result replaces their score.
     for record in attempts:
-        spend = record.get("spend") or {}
-        _add_usage(telemetry, {
-            "cost_usd": spend.get("total_cost_usd"),
-            "calls": spend.get("n_llm_calls"),
-            "input_tokens": spend.get("input_tokens"),
-            "output_tokens": spend.get("output_tokens"),
-            "cache_read_tokens": spend.get("cache_read_tokens"),
-            "cache_write_tokens": spend.get("cache_write_tokens"),
-        })
+        _add_usage(telemetry, _record_usage(record))
     recent = []
     issues: dict[str, int] = {}
-    for record, outcome in zip(records, outcomes):
+    for record in records:
+        if _outcome(record) == "error":
+            kind = _failure(record)["kind"]
+            issues[kind] = issues.get(kind, 0) + 1
+    for record in latest.values():
+        outcome = _outcome(record)
         spend = record.get("spend") or {}
-        failure = _failure(record) if outcome == "error" else None
-        if failure:
-            issues[failure["kind"]] = issues.get(failure["kind"], 0) + 1
+        failure = _failure(record) if outcome in {"error", "execution_error", "interrupted"} else None
         recent.append({
             "task_id": record.get("instance_id") or record.get("task_id") or "unknown",
             "attempt_source": "current" if (record.get("instance_id") or record.get("task_id")) in current_ids else "history",
@@ -320,6 +344,8 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
             "calls": int(_number(spend.get("n_llm_calls"), int)),
             "cost_usd": float(_number(spend.get("total_cost_usd"), float)),
             "failure": failure,
+            "previous_evaluation": _outcome(evaluations[_record_id(record)])
+            if _record_id(record) in evaluations and evaluations[_record_id(record)] is not record else None,
         })
 
     owner = Path(state["owner_dir"]) if state.get("owner_dir") else None
@@ -327,18 +353,21 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
     active.sort(key=lambda item: (item.get("position", 0), item.get("task_id", "")))
     active_phases = {item["task_id"]: item.get("phase") for item in active}
     for item in recent:
-        if item["attempt_source"] == "history":
+        if item["attempt_source"] == "history" or item.get("previous_evaluation"):
             item["retry_phase"] = active_phases.get(item["task_id"])
-    completed_ids = {
-        str(record.get("instance_id") or record.get("task_id"))
-        for record in current
-        if record.get("instance_id") is not None or record.get("task_id") is not None
-    }
-    for task in active:
-        # Result publication and active-row removal are separate atomic writes. Avoid a
-        # transient double count when an HTTP refresh lands between those two operations.
-        if str(task.get("task_id")) not in completed_ids:
-            _add_usage(telemetry, task.get("usage") or {})
+    current_by_id = {_record_id(record): record for record in current}
+    live_by_id = {str(task["task_id"]): task for task in active}
+    # Interrupted/resumed tasks may already have a stale row in the results ledger.
+    # Their session traces continue growing; add only the unrecorded difference.
+    if owner:
+        for key, record in current_by_id.items():
+            if key not in live_by_id and _outcome(record) in {"execution_error", "interrupted"}:
+                live_by_id[key] = _activity(owner, {"task_id": key})
+    for key, task in live_by_id.items():
+        recorded = _record_usage(current_by_id.get(key, {}))
+        usage = task.get("usage") or {}
+        _add_usage(telemetry, {name: max(0, _number(value, float) - _number(recorded.get(name), float))
+                               for name, value in usage.items()})
     cache_base = telemetry["input_tokens"] + telemetry["cache_read_tokens"]
     telemetry["cache_hit_percent"] = (
         100 * telemetry["cache_read_tokens"] / cache_base if cache_base else 0.0
@@ -354,9 +383,25 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
     scored = passed + failed
     total = int(aggregate.get("total") or state.get("total") or len(records))
     elapsed = _elapsed(state.get("started_at"))
-    throughput = max(0, len(current) - int(state.get("initial_completed") or 0))
-    remaining = max(0, int(state.get("total") or total) - len(current))
+    if state.get("finished_at") and state.get("started_at"):
+        try:
+            elapsed = max(0, int((datetime.fromisoformat(state["finished_at"].replace("Z", "+00:00"))
+                                - datetime.fromisoformat(state["started_at"].replace("Z", "+00:00"))).total_seconds()))
+        except (ValueError, TypeError):
+            pass
+    current_evaluated = [r for r in current if _outcome(r) not in {"execution_error", "interrupted"}]
+    initial = state.get("initial_results")
+    throughput = (sum(initial.get(_record_id(r)) != _record_digest(r) for r in current_evaluated)
+                  if isinstance(initial, dict) else
+                  max(0, len(current_evaluated) - int(state.get("initial_completed") or 0)))
+    remaining = max(0, int(state.get("total") or total) - len(current_evaluated))
     eta = int(elapsed / throughput * remaining) if elapsed and throughput else None
+    execution_errors = sum(_outcome(r) == "execution_error" for r in latest.values())
+    interrupted = sum(_outcome(r) == "interrupted" for r in latest.values())
+    # Execution failures remain in the success denominator, without being called
+    # completed evaluations or overwriting earlier grades of the same task.
+    denominator = len(evaluations) + sum(
+        key not in evaluations and _outcome(r) == "execution_error" for key, r in latest.items())
     return {
         "schema_version": SCHEMA_VERSION,
         "updated_at": _now(),
@@ -367,22 +412,26 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
         "results_path": str(results_path),
         "result_sources": sources + [str(results_path)],
         "score_mode": "cumulative_retry" if sources else "single_run",
-        "current_attempt": {"completed": len(current), "total": int(state.get("total") or 0)},
+        "current_attempt": {"completed": len(current_evaluated), "total": int(state.get("total") or 0),
+                            "evaluated_since_start": throughput,
+                            "execution_errors": sum(_outcome(r) == "execution_error" for r in current),
+                            "interrupted": sum(_outcome(r) == "interrupted" for r in current)},
         # Keep errors visible in the headline denominator rather than making a run look
         # better when a test package could not compile. 'scored' remains a separate fact.
         "pass_rate": {
-            "numerator": passed, "denominator": len(records),
-            "percent": 100 * passed / len(records) if records else None,
-            "basis": "completed_including_errors",
+            "numerator": passed, "denominator": denominator,
+            "percent": 100 * passed / denominator if denominator else None,
+            "basis": "attempted_including_errors",
         },
         "issue_counts": issues,
         "progress": {
             "completed": len(records), "total": total, "scored": scored,
             "passed": passed, "failed": failed, "errors": errors,
+            "execution_errors": execution_errors, "interrupted": interrupted,
         },
         "launcher": {
             "alive": alive, "pid": pid or None, "elapsed_seconds": elapsed,
-            "concurrency": int(state.get("concurrency") or 1), "active": active,
+            "concurrency": int(state.get("concurrency") or 1), "active": active if alive else [],
         },
         "telemetry": telemetry,
         "eta_seconds": eta,
@@ -422,8 +471,11 @@ class BenchmarkMonitor:
             "launcher_pid": os.getpid(),
             "launcher_start": _process_start(os.getpid()),
             "initial_completed": len(
-                _records(_read_json(Path(results_path or self.run_dir / "results.json"), []))
+                [r for r in _records(_read_json(Path(results_path or self.run_dir / "results.json"), []))
+                 if _outcome(r) not in {"execution_error", "interrupted"}]
             ),
+            "initial_results": {_record_id(r): _record_digest(r) for r in
+                _records(_read_json(Path(results_path or self.run_dir / "results.json"), []))},
             # A new launcher process owns a new live set. Completed/interrupted state may
             # be resumed, but stale worker rows from the dead process may not.
             "active": {},
