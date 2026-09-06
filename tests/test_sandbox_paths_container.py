@@ -14,7 +14,7 @@ from agentevolver.paths import P, path_manager
 from agentevolver.plan.server import PlanManagerServer
 from agentevolver.sandbox.project import ProjectSandbox
 from agentevolver.sandbox.server import sandbox_manager
-from agentevolver.tool.default.workspace.bash import BashTool
+from agentevolver.tool.default.workspace.write_file import WriteFileTool
 
 
 pytestmark = pytest.mark.integration
@@ -64,6 +64,7 @@ async def test_base_peer_and_controller_share_writable_files(tmp_path, monkeypat
     sandbox.shared_extension_root.mkdir()
     path_manager.bind_session("local", "mount-roundtrip")
     path_manager.override(P.SESSION_WORKSPACE, sandbox.workspace_root)
+    path_manager.override(P.SESSION_PLAN_DIR, sandbox.plan_root)
     prefix = "/workspace/AgentEvolver"
     keys = [f"mount-probe-{uuid.uuid4().hex}" for _ in range(2)]
     try:
@@ -82,20 +83,30 @@ async def test_base_peer_and_controller_share_writable_files(tmp_path, monkeypat
         )
         inspection = subprocess.run(["docker", "inspect", peer.resource_id],
                                     capture_output=True, text=True, check=True)
-        assert all(mount["RW"] for mount in json.loads(inspection.stdout)[0]["Mounts"])
+        peer_mounts = json.loads(inspection.stdout)[0]["Mounts"]
+        assert all(mount["RW"] for mount in peer_mounts)
+        assert all(not sandbox.plan_root.is_relative_to(mount["Source"]) for mount in peer_mounts)
 
         monkeypatch.setenv("AGENTEVOLVER_EXEC_CONTAINER", peer.resource_id)
         monkeypatch.setenv("AGENTEVOLVER_TASK_WORKSPACE", str(sandbox.workspace_root))
         monkeypatch.setenv("AGENTEVOLVER_EXEC_WORKDIR", "/workspace")
         plan = PlanManagerServer()
-        assert 'path="/workspace/plan.md"' in plan.context("mount-roundtrip", enabled=True)
+        plan_file = path_manager.get(P.SESSION_PLAN)
+        assert f'path="{plan_file}"' in plan.context("mount-roundtrip", enabled=True)
         for revision in ("Initial plan", "Feedback received: revised plan"):
-            response = await BashTool()(command=f"printf %s {shlex.quote(revision)} > /workspace/plan.md")
+            response = await WriteFileTool()(path=str(plan_file), content=revision)
             assert response.success, response.message
-            assert sandbox.workspace_root.joinpath("plan.md").read_text() == revision
+            assert sandbox.plan_root.joinpath("plan.md").read_text() == revision
+            assert not sandbox.workspace_root.joinpath("plan.md").exists()
             assert revision in plan.context("mount-roundtrip", enabled=True)
-            observed = await base.run_command("cat session/workspace/plan.md")
+            observed = await base.run_command("cat session/plan/plan.md")
             assert observed.exit_code == 0 and observed.stdout == revision
+
+        invisible = await peer.run_command(
+            f"test ! -e {shlex.quote(str(plan_file))} && "
+            "test ! -e /plan && test ! -e /workspace/plan.md"
+        )
+        assert invisible.exit_code == 0, invisible.as_message()
 
         for item in sandbox.mounts():
             source = Path(item["source"])

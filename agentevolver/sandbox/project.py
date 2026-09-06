@@ -73,6 +73,7 @@ class ProjectSandbox:
     workspace_root: Path
     log_root: Path
     extension_root: Path
+    plan_root: Path
     package_root: Path
     shared_extension_root: Path
 
@@ -101,23 +102,25 @@ class ProjectSandbox:
                      else path_manager.under(project, P.PROJECT_WORKSPACE))
         log = path_manager.under(project, P.PROJECT_LOG)
         extension = path_manager.under(project, P.PROJECT_EXTENSION)
+        plan = path_manager.under(project, P.PROJECT_PLAN)
         if not _inside(workspace, project):
             raise ValueError("workspace_root must be located under project_root")
         if materialize:
-            for root in (project, workspace, log, extension):
+            for root in (project, workspace, log, extension, plan):
                 root.mkdir(parents=True, exist_ok=True)
         return cls(
             project_root=project,
             workspace_root=workspace,
             log_root=log,
             extension_root=extension,
+            plan_root=plan,
             package_root=Path(package_root or get_package_root()).expanduser().resolve(),
             shared_extension_root=Path(shared_extension_root or get_extension_root()).expanduser().resolve(),
         )
 
     def materialize(self) -> "ProjectSandbox":
         """Create this sandbox's roots on disk. Idempotent; safe to call repeatedly."""
-        for root in (self.project_root, self.workspace_root, self.log_root, self.extension_root):
+        for root in (self.project_root, self.workspace_root, self.log_root, self.extension_root, self.plan_root):
             root.mkdir(parents=True, exist_ok=True)
         return self
 
@@ -137,12 +140,13 @@ class ProjectSandbox:
             "workspace_root": str(self.workspace_root),
             "log_root": str(self.log_root),
             "extension_root": str(self.extension_root),
+            "plan_root": str(self.plan_root),
             "package_root": str(self.package_root),
             "shared_extension_root": str(self.shared_extension_root),
         }
 
     def mounts(self) -> List[Dict[str, str]]:
-        """Expose writable resources together under the command workspace."""
+        """Expose writable execution resources; the coordinator's plan stays local."""
         return [
             {"source": str(self.workspace_root), "target": "/workspace", "mode": "rw"},
             {"source": str(self.extension_root), "target": "/workspace/.agentevolver/extension", "mode": "rw"},
@@ -350,7 +354,7 @@ def session_writable_roots() -> List[Path]:
     if not roots:
         return []
     return [roots[name].resolve() for name in
-            ("workspace", "extension", "log", "package", "shared_extension")]
+            ("workspace", "extension", "log", "package", "shared_extension", "plan")]
 
 
 def session_readable_roots() -> List[Path]:

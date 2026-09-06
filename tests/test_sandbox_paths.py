@@ -1,4 +1,4 @@
-"""The agent and host must address the same mounted files, including plan.md."""
+"""Project paths follow execution mounts; coordinator plans stay agent-side."""
 
 from pathlib import Path
 
@@ -17,30 +17,44 @@ from agentevolver.sandbox.types import SandboxConfig
 def external_shell(tmp_path, monkeypatch):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    plan = tmp_path / "plan"
+    plan.mkdir()
     monkeypatch.setenv("AGENTEVOLVER_EXEC_CONTAINER", "task-container")
     monkeypatch.setenv("AGENTEVOLVER_TASK_WORKSPACE", str(workspace))
     monkeypatch.setenv("AGENTEVOLVER_EXEC_WORKDIR", "/workspace")
     return workspace
 
 
-def test_plan_uses_container_path_but_reads_host_file(external_shell):
+@pytest.mark.asyncio
+async def test_plan_uses_agent_file_tools_without_a_peer_mount(external_shell):
+    from agentevolver.tool.default.workspace.read_file import ReadFileTool
+    from agentevolver.tool.default.workspace.write_file import WriteFileTool
+
     path_manager.bind_session("local", "plan-mount")
     path_manager.override(P.SESSION_WORKSPACE, external_shell)
+    path_manager.override(P.SESSION_PLAN_DIR, external_shell.parent / "plan")
     manager = PlanManagerServer()
     context = manager.context("plan-mount", enabled=True)
-    assert 'path="/workspace/plan.md"' in context
+    plan = path_manager.get(P.SESSION_PLAN)
+    assert f'path="{plan}"' in context
+    assert "read_file_tool/write_file_tool" in context
     assert str(external_shell) not in context
     assert not (external_shell / "plan.md").exists()
-    (external_shell / "plan.md").write_text("First implementation")
+    response = await WriteFileTool()(path=str(plan), content="First implementation")
+    assert response.success, response.message
     assert "First implementation" in manager.context("plan-mount", enabled=True)
-    (external_shell / "plan.md").write_text("Feedback received: revised implementation")
+    response = await WriteFileTool()(path=str(plan), content="Feedback received: revised implementation")
+    assert response.success, response.message
+    response = await ReadFileTool()(path=str(plan))
+    assert response.success and "revised implementation" in response.message
     assert "revised implementation" in manager.context("plan-mount", enabled=True)
     assert read_plan("plan-mount") == "Feedback received: revised implementation"
-    assert path_manager.get(P.SESSION_PLAN) == external_shell / "plan.md"
+    assert plan == external_shell.parent / "plan/plan.md"
+    assert not (external_shell / "plan.md").exists()
 
 
 @pytest.mark.asyncio
-async def test_agent_workspace_prompt_matches_plan_path(external_shell):
+async def test_agent_workspace_prompt_uses_the_peer_path(external_shell):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     from agentevolver.agent.actor.meta_agent import MetaAgent
@@ -62,11 +76,20 @@ def test_projection_does_not_invent_mounts(external_shell, tmp_path):
     (external_shell / "escape").symlink_to(tmp_path, target_is_directory=True)
     escaped = external_shell / "escape" / "plan.md"
     assert manager.execution_path(escaped) == escaped
+    plan = tmp_path / "plan/plan.md"
+    assert manager.execution_path(plan) == plan
+    other_plan = tmp_path / "plan-other/plan.md"
+    assert manager.execution_path(other_plan) == other_plan
+    (tmp_path / "plan/escape").symlink_to(tmp_path, target_is_directory=True)
+    escaped_plan = tmp_path / "plan/escape/private.txt"
+    assert manager.execution_path(escaped_plan) == escaped_plan
 
 
 def test_projection_needs_an_external_shell(external_shell, monkeypatch):
     monkeypatch.delenv("AGENTEVOLVER_EXEC_CONTAINER")
     assert path_manager.execution_path(external_shell / "plan.md") == external_shell / "plan.md"
+    plan = external_shell.parent / "plan/plan.md"
+    assert path_manager.execution_path(plan) == plan
 
 
 def test_projection_honors_custom_workdir(external_shell, monkeypatch):
@@ -95,7 +118,7 @@ def test_legacy_base_container_mapping_remains_usable(monkeypatch):
     assert to_host_path("/AgentEvolver/output/run") == "/host/repo/output/run"
 
 
-def test_session_resources_are_all_writable_and_under_workspace(tmp_path):
+def test_session_resources_are_writable_with_plan_outside_workspace(tmp_path):
     sandbox = ProjectSandbox.create(tmp_path / "session", package_root=tmp_path / "package",
                                     shared_extension_root=tmp_path / "shared")
     mounts = sandbox.mounts()
@@ -104,7 +127,10 @@ def test_session_resources_are_all_writable_and_under_workspace(tmp_path):
         ("workspace_root", "extension_root", "log_root", "package_root", "shared_extension_root")
     }
     assert all(item["mode"] == "rw" for item in mounts)
+    assert sandbox.plan_root.is_dir()
+    assert not sandbox.plan_root.is_relative_to(sandbox.workspace_root)
     assert all(Path(item["target"]).is_relative_to("/workspace") for item in mounts)
+    assert all(not sandbox.plan_root.is_relative_to(item["source"]) for item in mounts)
 
 
 @pytest.mark.asyncio

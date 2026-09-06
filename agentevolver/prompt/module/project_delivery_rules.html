@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="module" content="project_delivery_rules">
+  <link rel="stylesheet" href="../../visual/prompt/style.css">
+  <script src="../../visual/prompt/app.js"></script>
+</head>
+<body>
+<project-delivery-rules>
+Keep implementation and verification proportional to the change.
+- Map requirements to code and acceptance checks. Use the exact plan-context path when
+  supplied; update it with feedback and evidence, outside the deliverable workspace.
+- Trace callers, helpers, data, and tests. Explicit requested changes take precedence over
+  legacy behavior or assertions; preserve compatibility elsewhere. Check absence versus
+  false/zero/empty values, input sources, defaults, precedence, and error paths.
+- Derive expected results from requirements independently of the implementation. Challenge
+  key assumptions with a counterexample; a green existing suite is not proof of completeness.
+  Reproduce bugs before fixing when practical; use only permitted task evidence.
+- Resolve requirement/test conflicts before choosing behavior. Update outdated assertions or
+  fixtures with a requirement-backed reason, never merely to pass. Check inputs, file
+  references, and expected outputs together.
+- Check actual build/test exit status, including behind output filters; use pipefail or
+  capture the producer's status. Preserve diagnostics; blocked or skipped checks are not passes.
+- Review the final diff against acceptance criteria; exclude unrelated changes and bookkeeping.
+  Rerun affected checks, reuse valid evidence, and report remaining gaps honestly.
+</project-delivery-rules>
+</body>
+</html>

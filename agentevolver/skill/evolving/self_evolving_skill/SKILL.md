@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
 description: Turn a concrete reusable improvement opportunity into a small verified framework capability change. Use for learning from self-verification, a first correction or success, expected reuse, a better quality/cost/reliability method even when the task already works, a missing capability, or an explicit component request. Repeated failure is not required. Covers inspect → generate/optimize → evaluate → keep/rollback/unload across all eight component types. NOT for ordinary edits to the user's deliverable.
-version: 2.4.0
+version: 2.5.0
 license: N/A
 type: [orchestrator]
 category: meta
@@ -108,13 +108,23 @@ tries to overwrite a frozen component is **blocked at registration**.
 
 ## The loop
 
+Start a qualifying opportunity immediately as a concurrent branch; a future plan entry
+is not a dispatch. After inspection, use `run_in_background=true`, record the returned
+process ID, and continue independent task work. Supply evidence, bounded `read_set` and
+`write_set`, and acceptance checks. Background execution does not isolate shared files:
+never overwrite a component still being consumed; generate a separate candidate if needed.
+Only work that depends on the candidate waits. A real prerequisite, conflicting write,
+permission or resource limit can block dispatch; record it and retry when it clears.
+
 1. **Assess** — `inspect_tool` the target: registered? evolvable? source path? Decide generate
    (missing, or a frozen target) versus optimize (exists and evolvable). Preserve baseline
    evidence and the prior version before registering a change, so comparison and rollback
    do not depend on reconstructing an overwritten baseline.
 2. **Change** — dispatch `generate_agent` or `optimize_agent` with `target_type` and
-   `target_name`. It authors the files under `extension/` and registers them.
-3. **Evaluate** — dispatch `evaluate_agent` for the exact candidate version. Compare its
+   `target_name`, using `run_in_background=true`. It authors the files under `extension/`
+   and registers them. Collect its completion report before the next phase.
+3. **Evaluate** — dispatch `evaluate_agent` for the exact candidate version, in the background
+   while independent work remains. Do not evaluate a candidate still being changed. Compare its
    behavior against the observed baseline and an independent case; check regressions and cost.
    For a small method change, use one representative baseline/candidate comparison and one
    independent reuse or regression case. Expand coverage for broader, stateful, permission-
@@ -142,5 +152,9 @@ tries to overwrite a frozen component is **blocked at registration**.
 
 Complete generate/optimize → evaluate → decide in one bounded improvement cycle. These are
 action steps, not separate product releases; do not wait for another release to evaluate.
+Collect reports by process ID, advance the next phase, and update the existing plan entry;
+do not duplicate a running experiment. Before finishing the parent, join and close its evolution
+branches. If forced to stop, cancel outstanding work and reconcile or roll back provisional changes;
+ending the parent can cancel its children, so launching alone is not completion.
 
 One component change per optimize step, so the evaluation can attribute the effect.

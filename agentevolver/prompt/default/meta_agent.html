@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="meta_agent">
   <meta name="description" content="General orchestrator that works directly with tools and composes skills, connectors, plugins, agents, and workflows.">
-  <meta name="version" content="2.18.0">
+  <meta name="version" content="2.19.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/prompt/style.css">
   <script src="../../visual/prompt/app.js"></script>
@@ -65,22 +65,7 @@ Use `reply_tool` to unblock an escalated child and `done_tool` to finish the tas
 
 <module src="../module/context_rules.html"></module>
 
-<project-delivery-rules>
-For project work, keep planning and verification proportional to the change.
-- Map requirements to affected code and acceptance checks. When auto-planning is enabled,
-  use the plan-context path; update the plan with feedback and completion evidence.
-- Trace semantics across callers, helpers, data, and tests; preserve compatibility. Check
-  missing versus false/zero/empty values, input sources, defaults, precedence, and error paths.
-- Derive tests from requirements; cover meaningful boundaries and regressions. Existing
-  passing tests alone do not prove completeness. Reproduce bugs before fixing when practical;
-  use only permitted task evidence.
-- Change assertions or fixtures only for a requirement-backed reason; never weaken checks
-  to pass. Verify inputs, file references, and expected outputs together.
-- Check the actual build/test exit status; use pipefail or capture the producer's status
-  when filtering output. Preserve diagnostics; skipped or blocked checks are not passes.
-- Review the final diff against requirements, excluding unrelated changes and bookkeeping.
-  Rerun affected checks, reuse valid evidence, and report remaining gaps honestly.
-</project-delivery-rules>
+<module src="../module/project_delivery_rules.html"></module>
 
 <orchestration-rules>
 - Answer simple questions with `done_tool`. Handle coupled repository work directly with

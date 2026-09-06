@@ -17,6 +17,7 @@ to be safe.
 
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Dict, List, Optional
 
 from agentevolver.capability import MOUNTED_TYPES
@@ -103,7 +104,8 @@ async def declaration_of(capability_type: str, name: str) -> Optional[Dict[str, 
 #: every step for the same reason `PLAN_MODE_NOTICE` is: an obligation that applies to
 #: every action has to be legible at the moment of every action.
 AUTO_MODE_NOTICE = (
-    "Keep `plan.md` current. For anything that is more than one obvious step, write "
+    "Keep `plan.md` at the exact plan-context path, outside the deliverable workspace. "
+    "For anything that is more than one obvious step, write "
     "the plan there before you start — the goal, the steps, and anything you had to "
     "guess — and revise it as what you learn changes it. It is rendered back to you "
     "every step and the person watching reads the same file, so it is how the two of "
@@ -141,16 +143,18 @@ EVOLUTION_PLAN_NOTICE = (
     "and status, next action and decision reason. Mark unknowns and expected savings "
     "honestly. Connect each verification-driven opportunity to the method's cause, "
     "the prevention/detection improvement, and a concrete next consumer; the consumer "
-    "can be a different check or operation in the same project. Before deferring again, "
-    "reassess the full construction, evaluation, "
-    "integration and rollback cost against actual remaining resources and intended "
-    "reuse; record the constraint and a concrete revisit condition. 'Product work "
-    "first' or fewer remaining releases alone is not a cost assessment. When evidence, "
-    "consumer and verification are concrete and the loop fits, schedule the bounded "
-    "experiment in the ordered plan and execute it through the shared evolution rules. "
+    "can be a different check or operation in the same project. When evidence, consumer "
+    "and verification are concrete and the loop fits, immediately dispatch the bounded "
+    "experiment with run_in_background=true under the shared evolution rules; continue "
+    "independent task work. Record the returned task/process ID and running status, "
+    "not a future schedule. Do not duplicate active experiments. Defer only for a "
+    "concrete prerequisite, write conflict, permission, or resource constraint and "
+    "record when to retry; 'product work first' is not a reason to postpone independent work. "
     "Update the same entry with candidate identity/version, evaluation evidence, "
     "keep/rollback/unload decision and later actual consumer use as they occur. "
-    "Keep proposed, evaluated, adopted and used distinct; a plan entry or product edit "
+    "Collect reports and advance generation, evaluation and adoption in dependency order; "
+    "close active evolution branches before finishing the parent task. "
+    "Keep proposed, running, evaluated, adopted and used distinct; a plan entry or product edit "
     "is not evolution. Preserve unresolved entries when rewriting or compacting the "
     "plan, linking lengthy evidence separately. If no opportunity qualifies, briefly "
     "record that assessment without inventing a candidate or imposing a quota. Review "
@@ -275,7 +279,7 @@ class PlanManagerServer(metaclass=Singleton):
         state = self.state(session_id)
         if state.mode is PlanMode.OFF or (not enabled and not state.active):
             return ""
-        path = path_manager.execution_path(plan_path(session_id))
+        path = plan_path(session_id)
         text = read_plan(session_id)
         if len(text) > PLAN_CONTEXT_MAX_CHARS:
             text = text[:PLAN_CONTEXT_MAX_CHARS] + (
@@ -283,6 +287,12 @@ class PlanManagerServer(metaclass=Singleton):
                 "keep the current plan concise and link detailed evidence separately.]"
             )
         notice = PLAN_MODE_NOTICE if state.active else AUTO_MODE_NOTICE
+        if os.environ.get("AGENTEVOLVER_EXEC_CONTAINER", "").strip():
+            notice += (
+                "\nThis is an agent-side file, not mounted in the task shell. "
+                "Use read_file_tool/write_file_tool at this exact path for the plan; "
+                "use bash_tool for the peer repository."
+            )
         if enabled and evolution_enabled:
             notice += "\n\n" + EVOLUTION_PLAN_NOTICE
         if not text.strip():

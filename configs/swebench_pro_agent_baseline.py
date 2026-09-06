@@ -6,12 +6,14 @@ value MUST stay in sync (see test_shipped_configs):
 
 | field         | agent arm                                  | this baseline        |
 | `agent_names` | meta_agent + generate/optimize/evaluate    | meta_agent           |
-| `tool_names`  | bash + done + inspect + adoption           | bash + done + inspect |
+| `tool_names`  | bash + done + inspect + read/write + adoption | bash + done + inspect + read/write |
 | `skill_names` | self_evolving_skill                        | none                 |
 
 The comparison is only meaningful while the two arms run the same model, the same
 memory settings, and the same final-only grading protocol. Both arms verify locally;
 neither receives hidden test scores while solving.
+Read/write tools maintain the agent-side plan; repository commands run through Bash
+in the peer container, which does not mount the plan.
 
 GT-SAFETY (critical): the launcher hands the agent ONLY
 `problem_statement` / `requirements` / `interface`; the oracle fields
@@ -42,6 +44,8 @@ agent_names = [
 tool_names = [
     "bash_tool",
     "done_tool",
+    "read_file_tool",
+    "write_file_tool",
     "inspect_tool",  # Same read-only capability discovery as the evolution arm.
 ]
 # No self_evolving_skill here — that is the evolution arm's alone.

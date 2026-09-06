@@ -204,16 +204,8 @@ def test_a_container_mount_override_reaches_the_sandbox_boundary():
 def test_an_override_moves_what_lives_inside_it():
     """A declaration about a directory is a declaration about what is in it.
 
-    `override` replaced one key. Everything nested under it kept resolving from the
-    table, so a run that declared its workspace at a container mount point moved the
-    workspace and left `workspace/plan.md` and `workspace/notebooks` at the host layout
-    path — two names for one directory, and whichever a caller happened to use decided
-    whether the agent could write there.
-
-    Cascading in `get` rather than deriving at each nested key, because there is nothing
-    special about those two: the next key added under an overridden one gets it without
-    anyone remembering. Which is the failure this replaces — the plan was fixed by hand
-    and `session_notebooks`, identical in shape, was not.
+    Workspace relocation moves notebooks but not the sibling plan directory.
+    Relocating the plan directory separately moves its document.
     """
     from agentevolver.paths import P
 
@@ -222,7 +214,9 @@ def test_an_override_moves_what_lives_inside_it():
         path_manager.override(P.SESSION_WORKSPACE, "/workspace")
 
         assert path_manager.get(P.SESSION_WORKSPACE) == Path("/workspace")
-        assert path_manager.get(P.SESSION_PLAN) == Path("/workspace/plan.md")
+        assert not path_manager.get(P.SESSION_PLAN).is_relative_to("/workspace")
+        path_manager.override(P.SESSION_PLAN_DIR, "/plan")
+        assert path_manager.get(P.SESSION_PLAN) == Path("/plan/plan.md")
         assert path_manager.get(P.SESSION_NOTEBOOKS) == Path("/workspace/notebooks")
 
         # Only what is inside. A sibling of the overridden key is a different directory.
@@ -241,8 +235,9 @@ def test_asking_about_another_session_is_not_answered_by_this_ones_override():
     path_manager.bind_session("local", "cascade_other")
     try:
         path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+        path_manager.override(P.SESSION_PLAN_DIR, "/plan")
         other = path_manager.get(P.SESSION_PLAN, owner="local", session_id="someone_else")
-        assert not str(other).startswith("/workspace"), (
+        assert not other.is_relative_to("/plan"), (
             f"another run's plan was answered from this run's mount point: {other}"
         )
     finally:
@@ -262,9 +257,10 @@ def test_naming_the_bound_run_is_the_same_question_as_naming_nothing():
     path_manager.bind_session("local", "same_question")
     try:
         path_manager.override(P.SESSION_WORKSPACE, "/workspace")
+        path_manager.override(P.SESSION_PLAN_DIR, "/plan")
         bare = path_manager.get(P.SESSION_PLAN)
         named = path_manager.get(P.SESSION_PLAN, owner="local", session_id="same_question")
-        assert bare == named == Path("/workspace/plan.md")
+        assert bare == named == Path("/plan/plan.md")
         # `notebooks` gets this without a line of its own.
         assert path_manager.get(
             P.SESSION_NOTEBOOKS, owner="local", session_id="same_question"

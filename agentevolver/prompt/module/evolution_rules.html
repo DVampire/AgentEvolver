@@ -23,28 +23,32 @@ feedback, and verification boundaries; repeated failure is not required.
 6. Self-verification: tests, debugging, or review reveal omissions, weak checks, or a useful
    method. Identify a reusable prevention/detection improvement beyond the product/setup fix.
 
-**Decide.** Name evidence, next consumer, expected benefit, and a bounded comparison.
+**Decide.** Name evidence, next consumer, benefit, and a bounded comparison.
 A different operation in the same project qualifies; passing tests or available Bash do not
-rule out improvement. If the full loop is affordable, run the smallest useful experiment before
-its next dependent use; otherwise record the constraint and revisit condition.
+rule out improvement. When the loop fits, launch now, not at a later plan step or release.
 Prefer existing Tool, Skill, Agent/prompt, Connector, Plugin, Workflow,
 Environment, or Memory capabilities over duplicates.
 
-**Act.** Invoke `self_evolving_skill` for the procedure. Use `inspect_tool` to check
-`enable_evolving`; dispatch `optimize_agent` for evolvable targets or `generate_agent` for
-missing targets or alternatives to frozen ones. Pass `target_type` and `target_name`; preserve the baseline.
-Use `evaluate_agent` on the exact candidate version: compare a baseline/candidate case and
-an independent reuse/regression case, including cost; expand checks with risk. Require
-behavioral evidence. Record keep/rollback/unload via `adoption_tool` with the completed
-evaluator's `run_id`. Candidates are live but provisional: preserve consumer permission boundaries,
-limit use to validation, and roll back or unload failed/unassessed changes. Confirm actual
-consumer use; registration alone does not replace a running instance.
+**Act.** Invoke `self_evolving_skill`; inspect `enable_evolving` with `inspect_tool`.
+Immediately dispatch `optimize_agent` for evolvable targets or `generate_agent` for missing/frozen
+alternatives with `run_in_background=true`. Pass `target_type`, `target_name`, evidence,
+bounded `read_set`/`write_set`, and acceptance. Preserve the baseline; continue independent work.
+Do not overwrite capabilities/files still in use; generate a separate candidate if needed.
+After completion, dispatch `evaluate_agent` on the exact candidate version, also in the background
+while independent work remains. Compare a baseline/candidate case and an independent reuse/regression
+case, including cost; expand checks with risk. Require behavioral evidence.
+Record keep/rollback/unload via `adoption_tool` with the completed evaluator's `run_id`.
+Candidates are live but provisional: preserve consumer permission boundaries, limit use to validation,
+and roll back or unload failed/unassessed changes. Dependent work waits for evaluation and adoption.
+Confirm consumer use; registration does not replace running instances. Generation and evaluation are sequential.
 
-**Track.** Record opportunities and decisions in the existing work record or the live plan's
-Evolution opportunities section. Reassess after new verification evidence and before finishing;
-keep proposed, evaluated, adopted, and used distinct. Preserve unresolved evidence through
-compaction; no separate model call or per-step report. Budget evaluation, integration, rollback,
-and task completion. At TIGHT, only small critical-path experiments that fit.
+**Track.** Use the work record or plan's Evolution opportunities section: returned task/process ID,
+running status, evidence, and decisions. Collect reports and advance phases; never duplicate active work.
+Before finishing, join and close the branch; if forced to stop, cancel it and reconcile provisional changes.
+Distinguish proposed, running, evaluated, adopted, and used. Defer only for a concrete prerequisite,
+write conflict, permission, or resource constraint; record when to retry. Reassess on new evidence
+and before finishing; preserve unresolved entries through compaction without per-step reports.
+Budget evaluation, integration, rollback, and task completion. At TIGHT, only fitting critical-path experiments.
 At CRITICAL, start no new experiment; close or roll back provisional changes.
 
 No signal means continue normally. Never impose quotas, invent gaps, weaken baselines, or

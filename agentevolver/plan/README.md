@@ -25,17 +25,23 @@ The gate itself is `agentevolver/hook/default/plan_mode.py`, which runs on
 website-user and other leaf workers leave it disabled. A worker receives a bounded
 assignment and returns evidence; its coordinator owns planning and replanning.
 
-`PlanManagerServer.context()` reads the session's `workspace/plan.md` each step.
+`PlanManagerServer.context()` reads the session's `plan/plan.md` each step.
 The agent loop adds it to the volatile context layer after the cached conversation,
 so revisions appear immediately and survive history compaction. The plan is the
 coordinator's working document, not a separate model or an execution engine.
 
-For a host controller using Bash in a task container, the launcher declares the host
-mount source with `AGENTEVOLVER_TASK_WORKSPACE` and its container target with
-`AGENTEVOLVER_EXEC_WORKDIR`. The plan context shows the container path (normally
-`/workspace/plan.md`); the plan manager reads and approves the same file through its
-host path. `path_manager.execution_path()` only translates paths under this declared
-mount, so other sessions' paths are never advertised as local container files.
+PathManager owns `P.SESSION_PLAN` and `P.SESSION_PLAN_DIR`. The `plan/` directory is
+beside `workspace/`, with agent-side write permission. Plans stay outside the business
+repository and its submitted patch. Workspace overrides and child worktrees do not
+relocate the coordinator's plan.
+
+The plan belongs to the coordinator runtime, not the execution environment. When Bash
+runs in a peer container, the plan context retains its agent-side path and the agent uses
+`read_file_tool`/`write_file_tool` there. Both SWE Pro configurations mount these tools.
+No plan directory is mounted in the peer, and no benchmark preparation or grading step
+needs to know about it. The plan manager reads updates into the next live context and
+persists approved plans at the same path. Workspace translation through
+`path_manager.execution_path()` remains only for execution paths.
 
 - `auto`: maintain the plan before multi-step work and revise it before acting on
   new feedback. The agent writes it with its normal workspace tools. No approval gate.
@@ -62,11 +68,14 @@ permissions; `enable_evolving` describes target mutability, not this permission.
 Each concrete opportunity has a stable ID, source evidence, reusable operation or
 method, intended consumer/next use, expected benefit, inspected capabilities or next
 discovery step, smallest experiment and baseline/reuse checks, and a status/next action
-with rationale. Replanning preserves unresolved entries. Repeated deferral requires a
-fresh cost assessment against actual resources and intended reuse, with a constraint
-and revisit condition. A qualifying experiment becomes an ordered plan step. Its entry
-then records the exact candidate, evaluation evidence, adoption decision and subsequent
-consumer use separately. No qualifying opportunity is a valid recorded assessment.
+with rationale. Replanning preserves unresolved entries. A qualifying opportunity is dispatched
+immediately with `run_in_background=true` while independent product work continues. Its plan
+entry records the returned task/process ID and actual status rather than a future schedule.
+Generation, evaluation and adoption remain sequential within the branch; dependent consumers
+wait, and active branches must be collected and closed before the parent finishes. Deferral
+requires a concrete prerequisite, write conflict, permission or resource constraint and a retry
+condition. The entry records candidate version, evaluation, adoption and actual use separately.
+No qualifying opportunity is a valid recorded assessment.
 
 Self-verification is an explicit discovery boundary: after meaningful local tests,
 debugging, browser checks or final review, separate the product/setup problem from what

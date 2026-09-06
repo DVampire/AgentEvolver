@@ -260,6 +260,7 @@ class PathManagerServer:
                 ("workspace", P.SESSION_WORKSPACE),
                 ("log", P.SESSION_LOG),
                 ("extension", P.SESSION_EXTENSION),
+                ("plan", P.SESSION_PLAN_DIR),
             )
         }
         roots["shared_extension"] = self.get(P.EXTENSION)
@@ -408,16 +409,9 @@ class PathManagerServer:
     def _under_an_override(self, key: P, template: str) -> Optional[Path]:
         """The path for a key that lives *inside* an overridden one, or None.
 
-        An override replaces one key. Everything nested under it kept resolving from the
-        table, so overriding `SESSION_WORKSPACE` to a container's mount point moved the
-        workspace and left `workspace/plan.md` and `workspace/notebooks` at the host
-        layout path. Two names for one directory, and whichever a caller happened to use
-        decided whether it worked.
-
-        Cascading here rather than at each nested key, because there is nothing special
-        about those two: the rule is that a declaration about a directory is a declaration
-        about what is in it, and the next key added under an overridden one gets it for
-        free.
+        Workspace overrides also move notebooks; plan-directory overrides move the
+        plan file. Sibling roots stay independent. Resolving this centrally keeps
+        nested keys consistent without each caller deriving its own paths.
 
         The suffix carries no placeholders in practice — a nested key adds fixed segments
         to its parent — and one that did would be resolved against the same session

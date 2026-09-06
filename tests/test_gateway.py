@@ -403,10 +403,13 @@ def test_a_session_reports_the_extension_staging_area_it_mounts() -> None:
             },
             {
                 "source": str(Path(created.result["project_root"]) / "extension"),
-                "target": "/extension",
+                "target": "/workspace/.agentevolver/extension",
                 "mode": "rw",
             },
         ]
+        plan_root = Path(stage.result["sandbox"]["plan_root"])
+        assert plan_root.parent == Path(created.result["project_root"])
+        assert all(not plan_root.is_relative_to(item["source"]) for item in stage.result["mounts"])
 
     asyncio.run(run())
 

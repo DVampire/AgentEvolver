@@ -43,12 +43,13 @@ class P(str, Enum):
     TRACE_INTEGRITY = "trace_integrity"
     TRACE_PROJECTIONS = "trace_projections"
     TRACE_PROJECTION_WATERMARK = "trace_projection_watermark"
-    #: The three directories a project root is made of. `ProjectSandbox` builds
+    #: The directories a project root is made of. `ProjectSandbox` builds
     #: these for a root it is handed, which may be any directory, so it cannot ask
     #: for a session key — but the leaf names still belong to the table.
     PROJECT_WORKSPACE = "project_workspace"
     PROJECT_LOG = "project_log"
     PROJECT_EXTENSION = "project_extension"
+    PROJECT_PLAN = "project_plan"
     PROJECT_MANIFEST = "project_manifest"
     PROJECT_RESULT = "project_result"
     PROJECT_PATCH = "project_patch"
@@ -100,7 +101,7 @@ class P(str, Enum):
     # --- per session / per run (disposable) ------------------------------
     SESSIONS = "sessions"
     SESSION = "session"
-    #: The three directories a session owns. ``workspace`` was the only one with a key
+    #: The execution directories a session owns. ``workspace`` was the only one with a key
     #: of its own, so ``log`` and ``extension`` were reachable only by joining a
     #: ``PROJECT_*`` fragment onto a root the caller already had — two algorithms for one
     #: directory, and the table had no say in the second. A session's staged extension
@@ -139,6 +140,7 @@ class P(str, Enum):
     #: process and must not be reachable by the file tools the agent uses on its
     #: own work, or the agent could rewrite the objective it is measured against.
     SESSION_GOALS = "session_goals"
+    SESSION_PLAN_DIR = "session_plan_dir"
     SESSION_PLAN = "session_plan"
     #: Editor state — open tabs, layout. Per session, unlike the extensions and
     #: agent logins beside it, which are worth sharing across all of them.
@@ -168,7 +170,7 @@ RELATIVE: frozenset = frozenset({
     P.LOG_BENCHMARK_RESULT, P.TRACE_EVENT_LOG, P.TRACE_SQLITE, P.TRACE_INTEGRITY,
     P.TRACE_PROJECTIONS, P.TRACE_PROJECTION_WATERMARK,
     P.PROJECT_WORKSPACE, P.PROJECT_LOG,
-    P.PROJECT_EXTENSION, P.PROJECT_MANIFEST, P.PROJECT_RESULT,
+    P.PROJECT_EXTENSION, P.PROJECT_PLAN, P.PROJECT_MANIFEST, P.PROJECT_RESULT,
     P.PROJECT_PATCH, P.PROJECT_SUBMISSION, P.PROJECT_SUBMISSION_VIEW,
     P.PROJECT_EVALUATION,
     P.PROJECT_RESULT_RUN,
@@ -193,7 +195,7 @@ FILES: frozenset = frozenset({
 
 LAYOUT: Dict[P, str] = {
     #: A manager's own working directory under whichever log root the run is bound
-    #: to, and the three roots a project directory is made of. Both are resolved
+    #: to, and the roots a project directory is made of. Both are resolved
     #: against a root supplied at call time — a session's log root moves when the
     #: session binds, and a project root may be any directory — so they are joined
     #: through :meth:`PathManagerServer.under`, not :meth:`get`.
@@ -223,6 +225,7 @@ LAYOUT: Dict[P, str] = {
     P.PROJECT_WORKSPACE: "workspace",
     P.PROJECT_LOG: "log",
     P.PROJECT_EXTENSION: "extension",
+    P.PROJECT_PLAN: "plan",
     P.PROJECT_MANIFEST: "session.json",
     P.PROJECT_RESULT: "result.json",
     P.PROJECT_PATCH: "agent.patch",
@@ -276,12 +279,9 @@ LAYOUT: Dict[P, str] = {
     #: and it outlives the process — a plan held only in `PlanState` was gone the
     #: moment the run ended, including the one a person had just approved.
     #:
-    #: Inside the workspace, not beside it. Every other session-level file here is
-    #: framework state the agent never touches; this one the agent writes, and
-    #: `workspace_write` is exactly the permission it holds. A sibling of `workspace/`
-    #: refused `write_file_tool` — "outside the writable roots" — which would have made
-    #: `auto` a mode that asks for a document the agent is not allowed to create.
-    P.SESSION_PLAN: "output/{owner}/sessions/{session_id}/workspace/plan.md",
+    #: A separate writable root keeps agent bookkeeping out of the deliverable.
+    P.SESSION_PLAN_DIR: "output/{owner}/sessions/{session_id}/plan",
+    P.SESSION_PLAN: "output/{owner}/sessions/{session_id}/plan/plan.md",
     P.SESSION_IDE_USER_DATA: "output/{owner}/sessions/{session_id}/ide/user-data",
     P.SESSION_NOTEBOOKS: "output/{owner}/sessions/{session_id}/workspace/notebooks",
 }

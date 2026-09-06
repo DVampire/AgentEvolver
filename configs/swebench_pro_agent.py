@@ -1,16 +1,12 @@
 """Config for examples/run_swebench_pro.py — the self-evolution (agent) arm.
 
-Structured exactly like `configs/programbench_agent.py`, because a SWE-bench Pro
-run is the same shape as a ProgramBench run: a single MetaAgent works a task
-inside an offline task container and produces one artifact (here a git patch that
-resolves the issue, not a reconstructed program). Only the task and the grader
-differ; the roster is identical.
+A single MetaAgent produces a git patch using an offline task container for
+repository commands. The agent runtime and its planning files stay on the host.
 
 The roster, deliberately minimal:
-- **`bash_tool` + `done_tool`, with read-only `inspect_tool`.** The agent reads, edits and diffs the repo
-  through the shell; that is the whole toolset the reference SWE agents
-  (SWE-agent / mini-SWE-agent) use, and the score comes from the model reasoning
-  over the codebase, not from a wide tool surface.
+- **Repository work through `bash_tool`, with `done_tool` and `inspect_tool`.**
+  `read_file_tool`/`write_file_tool` maintain the agent-side plan outside the repository;
+  the peer shell does not mount it. Both experiment arms use the same planning tools.
 - **Local verification only.** The agent runs existing repository tests and writes
   its own regression tests. Hidden grading happens only after submission, outside
   the agent; no official scores are returned to it.
@@ -67,6 +63,8 @@ agent_names = [
 tool_names = [
     "bash_tool",
     "done_tool",
+    "read_file_tool",
+    "write_file_tool",
     "inspect_tool",  # Required by the shared evolution policy; also present in baseline.
     "adoption_tool",
 ]

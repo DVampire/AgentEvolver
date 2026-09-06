@@ -45,12 +45,14 @@ async def test_workspace_mapping_is_task_local_and_inherited(tmp_path):
     manager.bind_session("owner", "run")
     original = manager.get(P.SESSION_WORKSPACE)
     log = manager.get(P.SESSION_LOG)
+    plan = manager.get(P.SESSION_PLAN)
     async def worker(name):
         with manager.workspace(tmp_path / name):
             await asyncio.sleep(0)
             assert manager.get(P.SESSION_WORKSPACE) == tmp_path / name
             assert manager.get(P.SESSION_LOG) == log
-            assert manager.get(P.SESSION_PLAN).is_relative_to(tmp_path / name)
+            assert manager.get(P.SESSION_PLAN) == plan
+            assert not plan.is_relative_to(tmp_path / name)
             async def child():
                 return manager.get(P.SESSION_WORKSPACE)
             assert await asyncio.create_task(child()) == tmp_path / name
@@ -333,6 +335,7 @@ def test_the_sandbox_names_its_roots_the_same_way_the_table_does(
         ("workspace", P.SESSION_WORKSPACE, sandbox.workspace_root),
         ("log", P.SESSION_LOG, sandbox.log_root),
         ("extension", P.SESSION_EXTENSION, sandbox.extension_root),
+        ("plan", P.SESSION_PLAN_DIR, sandbox.plan_root),
     ):
         declared = path_manager.get(key, owner="o", session_id="s").name
         assert built.name == declared, (
@@ -508,8 +511,10 @@ def test_session_roots_name_the_staging_tree_apart_from_the_shared_library() -> 
             "extension",
             "shared_extension",
             "package",
+            "plan",
         }
         assert roots["extension"] != roots["shared_extension"]
+        assert roots["plan"].parent == roots["workspace"].parent == roots["project"]
         assert roots["extension"].is_relative_to(roots["project"])
         assert not roots["shared_extension"].is_relative_to(roots["project"])
     finally:

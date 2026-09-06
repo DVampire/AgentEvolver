@@ -538,10 +538,7 @@ async def test_the_gate_reads_a_real_declaration_and_lets_the_agent_speak():
 def test_the_agent_is_allowed_to_write_its_own_plan():
     """`auto` asks the agent for a document. It must be somewhere the agent may write.
 
-    `plan.md` first went beside `workspace/`, with the framework's other session files,
-    and `workspace_write` refused it: "outside the writable roots". Nothing raised —
-    `auto` would simply have been a mode that asks every run for a plan the agent is not
-    permitted to create, and the refusal would have read as the agent's mistake.
+    The plan is outside `workspace/` and has its own explicit writable session root.
 
     Checked through `permission_manager` rather than by comparing strings, because the
     permission system is what actually decides, and a path can look contained while the
@@ -551,8 +548,10 @@ def test_the_agent_is_allowed_to_write_its_own_plan():
     from agentevolver.permission import permission_manager
     from agentevolver.permission.types import Operation, PermissionMode, PermissionRequest
 
+    path_manager.bind_session("local", "plan_probe")
     workspace = path_manager.get(P.SESSION_WORKSPACE, owner="local", session_id="plan_probe")
     plan = path_manager.get(P.SESSION_PLAN, owner="local", session_id="plan_probe")
+    assert not plan.is_relative_to(workspace)
 
     permission_manager.register(
         entity_name="plan_probe_tool", mode=PermissionMode.WORKSPACE_WRITE, workspace=str(workspace)
@@ -604,24 +603,17 @@ def test_an_approved_plan_lands_on_disk_because_the_gate_forbids_writing_it():
         path_manager.unbind_session()
 
 
-def test_the_plan_follows_a_container_mount_override():
-    """An override on the *workspace* has to move the plan, because the plan is in it.
-
-    Resolving `P.SESSION_PLAN` directly did not: it is its own template, spelling out
-    the workspace segment again, so overriding `SESSION_WORKSPACE` moved one and left
-    the other. Inside a container that meant the agent was told about — and the approval
-    wrote to — the host-layout path, which happens to be the same file through a second
-    mount. Right by accident, and the same accident the sandbox boundary did not get.
-    """
+def test_the_plan_has_an_independent_writable_directory_override():
+    """Workspace relocation cannot move the agent's plan directory."""
     from agentevolver.paths import P, path_manager
     from agentevolver.plan import plan_path
 
     path_manager.bind_session("local", "mount_plan")
     try:
         path_manager.override(P.SESSION_WORKSPACE, "/workspace")
-        assert plan_path() == Path("/workspace/plan.md"), (
-            f"the plan did not follow the workspace: {plan_path()}"
-        )
+        assert not plan_path().is_relative_to("/workspace")
+        path_manager.override(P.SESSION_PLAN_DIR, "/plan")
+        assert plan_path() == Path("/plan/plan.md")
         # And the boundary agrees, so the agent may write what it is told about.
         from agentevolver.sandbox.project import check_session_path
 
@@ -644,9 +636,10 @@ def test_naming_this_run_is_not_a_way_to_lose_the_override():
     path_manager.bind_session("local", "named_run")
     try:
         path_manager.override(P.SESSION_WORKSPACE, "/workspace")
-        assert plan_path("named_run") == Path("/workspace/plan.md")
-        assert plan_path(owner="local") == Path("/workspace/plan.md")
+        path_manager.override(P.SESSION_PLAN_DIR, "/plan")
+        assert plan_path("named_run") == Path("/plan/plan.md")
+        assert plan_path(owner="local") == Path("/plan/plan.md")
         # A genuinely different run is a different question, and gets the table's answer.
-        assert plan_path("some_other_run") != Path("/workspace/plan.md")
+        assert plan_path("some_other_run") != Path("/plan/plan.md")
     finally:
         path_manager.unbind_session()

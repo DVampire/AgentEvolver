@@ -115,6 +115,7 @@ session-scoped key answers for that run:
 
 ```python
 path_manager.get(P.SESSION_EXTENSION)          # this run's staging tree
+path_manager.get(P.SESSION_PLAN)               # sessions/<id>/plan/plan.md
 path_manager.session_roots()["workspace"]      # and the rest of them, by name
 ```
 
@@ -159,7 +160,7 @@ processes; a context variable alone cannot isolate the other singleton managers.
 
 For host Git child dispatch, `workspace(path)` temporarily maps only workspace keys in
 the current asyncio task and its children. Exiting the context restores the caller's
-mapping. Log, extension, and registry roots stay attached to the shared run, and no
+mapping. Plan, log, extension, and registry roots stay attached to the shared run, and no
 rebind listeners are invoked. This keeps private worktrees separate without moving the
 root session or implying an OS sandbox.
 

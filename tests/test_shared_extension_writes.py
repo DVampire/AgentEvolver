@@ -19,7 +19,7 @@ def roots(tmp_path, monkeypatch):
     return roots
 
 
-@pytest.mark.parametrize("resource", ["workspace", "extension", "log", "package", "shared_extension"])
+@pytest.mark.parametrize("resource", ["workspace", "extension", "log", "package", "shared_extension", "plan"])
 @pytest.mark.parametrize("mode", [PermissionMode.WORKSPACE_WRITE, PermissionMode.DANGER_FULL_ACCESS])
 def test_file_and_shell_checks_agree_on_writable_resources(roots, resource, mode):
     path = str(roots[resource] / "probe.py")
@@ -28,7 +28,7 @@ def test_file_and_shell_checks_agree_on_writable_resources(roots, resource, mode
     assert validate_command(f"echo updated > {path}", mode).allowed
 
 
-@pytest.mark.parametrize("resource", ["workspace", "extension", "log", "package", "shared_extension"])
+@pytest.mark.parametrize("resource", ["workspace", "extension", "log", "package", "shared_extension", "plan"])
 def test_explicit_read_only_mode_still_blocks_writes(roots, resource):
     path = str(roots[resource] / "probe.py")
     assert not check_file_write(path, "updated", PermissionMode.READ_ONLY).allowed

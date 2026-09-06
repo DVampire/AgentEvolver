@@ -29,7 +29,8 @@ sources back to the host namespace before asking the host daemon to mount them.
 `ProjectSandbox.mounts()` places the task workspace at `/workspace` and its resources
 under `/workspace/.agentevolver/`: `package`, `extension` (session staging),
 `extension-base` (shared library), and `log`. All are writable, including framework
-source and shared extensions. File tools and Bash follow this policy; explicit
+source and shared extensions. The coordinator's `plan/` directory stays in the agent
+runtime and is not mounted into execution peers. File tools and Bash follow this policy; explicit
 `read_only` execution modes and plan approval gates still apply. Promotion remains
 the operation that records candidate validation, adoption, and rollback history.
 

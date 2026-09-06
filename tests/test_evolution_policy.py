@@ -69,6 +69,8 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, task, defe
         live = "\n".join(await agent._live_blocks(0))
         assert "Evolution opportunities" in live
         assert "self-verification discoveries" in live
+        assert "immediately dispatch" in live and "run_in_background=true" in live
+        assert "returned task/process ID and running status" in live
         assert not plan_manager.active(ctx.id)
         cfg = parse_prompt_file(str(ROOT / "agentevolver/prompt/default" / f"{agent.name}.html"))
         message = await cfg.to_prompt().get_system_message(values, reload=True)
@@ -76,6 +78,9 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, task, defe
         assert message.text.count("<self-evolution-rules>") == 1
         assert "Do not wait for a task to mention evolution" in message.text
         assert "Repeated cost or inconsistency" in message.text
+        assert "Immediately dispatch" in rendered and "run_in_background=true" in rendered
+        assert "Generation and evaluation are sequential" in rendered
+        assert "Before finishing, join and close" in rendered
         for opportunity in ("Reusable learning", "Expected reuse", "Better method",
                             "Missing capability", "New experience", "Self-verification",
                             "before implementation fails", "repeated failure is not required"):
