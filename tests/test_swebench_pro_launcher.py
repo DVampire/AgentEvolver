@@ -577,7 +577,9 @@ async def test_launcher_grades_after_exit_and_resume_never_restarts_submitted_ag
         assert patch == "unchanged frozen patch"
         assert events.count("solve") == 1
         events.append("grade")
-        return {"error_code": "timeout"} if events.count("grade") == 1 else {"resolved": False}
+        return {"error_code": "timeout"} if events.count("grade") == 1 else {
+            "resolved": False, "grader_profile": "official_repaired",
+        }
 
     monkeypatch.setattr(swebench_pro, "config", Config(tag="test", output_owner="sample", WALL_CLOCK=10))
     monkeypatch.setattr(swebench_pro, "path_manager", Paths())
@@ -619,6 +621,8 @@ async def test_launcher_grades_after_exit_and_resume_never_restarts_submitted_ag
     result = load_run_results(str(Path(args.out) / "results.json"))[0]
     assert result["grader_evals"] == 0
     assert result["evaluation_protocol"] == EVALUATION_PROTOCOL
+    assert result["grader_profile"] == "official_repaired"
+    assert result["final_grade"]["grader_profile"] == "official_repaired"
     assert args.user_cfg_options["extension_root"] == str(owner / "extension")
     assert json.loads((Path(args.out) / "run_state.json").read_text())["grader_profile"] == "official"
 

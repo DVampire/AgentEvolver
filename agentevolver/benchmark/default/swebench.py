@@ -460,6 +460,76 @@ class SWEBenchVerifiedBenchmark(SWEBenchBenchmark):
         return await _grade_verified(options["workspace_dir"], row, patch=patch)
 
 
+class SWEBenchProTaskRepairs:
+    """Reviewed task-data corrections, applied only in the final grading container.
+
+    Entries pin the dataset identity, injected test revision and exact fixture bytes.
+    Unknown tasks are untouched. Adding an entry requires a reproduced setup defect
+    and a check that an incorrect implementation still fails after the repair.
+    """
+
+    VERSION = "swe-pro-task-repairs-v1"
+    REPAIRS = {
+        "instance_flipt-io__flipt-756f00f79ba8abf9fe53f3c6c818123b42eb7355": {
+            "id": "flipt-config-test-fixtures-v1",
+            "repo": "flipt-io/flipt",
+            "base_commit": "266e5e143e87519047b9be3202a0aba273b83de3",
+            "test_revision": "756f00f79ba8abf9fe53f3c6c818123b42eb7355",
+            "test_files": ["internal/config/config_test.go"],
+            "reason": "Injected TestLoad requires its matching added and updated YAML fixtures.",
+            "fixtures": {
+                "internal/config/testdata/advanced.yml":
+                    "8cc7db5d89c0ffe2eefef5aa488b3cad0459cb8a469d416673ff3ef8f3671c11",
+                "internal/config/testdata/deprecated/ui_disabled.yml":
+                    "873e0e39f2da7690e5cfdc00eb69c3046ce28c20123f7ffe8aeeafba17f0983c",
+            },
+        },
+    }
+
+    @classmethod
+    def fingerprint(cls, grader_fingerprint: str) -> str:
+        payload = json.dumps({"grader": grader_fingerprint, "version": cls.VERSION,
+                              "repairs": cls.REPAIRS, "implementation": inspect.getsource(cls)},
+                             sort_keys=True).encode()
+        return hashlib.sha256(payload).hexdigest()
+
+    @classmethod
+    def prepare(cls, row: Dict) -> Tuple[Dict, Optional[Dict]]:
+        """Return detached grading metadata; never modify the dataset or agent patch."""
+        repair = cls.REPAIRS.get(row["instance_id"])
+        if repair is None:
+            return dict(row), None
+        from pathlib import PurePosixPath
+
+        for key in ("repo", "base_commit"):
+            if row.get(key) != repair[key]:
+                raise ValueError(f"Task repair {repair['id']}: changed {key}; review required")
+        lines = row.get("before_repo_set_cmd", "").strip().splitlines()
+        expected = ["git", "checkout", repair["test_revision"], "--", *repair["test_files"]]
+        if not lines or shlex.split(lines[-1]) != expected:
+            raise ValueError(f"Task repair {repair['id']}: changed test checkout; review required")
+        roots = {PurePosixPath(path).parent / "testdata" for path in repair["test_files"]}
+        for path, digest in repair["fixtures"].items():
+            relative = PurePosixPath(path)
+            if (relative.is_absolute() or ".." in relative.parts
+                    or not any(relative.is_relative_to(root) for root in roots)
+                    or relative.suffix not in {".json", ".yaml", ".yml", ".txt", ".csv", ".tsv", ".xml", ".golden"}
+                    or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+                raise ValueError(f"Task repair {repair['id']}: invalid fixture manifest")
+        metadata = {"catalog_version": cls.VERSION, "task_id": row["instance_id"], **repair}
+        checksums = [f"{digest}  {path}" for path, digest in repair["fixtures"].items()]
+        # Upstream consumes only the LAST line of before_repo_set_cmd. Keep the
+        # checkout, content verification and acknowledgement in that single line.
+        lines[-1] = (
+            shlex.join([*expected, *repair["fixtures"]])
+            + " && printf '%s\\n' " + shlex.join(checksums)
+            + " | sha256sum --check --status"
+            + " && printf '%s\\n' " + shlex.quote(json.dumps(metadata, sort_keys=True))
+            + " > /workspace/task_repair.json || exit 86"
+        )
+        return {**row, "before_repo_set_cmd": "\n".join(lines)}, metadata
+
+
 @BENCHMARK.register_module(force=True)
 class SWEBenchProBenchmark(SWEBenchBenchmark):
     """SWE-bench Pro — 731 issues across Python, Go, JS and TS, with longer patches."""
@@ -480,12 +550,15 @@ class SWEBenchProBenchmark(SWEBenchBenchmark):
         repo = os.path.abspath(options["grader_repo"])
         if not os.path.isfile(os.path.join(repo, "swe_bench_pro_eval.py")):
             raise ValueError(f"grader repo not found: {repo}")
+        fingerprint = _grader_fingerprint(repo)
+        if profile == "official":
+            fingerprint = SWEBenchProTaskRepairs.fingerprint(fingerprint)
         return {
             "grader_profile": profile,
             "grader_implementation": (
                 OFFICIAL_PRO_GRADER_PROTOCOL if profile == "official" else "swe-pro-diagnostic-v1"
             ),
-            "grader_fingerprint": _grader_fingerprint(repo),
+            "grader_fingerprint": fingerprint,
         }
     # Pro adds a written requirements list and an interface spec to the issue text.
     safe_fields: Tuple[str, ...] = Field(
@@ -547,8 +620,8 @@ def _run_official_pro(workspace_dir: str, row: dict, grader_repo: str, patch: st
     """Upstream eval_with_docker migrated into the benchmark implementation.
 
     Reference: scaleapi/SWE-bench_Pro-os, ca10a60a5fcae51e6948ffe1485d4153d421e6c5.
-    The only integration changes are a per-invocation evidence directory and returning
-    Benchmark's count fields. Image selection, pull/local fallback, bind mount,
+    Reviewed task-data repairs are applied automatically and labelled official_repaired.
+    Image selection, pull/local fallback, bind mount,
     entrypoint, scripts, inherited image environment, container wait and scoring match
     the upstream local-Docker path. No launcher process or second result ledger.
     """
@@ -561,9 +634,16 @@ def _run_official_pro(workspace_dir: str, row: dict, grader_repo: str, patch: st
     mounted = artifact / "workspace"
     mounted.mkdir()
     results = None
+    repair = None
+    repair_verified = False
+    repair_required = row["instance_id"] in SWEBenchProTaskRepairs.REPAIRS
     try:
         import docker
 
+        row, repair = SWEBenchProTaskRepairs.prepare(row)
+        if repair:
+            (artifact / "task_repair_expected.json").write_text(
+                json.dumps(repair, indent=2), encoding="utf-8")
         iid = row["instance_id"]
         files = {
             "patch.diff": strip_binary_hunks(patch),
@@ -573,6 +653,7 @@ def _run_official_pro(workspace_dir: str, row: dict, grader_repo: str, patch: st
         }
         for name, content in files.items():
             (mounted / name).write_text(content, encoding="utf-8")
+        (artifact / "entryscript.sh").write_text(files["entryscript.sh"], encoding="utf-8")
         (artifact / "submitted.patch").write_text(patch, encoding="utf-8")
         image = _official_pro_image_ref(row)
         docker_platform = "linux/amd64" if platform.machine().lower() in {"arm64", "aarch64"} else None
@@ -596,9 +677,15 @@ def _run_official_pro(workspace_dir: str, row: dict, grader_repo: str, patch: st
             for name in ("stdout.log", "stderr.log"):
                 source = mounted / name
                 (artifact / name).write_text(source.read_text() if source.exists() else "", encoding="utf-8")
+            if repair:
+                acknowledgement = json.loads((mounted / "task_repair.json").read_text(encoding="utf-8"))
+                if acknowledgement != repair:
+                    raise ValueError("Task repair acknowledgement does not match the pinned manifest")
+                repair_verified = True
+                (artifact / "task_repair.json").write_text(
+                    json.dumps(acknowledgement, indent=2), encoding="utf-8")
             results = json.loads((mounted / "output.json").read_text(encoding="utf-8"))
             (artifact / "output.json").write_text(json.dumps(results), encoding="utf-8")
-            (artifact / "entryscript.sh").write_text(files["entryscript.sh"], encoding="utf-8")
         finally:
             client.close()
         report = _official_pro_report(results, row)
@@ -606,6 +693,12 @@ def _run_official_pro(workspace_dir: str, row: dict, grader_repo: str, patch: st
         # Upstream main scores evaluator exceptions/missing output as False.
         (artifact / "exception.log").write_text(f"{type(error).__name__}: {error}", encoding="utf-8")
         report = _official_pro_report(None, row)
+        if repair_required and not repair_verified:
+            report.update(error_code="test_data_repair_failed", error_details=str(error))
+    if repair_required:
+        report.update(grader_profile="official_repaired", task_repair_applied=repair_verified,
+                      task_repair_id=SWEBenchProTaskRepairs.REPAIRS[row["instance_id"]]["id"],
+                      task_repair_version=SWEBenchProTaskRepairs.VERSION)
     report["evidence_path"] = str(artifact)
     (artifact / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report

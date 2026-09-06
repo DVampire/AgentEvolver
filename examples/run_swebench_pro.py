@@ -665,6 +665,9 @@ async def run_launcher(args) -> int:
                 record.update(saved_result.get("agent_result") or {"status": "historical"})
                 record.update(
                     final_grade=saved["evaluation"]["details"], resolved=saved["score"] == 1,
+                    grader_profile=saved["evaluation"]["details"].get(
+                        "grader_profile", run_state["grader_profile"]
+                    ),
                     attempt_status="completed",
                 )
                 return record
@@ -718,6 +721,9 @@ async def run_launcher(args) -> int:
                 submission_sha256=submission["sha256"],
             )
             record.update(benchmark_info.evaluation)
+            record["grader_profile"] = evaluated.evaluation.details.get(
+                "grader_profile", run_state["grader_profile"]
+            )
             record["attempt_status"] = "completed"
             if evaluated.evaluation.status == "error":
                 record["error"] = evaluated.evaluation.details.get("error_code")
@@ -841,7 +847,7 @@ def parse_args(argv=None):
         "--grader-profile",
         choices=("official", "diagnostic"),
         default="official",
-        help="Official uses unchanged upstream scripts; diagnostic enables custom repairs and is non-comparable.",
+        help="Official uses upstream scripts with registered task-data fixes (labelled official_repaired); diagnostic enables broader local repairs.",
     )
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument(

@@ -196,8 +196,9 @@ whose attribution needs review, `grading_setup` covers missing fixtures/parsing/
 and `evaluation` covers other unresolved execution issues. Legacy `test_build_failed`
 records receive the same display classification without rewriting their original ledger.
 Missing-fixture mentions in failed test logs are diagnostic hints only: negative tests
-can intentionally reference absent paths, so these hints never repair fixtures or change
-official grading. Test builds are not automatically treated as host infrastructure faults.
+can intentionally reference absent paths. Only reviewed, task-ID-specific corrections
+are restored during official grading. Test builds are not automatically treated as host
+infrastructure faults.
 
 SWE Pro's default `official` grading is implemented inside `default/swebench.py`,
 ported from the upstream local-Docker evaluator at commit
@@ -278,9 +279,23 @@ management remains in context/server; benchmark-specific grading stays in its im
 
 SWE Pro defaults to `--grader-profile official`: upstream run scripts and parsers are
 uploaded unchanged, and entry-script generation is regression-tested against the local
-upstream generator. It does not restore extra fixtures or rewrite selectors. The local
-grader asset fingerprint and profile are recorded and checked on resume. This is asset
-compatibility, not a claim that the entire custom launcher has been certified by a leaderboard.
+upstream generator. `SWEBenchProTaskRepairs` in `default/swebench.py` automatically applies
+reviewed corrections by task ID in the grading container. Each entry pins the repository,
+base commit, test revision, fixture paths and SHA-256 values. The matching test checkout
+also restores those fixtures and verifies their content before running tests. Unknown
+tasks follow the unchanged path; a mismatched repair is an evaluation error, not a pass.
+
+The repaired evaluation is the normal final result: passing tests count as correct and
+failing tests count as incorrect. Affected results carry `grader_profile=official_repaired`
+and the repair ID/version; this is a result label, not another CLI mode or score ledger.
+The initial correction pairs Flipt's injected configuration tests with `advanced.yml`
+and `deprecated/ui_disabled.yml`. Repair details and verification evidence remain in the
+grading artifacts; agent submissions and solver workspaces are unchanged.
+
+The grader fingerprint includes the repair catalog and implementation, and is checked on
+resume. Updating a repair requires re-evaluating frozen submissions under the new identity;
+previous grades are not silently reinterpreted. The label identifies corrected test data,
+not certification against an unmodified upstream leaderboard environment.
 
 `--grader-profile diagnostic` explicitly enables bounded test-worker parallelism,
 fail-fast setup, selector/parser repairs and Go test-data revision matching.
