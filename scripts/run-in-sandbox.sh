@@ -19,6 +19,7 @@ set -euo pipefail
 #   scripts/run-in-sandbox.sh --gpus -- python examples/run_meta_agent.py --task "..."
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CONTAINER_ROOT="/workspace/AgentEvolver"
 
 IMAGE="agentevolver/base:latest"
 GPUS="auto"        # auto -> --gpus all when the host has NVIDIA GPUs; --no-gpus to force off
@@ -78,7 +79,7 @@ TTY_ARG=()
 
 echo "AgentEvolver — run in sandbox (Model X)"
 echo "  image   : ${IMAGE}"
-echo "  repo    : ${REPO_ROOT} -> /AgentEvolver"
+echo "  repo    : ${REPO_ROOT} -> ${CONTAINER_ROOT} (rw)"
 echo "  gpus    : $([[ ${#GPU_ARG[@]} -gt 0 ]] && echo 'all' || echo 'none')"
 # The container runs as root, so ~/.ssh inside it is /root/.ssh. The host directory is
 # mounted read-only to a staging path and *copied* there rather than mounted directly:
@@ -101,7 +102,7 @@ exec docker run --rm "${TTY_ARG[@]}" \
   `# per-session IDE containers), and killing it mid-shutdown orphans them.` \
   --stop-timeout 60 \
   -v "${DOCKER_SOCK}:${DOCKER_SOCK}" \
-  -v "${REPO_ROOT}:/AgentEvolver" \
+  -v "${REPO_ROOT}:${CONTAINER_ROOT}:rw" \
   `# The SSH environment reaches other machines from in here, so it needs the keys` \
   `# and known_hosts that are the whole basis of that reach. Read-only: the agent has` \
   `# no business writing to them, and a host key accepted inside a --rm container` \
@@ -109,12 +110,16 @@ exec docker run --rm "${TTY_ARG[@]}" \
   `# the frontend and cannot connect to anything — the failure reads as a bad key` \
   `# path rather than as a missing mount, which is a slow thing to work out.` \
   "${SSH_MOUNT[@]}" \
-  -w /AgentEvolver \
+  -w "${CONTAINER_ROOT}" \
   `# Peer containers are created against the HOST Docker daemon, so their bind` \
   `# mounts resolve in the host's mount namespace. Pass the host path we mounted` \
-  `# at /AgentEvolver so those sources can be translated back (see` \
+  `# at CONTAINER_ROOT so those sources can be translated back (see` \
   `# agentevolver/sandbox/default/base.py:to_host_path).` \
   -e AGENTEVOLVER_HOST_ROOT="${REPO_ROOT}" \
+  -e AGENTEVOLVER_CONTAINER_ROOT="${CONTAINER_ROOT}" \
+  -e AGENTEVOLVER_HOME="${CONTAINER_ROOT}" \
+  -e PYTHONPATH="${CONTAINER_ROOT}" \
+  --entrypoint "${CONTAINER_ROOT}/docker/base/entrypoint.sh" \
   "${GPU_ARG[@]}" \
   "${IMAGE}" \
-  /AgentEvolver/scripts/sandbox-entry.sh "$@"
+  "${CONTAINER_ROOT}/scripts/sandbox-entry.sh" "$@"

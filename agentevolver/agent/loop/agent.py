@@ -913,10 +913,11 @@ class Agent(BaseModel):
         return {
             "evolution_enabled": evolution_enabled,
             "max_actions": self.max_actions,
-            "workspace_root": str(roots.get("workspace", "") or self.base_dir),
+            "workspace_root": str(path_manager.execution_path(roots.get("workspace", "") or self.base_dir)),
             "project_root": str(roots.get("project", "")),
             "package_root": str(roots.get("package", "")),
             "extension_root": str(roots.get("extension", "")),
+            "shared_extension_root": str(roots.get("shared_extension", "")),
             "log_root": str(roots.get("log", "")),
         }
 

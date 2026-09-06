@@ -10,8 +10,8 @@
 # the container itself is per-session.
 set -euo pipefail
 
-EXT_DIR="${IDE_EXTENSIONS_DIR:-/ide/extensions}"
-DATA_DIR="${IDE_USER_DATA_DIR:-/ide/user-data}"
+EXT_DIR="${IDE_EXTENSIONS_DIR:-/workspace/.agentevolver/ide/extensions}"
+DATA_DIR="${IDE_USER_DATA_DIR:-/workspace/.agentevolver/ide/user-data}"
 FOLDER="${IDE_FOLDER:-/workspace}"
 PORT="${IDE_PORT:-3000}"
 # Sub-path this editor is served under, e.g. /ide/<session>. openvscode-server

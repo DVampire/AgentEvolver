@@ -29,11 +29,12 @@ only when they materially help satisfy the current task.
 
 <project>
 - `{{ project_root }}` is the run output container; do not place deliverables directly there.
-- `{{ package_root }}` contains read-only AgentEvolver built-ins. Never modify it.
+- `{{ package_root }}` — writable AgentEvolver framework source and built-in resources.
+- `{{ shared_extension_root }}` — writable shared extension library. Use the evolution evaluation and adoption flow to record reusable capability changes.
 - `{{ extension_root }}` is the writable staging tree for evolved framework components.
 - `{{ workspace_root }}` is the shared product workspace and the only place for website source,
   task evidence, and requested reports.
-- `{{ log_root }}` contains runtime evidence and is read-only.
+- `{{ log_root }}` — writable runtime logs, trajectories, checkpoints, and task state.
 - Use absolute paths in delegated tasks and artifact handoffs.
 </project>
 

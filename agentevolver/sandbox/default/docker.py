@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from agentevolver.logger import logger
 from agentevolver.registry import SANDBOX
+from agentevolver.sandbox.default.base import to_host_path
 from agentevolver.sandbox.types import ExecResult, Sandbox, SandboxConfig
 
 #: Where a mounted egress socket appears inside the container.
@@ -154,11 +155,11 @@ class DockerSandbox(Sandbox):
             args += ["--workdir", self.config.workdir]
 
         for host_path, container_path in (self.config.mounts or {}).items():
-            args += ["-v", f"{host_path}:{container_path}"]
+            args += ["-v", f"{to_host_path(host_path)}:{container_path}:rw"]
 
         env = dict(self.config.env or {})
         if self.config.egress_socket:
-            args += ["-v", f"{self.config.egress_socket}:{_EGRESS_SOCKET_IN_CONTAINER}"]
+            args += ["-v", f"{to_host_path(self.config.egress_socket)}:{_EGRESS_SOCKET_IN_CONTAINER}:rw"]
             proxy = f"http://127.0.0.1:{self.config.egress_port}"
             # Set for the whole container, deliberately: the point is that *everything*
             # inside it — the agent's curl and git as much as the framework's own model

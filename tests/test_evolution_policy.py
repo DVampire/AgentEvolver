@@ -44,11 +44,15 @@ async def test_shipped_swe_roster_enables_only_evolution_arm(arm, enabled, bound
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("cls", [MetaAgent, WebsiteBuilderAgent])
+@pytest.mark.parametrize("cls, task", [
+    (MetaAgent, "Build a small usable site."),
+    (MetaAgent, "Fix the repository issue and verify it with local tests."),
+    (WebsiteBuilderAgent, "Build a small usable site."),
+])
 @pytest.mark.parametrize("deferred", [False, True])
-async def test_policy_reaches_real_prompt_without_evolution_task(cls, deferred, bound_session):
+async def test_policy_reaches_real_prompt_without_evolution_task(cls, task, deferred, bound_session):
     agent = cls(enable_evolving=False)  # Target mutability is not the runtime switch.
-    agent.task = "Build a small usable site."
+    agent.task = task
     ctx = SimpleNamespace(id=f"policy-{cls.__name__}-{deferred}", extra={})
     agent.router = SimpleNamespace(schemas=AsyncMock(return_value=([], {} if deferred else ROUTES)))
     if deferred:
@@ -62,7 +66,9 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, deferred, 
         agent.middleware = []
         agent.ctx = ctx
         agent.environment_state = AsyncMock(return_value="")
-        assert "Evolution opportunities" in "\n".join(await agent._live_blocks(0))
+        live = "\n".join(await agent._live_blocks(0))
+        assert "Evolution opportunities" in live
+        assert "self-verification discoveries" in live
         assert not plan_manager.active(ctx.id)
         cfg = parse_prompt_file(str(ROOT / "agentevolver/prompt/default" / f"{agent.name}.html"))
         message = await cfg.to_prompt().get_system_message(values, reload=True)
@@ -71,7 +77,7 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, deferred, 
         assert "Do not wait for a task to mention evolution" in message.text
         assert "Repeated cost or inconsistency" in message.text
         for opportunity in ("Reusable learning", "Expected reuse", "Better method",
-                            "Missing capability", "New experience",
+                            "Missing capability", "New experience", "Self-verification",
                             "before implementation fails", "repeated failure is not required"):
             assert opportunity in rendered
         for guard in ("preserve consumer permission boundaries", "exact candidate version",

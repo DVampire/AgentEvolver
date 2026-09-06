@@ -29,9 +29,14 @@ embeds it in an iframe.
 | Container path | Host source | Scope |
 |---|---|---|
 | `/workspace` | `session.sandbox.workspace_root` | **per session** — the same files the agent edits |
-| `/ide/extensions` | `output/<owner>/state/ide/extensions` | **per owner** — installed plugins survive new sessions |
-| `/ide/user-data` | `output/<owner>/state/ide/user-data` | **per owner** — settings and keybindings |
-| `/home/workspace` | `output/<owner>/state/ide/home` | **per owner** — `$HOME`, so `~/.codex` and `~/.claude` logins survive a reaped container. Empty in the image, so nothing is shadowed. |
+| `/workspace/.agentevolver/ide/extensions` | `output/<owner>/state/ide/extensions` | **per owner** — installed plugins survive new sessions |
+| `/workspace/.agentevolver/ide/user-data` | `output/<owner>/sessions/<session>/ide/user-data` | **per session** — editor settings and state |
+| `/workspace/.agentevolver/ide/home` | `output/<owner>/state/ide/home` | **per owner** — `$HOME` preserves CLI logins |
+| `/workspace/.agentevolver/framework` | live framework checkout | shared, writable source; selected through `PYTHONPATH` |
+| `/workspace/.agentevolver/extension-base` | shared extension library | shared, writable capabilities |
+
+All mounts are read-write. The manager passes the directory environment variables
+explicitly, so already-built IDE images also use these paths on their next launch.
 
 The container never mounts the Docker socket, so its integrated terminal cannot
 reach the host daemon.

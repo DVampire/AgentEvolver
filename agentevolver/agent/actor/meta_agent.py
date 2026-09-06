@@ -52,8 +52,8 @@ class MetaAgent(Agent):
     name: str = Field(default="meta_agent")
     description: str = Field(
         default="Orchestrator that decomposes tasks, dispatches sub-agents concurrently, "
-        "reacts to their reports, and triggers self-evolution when a capability is "
-        "missing or a sub-agent underperforms."
+        "reacts to their reports, and discovers reusable capability improvements "
+        "from planning, feedback, debugging, and self-verification."
     )
     metadata: Dict[str, Any] = Field(default={})
     prompt_name: str = Field(default="meta_agent")

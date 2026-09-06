@@ -126,13 +126,23 @@ EVOLUTION_PLAN_NOTICE = (
     "At initial planning and when feedback, a correction, verification, or replanning "
     "reveals useful evidence, review both new and outstanding opportunities under the "
     "shared self-evolution rules. A missing capability is not the only signal: consider "
-    "reusable learning, expected reuse, a better method, and new user experiences. "
+    "reusable learning, expected reuse, a better method, new user experiences, and "
+    "self-verification discoveries. After meaningful local tests, debugging, browser "
+    "checks, or final review, distinguish the task defect/setup issue from what the "
+    "result teaches about the implementation or verification method. A first discovery "
+    "or a passing check can expose a reusable improvement; another repository or a "
+    "repeated failure is not required. Before finishing, reassess an earlier 'none "
+    "identified' against new verification evidence. Use permitted local evidence in "
+    "benchmarks, never hidden grader data or reference solutions. "
     "For each concrete opportunity keep a stable ID and record: evidence/source; the "
     "reusable operation or method and its intended consumer/next use; expected benefit "
     "over the current approach; existing capabilities inspected or a bounded discovery "
     "step; the smallest experiment, baseline comparison and reuse/regression check; "
     "and status, next action and decision reason. Mark unknowns and expected savings "
-    "honestly. Before deferring again, reassess the full construction, evaluation, "
+    "honestly. Connect each verification-driven opportunity to the method's cause, "
+    "the prevention/detection improvement, and a concrete next consumer; the consumer "
+    "can be a different check or operation in the same project. Before deferring again, "
+    "reassess the full construction, evaluation, "
     "integration and rollback cost against actual remaining resources and intended "
     "reuse; record the constraint and a concrete revisit condition. 'Product work "
     "first' or fewer remaining releases alone is not a cost assessment. When evidence, "
@@ -265,7 +275,7 @@ class PlanManagerServer(metaclass=Singleton):
         state = self.state(session_id)
         if state.mode is PlanMode.OFF or (not enabled and not state.active):
             return ""
-        path = plan_path(session_id)
+        path = path_manager.execution_path(plan_path(session_id))
         text = read_plan(session_id)
         if len(text) > PLAN_CONTEXT_MAX_CHARS:
             text = text[:PLAN_CONTEXT_MAX_CHARS] + (

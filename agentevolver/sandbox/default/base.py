@@ -17,7 +17,7 @@ from agentevolver.sandbox.process import ensure_server
 from agentevolver.sandbox.types import DEFAULT_FILE_MODE, ExecResult, Sandbox, SandboxConfig
 
 #: Where scripts/run-in-sandbox.sh bind-mounts the repo inside the container.
-CONTAINER_REPO_ROOT = "/AgentEvolver"
+CONTAINER_REPO_ROOT = "/workspace/AgentEvolver"
 
 
 def to_host_path(path: str) -> str:
@@ -26,11 +26,11 @@ def to_host_path(path: str) -> str:
     The opensandbox daemon reaches the HOST Docker daemon over a mounted socket,
     so bind-mount sources are resolved in the host's mount namespace — not ours.
     When the framework is itself running inside the repo container, a path like
-    ``/AgentEvolver/output/...`` does not exist on the host and Docker would
+    ``/workspace/AgentEvolver/output/...`` does not exist on the host and Docker would
     silently create an empty directory there instead of sharing the real one.
 
     ``scripts/run-in-sandbox.sh`` exports ``AGENTEVOLVER_HOST_ROOT`` with the
-    host path it mounted at ``/AgentEvolver``; that mapping cannot be derived
+    host path it mounted at ``AGENTEVOLVER_CONTAINER_ROOT``; that mapping cannot be derived
     reliably from /proc/self/mountinfo, which reports the source relative to its
     filesystem root rather than the host's mount namespace. Unset (running
     directly on the host) means paths are already host paths.
@@ -38,10 +38,16 @@ def to_host_path(path: str) -> str:
     host_root = os.environ.get("AGENTEVOLVER_HOST_ROOT")
     if not host_root:
         return path
-    if path == CONTAINER_REPO_ROOT:
-        return host_root
-    if path.startswith(f"{CONTAINER_REPO_ROOT}/"):
-        return host_root.rstrip("/") + path[len(CONTAINER_REPO_ROOT):]
+    # Older launchers exported only HOST_ROOT and mounted at /AgentEvolver.
+    # Keep those running containers usable while new launches use /workspace.
+    roots = (os.environ.get("AGENTEVOLVER_CONTAINER_ROOT") or CONTAINER_REPO_ROOT,
+             "/AgentEvolver")
+    for root in roots:
+        root = root.rstrip("/")
+        if path == root:
+            return host_root
+        if path.startswith(f"{root}/"):
+            return host_root.rstrip("/") + path[len(root):]
     return path
 
 
@@ -135,7 +141,7 @@ class OpenSandbox(Sandbox):
     def container_workspace(self) -> Optional[str]:
         # opensandbox mounts the session workspace (and the ProgramBench task image's
         # WORKDIR) at /workspace; bash_tool runs there, so the prompt must say /workspace.
-        return "/workspace"
+        return self.config.workdir or "/workspace"
 
     @property
     def resource_id(self) -> Optional[str]:
@@ -174,12 +180,13 @@ class OpenSandbox(Sandbox):
         )
         if entrypoint:
             create_kwargs["entrypoint"] = entrypoint
-        # Bind-mount host dirs (e.g. the repo at /AgentEvolver) so files stay consistent
+        # Bind-mount writable host dirs so files stay consistent
         # between the base container and this peer. Sources are rewritten to host
         # paths because the daemon binds them in the host's mount namespace.
         if self.config.mounts:
             create_kwargs["volumes"] = [
-                Volume(name=f"mount{i}", host=Host(path=to_host_path(host_path)), mount_path=container_path)
+                Volume(name=f"mount{i}", host=Host(path=to_host_path(host_path)),
+                       mount_path=container_path, read_only=False)
                 for i, (host_path, container_path) in enumerate(self.config.mounts.items())
             ]
         if not self.config.network:
@@ -252,7 +259,8 @@ class OpenSandbox(Sandbox):
 
         sb = self._require()
         to = timedelta(seconds=timeout) if isinstance(timeout, int) else timeout
-        opts = RunCommandOpts(working_directory=workspace_root, timeout=to, envs=env or None)
+        opts = RunCommandOpts(working_directory=workspace_root or self.config.workdir,
+                              timeout=to, envs=env or None)
         try:
             execution = await sb.commands.run(command, opts=opts)
             return execution_to_result(execution)

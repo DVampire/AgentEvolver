@@ -1,8 +1,9 @@
 """Per-session filesystem sandbox and staged-extension promotion.
 
-The agent never writes to the shared extension tree.  Each Project/Session owns
-``<project_root>/extension`` as a writable staging tree; promotion is an
-explicit, auditable copy into the shared extension root after validation.
+Each Project/Session owns ``<project_root>/extension`` as a staging tree;
+promotion remains an explicit, auditable copy into the shared extension root.
+All mounted session resources, including framework source and the shared
+extension library, are writable within the sandbox's filesystem boundary.
 """
 
 from __future__ import annotations
@@ -64,8 +65,7 @@ def _remove_entry(path: Path) -> None:
 class ProjectSandbox:
     """Host-visible filesystem roots for one isolated Project/Session.
 
-    ``workspace_root`` and ``extension_root`` are the only writable roots
-    exposed to an agent.  The staged extension root is deliberately inside the
+    All exposed roots are writable. The staged extension root is inside the
     project output tree, so users can inspect it locally before promotion.
     """
 
@@ -142,12 +142,13 @@ class ProjectSandbox:
         }
 
     def mounts(self) -> List[Dict[str, str]]:
-        """Expose only the session roots an agent is allowed to access."""
+        """Expose writable resources together under the command workspace."""
         return [
             {"source": str(self.workspace_root), "target": "/workspace", "mode": "rw"},
-            {"source": str(self.extension_root), "target": "/extension", "mode": "rw"},
-            {"source": str(self.package_root), "target": "/package", "mode": "ro"},
-            {"source": str(self.shared_extension_root), "target": "/extension-base", "mode": "ro"},
+            {"source": str(self.extension_root), "target": "/workspace/.agentevolver/extension", "mode": "rw"},
+            {"source": str(self.log_root), "target": "/workspace/.agentevolver/log", "mode": "rw"},
+            {"source": str(self.package_root), "target": "/workspace/.agentevolver/package", "mode": "rw"},
+            {"source": str(self.shared_extension_root), "target": "/workspace/.agentevolver/extension-base", "mode": "rw"},
         ]
 
     def _load_manifest(self) -> Dict[str, Any]:
@@ -344,28 +345,17 @@ def validate_staged_extension(extension_root: str) -> Dict[str, Any]:
 
 
 def session_writable_roots() -> List[Path]:
-    """Where this run may write: its workspace, and its staged extension tree.
-
-    Not the shared extension library — promotion is the only thing that writes there, and
-    it does so after validation and approval. A run that could write it directly would
-    make every registered component editable by any agent that guessed the path.
-    """
+    """Every exposed session resource is writable, including source and shared code."""
     roots = path_manager.session_roots()
     if not roots:
         return []
-    return [roots["workspace"].resolve(), roots["extension"].resolve()]
+    return [roots[name].resolve() for name in
+            ("workspace", "extension", "log", "package", "shared_extension")]
 
 
 def session_readable_roots() -> List[Path]:
-    """Where this run may read: everything writable, plus its log tree, the installed
-    package, and the shared extension library it will be promoted into."""
-    roots = path_manager.session_roots()
-    if not roots:
-        return []
-    return session_writable_roots() + [
-        roots["log"].resolve(), roots["package"].resolve(),
-        roots["shared_extension"].resolve(),
-    ]
+    """Read and write access cover the same mounted resources."""
+    return session_writable_roots()
 
 
 def check_session_path(ctx: Any = None, path: str = "", *, write: bool) -> Optional[str]:

@@ -99,7 +99,7 @@ class PathManagerServer:
 
     @staticmethod
     def package_dir() -> Path:
-        """The installed package directory — shipped resources, read-only to a run.
+        """The installed package directory, writable when exposed to a session.
 
         Derived from this file's location rather than from the project directory, because
         an installed package and the tree it writes into need not be the same checkout.
@@ -108,7 +108,7 @@ class PathManagerServer:
 
     @classmethod
     def package_resource(cls, *parts: str) -> Path:
-        """Resolve a shipped read-only resource and keep it inside the package."""
+        """Resolve a shipped resource and keep it inside the package."""
         root = cls.package_dir()
         path = root.joinpath(*parts).resolve()
         if not path.is_relative_to(root):
@@ -236,7 +236,7 @@ class PathManagerServer:
 
         ``extension`` and ``shared_extension`` are named apart because they were not named
         apart before: the first is the session's own staging tree, the second is the
-        durable library that only promotion writes to, and a reader had to know which
+        durable library shared across runs, and a reader had to know which
         module they were in to tell which one they had.
         """
         bound = self.session
@@ -302,6 +302,24 @@ class PathManagerServer:
             yield
         finally:
             self._workspace.reset(token)
+
+    def execution_path(self, path: str | Path) -> Path:
+        """Project a host workspace path into the shell's mounted workspace.
+
+        Host-side readers keep using ``get``. Only paths shown to the agent are
+        translated when its shell runs in a separate task container. The launcher
+        declares both sides of that mount; sibling sessions and other host roots
+        must not be mistaken for paths available inside this container.
+        """
+        value = Path(path).expanduser()
+        host_workspace = os.environ.get("AGENTEVOLVER_TASK_WORKSPACE", "").strip()
+        if not os.environ.get("AGENTEVOLVER_EXEC_CONTAINER", "").strip() or not host_workspace:
+            return value
+        try:
+            relative = value.resolve().relative_to(Path(host_workspace).resolve())
+        except ValueError:
+            return value
+        return Path(os.environ.get("AGENTEVOLVER_EXEC_WORKDIR") or "/workspace") / relative
 
     # ================================================================== #
     # 3. Resolution — key + parameters to an absolute path

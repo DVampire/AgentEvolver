@@ -30,6 +30,13 @@ The agent loop adds it to the volatile context layer after the cached conversati
 so revisions appear immediately and survive history compaction. The plan is the
 coordinator's working document, not a separate model or an execution engine.
 
+For a host controller using Bash in a task container, the launcher declares the host
+mount source with `AGENTEVOLVER_TASK_WORKSPACE` and its container target with
+`AGENTEVOLVER_EXEC_WORKDIR`. The plan context shows the container path (normally
+`/workspace/plan.md`); the plan manager reads and approves the same file through its
+host path. `path_manager.execution_path()` only translates paths under this declared
+mount, so other sessions' paths are never advertised as local container files.
+
 - `auto`: maintain the plan before multi-step work and revise it before acting on
   new feedback. The agent writes it with its normal workspace tools. No approval gate.
 - `plan`: the existing effect gate waits for human approval through `exit_plan_mode`.
@@ -60,6 +67,16 @@ fresh cost assessment against actual resources and intended reuse, with a constr
 and revisit condition. A qualifying experiment becomes an ordered plan step. Its entry
 then records the exact candidate, evaluation evidence, adoption decision and subsequent
 consumer use separately. No qualifying opportunity is a valid recorded assessment.
+
+Self-verification is an explicit discovery boundary: after meaningful local tests,
+debugging, browser checks or final review, separate the product/setup problem from what
+the result teaches about the agent's implementation or verification method. A passing
+check or a first correction can justify a bounded experiment; a different check or operation
+in the same project can be its next consumer. Link the observation, method change and
+comparison in the opportunity entry, and revisit an early “none identified” assessment
+when new evidence arrives. Benchmark discovery uses solver-visible inputs and local
+checks; hidden grading stays outside this loop. A manual diagnosis or a candidate's local
+evaluation is not an official benchmark result.
 
 For example, a browser result that serializes an entire scene may justify investigating
 a bounded observation operation: cite the failed call, identify the next browser check

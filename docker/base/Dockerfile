@@ -130,14 +130,14 @@ RUN curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${
 # The agentevolver framework + sandbox extra (opensandbox / opensandbox-server /
 # docker) so the in-container agent can spawn peer containers through the mounted
 # Docker socket. Editable install off a COPY bakes deps into the image; at runtime
-# the launcher bind-mounts the host repo over /AgentEvolver so source edits are picked up live.
-COPY . /AgentEvolver
-RUN pip install --no-cache-dir -e "/AgentEvolver[sandbox]"
+# the launcher bind-mounts the host repo here so source edits are picked up live.
+COPY . /workspace/AgentEvolver
+RUN pip install --no-cache-dir -e "/workspace/AgentEvolver[sandbox]"
 
 # The host repo is bind-mounted at runtime (different owner uid); mark it safe so
 # git_tool works. WORKDIR is the mounted project.
-RUN git config --global --add safe.directory /AgentEvolver
-WORKDIR /AgentEvolver
+RUN git config --global --add safe.directory /workspace/AgentEvolver
+WORKDIR /workspace/AgentEvolver
 
 # Entrypoint runs the command as root (pip install + Docker socket access) and, on
 # exit, chowns the run's outputs back to the mounted project's host owner so they are

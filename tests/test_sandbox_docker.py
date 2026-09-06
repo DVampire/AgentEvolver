@@ -52,8 +52,8 @@ def test_every_requested_mount_reaches_the_container():
     framework checkout and the interpreter have to appear at their *host* paths, because
     the forwarder inside the container is started from those paths verbatim."""
     args = _args(mounts={"/host/repo": "/AgentEvolver", "/host/env": "/host/env"})
-    assert "/host/repo:/AgentEvolver" in _pairs(args, "-v")
-    assert "/host/env:/host/env" in _pairs(args, "-v")
+    assert "/host/repo:/AgentEvolver:rw" in _pairs(args, "-v")
+    assert "/host/env:/host/env:rw" in _pairs(args, "-v")
 
 
 # --------------------------------------------------------------------------- #
@@ -64,7 +64,7 @@ def test_an_egress_socket_brings_the_socket_and_the_proxy_variables():
     the agent's curl and git as much as the framework's own model calls — has one route
     out, and that route checks the policy."""
     args = _args(network=False, egress_socket="/tmp/agentevolver-egress/x.sock", egress_port=9000)
-    assert "/tmp/agentevolver-egress/x.sock:/run/egress.sock" in _pairs(args, "-v")
+    assert "/tmp/agentevolver-egress/x.sock:/run/egress.sock:rw" in _pairs(args, "-v")
     env = _pairs(args, "-e")
     assert "HTTPS_PROXY=http://127.0.0.1:9000" in env
     assert "HTTP_PROXY=http://127.0.0.1:9000" in env

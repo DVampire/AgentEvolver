@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
-description: Turn a concrete reusable improvement opportunity into a small verified framework capability change. Use for learning from a first correction or success, expected reuse, a better quality/cost/reliability method even when the task already works, a missing capability, or an explicit component request. Repeated failure is not required. Covers inspect → generate/optimize → evaluate → keep/rollback/unload across all eight component types. NOT for ordinary edits to the user's deliverable.
-version: 2.3.0
+description: Turn a concrete reusable improvement opportunity into a small verified framework capability change. Use for learning from self-verification, a first correction or success, expected reuse, a better quality/cost/reliability method even when the task already works, a missing capability, or an explicit component request. Repeated failure is not required. Covers inspect → generate/optimize → evaluate → keep/rollback/unload across all eight component types. NOT for ordinary edits to the user's deliverable.
+version: 2.4.0
 license: N/A
 type: [orchestrator]
 category: meta
@@ -45,6 +45,19 @@ and close a detected opportunity; task wording or a component quota is not execu
 Do not apply a second, stricter trigger gate here. A first correction, successful discovery,
 expected reuse, or better method can justify an experiment even if direct task work could
 succeed. Repeated failure and a broken baseline are not required.
+
+For an opportunity discovered during self-verification, capture the local check and what
+it revealed, then separate the immediate product/setup fix from the reusable method change.
+For example, an incomplete check may motivate a verification skill; repeated manual extraction
+of diagnostics may motivate an operation; a reasoning omission may motivate an agent/prompt
+alternative. Choose from the evidence and existing capabilities, not from these examples.
+Describe how the method would catch or avoid the mistake on a different permitted case.
+A different check or operation in the same project can supply that reuse case. Do not embed
+the current task's answer and call it a general capability, or count a summary as adoption.
+
+Keep benchmark discovery and candidate evaluation within solver-visible task inputs and
+local checks. Official grading remains outside this loop; do not inspect hidden tests or
+reference patches, alter grading, or claim a candidate comparison as an official score.
 
 A new product experience can begin this investigation before any failure. Translate the
 chosen experience into a concrete operation or observation, inspect existing capabilities

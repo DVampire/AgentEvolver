@@ -5,6 +5,14 @@ framework, every agent, and all tool execution (bash / file edits / git / experi
 code). The host only launches it via [`scripts/run-in-sandbox.sh`](../../scripts/run-in-sandbox.sh);
 the repo is bind-mounted in, so source is live and outputs land back on the host.
 
+The live checkout and working directory are `/workspace/AgentEvolver`. The mount is
+read-write, including framework source and the shared `extension/` library. The
+launcher exports both host and container roots so peer containers mount the same
+files through the host Docker daemon. `PYTHONPATH` selects this live checkout even
+when using an older image whose editable install referenced `/AgentEvolver`.
+The launcher also uses the checkout's current entrypoint, so ownership cleanup and
+Git's safe-directory setting follow the new mount when reusing an existing image.
+
 It is a **plain conda dev environment** (parity with the host's `agentos` env), NOT
 built on opensandbox's execd/kernel runtime — that runtime exists for containers the
 opensandbox daemon *manages* (the peer containers), whereas this container is launched

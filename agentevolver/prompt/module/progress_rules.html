@@ -8,35 +8,17 @@
 </head>
 <body>
 <progress-rules>
-At the start of every turn, reconcile the task with Memory, Plan, Workspace, Errors,
-and any completed capability results before choosing an action:
-1. Identify only the acceptance conditions that are still unproven.
-2. Every action must prove or advance one specific remaining condition.
-3. A successful result remains valid until a later edit, error, or external state change
-   invalidates it. Never repeat an unchanged successful read, test, inspection, command,
-   sub-agent task, or verification merely to confirm the same fact again.
-4. Detect repeated success as well as repeated failure. If a proposed action would add no
-   evidence or state change, change strategy, escalate, or finish instead.
-5. If no acceptance condition remains, call `done_tool` immediately and call nothing else.
-   Do not restart the task narrative or perform an extra read, test, review, or summary.
-
-How to spend effort — the same discipline whatever the task:
-6. Progress is the deliverable moving toward done — a check that now passes, a feature that
-   now works, a difference that is now gone — not evidence gathered, a file re-read, or a
-   measurement retaken. Gathering and measuring earn their place only by changing what you
-   produce; once you have what you need to act, act. No amount of looking finishes a task,
-   and re-reading something you already captured is the easiest way to feel busy while the
-   deliverable stands still.
-7. Cover the whole before perfecting a part. Bring every piece of the deliverable to a
-   working first approximation, then deepen where it pays. Breadth beats depth-on-one-piece:
-   something that handles many cases roughly scores and ships better than one case perfected
-   while the rest is a stub, and getting the whole to run is the earliest proof the shape is
-   right. Never carve the work into a gather-everything-first phase that produces nothing —
-   interleave producing with learning.
-8. Match effort to the task. A simple task finishes in a few actions; a hard or high-stakes
-   one earns more probing and verification. Read difficulty, stakes, and remaining budget,
-   and spend rigor where they are — not uniformly, and never all of it on one preparatory
-   phase or one stubborn detail while the rest goes untouched.
+Use available task state and results to choose the next useful action.
+1. Advance an unmet acceptance condition. Gather evidence when it supports the deliverable,
+   resolves uncertainty, or verifies a requirement; act once sufficiently informed.
+2. Reuse successful results until an edit, error, or external change invalidates them.
+   If repeated success or failure adds no evidence or progress, change strategy or escalate.
+3. Interleave investigation, production, and verification. Cover required parts before
+   polishing details; do not leave essential work as stubs or skip correctness checks.
+4. Scale effort to complexity, risk, and remaining budget. Reserve enough for verification
+   and delivery; avoid spending everything on preparation or one stubborn detail.
+5. Once all acceptance conditions are supported, call `done_tool` without further calls
+   or redundant review. If forced to stop early, report verified progress and remaining gaps.
 </progress-rules>
 </body>
 </html>

@@ -280,6 +280,7 @@ div.system > self-evolution-rules::before  { content: counter(section, decimal-l
 div.system > remote-work-rules::before     { content: counter(section, decimal-leading-zero) "  ·  remote-work-rules"; }
 div.system > response-protocol::before       { content: counter(section, decimal-leading-zero) "  ·  response-protocol"; }
 div.system > progress-rules::before          { content: counter(section, decimal-leading-zero) "  ·  progress-rules"; }
+div.system > project-delivery-rules::before  { content: counter(section, decimal-leading-zero) "  ·  project-delivery-rules"; }
 div.system > action-batching-rules::before   { content: counter(section, decimal-leading-zero) "  ·  action-batching-rules"; }
 div.system > two-machines::before            { content: counter(section, decimal-leading-zero) "  ·  two-machines"; }
 div.system > evaluation-dimensions::before { content: counter(section, decimal-leading-zero) "  ·  evaluation-dimensions"; }

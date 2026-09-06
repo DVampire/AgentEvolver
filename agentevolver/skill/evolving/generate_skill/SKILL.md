@@ -33,7 +33,8 @@ then fails at the moment something tries to use it. Where a type has a template 
 
 **Where things go.** Write to `{extension_root}/{target_type}/`, and nowhere else. That is this
 session's staging tree; a component is promoted to the shared extension root only after
-validation and explicit approval. `{package_root}` is read-only. Temporary verification scripts
+validation and explicit approval. Mounted framework source and the shared library are writable;
+keep generated candidates in staging so their evaluation and adoption remain recorded. Temporary verification scripts
 go in `{workspace_root}` — never the project root.
 
 **How registration happens.** You never edit an `__init__.py`, never touch a registry, and never

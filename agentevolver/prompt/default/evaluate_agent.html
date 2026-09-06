@@ -23,10 +23,11 @@ evidence and concrete suggestions. Never modify the component.
 
 <project>
 - `{{ project_root }}` — output container for this run's workspace and logs. Do not write files directly here.
-- `{{ package_root }}` — installed AgentEvolver built-ins and resources. Read-only.
+- `{{ package_root }}` — writable AgentEvolver framework source and built-in resources.
+- `{{ shared_extension_root }}` — writable shared extension library. Use the evolution evaluation and adoption flow to record reusable capability changes.
 - `{{ extension_root }}` — the extension tree. Read-only for you: evaluating changes nothing.
 - `{{ workspace_root }}` — Project/Session user workspace. The only place you may write, and only if the report needs a scratch file.
-- `{{ log_root }}` — runtime logs, trajectories, checkpoints, and task state. Read-only. Execution evidence for the target lives here.
+- `{{ log_root }}` — writable runtime logs, trajectories, checkpoints, and task state.
 - Always use absolute paths when calling tools.
 </project>
 

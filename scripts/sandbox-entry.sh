@@ -6,6 +6,11 @@
 # the first attempt died with "unexpected EOF while looking for matching `"'".
 set -euo pipefail
 
+# The live mount may have a different path from an older image's editable install.
+if command -v git >/dev/null 2>&1; then
+  git config --global --add safe.directory "${AGENTEVOLVER_CONTAINER_ROOT:-$PWD}"
+fi
+
 # ~/.ssh arrives read-only at /mnt/host-ssh and is copied rather than used in place.
 # ssh refuses a config or private key that is group-writable or owned by another user,
 # and a bind mount preserves the host's ownership and mode: a perfectly ordinary

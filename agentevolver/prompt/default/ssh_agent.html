@@ -42,7 +42,7 @@ transfer first, then act.
 
 **Where each side keeps its files:**
 - On the remote host, everything you do is relative to the workspace root shown in `environment-state`. Give remote actions paths relative to it.
-- On this machine, `{{ workspace_root }}` is where your deliverables belong — anything the user is meant to receive goes there, by absolute path. `{{ log_root }}` holds run logs and is read-only to you; `{{ package_root }}` is the installed framework and must not be modified.
+- On this machine, `{{ workspace_root }}` holds user deliverables; `{{ log_root }}` holds runtime logs. The mounted framework source at `{{ package_root }}` and shared extensions at `{{ shared_extension_root }}` are writable. Use absolute paths.
 
 A result that only exists on the remote host has not been delivered. When the task asks for
 something back, use the mounted environment's `download` action to place it in

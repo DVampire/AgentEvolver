@@ -20,13 +20,15 @@ from agentevolver.sandbox.types import SandboxConfig
 
 #: Container paths the entrypoint reads. Mirrored in docker/vscode/.
 CONTAINER_WORKSPACE = "/workspace"
-CONTAINER_EXTENSIONS = "/ide/extensions"
-CONTAINER_USER_DATA = "/ide/user-data"
+CONTAINER_EXTENSIONS = "/workspace/.agentevolver/ide/extensions"
+CONTAINER_USER_DATA = "/workspace/.agentevolver/ide/user-data"
+CONTAINER_FRAMEWORK = "/workspace/.agentevolver/framework"
+CONTAINER_SHARED_EXTENSION = "/workspace/.agentevolver/extension-base"
 #: $HOME inside the image (empty there, so mounting over it shadows nothing).
 #: The coding agents keep their credentials in it — ~/.codex, ~/.claude — so
 #: without a mount every `codex login` would be lost the next time the container
 #: is reaped.
-CONTAINER_HOME = "/home/workspace"
+CONTAINER_HOME = "/workspace/.agentevolver/ide/home"
 
 
 def base_path(session_id: str) -> str:
@@ -98,7 +100,9 @@ class IdeManagerServer:
             # beside them stay owner-wide: those are worth installing once.
             user_data = path_manager.get(P.SESSION_IDE_USER_DATA, owner=owner, session_id=session_id)
             home = path_manager.get(P.IDE_HOME, owner=owner)
-            for directory in (workspace, extensions, user_data, home):
+            framework = path_manager.package_dir().parent
+            shared_extension = path_manager.get(P.EXTENSION)
+            for directory in (workspace, extensions, user_data, home, shared_extension):
                 directory.mkdir(parents=True, exist_ok=True)
 
             from agentevolver.sandbox.default.vscode import VscodeSandbox
@@ -107,12 +111,21 @@ class IdeManagerServer:
                 timeout_minutes=self.container_timeout_minutes,
                 # Extensions install from the Open VSX registry over the network.
                 network=True,
-                env={**self._agent_credentials(), "IDE_BASE_PATH": base_path(session_id)},
+                workdir=CONTAINER_WORKSPACE,
+                env={**self._agent_credentials(), "IDE_BASE_PATH": base_path(session_id),
+                     "IDE_EXTENSIONS_DIR": CONTAINER_EXTENSIONS,
+                     "IDE_USER_DATA_DIR": CONTAINER_USER_DATA,
+                     "HOME": CONTAINER_HOME,
+                     "PYTHONPATH": CONTAINER_FRAMEWORK,
+                     "AGENTEVOLVER_HOME": CONTAINER_FRAMEWORK,
+                     "AGENTEVOLVER_EXTENSION_ROOT": CONTAINER_SHARED_EXTENSION},
                 mounts={
                     str(workspace): CONTAINER_WORKSPACE,
                     str(extensions): CONTAINER_EXTENSIONS,
                     str(user_data): CONTAINER_USER_DATA,
                     str(home): CONTAINER_HOME,
+                    str(framework): CONTAINER_FRAMEWORK,
+                    str(shared_extension): CONTAINER_SHARED_EXTENSION,
                 },
             ))
             logger.info(f"| 🟢 IDE starting for session {session_id} ({workspace})")

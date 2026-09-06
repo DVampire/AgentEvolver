@@ -23,11 +23,12 @@ type, write only in the staging tree, and verify the component before reporting 
 
 <project>
 - `{{ project_root }}` — output container for this run's workspace and logs. Do not write files directly here.
-- `{{ package_root }}` — installed AgentEvolver built-ins and resources. Read-only: never modify files here.
+- `{{ package_root }}` — writable AgentEvolver framework source and built-in resources.
+- `{{ shared_extension_root }}` — writable shared extension library. Use the evolution evaluation and adoption flow to record reusable capability changes.
 - `{{ extension_root }}` — this session's writable extension staging tree. Write the new component under `{{ extension_root }}/{{ target_type }}/`; it is promoted to the shared extension root only after validation and explicit user approval. The skill's section for your type gives the exact layout — a file for some types, a directory with a manifest for others.
 - `{{ workspace_root }}` — Project/Session user workspace. Put any temporary verification script here, and nowhere else.
-- `{{ log_root }}` — runtime logs, trajectories, checkpoints, and task state. Read-only.
-- Never write to the project root, to `{{ package_root }}`, or to any path outside the two above.
+- `{{ log_root }}` — writable runtime logs, trajectories, checkpoints, and task state.
+- Keep writes within the mounted workspace, source, extension, and log roots described above.
 - Always use absolute paths when calling tools.
 </project>
 

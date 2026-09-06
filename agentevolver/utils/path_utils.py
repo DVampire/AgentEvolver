@@ -9,7 +9,7 @@ _REPO_ROOT = _PACKAGE_ROOT.parent
 
 
 def package_root() -> Path:
-    """The installed package directory, containing shipped read-only resources."""
+    """The installed package directory, containing shipped framework resources."""
     return _PACKAGE_ROOT
 
 
@@ -81,7 +81,7 @@ def get_extension_root() -> str:
 
 
 def get_package_root() -> str:
-    """The installed package directory — for shipped, read-only resources."""
+    """The installed package directory — for shipped framework resources."""
     return str(package_root())
 
 
