@@ -245,6 +245,27 @@ def test_builder_prompt_requires_independent_preview_before_first_release():
     assert "Publish only after `VERDICT: PASS`" in verify
     assert "public gateway path, not its internal port" in verify
     assert "Do not use its resident job for preview testing" in verify
+    text = " ".join(prompt.split())
+    for rule in ("including development smoke checks", "a local browser self-test is not a prerequisite",
+                 "Do not first build a second browser-testing stack",
+                 "They never replace independent preview acceptance",
+                 "do not silently switch to ad hoc CDP"):
+        assert rule in text
+
+
+def test_webapp_skill_routes_browser_checks_before_optional_scripts():
+    path = Path(__file__).resolve().parents[1] / "agentevolver/skill/web/webapp_testing_skill/SKILL.md"
+    source = path.read_text()
+    routing, scripts = source.split("## Scripted tests: a separate, conditional path", 1)
+    text = " ".join(routing.split())
+    for rule in ("already operate a browser environment", "mounted `browser_agent`",
+                 "version-pinned `release_url`", "Website User Agents supply preferences",
+                 "not a prerequisite to delegation", "blocker, not a pass"):
+        assert rule in text
+    assert "To test local web applications, write native Python Playwright scripts." not in source
+    assert "cannot satisfy a requirement for independent Browser Agent approval" in " ".join(scripts.split())
+    assert "Do not require `networkidle` for every application" in source
+    assert "Preserve test exit codes" in source
 
 
 @pytest.mark.asyncio
@@ -446,12 +467,14 @@ def test_next_release_does_not_require_an_evolution_decision(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_keep_decision_requires_real_change_and_evaluation(monkeypatch):
+async def test_keep_decision_rejects_self_reported_evaluation_without_run_id(monkeypatch):
     from agentevolver.extension import extension_manager
 
     component = SimpleNamespace(version="1.0.0")
     manifest = SimpleNamespace(find=lambda module, name: component)
-    monkeypatch.setattr(extension_manager, "read_manifest", lambda: manifest)
+    # Patch the class, not the singleton: restoring a bound method on the instance
+    # would shadow later tests' class-level patches and leak across test cases.
+    monkeypatch.setattr(type(extension_manager), "read_manifest", lambda self: manifest)
     contract = {
         "evolution_runs": [
             {
@@ -487,8 +510,11 @@ async def test_keep_decision_requires_real_change_and_evaluation(monkeypatch):
         ),
     )
 
-    assert response.success is True
-    assert contract["evolution_decisions"][0]["decision"] == "keep"
+    # Legacy website-local success flags and prose are not an independent evaluator
+    # receipt. Keeping a candidate now requires the completed evaluation's run_id.
+    assert response.success is False
+    assert "completed independent evaluation run_id" in response.message
+    assert contract["evolution_decisions"] == []
 
 
 @pytest.mark.asyncio

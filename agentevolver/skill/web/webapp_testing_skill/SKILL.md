@@ -1,7 +1,7 @@
 ---
 name: webapp_testing_skill
-description: "Toolkit for interacting with and testing local web applications using Playwright. Supports verifying frontend functionality, debugging UI behavior, capturing browser screenshots, and viewing browser logs."
-version: "1.0.0"
+description: "Route browser interaction checks through the existing Browser Agent or browser environment. Supports bounded UI verification, screenshots and diagnostics; Playwright scripts are for explicit automation or reusable regression coverage, not a prerequisite for independent preview acceptance."
+version: "1.1.0"
 type: worker
 license: "Complete terms in LICENSE.txt"
 category: testing
@@ -10,17 +10,45 @@ metadata: {}
 ---
 # Web Application Testing
 
-To test local web applications, write native Python Playwright scripts.
+## Choose the existing browser capability first
+
+- If you already operate a browser environment, use its observation/action interface for
+  navigation, input, screenshots and diagnostics. Do not start a second browser or delegate
+  recursively just because you are reading this skill.
+- If you orchestrate a mounted `browser_agent`, delegate browser interaction checks to it.
+  Keep syntax, unit and build checks local. For a built web product, use `deploy_tool` preview
+  and pass the returned version-pinned `release_url`, source revision and a finite set of
+  user journeys to the Browser Agent. Follow the caller's release protocol, including its
+  explicit `site_url` fallback when a pinned URL is unavailable. Do not substitute a source
+  server port for a deployed URL.
+- Wait for the Browser Agent's report and inspect its concrete observations. Fix the source
+  when needed, deploy a fresh preview, and recheck affected journeys. A changed revision needs
+  new verification. Builder-authored scripts and HTTP health checks do not replace independent
+  acceptance; Website User Agents supply preferences and feedback, not technical approval.
+- Creating a Playwright smoke script, starting Chromium or opening a CDP port is not a
+  prerequisite to delegation. On a permission, connection or browser-start failure, report
+  the exact failed phase; use an authorized recovery path rather than switching launchers,
+  disabling isolation or retrying the same failing setup. Unavailable verification is a
+  blocker, not a pass.
+
+## Scripted tests: a separate, conditional path
+
+Use the examples below when the task explicitly needs browser automation or a maintained
+regression suite. If no browser capability is available, authorized scripts may provide
+development evidence, but cannot satisfy a requirement for independent Browser Agent approval.
+Do not take this path merely to avoid a delegated check or to recover from a denied operation.
+Prefer the project's existing test runner and browser configuration over creating another stack.
 
 **Helper Scripts Available**:
+
 - `scripts/with_server.py` - Manages server lifecycle (supports multiple servers)
 
 **Always run scripts with `--help` first** to see usage. DO NOT read the source until you try running the script first and find that a customized solution is abslutely necessary. These scripts can be very large and thus pollute your context window. They exist to be called directly as black-box scripts rather than ingested into your context window.
 
-## Decision Tree: Choosing Your Approach
+## Script setup (only after selecting the scripted path)
 
 ```
-User task → Is it static HTML?
+Scripted test → Is it static HTML?
     ├─ Yes → Read HTML file directly to identify selectors
     │         ├─ Success → Write Playwright script using selectors
     │         └─ Fails/Incomplete → Treat as dynamic (below)
@@ -30,7 +58,7 @@ User task → Is it static HTML?
         │        Then use the helper + write simplified Playwright script
         │
         └─ Yes → Reconnaissance-then-action:
-            1. Navigate and wait for networkidle
+            1. Navigate and wait for an application-specific ready condition
             2. Take screenshot or inspect DOM
             3. Identify selectors from rendered state
             4. Execute actions with discovered selectors
@@ -60,8 +88,8 @@ from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True) # Always launch chromium in headless mode
     page = browser.new_page()
-    page.goto('http://localhost:5173') # Server already running and ready
-    page.wait_for_load_state('networkidle') # CRITICAL: Wait for JS to execute
+    page.goto('http://localhost:5173', wait_until='domcontentloaded', timeout=30000)
+    page.locator('main').wait_for(state='visible', timeout=10000) # Replace with this app's ready signal
     # ... your automation logic
     browser.close()
 ```
@@ -81,8 +109,9 @@ with sync_playwright() as p:
 
 ## Common Pitfall
 
-❌ **Don't** inspect the DOM before waiting for `networkidle` on dynamic apps
-✅ **Do** wait for `page.wait_for_load_state('networkidle')` before inspection
+Do not require `networkidle` for every application: streaming, polling and games may never
+be network-idle. Wait for a bounded, application-specific ready condition before inspection;
+a visible canvas alone does not prove that rendering and input work. Verify actual behavior.
 
 ## Best Practices
 
@@ -90,7 +119,9 @@ with sync_playwright() as p:
 - Use `sync_playwright()` for synchronous scripts
 - Always close the browser when done
 - Use descriptive selectors: `text=`, `role=`, CSS selectors, or IDs
-- Add appropriate waits: `page.wait_for_selector()` or `page.wait_for_timeout()`
+- Prefer bounded locator or application-state waits over arbitrary sleeps.
+- Preserve test exit codes and report failing assertions, browser errors and unavailable checks;
+  successful shell execution alone is not a passing test.
 
 ## Reference Files
 
