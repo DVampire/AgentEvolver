@@ -44,6 +44,31 @@ accepted/deferred changes and reasons, the next experiment, and its evidence.
 Implementation, technical verification and user confirmation remain separate states.
 Workers do not maintain copies of this document.
 
+When `use_plan` and the shared evolution policy are enabled, the live planning context also
+requires an **Evolution opportunities** section near the top of `plan.md`. This applies
+to Meta and Builder through the shared agent loop; it adds no automatic plan obligation
+to leaf workers and is omitted in `off` mode. An explicitly active review gate still
+applies: describing an experiment does not authorize executing it before approval.
+Policy availability comes from the system prompt's scoped capability roster and
+permissions; `enable_evolving` describes target mutability, not this permission.
+
+Each concrete opportunity has a stable ID, source evidence, reusable operation or
+method, intended consumer/next use, expected benefit, inspected capabilities or next
+discovery step, smallest experiment and baseline/reuse checks, and a status/next action
+with rationale. Replanning preserves unresolved entries. Repeated deferral requires a
+fresh cost assessment against actual resources and intended reuse, with a constraint
+and revisit condition. A qualifying experiment becomes an ordered plan step. Its entry
+then records the exact candidate, evaluation evidence, adoption decision and subsequent
+consumer use separately. No qualifying opportunity is a valid recorded assessment.
+
+For example, a browser result that serializes an entire scene may justify investigating
+a bounded observation operation: cite the failed call, identify the next browser check
+as consumer, compare useful diagnostic coverage and output size, and test an independent
+page before adoption. This is an illustration, not a required capability or a prefilled
+plan. The coordinator authors the assessment from its run's evidence. Runtime projects
+the instructions and latest document; it does not semantically validate these decisions,
+force an evolution quota, or treat a written opportunity as verified evolution.
+
 Website Builder also projects current-release feedback status every step. Deployment
 receipts carry `subscriber_min_turns`, and `job__wait(min_turns_by_job=...)` waits for
 each subscriber's own execution count. A retry does not renumber the product release.

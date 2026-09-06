@@ -8,7 +8,7 @@ Directory names match each product's identity and purpose; use the paths below i
 | `arkbound_game/` | ECHO — Arkbound | A visually striking 3D ocean exploration game with meaningful voyages and player agency. |
 | `commonspace_forum/` | COMMONSPACE — A living forum | A beautiful shared community where visitors discover, contribute to and revisit real conversations. |
 | `lumen_museum/` | LUMEN — Museum of AI & Technology | An educational museum where manipulating exhibits helps visitors understand real technological ideas. |
-| `orbital_simulator/` | ORBITAL — An interactive universe observatory | A scientifically grounded space simulator for exploration, causal experiments and comparison. |
+| `orbital_simulator/` | ORBITAL — A living universe | A grand 3D journey through many galaxies, the Milky Way and the Solar System, with explained reference frames and physically grounded motion. |
 
 Each directory includes a complete, matching set of inputs:
 

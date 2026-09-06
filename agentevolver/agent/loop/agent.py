@@ -253,6 +253,9 @@ class Agent(BaseModel):
         self.task: str = ""
         self.step: int = 0
         self._routing: Dict[str, Any] = {}
+        # Reuse the system prompt's scoped policy decision in live planning. Target
+        # mutability is independent of whether this agent can run an evolution loop.
+        self._evolution_policy_enabled = False
         self._notes: List[str] = []
         self._model_failures = 0
         self._truncated_turns = 0
@@ -905,6 +908,7 @@ class Agent(BaseModel):
                 ("tool", "inspect_tool"), ("skill", "self_evolving_skill"),
             }
             evolution_enabled = required.issubset(routes)
+        self._evolution_policy_enabled = evolution_enabled
         roots = path_manager.session_roots() or {}
         return {
             "evolution_enabled": evolution_enabled,
@@ -1237,6 +1241,7 @@ class Agent(BaseModel):
         self._notes = []
         planning = plan_manager.context(
             str(getattr(self.ctx, "id", "") or ""), enabled=self.use_plan,
+            evolution_enabled=self._evolution_policy_enabled,
         )
         if planning:
             blocks.append(planning)

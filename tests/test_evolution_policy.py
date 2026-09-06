@@ -24,7 +24,7 @@ ROUTES = {
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cls", [MetaAgent, WebsiteBuilderAgent])
 @pytest.mark.parametrize("deferred", [False, True])
-async def test_policy_reaches_real_prompt_without_evolution_task(cls, deferred):
+async def test_policy_reaches_real_prompt_without_evolution_task(cls, deferred, bound_session):
     agent = cls(enable_evolving=False)  # Target mutability is not the runtime switch.
     agent.task = "Build a small usable site."
     ctx = SimpleNamespace(id=f"policy-{cls.__name__}-{deferred}", extra={})
@@ -34,6 +34,14 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, deferred):
     try:
         values = await agent.prompt_modules(ctx)
         assert values["evolution_enabled"] is True
+        # The same decision must reach live planning, including deferred capabilities.
+        from agentevolver.plan.server import plan_manager
+
+        agent.middleware = []
+        agent.ctx = ctx
+        agent.environment_state = AsyncMock(return_value="")
+        assert "Evolution opportunities" in "\n".join(await agent._live_blocks(0))
+        assert not plan_manager.active(ctx.id)
         cfg = parse_prompt_file(str(ROOT / "agentevolver/prompt/default" / f"{agent.name}.html"))
         message = await cfg.to_prompt().get_system_message(values, reload=True)
         rendered = " ".join(message.text.split())
@@ -56,21 +64,27 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, deferred):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("missing", list(ROUTES))
-async def test_incomplete_roster_cannot_enable_policy_with_task_words(missing):
+async def test_incomplete_roster_cannot_enable_policy_with_task_words(missing, bound_session):
     agent = MetaAgent(enable_evolving=True)
     agent.task = "You must evolve all eight components."
     agent.router = SimpleNamespace(schemas=AsyncMock(return_value=([], {
         n: r for n, r in ROUTES.items() if n != missing})))
     values = await agent.prompt_modules(SimpleNamespace(id=f"missing-{missing}", extra={}))
     assert values["evolution_enabled"] is False
+    agent.middleware = []
+    agent.environment_state = AsyncMock(return_value="")
+    assert "Evolution opportunities" not in "\n".join(await agent._live_blocks(0))
 
 
 @pytest.mark.asyncio
-async def test_read_only_policy_stays_off_even_with_full_roster():
+async def test_read_only_policy_stays_off_even_with_full_roster(bound_session):
     agent = MetaAgent(permission_mode="read_only")
     agent.router = SimpleNamespace(schemas=AsyncMock(return_value=([], ROUTES)))
     values = await agent.prompt_modules(None)
     assert values["evolution_enabled"] is False
+    agent.middleware = []
+    agent.environment_state = AsyncMock(return_value="")
+    assert "Evolution opportunities" not in "\n".join(await agent._live_blocks(0))
     agent.router.schemas.assert_not_awaited()
 
 

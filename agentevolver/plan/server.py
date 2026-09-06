@@ -119,6 +119,34 @@ AUTO_MODE_NOTICE = (
     "plan; workers report results to you and need not maintain their own plans."
 )
 
+# Only coordinators with evolution enabled receive this planning obligation. The
+# document records decisions; it neither invents candidates nor authorizes adoption.
+EVOLUTION_PLAN_NOTICE = (
+    "Maintain a compact 'Evolution opportunities' section near the top of plan.md. "
+    "At initial planning and when feedback, a correction, verification, or replanning "
+    "reveals useful evidence, review both new and outstanding opportunities under the "
+    "shared self-evolution rules. A missing capability is not the only signal: consider "
+    "reusable learning, expected reuse, a better method, and new user experiences. "
+    "For each concrete opportunity keep a stable ID and record: evidence/source; the "
+    "reusable operation or method and its intended consumer/next use; expected benefit "
+    "over the current approach; existing capabilities inspected or a bounded discovery "
+    "step; the smallest experiment, baseline comparison and reuse/regression check; "
+    "and status, next action and decision reason. Mark unknowns and expected savings "
+    "honestly. Before deferring again, reassess the full construction, evaluation, "
+    "integration and rollback cost against actual remaining resources and intended "
+    "reuse; record the constraint and a concrete revisit condition. 'Product work "
+    "first' or fewer remaining releases alone is not a cost assessment. When evidence, "
+    "consumer and verification are concrete and the loop fits, schedule the bounded "
+    "experiment in the ordered plan and execute it through the shared evolution rules. "
+    "Update the same entry with candidate identity/version, evaluation evidence, "
+    "keep/rollback/unload decision and later actual consumer use as they occur. "
+    "Keep proposed, evaluated, adopted and used distinct; a plan entry or product edit "
+    "is not evolution. Preserve unresolved entries when rewriting or compacting the "
+    "plan, linking lengthy evidence separately. If no opportunity qualifies, briefly "
+    "record that assessment without inventing a candidate or imposing a quota. Review "
+    "at meaningful boundaries, not with a separate model call or a rewrite every step."
+)
+
 PLAN_CONTEXT_MAX_CHARS = 16_000
 
 
@@ -222,7 +250,9 @@ class PlanManagerServer(metaclass=Singleton):
         """Which stance this run is under. `AUTO` for a run nobody has set."""
         return self.state(session_id).mode
 
-    def context(self, session_id: str, *, enabled: bool = False) -> str:
+    def context(
+        self, session_id: str, *, enabled: bool = False, evolution_enabled: bool = False,
+    ) -> str:
         """Project the current document into the volatile layer, never cached history.
 
         Coordinators opt in to automatic planning. A worker gets no automatic plan
@@ -243,6 +273,8 @@ class PlanManagerServer(metaclass=Singleton):
                 "keep the current plan concise and link detailed evidence separately.]"
             )
         notice = PLAN_MODE_NOTICE if state.active else AUTO_MODE_NOTICE
+        if enabled and evolution_enabled:
+            notice += "\n\n" + EVOLUTION_PLAN_NOTICE
         if not text.strip():
             text = "No plan.md exists yet."
         return (

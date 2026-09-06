@@ -3,55 +3,183 @@
 <head>
   <meta charset="UTF-8">
   <meta name="name" content="orbital_simulator">
-  <meta name="description" content="A beautiful, scientifically grounded space simulator for exploration, causal experiments and understanding cosmic motion.">
-  <meta name="version" content="3.0.0">
-  <title>ORBITAL — An interactive universe observatory</title>
+  <meta name="description" content="A grand, realistic 3D universe observatory: explore many galaxies, enter the Milky Way and follow the Solar System through galactic space.">
+  <meta name="version" content="4.0.0">
+  <title>ORBITAL — A living universe</title>
 </head>
 <body><main>
-  <h1>ORBITAL — An interactive universe observatory</h1>
+  <h1>ORBITAL — A living universe</h1>
+
   <section id="product-intent">
-    <h2>Explore the universe through a question</h2>
-    <p>Create a fancy, absorbing and useful browser observatory where visitors explore cosmic motion and investigate why it behaves as it does. Choose a coherent scope: an interactive solar system, an orbital mechanics lab, stellar dynamics or another understandable astronomical system. The initial product should make its chosen phenomenon compelling and usable rather than claim to simulate everything.</p>
-    <p>Let the wonder of a planetarium lead into the agency of a scientific instrument. A visitor should be able to explore, ask a question, change a meaningful condition and understand an observable result. The result is an educational simulator with practical explanatory value, without game progression or invented resource economies.</p>
+    <h2>Feel the universe's scale and understand its motion</h2>
+    <p>Build a magnificent, deeply interactive three-dimensional universe observatory. Visitors
+    explore many galaxies, enter a richly realized Milky Way, find our Solar System within it
+    and descend to planetary detail. They can also observe the Solar System travelling through
+    galactic space while planets orbit the Sun. The experience should inspire the wonder of a
+    great planetarium and give visitors the agency to investigate what they see.</p>
+    <p>This connected cosmic journey is the scope of the first usable release. Develop a complete,
+    visually accomplished route across these scales, with meaningful opportunities to explore
+    alternatives. A small orbital diagram, an isolated physics lab or a cinematic opening that
+    leads to plain information cards does not satisfy the product. The purpose is exploration
+    and scientific understanding, without missions, resources or progression gates.</p>
   </section>
+
+  <section id="cosmic-scale">
+    <h2>Many galaxies, a Milky Way you can enter, a Solar System you can find</h2>
+    <p>Make many galaxies visible as distinct systems with varied morphology, orientation and
+    spatial depth. Let visitors select, approach and inspect multiple galaxies. Choose a
+    substantial but feasible collection; there is no arbitrary object quota. A gallery of
+    interchangeable spiral icons or a star field with renamed points cannot convey this scope.
+    Additional procedural populations can enrich the scene when their illustrative status is clear.</p>
+    <p>The Milky Way deserves particular depth: recognizable spiral structure, a central
+    concentration, a stellar disk with thickness and a surrounding halo. Show how its appearance
+    changes from above, from the side and within the disk. Locate the Solar System using sourced
+    astronomical context. Make the journey from galaxy to solar neighbourhood to planets legible,
+    with spatial continuity, useful orientation and a reliable way back.</p>
+    <p>Planetary views should reward close inspection with three-dimensional form, directional
+    sunlight, distinctive surfaces and appropriate atmospheric or ring detail. Preserve the
+    relationship between these local objects and their larger setting. Choose how selection,
+    navigation and level of detail work; the user should feel they are exploring a connected
+    universe rather than switching between unrelated screens.</p>
+  </section>
+
+  <section id="motion-and-reference-frames">
+    <h2>Follow the Solar System through space</h2>
+    <p>Represent planetary orbital motion together with the Solar System's motion through the
+    Milky Way. Let visitors compare a Sun-centred view with a galactic or clearly defined local
+    inertial view. They should be able to inspect the resulting winding trajectories from
+    different angles, pause at a meaningful moment and understand what each frame shows.</p>
+    <p>Generate trajectories from the composed model, using consistent positions, times and
+    coordinate transformations. Planetary orbits remain approximately coplanar with their actual
+    inclinations; account for the orientation of their plane relative to the Galaxy and to solar
+    motion. Do not assign arbitrary tilts or draw a perfect decorative helix. Winding paths depend
+    on the chosen frame and interval; the Sun does not mechanically drag a line of trailing planets.</p>
+    <p>Handle the enormous difference between planetary and galactic time scales deliberately.
+    Display the active time scale, trail interval, units and relevant scale exaggerations. Keep a
+    coherent physical clock in views presented as physical comparisons. A separately accelerated
+    explanatory view can make a relationship easier to see, but its transformations must be clear.
+    Changing the camera or reference frame should preserve the same physical scenario.</p>
+  </section>
+
   <section id="interaction-depth">
-    <h2>A universe that responds to investigation</h2>
-    <p>Build a coherent explore-experiment-compare loop. Give visitors control over their view and over the relevant model conditions. Make it easy to focus on something interesting, understand the current state, pause or inspect it and return to a known starting point. Choose the controls and representations that suit the phenomenon.</p>
-    <p>Changing a meaningful input must affect simulated behaviour through an implemented model. Changing a camera or display scale should not silently change physical state. Let the visitor compare conditions from an equivalent baseline and connect the visual change to a readable explanation or measurement.</p>
-    <p>A solar-system time explorer, manipulable launch conditions, orbit overlays, a binary-star experiment, synchronized plots or a tour across scales are possible inspirations. They are not a required feature list. Choose a few mutually reinforcing interactions that answer a worthwhile question, and allow free exploration beyond any guided example.</p>
+    <h2>Give curiosity somewhere to go</h2>
+    <p>Support a complete explore-inspect-question-compare journey. Visitors can change their
+    viewpoint and time, focus on interesting objects, inspect a relationship and return to a
+    known state. Design a few meaningful ways to manipulate or compare the model, so the
+    experience goes beyond orbiting a camera and opening fact panels.</p>
+    <p>Choose interactions that strengthen the cosmic journey. Comparing reference frames,
+    tracing a body's history, changing a physical condition in an explicitly hypothetical
+    experiment, relating observations to a model, or following a personally chosen discovery
+    route are possibilities. These are inspiration, not a mandatory collection of panels.
+    Distinguish a visitor's experiment from the reference universe and offer understandable reset.</p>
+    <p>Show the consequence of a changed input through the model and an appropriate visible
+    explanation or measurement. Let visitors repeat a comparison from equivalent conditions.
+    Explanations should help someone answer a question about what they just did, while leaving
+    the main scene available for further exploration.</p>
   </section>
+
   <section id="scientific-integrity">
-    <h2>An honest and understandable model</h2>
-    <p>Choose a physically grounded model appropriate to the scope and available compute. Explain the main assumptions, units, time scale and approximations. Distinguish reference data, computed results and illustrative effects. Cite authoritative sources for factual body data and physical relationships, including a reference epoch where relevant.</p>
-    <p>Make visual exaggerations such as enlarged bodies or compressed distances clear where they affect understanding. Do not imply live ephemerides, general relativity or full gravitational interactions unless actually implemented and checked. A limited, transparent model can be an excellent educational instrument.</p>
-    <p>Handle the failure cases your model makes possible: invalid parameters, numerical instability, a body leaving view or approaching a singularity are examples. Let visitors recover without interpreting a frozen or invalid state as a physical result. Validate representative behaviour and relevant numerical sensitivity; report limits rather than invent precision.</p>
+    <h2>Realism you can explain</h2>
+    <p>Realism means convincing spatial structure, physically grounded motion and traceable
+    information. Use suitable astronomical data, models and imagery, with sources and relevant
+    reference epochs. Distinguish measured catalogue entries, reconstructed structure,
+    statistically generated populations and numerical results. A named real galaxy's appearance
+    and location should not be invented and presented as observation.</p>
+    <p>Choose an appropriate physical model at each scale and explain how the levels connect.
+    Approximate galactic potentials, analytic planetary orbits and numerical experiments can
+    coexist when their assumptions are explicit. A browser need not integrate every star in
+    every galaxy. Do not claim a full cosmological simulation, live ephemerides or verified
+    precision beyond what is implemented. Galactic motion must use an explained model; avoid
+    silently treating the central black hole as the Galaxy's entire gravitating mass.</p>
+    <p>Make compression of distance, enlargement of bodies and other illustrative transformations
+    understandable at the point of use. Keep readouts, trails and labels consistent with them.
+    Validate representative motion, frame transformations and time-step sensitivity where
+    relevant. Handle invalid inputs, lost objects and numerical failure with explicit recovery.</p>
   </section>
+
   <section id="visual-craft">
-    <h2>A spectacular view that rewards close inspection</h2>
-    <p>Give the observatory a memorable visual identity with a strong sense of scale, depth, light and motion. Use scientifically meaningful forms, crafted materials or imagery, clear trajectories or relationships and carefully placed annotations. Choose a rendering approach that makes the phenomenon vivid: immersive 3D is welcome, and other expressive representations can serve specific experiments.</p>
-    <p>Keep the main scene prominent and responsive while visitors investigate. Compose readable time, parameter and comparison controls into the same visual language. Transitions should help orientation; motion should be pausable and labels should remain usable. A static star field behind generic controls or moving spheres unrelated to parameters will not meet the goal.</p>
-    <p>Support accessible selection and adjustment, numeric alternatives where precise manipulation matters, keyboard use, reduced motion and a phone layout designed for the scene. Give expensive effects a graceful fallback and explain rendering failures. Optional sound starts off. Do not trade interaction responsiveness for visual effects.</p>
+    <h2>A universe worth looking into</h2>
+    <p>The principal experience must be genuinely three-dimensional: inspectable volume, depth,
+    parallax, spatially coherent motion and detailed near views. Choose the engine and rendering
+    techniques yourself. Efficient particles, billboards, instancing or procedural detail are
+    welcome inside a coherent 3D world; rotating a flat illustration alone is insufficient.</p>
+    <p>Use a distinctive visual identity with carefully composed light, stellar density, dust,
+    materials, typography and annotation. Let galaxies have character and planets have recognizable
+    detail. Make scale transitions beautiful and useful, with precise selection feedback and a
+    restrained interface that keeps the scene prominent. Visual quality must hold up in ordinary
+    exploration, including side views and close-ups, not only in one staged opening image.</p>
+    <p>Keep navigation responsive as complexity grows. Choose a sensible approach to loading,
+    coordinates and detail levels. Offer appropriate quality controls and honest rendering-failure
+    states. Support keyboard and touch interaction, visible focus, readable contrast, a considered
+    phone layout and reduced camera motion. Visitors must be able to pause and think. Optional
+    sound starts off; essential meaning remains available without it.</p>
   </section>
+
   <section id="lasting-value">
-    <h2>A question someone else can explore</h2>
-    <p>Offer a useful way to retain or reconstruct an investigation: saved conditions, a shareable experiment, an exported comparison or another appropriate artifact. Be clear about the model version and what is preserved. Test the actual return or reconstruction promise, handle older state explicitly and avoid promising identical numerical results across all devices without evidence.</p>
-    <p>Let curiosity and actual confusion guide later changes to the scope, explanation or controls. A new visual theme does not resolve a misunderstanding of the model. Different visitors may want to wander, investigate precisely or demonstrate an idea; their suggestions should have room to change the initial design.</p>
+    <h2>Carry a discovery beyond this visit</h2>
+    <p>Choose a useful way to save and revisit an investigation: a reconstructable shared view,
+    an experiment record, an annotated route or another artifact appropriate to the experience.
+    Preserve the meaningful choices and model settings behind it. Implement the promised reload,
+    export or reconstruction behaviour, identify model versions and handle older state explicitly.</p>
+    <p>Let different visitors enjoy wandering, investigating or explaining. Actual feedback may
+    reshape a journey, a visualization or the model's explanatory layer. A preference for calm
+    observation should coexist with deeper exploration. Improved colours alone do not resolve a
+    user's difficulty understanding motion or finding their place in the universe.</p>
   </section>
+
   <section id="open-horizons">
-    <h2>Let a new idea open a new possibility</h2>
-    <p>A visitor might want to connect a simulated view to observed data, investigate a newly encountered object, compare alternative explanations or tell a visual story about an experiment. Public astronomical catalogues, imagery, time-series data or media are possible resources if the chosen model can use them honestly. There is no required provider, dataset or extra phenomenon.</p>
-    <p>The first release is a starting point, not the limit of what the product may become. A valuable new function can justify investigating an unfamiliar service, format or interaction. Establish feasibility with available documentation and a small experiment, then choose the smallest version that preserves the user value. If access or evidence is missing, explain the dependency instead of simulating a successful integration. Maintain a useful core experience while exploring.</p>
+    <h2>Let discovery create new possibilities</h2>
+    <p>New ideas may involve astronomical catalogues, imagery, recorded observations, media,
+    comparative experiments or a form of exploration not anticipated here. Public APIs and
+    unfamiliar data formats are possible ingredients when they serve a concrete visitor need.
+    No particular provider, dataset or optional phenomenon is required.</p>
+    <p>Investigate worthwhile ideas through relevant documentation and a small feasible experiment.
+    Preserve the essential user value when choosing a bounded implementation. If access or
+    evidence is unavailable, explain the dependency instead of pretending the integration works.
+    The initial design and the currently available tools are not a ceiling on imagination.</p>
   </section>
+
   <section id="creative-freedom">
-    <h2>An open brief with a clear purpose</h2>
-    <p>The purpose and observable quality requirements in this brief are commitments. Named features, layouts, mechanics and technologies offered as possibilities are inspiration, not an acceptance checklist. Choose the product identity, architecture, visual language and interaction design yourself. You may develop a stronger interpretation of the concept if it preserves its purpose.</p>
-    <p>Start with one polished, coherent end-to-end experience that leaves room for discovery and meaningful choices. Decide the appropriate breadth yourself. Expand or rethink it when actual use reveals a worthwhile direction; there is no prescribed feature roadmap or required quota of new ideas. User feedback may challenge the initial design. Explore conflicting preferences without reducing people to prebuilt persona modes.</p>
-    <p>Keep product-development conversations and experiment administration outside the website. The forum naturally includes community conversations, but it is not a Builder feedback ticketing system. Explain what the product actually does, preserve useful visitor work across revisions, and distinguish observed evidence from intended behaviour. Source hashes and repeated deployments alone do not establish an improved visitor experience; demonstrate the relevant before/after interaction.</p>
+    <h2>Strong experience goals, open design choices</h2>
+    <p>The broad galaxy field, explorable Milky Way, connected planetary detail, genuine 3D
+    presentation and explained combined motion are requirements. The collection's exact size,
+    additional phenomena, interaction grammar, interface, branding and architecture are yours
+    to design. Optional examples are invitations, not a feature checklist.</p>
+    <p>Complete a polished route through the required scales first, then let observed use shape
+    further depth. Do not defer the cosmic scope to a hypothetical later version. Users may
+    propose surprising experiences without prescribing implementation, and the Builder may
+    rethink its initial approach to serve them. No fixed roadmap, persona modes or quota of
+    new requests is prescribed.</p>
+    <p>Keep product-development dialogue outside the observatory. Explain what the delivered
+    product actually does and distinguish observed evidence from intention. Source hashes and
+    repeated deployments alone do not establish an improved visitor experience.</p>
   </section>
+
   <section id="quality-evidence">
-    <h2>Investigate the phenomenon you implemented</h2>
-    <p>Choose an end-to-end acceptance journey that fits your design. On the deployed version, explore a meaningful view, pause or inspect a state, change a model condition, compare equivalent starting points and explain the resulting visible or measured difference. Record enough inputs and timing to repeat the comparison. Verify that display-only changes leave physical state intact.</p>
-    <p>Test the promised save or reconstruction flow, important invalid-input recovery, a keyboard route, narrow-screen use and reduced motion. Separately record appropriate scientific checks and visual evidence from actual exploration. After feedback, repeat the relevant investigation; decorative motion and preset labels alone do not prove a working simulator.</p>
+    <h2>Travel through the universe you built</h2>
+    <p>On the exact deployed version, use ordinary controls to inspect multiple galaxies, enter
+    the Milky Way, locate the Solar System, approach a planet and return. Inspect galactic depth
+    from face-on and edge-on viewpoints, and verify that planetary close-ups contain real detail.
+    Capture representative views along this journey and explain what preserves orientation.</p>
+    <p>At equivalent physical conditions, switch reference frames and inspect combined-motion
+    trails. Check their sampled positions against the model and explain the displayed time and
+    distance scales. Try a meaningful model comparison and the offered save/reconstruction flow.
+    Check keyboard use, a narrow screen, reduced motion and important recovery paths. Choose
+    concrete acceptance steps to fit your design rather than inventing an unrelated checklist.</p>
+    <p>Report visual, interactive and scientific evidence separately. A technically functioning
+    selector does not establish a convincing galaxy; impressive animation does not validate
+    physics. After feedback, repeat the affected journey and show an observable change. Record
+    blocked prerequisites and untested claims honestly.</p>
+  </section>
+
+  <section id="reference-starting-points">
+    <h2>Starting points for research</h2>
+    <p>Consult <a href="https://science.nasa.gov/universe/galaxies/">NASA Galaxies</a>,
+    <a href="https://science.nasa.gov/solar-system/solar-system-facts/">NASA Solar System facts</a>
+    and <a href="https://science.nasa.gov/learn/basics-of-space-flight/chapter1-1/">NASA Basics
+    of Space Flight: the Solar System</a>, then inspect the specific data, coordinate conventions
+    and physical-model documentation your design needs. Overview pages are useful starting
+    points; they do not validate a numerical implementation or establish asset usage rights.</p>
   </section>
 </main></body>
 </html>
