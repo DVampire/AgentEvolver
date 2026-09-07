@@ -38,10 +38,15 @@ class TraceIntegrityError(RuntimeError):
 def resolve_integrity_profile(
     value: Any = None, *, ctx: Any = None,
 ) -> TraceIntegrityProfile:
-    """Resolve explicit → context → global configuration, refusing unknown values."""
+    """Resolve explicit → global configuration, refusing unknown values.
+
+    ``ctx`` is accepted and ignored. The middle step used to read
+    ``ctx.extra[TRACE_INTEGRITY_PROFILE_KEY]``, which nothing in the system ever wrote:
+    the profile is declared in ``configs/base.py`` and validated in ``config/validate.py``,
+    so the context branch could only ever be skipped — while suggesting to a reader that a
+    run could carry a different durability policy than the one configured.
+    """
     selected = value
-    if selected is None and ctx is not None:
-        selected = (getattr(ctx, "extra", {}) or {}).get(TRACE_INTEGRITY_PROFILE_KEY)
     if selected is None:
         try:
             from agentevolver.config import config

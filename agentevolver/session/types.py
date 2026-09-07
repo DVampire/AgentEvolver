@@ -213,11 +213,25 @@ class EventWindow(BaseModel):
 
 
 def resolve_workspace_root(ctx: Any = None, fallback: str = "") -> str:
-    """Resolve the effective workspace, preferring an internally-bound child root."""
-    extra = getattr(ctx, "extra", None) or {}
-    scoped = extra.get("execution_cwd")
+    """Resolve the effective workspace, preferring an internally-bound child root.
+
+    ``ctx`` is accepted and ignored, as in :func:`staged_extension_root`: every caller has
+    one to hand, and the answer no longer comes from it. It came from
+    ``ctx.extra["execution_cwd"]``, written by the dispatcher one line after it entered
+    ``path_manager.workspace(...)`` — the same path in two places, of which the mutable
+    copy was the one read.
+    """
+    from agentevolver.paths import path_manager
+
+    # The override first, and on its own: `session_roots()` resolves *through* it, but only
+    # for a bound session, and a relocated run is not always bound — so reading the roots
+    # first answered `config.workspace_root` for exactly the case this exists to serve.
+    scoped = path_manager.isolated_workspace()
     if scoped:
         return str(scoped)
+    roots = path_manager.session_roots()
+    if roots:
+        return str(roots["workspace"])
     try:
         from agentevolver.config import config
 
@@ -230,5 +244,10 @@ def resolve_workspace_root(ctx: Any = None, fallback: str = "") -> str:
 
 
 def isolated_workspace_root(ctx: Any = None) -> str:
-    """Return only a dispatcher-minted isolated cwd, never the global fallback."""
-    return str((getattr(ctx, "extra", None) or {}).get("execution_cwd") or "")
+    """Return only a dispatcher-minted isolated cwd, never the global fallback.
+
+    ``ctx`` is accepted and ignored — see :func:`resolve_workspace_root`.
+    """
+    from agentevolver.paths import path_manager
+
+    return str(path_manager.isolated_workspace() or "")

@@ -190,8 +190,10 @@ async def start_subscriber(
         parent_session_id=str(getattr(ctx, "id", "") or ""),
         extra={
             # A subscriber is a browser user; the builder's job-only scope is not its.
+            # `trace_integrity_profile` was inherited here too, and is configuration —
+            # read from `config`, not carried down a dispatch chain.
             key: value for key, value in inherited.items()
-            if key in ("root_session_id", "source_workspace", "trace_integrity_profile")
+            if key in ("root_session_id", "source_workspace")
         },
     )
     child_ctx.extra.setdefault(

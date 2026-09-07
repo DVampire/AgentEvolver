@@ -304,6 +304,21 @@ class PathManagerServer:
         finally:
             self._workspace.reset(token)
 
+    def isolated_workspace(self) -> Optional[Path]:
+        """The override set by :meth:`workspace`, or ``None`` when the run is not relocated.
+
+        ``session_roots()["workspace"]`` already resolves *through* the override, so this
+        answers the different question of whether there is one — which is what a sandbox
+        check needs, because a relocated child may write in its worktree *and* in the
+        ordinary session roots, while an unrelocated one has no extra root to allow.
+
+        The dispatcher used to answer it by also writing the path into
+        ``ctx.extra["execution_cwd"]``, one line after entering this override. Two copies
+        of one fact, and the copy was the one consulted — so any holder of the dict could
+        widen a sandbox boundary by editing it.
+        """
+        return self._workspace.get()
+
     def execution_path(self, path: str | Path) -> Path:
         """Project a host workspace path into the shell's mounted workspace.
 

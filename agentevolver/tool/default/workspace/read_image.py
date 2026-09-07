@@ -33,11 +33,16 @@ _EXAMPLES = [
 def _routed_model(ctx: Any) -> Optional[str]:
     """Which model the turn this tool call belongs to is being sent to.
 
-    The agent records it on the context before building the turn, so the answer is the
-    route the tool result will actually travel on rather than whatever the config says is
-    the default. Falling back to the configured role matters for callers that reach a tool
-    outside an agent turn — a workflow tool step, a direct call — where there is no turn to
-    have recorded anything.
+    The route a result will actually travel is a fact about this turn, not a setting: two
+    agents in one run reach different models, and only the caller knows which. So it comes
+    from the context rather than from ``config``, and the configured role is the fallback
+    for callers that reach a tool outside an agent turn — a workflow tool step, a direct
+    call — where there is no turn to have recorded anything.
+
+    Nothing in the framework currently records it: the key is read here and written only
+    by tests, so every real call takes the fallback. That is a missing writer, not a
+    reason to delete the question — an agent on a non-default model needs this to be
+    asked, or it is told an image is unreadable by a model it is not using.
     """
     from agentevolver.model import model_manager
 

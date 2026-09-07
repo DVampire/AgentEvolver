@@ -115,9 +115,16 @@ _TRACE_EXAMPLES = [
 
 
 def _session_key(kwargs: Dict[str, Any]) -> str:
-    """Which session's spill directory an artifact belongs in."""
-    ctx = kwargs.get("ctx")
-    return str((getattr(ctx, "extra", {}) or {}).get("project_root") or "")
+    """Which session's spill directory an artifact belongs in.
+
+    Read from the path table rather than from ``ctx.extra["project_root"]``, which nothing
+    ever wrote: the key was always empty, so every session's artifacts hashed to the same
+    ``"shared"`` bucket and the grouping this exists for never happened.
+    """
+    from agentevolver.paths import path_manager
+
+    roots = path_manager.session_roots()
+    return str(roots["project"]) if roots else ""
 
 
 def _call_id(kwargs: Dict[str, Any]) -> str:

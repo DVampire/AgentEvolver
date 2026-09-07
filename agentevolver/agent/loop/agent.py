@@ -604,8 +604,11 @@ class Agent(BaseModel):
         }
         if extra.get("child_reasoning_effort"):
             payload["reasoning_effort"] = extra["child_reasoning_effort"]
-        if extra.get("trace_integrity_profile"):
-            payload["trace_integrity_profile"] = extra["trace_integrity_profile"]
+        # `trace_integrity_profile` used to be forwarded from `extra` here. It is a
+        # configured setting — `configs/base.py` declares it and `config/validate.py`
+        # checks it — and nothing ever wrote it into a context, so this only ever
+        # forwarded nothing while implying a per-run override existed. The model layer
+        # reads the configured value directly.
         return payload
 
     async def act(self, decision: Decision) -> List[ActionResult]:

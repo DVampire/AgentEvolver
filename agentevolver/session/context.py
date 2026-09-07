@@ -46,13 +46,17 @@ def create_session(
         id=session_id,
         name=name,
         workspace_root=str(sandbox.workspace_root),
-        extra={
-            "workspace": str(sandbox.workspace_root),
-            "gateway_session": True,
-            "sandbox_mounts": sandbox.mounts(),
-            "source_workspace": source_workspace,
-            "project_id": session_id,
-        },
+        # Only what nothing else can answer. `workspace`, `sandbox_mounts`,
+        # `gateway_session` and `project_id` were also written here and read by nobody:
+        # the first two are `path_manager.session_roots()` and `sandbox.mounts()`, the
+        # third was never consulted, and the fourth is this context's own `id`. A key
+        # that duplicates an authority is a second answer waiting to disagree with it,
+        # which is what happened when the roots themselves travelled this way.
+        #
+        # `source_workspace` stays because it is the one fact no manager holds: the
+        # workspace a run was relocated *from*, which `path_manager` stops reporting the
+        # moment the relocation takes effect.
+        extra={"source_workspace": source_workspace},
     )
     return Session(
         context=context,

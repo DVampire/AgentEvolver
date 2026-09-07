@@ -10,12 +10,17 @@ import pytest
 from agentevolver.tool.default.workspace.apply_patch import ApplyPatchTool
 
 
-def _ctx(root):
-    return SimpleNamespace(extra={"execution_cwd": str(root)})
-
-
 def _call(root, patch):
-    return asyncio.run(ApplyPatchTool()(patch=patch, ctx=_ctx(root)))
+    """Run the tool against ``root``, declared where the tool actually asks.
+
+    The workspace used to be handed over as ``ctx.extra["execution_cwd"]``, so a test
+    could name a directory the path table had never heard of. It comes from the table
+    now, which is the same override the dispatcher enters for an isolated worktree.
+    """
+    from agentevolver.paths import path_manager
+
+    with path_manager.workspace(root):
+        return asyncio.run(ApplyPatchTool()(patch=patch, ctx=SimpleNamespace(extra={})))
 
 
 def test_apply_patch_updates_one_file(tmp_path):

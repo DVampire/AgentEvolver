@@ -290,9 +290,18 @@ async def test_direct_training_model_call_requires_a_real_session_id():
 
 
 @pytest.mark.asyncio
-async def test_mutating_tool_is_blocked_but_read_only_tool_is_not(
-    isolated_trace_manager,
-):
+async def test_mutating_tool_is_blocked_but_read_only_tool_is_not(isolated_trace_manager):
+    # The profile is configuration. It used to be settable per call through
+    # `ctx.extra["trace_integrity_profile"]`, which nothing in the system ever wrote — so
+    # the only thing that branch did was let a test reach a state no run could.
+    #
+    # Restored by assignment rather than by `monkeypatch`: undoing a `raising=False` patch
+    # deletes the attribute, and this config object has no `__delattr__` — the teardown
+    # failed where the test had passed.
+    from agentevolver.config import config
+
+    previous = getattr(config, "trace_integrity_profile", "interactive")
+    config.trace_integrity_profile = "high_risk"
     called = []
 
     class ProbeTool(Tool):
@@ -314,20 +323,19 @@ async def test_mutating_tool_is_blocked_but_read_only_tool_is_not(
         return await manager(
             name="probe_tool",
             input={},
-            ctx=ToolContext(
-                id="strict-tool-session",
-                name="probe",
-                extra={"trace_integrity_profile": "high_risk"},
-            ),
+            ctx=ToolContext(id="strict-tool-session", name="probe"),
         )
 
-    with pytest.raises(TraceIntegrityError, match="before_external_effect"):
-        await invoke(True)
-    assert called == []
+    try:
+        with pytest.raises(TraceIntegrityError, match="before_external_effect"):
+            await invoke(True)
+        assert called == []
 
-    response = await invoke(False)
-    assert response.success is True
-    assert called == [False]
+        response = await invoke(False)
+        assert response.success is True
+        assert called == [False]
+    finally:
+        config.trace_integrity_profile = previous
 
 
 def test_approval_timeout_config_must_be_positive():

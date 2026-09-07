@@ -1175,10 +1175,15 @@ class ToolContextManager(BaseModel):
         if not isinstance(message, str) or len(message) <= OUTPUT_LIMIT:
             return response
 
+        # The path table, not `ctx.extra["project_root"]` — a key nothing ever wrote, so
+        # this was always "" and every session's spilled output shared one bucket.
+        from agentevolver.paths import path_manager
+
+        roots = path_manager.session_roots()
         ref = await spill_text(
             message,
             SpillSource(tool_name=name, call_id=str(getattr(ctx, "id", "") or ""), label="result"),
-            session_key=str((getattr(ctx, "extra", {}) or {}).get("project_root") or ""),
+            session_key=str(roots["project"]) if roots else "",
             suggested_name=f"{name}.txt",
         )
         if ref is not None:

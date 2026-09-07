@@ -345,8 +345,13 @@ class CapabilityRouter(ToolRouter):
                         raise ValueError("Worktree dispatch does not relocate browser/remote environments")
                     source = str(roots["workspace"])
                     tree = await IsolatedWorktree.create(source, str(roots["log"]), make_id())
-                    child_ctx.extra["execution_cwd"] = str(tree.path)
                     child_ctx.extra.setdefault("source_workspace", source)
+                    # The override is the record. `kernel.spawn` starts the child with
+                    # `asyncio.create_task` inside this scope, so the child's context
+                    # snapshot carries it for the whole of its life even after this stack
+                    # unwinds — which is why the path did not also need writing into
+                    # `child_ctx.extra["execution_cwd"]`, where it was the copy everyone
+                    # actually read.
                     scope.enter_context(path_manager.workspace(tree.path))
                     scope.enter_context(permission_manager.relocate(source, str(tree.path)))
                 options = {"worktree": tree} if tree is not None else {}
@@ -414,8 +419,10 @@ class CapabilityRouter(ToolRouter):
         inherited = dict(getattr(ctx, "extra", None) or {})
         # Scoping the parent chose for this dispatch travels; the parent's own run state
         # does not.
-        keep = {"plugin_allowlist", "workflow_allowlist", "trace_integrity_profile",
-                "source_workspace"}
+        # `trace_integrity_profile` was inherited here too. It is configuration, read from
+        # `config` where it is declared and validated, so passing it down a dispatch chain
+        # gave a run's descendants a second place to disagree with the setting.
+        keep = {"plugin_allowlist", "workflow_allowlist", "source_workspace"}
         extra = {key: value for key, value in inherited.items() if key in keep}
         # History sharing is a grant for this dispatch, never inherited transitively.
         extra["fork"] = brief.get("fork") is True

@@ -379,11 +379,13 @@ def check_session_path(ctx: Any = None, path: str = "", *, write: bool) -> Optio
     allowed = session_writable_roots() if write else session_readable_roots()
     # An isolated workspace is minted by the dispatcher, not accepted from model input.
     # It narrows a child's writes to a disposable worktree while retaining the ordinary
-    # session roots needed for logs and installed capabilities.
-    scoped = (getattr(ctx, "extra", None) or {}).get("execution_cwd")
+    # session roots needed for logs and installed capabilities. Read from the path table:
+    # it came from `ctx.extra["execution_cwd"]`, which any holder of the dict could set,
+    # and this is a sandbox boundary — the one place a second, writable copy of a path is
+    # least defensible.
+    scoped = path_manager.isolated_workspace()
     if scoped:
-        scoped_root = Path(str(scoped)).expanduser().resolve()
-        allowed = [scoped_root, *allowed]
+        allowed = [scoped, *allowed]
     if not allowed or any(_inside(candidate, root) for root in allowed):
         return None
     access = "write" if write else "read"

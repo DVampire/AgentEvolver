@@ -400,7 +400,11 @@ async def test_worktree_dispatch_keeps_parent_clean_and_archives_patch(bound_ses
     class Worker(Agent):
         async def __call__(self, task="", files=None, ctx=None, **kwargs):
             workspace = path_manager.get(P.SESSION_WORKSPACE)
-            assert workspace != source and str(workspace) == ctx.extra["execution_cwd"]
+            # One authority for both questions: where the child writes, and whether it was
+            # relocated at all. The second used to be answered by `ctx.extra`, a copy the
+            # dispatcher wrote beside this override.
+            assert workspace != source
+            assert path_manager.isolated_workspace() == workspace
             assert (workspace / "file.txt").read_text() == "parent dirty\n"
             assert (workspace / "parent-new.txt").read_text() == "untracked parent\n"
             allowed = permission_manager.check_declared("writer", PermissionRequest(
