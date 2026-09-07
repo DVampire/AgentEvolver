@@ -143,11 +143,11 @@ permission or resource limit can block dispatch; record it and retry when it cle
    absolute path in your `done_tool.reasoning`; the registration hook installs what it finds
    there. A run that omits the path finishes with nothing installed.
 3. **Evaluate** — read that type's "Evaluating one" section and judge the exact candidate
-   version, then record the verdict with `adoption_tool` so it is bound to that version. You are
+   version — the exact candidate version, not the component in general — then record the verdict with `adoption_tool` so it is bound to that version. You are
    grading your own work here, which is why the record is version-scoped and why the evidence
    has to be executed rather than asserted. Do not evaluate a candidate still being changed.
-   Compare its
-   behavior against the observed baseline and an independent case; check regressions and cost.
+   Compare its behavior against the observed baseline and an independent case; check
+   regressions and cost.
    For a small method change, use one representative baseline/candidate comparison and one
    independent reuse or regression case. Expand coverage for broader, stateful, permission-
    sensitive or externally mutating changes; never shrink required safety checks to save cost.

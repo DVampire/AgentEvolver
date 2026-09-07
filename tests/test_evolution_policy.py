@@ -161,18 +161,23 @@ def test_evolution_skill_has_no_second_failure_or_memory_gate():
         assert guard in source
 
 
-def test_worker_instructions_support_bounded_verified_improvements():
-    skills = ROOT / "agentevolver/skill/evolving"
-    optimize = (skills / "optimize_skill/SKILL.md").read_text()
-    assert "apply_patch_tool" in optimize and "bash_tool" in optimize
-    assert "edit_file_tool" not in optimize and "write_file_tool" not in optimize
-    assert "enable_evolving" in optimize and "Frozen means stop" in optimize
-    for path in (skills / "evaluate_skill/SKILL.md",
-                 ROOT / "agentevolver/prompt/default/evaluate_agent.html"):
-        text = path.read_text()
-        for expected in ("independent reuse or regression case", "required safety checks",
-                         "untested limits", "inconclusive", "Reading instructions alone"):
-            assert expected in text
+def test_the_conventions_support_bounded_verified_improvements():
+    """The per-operation conventions, wherever they live, still bound the work.
+
+    They were three worker skills read by three agents; they are one file now, sectioned by
+    operation. What has to survive is the substance: a change edits through the patch tools
+    rather than overwriting whole files, a frozen target stops the run, and an evaluation
+    names an independent case, its safety checks, and what it could not test.
+    """
+    conventions = (
+        ROOT / "agentevolver/skill/evolving/self_evolving_skill/references/conventions.md"
+    ).read_text()
+    assert "apply_patch_tool" in conventions and "bash_tool" in conventions
+    assert "edit_file_tool" not in conventions and "write_file_tool" not in conventions
+    assert "enable_evolving" in conventions and "Frozen means stop" in conventions
+    for expected in ("independent reuse or regression case", "required safety checks",
+                     "untested limits", "inconclusive", "Reading instructions alone"):
+        assert expected in conventions
 
 
 @pytest.mark.parametrize("scenario_name", ["arkbound_game", "commonspace_forum", "lumen_museum", "orbital_simulator"])

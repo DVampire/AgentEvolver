@@ -1,10 +1,10 @@
-"""What the evolution skills tell an agent to do has to be doable.
+"""What the evolution skill tells an agent to do has to be doable.
 
-These four skills are the framework's instructions for changing itself: `generate_skill`,
-`optimize_skill` and `evaluate_skill` are read by the three evolution agents, and
-`self_evolving_skill` decides which of them runs. Prose is their entire interface, so a
-name that has gone stale is not a documentation defect — it is an instruction that costs
-a run several turns and then fails.
+`self_evolving_skill` is the framework's instruction for changing itself: when a change is
+warranted, and — in `references/<type>/` — what each of the eight component families is and
+how to write, change or judge one. Prose is its entire interface, so a name that has gone
+stale is not a documentation defect — it is an instruction that costs a run several turns
+and then fails.
 
 Two kinds had gone stale and neither could fail loudly:
 
@@ -46,8 +46,8 @@ def _skill_of(doc: Path) -> Path:
 
 def test_there_are_skills_and_documents_to_check():
     """Guards the guard: an empty sweep would pass everything below."""
-    assert len(SKILLS) == 4, [s.name for s in SKILLS]
-    assert len(DOCS) >= 25
+    assert len(SKILLS) == 1, [s.name for s in SKILLS]
+    assert len(DOCS) >= 18
 
 
 @pytest.mark.parametrize("doc", DOCS, ids=lambda p: str(p.relative_to(SKILLS_ROOT)))

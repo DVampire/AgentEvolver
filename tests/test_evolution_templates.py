@@ -19,7 +19,9 @@ from pathlib import Path
 import pytest
 
 TEMPLATE_ROOT = Path(__file__).parents[1] / "agentevolver" / "skill" / "evolving"
-TEMPLATES = sorted(TEMPLATE_ROOT.rglob("*_template.py"))
+#: Templates sit beside the type they build, named for the file they become — so the
+#: sweep follows `template*.py` rather than the old `*_template.py` suffix.
+TEMPLATES = sorted(TEMPLATE_ROOT.rglob("template*.py"))
 
 
 def _load(path: Path):
@@ -41,7 +43,7 @@ def _declared(module):
 
 def test_there_are_templates_to_check():
     """Guards the guard: an empty sweep would pass every parametrised case below."""
-    assert len(TEMPLATES) >= 4, f"found only {[p.name for p in TEMPLATES]}"
+    assert len(TEMPLATES) >= 3, f"found only {[str(p) for p in TEMPLATES]}"
 
 
 @pytest.mark.parametrize("path", TEMPLATES, ids=lambda p: p.stem)
