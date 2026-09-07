@@ -28,83 +28,110 @@ def test_generic_adoption_requires_versioned_passing_evidence(tmp_path, monkeypa
         manager.record_decision(report={**report, "verdict": "fail"}, run_id="eval-run", decision="keep", evidence="x")
 
 
-@pytest.mark.asyncio
-async def test_evaluator_rejects_invented_observation_ids():
-    import json
-    from types import SimpleNamespace
-    from agentevolver.agent.actor.evaluate_agent import EvaluateAgent
-    from agentevolver.response.types import Response, ResponseType
+from agentevolver.extension.server import ExtensionManagerServer
+from agentevolver.extension.types import Manifest, ManifestComponent
 
-    agent = EvaluateAgent()
-    agent.ctx = SimpleNamespace(extra={"target_type": "skill", "target_name": "candidate", "evaluation_version": "2"})
-    report = {"module": "skill", "name": "candidate", "version": "2", "verdict": "pass",
-              "baseline": "previous result", "cases": [
-                  {"case_id": "case", "expected": "x", "observed": "x", "passed": True,
-                   "evidence_ids": ["invented"]}]}
-    response = await agent.finalize(Response(type=ResponseType.AGENT, success=True, message=json.dumps(report)))
-    assert "evaluation" not in response.data
-    assert "absent" in response.data["evaluation_error"]
+
+#: Three guarantees the separate read-only evaluator used to own. The work is the agent's
+#: own now, so they are enforced where the decision is recorded: a citation is required,
+#: cited evidence must name calls that actually happened, and the evaluated version must
+#: still be the registered one.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("report, caller, valid", [
+    ({"module": "skill", "name": "candidate", "version": "2", "verdict": "fail",
+      "baseline": "v1 behaviour", "cases": []}, "caller", True),
+    (None, "caller", False),
+    ({}, "caller", False),
+    ({"module": "skill", "name": "candidate", "version": "2", "verdict": "fail",
+      "baseline": "v1 behaviour", "cases": []}, "", False),
+])
+async def test_adoption_requires_a_version_scoped_evaluation(monkeypatch, report, caller, valid):
+    from types import SimpleNamespace
+    from agentevolver.extension import extension_manager
+    from agentevolver.tool.default.adoption import AdoptionTool
+
+    active = Manifest(components=[
+        ManifestComponent(module="skill", name="candidate", version="2", file="unused"),
+    ])
+    monkeypatch.setattr(type(extension_manager), "read_manifest", lambda self: active)
+    calls = []
+    monkeypatch.setattr(type(extension_manager), "record_decision",
+                        lambda self, **kw: calls.append(kw) or kw)
+    result = await AdoptionTool()(action="record_decision", decision="rollback",
+        evidence="repeated regression", report=report,
+        ctx=SimpleNamespace(extra={"process_pid": caller}))
+    assert result.success is valid
+    assert bool(calls) is valid
+
+
+@pytest.mark.asyncio
+async def test_adoption_rejects_invented_evidence_ids(monkeypatch):
+    from types import SimpleNamespace
+    from agentevolver.extension import extension_manager
+    from agentevolver.message.types import ToolMessage
+    from agentevolver.runtime import kernel
+    from agentevolver.tool.default.adoption import AdoptionTool
+
+    active = Manifest(components=[
+        ManifestComponent(module="skill", name="candidate", version="2", file="unused"),
+    ])
+    monkeypatch.setattr(type(extension_manager), "read_manifest", lambda self: active)
+    conversation = SimpleNamespace(items=[ToolMessage(tool_call_id="observed", content="out")])
+    monkeypatch.setattr(kernel, "get",
+                        lambda pid: SimpleNamespace(agent=SimpleNamespace(conversation=conversation)))
+    calls = []
+    monkeypatch.setattr(type(extension_manager), "record_decision",
+                        lambda self, **kw: calls.append(kw) or kw)
+
+    def report(evidence_id):
+        return {"module": "skill", "name": "candidate", "version": "2", "verdict": "pass",
+                "baseline": "previous result",
+                "cases": [{"case_id": "case", "expected": "x", "observed": "x",
+                           "passed": True, "evidence_ids": [evidence_id]}]}
+
+    invented = await AdoptionTool()(action="record_decision", decision="keep", evidence="e",
+        report=report("invented"), ctx=SimpleNamespace(extra={"process_pid": "caller"}))
+    assert invented.success is False
+    assert "absent" in invented.message
+    assert not calls
+
+    real = await AdoptionTool()(action="record_decision", decision="keep", evidence="e",
+        report=report("observed"), ctx=SimpleNamespace(extra={"process_pid": "caller"}))
+    assert real.success is True
+    assert calls
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("active_version", ["2", "3", None])
-async def test_evaluator_binds_real_evidence_to_unchanged_version(monkeypatch, active_version):
-    import json
+async def test_adoption_binds_the_report_to_the_registered_version(monkeypatch, active_version):
     from types import SimpleNamespace
-    from agentevolver.agent.actor.evaluate_agent import EvaluateAgent
     from agentevolver.extension import extension_manager
     from agentevolver.message.types import ToolMessage
-    from agentevolver.response.types import Response, ResponseType
+    from agentevolver.runtime import kernel
+    from agentevolver.tool.default.adoption import AdoptionTool
 
     active = Manifest(components=[] if active_version is None else [
         ManifestComponent(module="skill", name="candidate", version=active_version, file="unused"),
     ])
     monkeypatch.setattr(type(extension_manager), "read_manifest", lambda self: active)
-    agent = EvaluateAgent()
-    agent.ctx = SimpleNamespace(extra={"target_type": "skill", "target_name": "candidate", "evaluation_version": "2"})
-    agent.conversation.items.append(ToolMessage(tool_call_id="observed", content="actual output"))
-    report = {"module": "skill", "name": "candidate", "version": "2", "verdict": "pass",
-              "baseline": "previous result", "cases": [
-                  {"case_id": "case", "expected": "x", "observed": "x", "passed": True,
-                   "evidence_ids": ["observed"]}]}
-    response = await agent.finalize(Response(type=ResponseType.AGENT, success=True,
-        message=json.dumps(report), data={"evaluation": {"unvalidated": True}}))
-    if active_version == "2":
-        assert response.data["evaluation"] == report
-    else:
-        assert "evaluation" not in response.data
-        assert "changed" in response.data["evaluation_error"]
-
-from agentevolver.extension.server import ExtensionManagerServer
-from agentevolver.extension.types import Manifest, ManifestComponent
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("parent, exited, status, valid", [
-    ("caller", True, "done", True), ("another", True, "done", False),
-    ("caller", False, "done", False), ("caller", True, "failed", False),
-])
-async def test_adoption_requires_own_completed_evaluator(monkeypatch, parent, exited, status, valid):
-    from types import SimpleNamespace
-    from agentevolver.agent.actor.evaluate_agent import EvaluateAgent
-    from agentevolver.extension import extension_manager
-    from agentevolver.runtime import kernel
-    from agentevolver.tool.default.adoption import AdoptionTool
-
-    report = {"module": "skill", "name": "candidate", "version": "2"}
-    proc = SimpleNamespace(agent=EvaluateAgent(), parent_pid=parent,
-        _exited=SimpleNamespace(is_set=lambda: exited), exit_status=SimpleNamespace(value=status),
-        last_result=SimpleNamespace(data={"evaluation": report}))
-    monkeypatch.setattr(kernel, "get", lambda pid: proc)
+    conversation = SimpleNamespace(items=[ToolMessage(tool_call_id="observed", content="out")])
+    monkeypatch.setattr(kernel, "get",
+                        lambda pid: SimpleNamespace(agent=SimpleNamespace(conversation=conversation)))
     calls = []
-    def record(self, **kwargs):
-        calls.append(kwargs)
-        return kwargs
-    monkeypatch.setattr(type(extension_manager), "record_decision", record)
-    result = await AdoptionTool()(action="record_decision", run_id="evaluation-run",
-        decision="keep", evidence="repeated regression", ctx=SimpleNamespace(extra={"process_pid": "caller"}))
-    assert result.success is valid
-    assert bool(calls) is valid
+    monkeypatch.setattr(type(extension_manager), "record_decision",
+                        lambda self, **kw: calls.append(kw) or kw)
+
+    result = await AdoptionTool()(action="record_decision", decision="keep", evidence="e",
+        report={"module": "skill", "name": "candidate", "version": "2", "verdict": "pass",
+                "baseline": "previous result",
+                "cases": [{"case_id": "case", "expected": "x", "observed": "x",
+                           "passed": True, "evidence_ids": ["observed"]}]},
+        ctx=SimpleNamespace(extra={"process_pid": "caller"}))
+    if active_version == "2":
+        assert result.success is True and calls
+    else:
+        assert result.success is False and not calls
+        assert "changed during evaluation" in result.message
 
 
 class _Entry:

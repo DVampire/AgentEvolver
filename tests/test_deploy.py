@@ -105,10 +105,9 @@ def test_adoption_tool_exposes_lifecycle_arguments_to_strict_providers():
         "token_cost",
         "elapsed_ms",
         "notes",
-        "release_number",
         "decision",
         "evidence",
-        "evaluation",
+        "report",
     } == set(parameters["properties"])
     assert "record_decision" in parameters["properties"]["action"]["enum"]
     assert parameters["additionalProperties"] is False

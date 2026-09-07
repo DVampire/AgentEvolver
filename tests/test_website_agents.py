@@ -469,7 +469,7 @@ def test_next_release_does_not_require_an_evolution_decision(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_keep_decision_rejects_self_reported_evaluation_without_run_id(monkeypatch):
+async def test_keep_decision_rejects_prose_instead_of_an_evaluation_report(monkeypatch):
     from agentevolver.extension import extension_manager
 
     component = SimpleNamespace(version="1.0.0")
@@ -512,10 +512,11 @@ async def test_keep_decision_rejects_self_reported_evaluation_without_run_id(mon
         ),
     )
 
-    # Legacy website-local success flags and prose are not an independent evaluator
-    # receipt. Keeping a candidate now requires the completed evaluation's run_id.
+    # Website-local success flags and a sentence of prose are not an evaluation. Keeping a
+    # candidate requires the structured, version-scoped `report` — the shape is what makes
+    # the claim checkable, and `evaluation="it passed"` is not that shape.
     assert response.success is False
-    assert "completed independent evaluation run_id" in response.message
+    assert "version-scoped evaluation" in response.message
     assert contract["evolution_decisions"] == []
 
 
@@ -589,7 +590,10 @@ async def test_builder_completion_only_closes_self_initiated_evolution(monkeypat
         "subscriber_job_ids": ["acceptance"],
         "acceptance_job_id": "acceptance",
         "collected_turns": {"acceptance": 1},
-        "evolution_runs": [],
+        # What this run started from. A component whose registered version differs from the
+        # baseline is one this run changed — read from the manifest rather than from anyone's
+        # account of which worker was dispatched.
+        "extension_baseline": {},
         "evolution_decisions": [],
         "release_acceptance": {"1": {"acceptance": {"status": "accepted",
                                                    "attempts": 1, "turn": 1}}},
@@ -604,38 +608,31 @@ async def test_builder_completion_only_closes_self_initiated_evolution(monkeypat
 
     assert await builder.completion_blocker(ctx) is None
 
-    contract["evolution_runs"] = [
-        {
-            "agent": "generate_agent",
-            "module": "skill",
-            "name": "adaptive_ui",
-            "version": "1.0.0",
-            "success": True,
-        }
-    ]
-    assert "missing evaluation and decision" in await builder.completion_blocker(ctx)
+    # A component now registered at a version the baseline does not carry: this run changed
+    # it, so finishing requires an evaluation recorded through `adoption_tool`.
+    from agentevolver.agent.actor import website_builder_agent as builder_module
 
-    contract["evolution_runs"].append(
-        {
-            "agent": "evaluate_agent",
-            "module": "skill",
-            "name": "adaptive_ui",
-            "version": "1.0.0",
-            "success": True,
-        }
-    )
-    assert "missing keep/rollback/unload decision" in await builder.completion_blocker(ctx)
+    monkeypatch.setattr(builder_module, "_installed_components",
+                        lambda: {"skill:adaptive_ui": "1.0.0"})
+    blocker = await builder.completion_blocker(ctx)
+    assert blocker is not None and "adaptive_ui" in blocker
+    assert "record keep/rollback/unload" in blocker
 
+    # Recording the decision closes it.
     contract["evolution_decisions"] = [
-        {
-            "release_number": 1,
-            "decision": "keep",
-            "module": "skill",
-            "name": "adaptive_ui",
-            "version": "1.0.0",
-        }
+        {"module": "skill", "name": "adaptive_ui", "version": "1.0.0",
+         "decision": "keep", "verdict": "pass", "success": True},
     ]
     assert await builder.completion_blocker(ctx) is None
+
+    # A decision for a different version does not close this one: the gate compares the
+    # registered version, so an adoption recorded against 0.9.0 leaves 1.0.0 outstanding.
+    contract["evolution_decisions"] = [
+        {"module": "skill", "name": "adaptive_ui", "version": "0.9.0",
+         "decision": "keep", "verdict": "pass", "success": True},
+    ]
+    stale = await builder.completion_blocker(ctx)
+    assert stale is not None and "1.0.0" in stale
 
 
 def test_builder_requires_verification_at_the_exact_deployed_url():
@@ -662,9 +659,6 @@ def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
     assert cfg.agent_names == [
         "website_builder_agent",
         "browser_agent",
-        "generate_agent",
-        "optimize_agent",
-        "evaluate_agent",
         "website_user_agent",
     ]
     assert cfg.tool_names == [
@@ -680,9 +674,6 @@ def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
         "frontend_ui_engineering_skill",
         "webapp_testing_skill",
         "self_evolving_skill",
-        "generate_skill",
-        "optimize_skill",
-        "evaluate_skill",
     ]
 
 
@@ -706,7 +697,7 @@ def test_website_demo_model_roster_matches_launcher_and_vision_catalog():
     assert cfg.website_builder_agent.model_name == DEFAULT_BUILDER_MODEL == "llm_hub/claude-fable-5-1"
     assert cfg.website_user_agent.model_name == DEFAULT_USER_MODELS[0]
     assert cfg.browser_agent.model_name == DEFAULT_ACCEPTANCE_MODEL == "llm_hub/gemini-3.8-flash"
-    assert cfg.model_name == cfg.generate_agent.model_name == "llm_hub/claude-opus-5"
+    assert cfg.model_name == "llm_hub/claude-opus-5"
     catalog = llm_hub_models(max_tokens=2048, default_temperature=0.0, default_timeout=30.0)
     specs = {entry["model_name"]: entry for group in catalog.values() for entry in group}
     assert all(specs[name].get("supports_vision", True) for name in DEFAULT_USER_MODELS)

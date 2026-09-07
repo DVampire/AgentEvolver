@@ -119,9 +119,11 @@ def test_meta_agent_evolution_rules_follow_the_live_roster_flag():
     text = _render_meta(evolution_enabled=True)
 
     assert "<self-evolution-rules>" in text
-    assert "generate_agent" in text
-    assert "optimize_agent" in text
-    assert "evaluate_agent" in text
+    # The rules used to name three worker agents to dispatch. The work is the agent's own
+    # now, so what has to survive is the loop it must run, not a roster it must address.
+    assert "self_evolving_skill" in text
+    assert "adoption_tool" in text
+    assert "inspect_tool" in text
 
 
 def test_default_agents_share_the_stable_to_live_user_layout():
@@ -163,10 +165,10 @@ def test_agent_prompts_use_the_native_calling_protocol():
         / "agentevolver"
         / "skill"
         / "evolving"
-        / "generate_skill"
+        / "self_evolving_skill"
         / "references"
         / "agent"
-        / "html_prompt_template.html",
+        / "template-prompt.html",
     ]
     forbidden = ("env__", "`finish`", '"type": "text"', '"name": "text"')
     for path in paths:
@@ -181,10 +183,10 @@ def test_generated_agent_template_matches_the_default_capability_frame():
         / "agentevolver"
         / "skill"
         / "evolving"
-        / "generate_skill"
+        / "self_evolving_skill"
         / "references"
         / "agent"
-        / "html_prompt_template.html"
+        / "template-prompt.html"
     )
     text = path.read_text(encoding="utf-8")
     for tag in (
@@ -211,7 +213,7 @@ def test_the_layout_was_actually_found():
     """
     assert LEAVES, "no template nests anything in <capability-context>"
     found = {p.name for p in TEMPLATES}
-    for expected in ("meta_agent.html", "code_agent.html", "generate_agent.html"):
+    for expected in ("meta_agent.html", "code_agent.html", "browser_agent.html"):
         assert expected in found, f"{expected} missing — TEMPLATES is not the prompt directory"
 
 
@@ -303,7 +305,8 @@ def test_the_agent_authoring_guide_describes_the_shape_it_will_be_read_against()
     generated afterwards.
     """
     guide = (
-        ROOT / "agentevolver" / "skill" / "evolving" / "generate_skill" / "references" / "agent.md"
+        ROOT / "agentevolver" / "skill" / "evolving" / "self_evolving_skill"
+        / "references" / "agent" / "agent.md"
     ).read_text(encoding="utf-8")
     assert CONTAINER in guide, "the agent-authoring guide never mentions the container"
     assert "as **siblings** of `<agent-context>`" not in guide, (

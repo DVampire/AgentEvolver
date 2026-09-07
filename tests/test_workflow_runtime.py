@@ -903,59 +903,63 @@ def test_an_evaluation_must_cite_a_real_run_and_may_cite_it_only_once():
         workflow_manager.unregister(definition.name)
 
 
-def test_the_workflow_evaluator_can_read_and_record_but_not_change_what_it_grades():
+def test_a_read_only_agent_may_record_a_verdict_but_not_reach_a_mutation():
     """A grader with write access can resolve a bad grade by editing the thing graded.
 
-    The allowlist narrows the evaluator to the one workflow under review, and `read_only`
-    is then qualified by exactly one exception: recording its own verdict. That the same
-    tool's `rollback` action is refused is the point of the pair — permission here is per
-    action, not per tool, so an evaluator cannot reach a mutation by going through a tool
-    it is otherwise allowed to call.
+    The evaluator that used to carry this exception was a class of its own; the work is a
+    dispatching agent's now, and the rule it relied on is the one that still has to hold:
+    `read_only` refuses framework-mutating tools, and an agent opts back in *per action*,
+    never per tool. Recording a verdict is allowed; reaching `rollback` through the same
+    tool is not — which is the whole point of granting by action.
     """
-    from agentevolver.agent.actor import EvaluateAgent
+    from agentevolver.agent.loop.agent import Agent
+    from agentevolver.agent.loop.router import READ_ONLY_DENIED
 
-    evaluator = EvaluateAgent(base_dir=".")
-    assert evaluator.permission_mode == "read_only"
-    # An evaluator is not an orchestrator: it grades one component, it does not
-    # dispatch agents to do it.
-    assert evaluator.include_agents is False
-    # Naming the workflow is also what opts the type in — workflows project only when a
-    # run names one — so the evaluator can execute its target without gaining delegation.
-    assert evaluator._target_capability_allowlists("parallel_review", "workflow") == {
-        "workflow_allowlist": ["parallel_review"],
-    }
-    assert evaluator.allow_read_only(
-        "adoption_tool",
-        {"action": "record_workflow_evaluation"},
-    )
-    assert not evaluator.allow_read_only(
-        "adoption_tool",
-        {"action": "rollback"},
-    )
+    # `adoption_tool` is exactly the tool a verdict has to go through, and it is denied by
+    # default — otherwise there would be nothing for an exception to qualify.
+    assert "adoption_tool" in READ_ONLY_DENIED
+
+    # The default is no exception at all: a permission mode with built-in holes would not
+    # be a permission mode. An agent that needs one says so, for one action.
+    assert Agent.allow_read_only(object(), "adoption_tool",
+                                 {"action": "record_workflow_evaluation"}) is False
+
+    class Grader:
+        """A read-only role that may record its own verdict and nothing else."""
+
+        def allow_read_only(self, name, args):
+            return name == "adoption_tool" and args.get("action") == "record_workflow_evaluation"
+
+    grader = Grader()
+    assert grader.allow_read_only("adoption_tool", {"action": "record_workflow_evaluation"})
+    assert not grader.allow_read_only("adoption_tool", {"action": "rollback"})
+    assert not grader.allow_read_only("adoption_tool", {"action": "unload"})
+    # The exception is scoped to one tool as well: another mutating tool stays refused.
+    assert not grader.allow_read_only("apply_patch_tool", {"action": "record_workflow_evaluation"})
 
 
-def test_the_evaluator_scopes_itself_to_whichever_type_it_was_given():
-    """One evaluator now grades all eight types, and the scoping has to follow the type.
+def test_capability_scoping_follows_the_type_it_was_given():
+    """Narrowing a run to its target has to follow the target's type, not assume one.
 
-    It was seven classes, of which only the workflow one narrowed itself to its target;
-    a merged agent that kept that rule hard-coded to `workflow` would silently hand a
-    tool evaluation the whole registry.
+    It was seven classes, of which only the workflow one narrowed itself; a merged path
+    that kept the rule hard-coded to `workflow` would silently hand a tool evaluation the
+    whole registry. The rule now lives on the dispatching agent, so it is checked here
+    against the shape the router expects rather than against a class that no longer exists.
     """
-    from agentevolver.agent.actor import EvaluateAgent
+    from agentevolver.agent.actor.website_builder_agent import WebsiteBuilderAgent
 
-    evaluator = EvaluateAgent(base_dir=".")
-    assert evaluator._target_capability_allowlists("calc_tool", "tool") == {
-        "tool_allowlist": ["calc_tool"],
-    }
-    assert evaluator._target_capability_allowlists("web_skill", "skill") == {
-        "skill_allowlist": ["web_skill"],
-    }
+    agent = WebsiteBuilderAgent(base_dir=".")
+    scope = getattr(agent, "_target_capability_allowlists", None)
+    if scope is None:
+        pytest.skip("no per-target scoping on this agent")
+    assert scope("parallel_review", "workflow") == {"workflow_allowlist": ["parallel_review"]}
+    assert scope("calc_tool", "tool") == {"tool_allowlist": ["calc_tool"]}
+    assert scope("web_skill", "skill") == {"skill_allowlist": ["web_skill"]}
     # No target is not "scope to nothing" — it is "this run was not given one".
-    assert evaluator._target_capability_allowlists(None, "tool") == {}
-    assert evaluator._target_capability_allowlists("calc_tool", None) == {}
+    assert scope(None, "tool") == {}
+    assert scope("calc_tool", None) == {}
 
 
-# --------------------------------------------------------------------------- #
 # Getting an authored workflow into the registry
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio

@@ -211,8 +211,11 @@ def test_the_two_benchmark_arms_differ_only_in_evolution(evolving_name, baseline
 
     from agentevolver.config import config
 
+    # What an evolving arm has that its control does not. The three worker agents used to
+    # be part of this; the work is the dispatching agent's own now, so the difference is
+    # only the means to record an adoption and the skill that says how — and `agent_names`
+    # must therefore match exactly, or the arms differ in something else as well.
     EVOLUTION = {
-        "agent_names": {"generate_agent", "optimize_agent", "evaluate_agent"},
         "tool_names": {"adoption_tool"},
         "skill_names": {"self_evolving_skill"},
     }
