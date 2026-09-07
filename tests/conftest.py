@@ -31,6 +31,15 @@ def _isolate_agentevolver_tree(tmp_path_factory):
     patch.setattr(config, "project_root", str(output), raising=False)
     patch.setattr(config, "workspace_root", str(output / "workspace"), raising=False)
     patch.setattr(config, "log_root", str(output / "log"), raising=False)
+    patch.setattr(config, "extension_root", str(home / "extension"), raising=False)
+    # `extension_manager` is already constructed by the time a fixture runs, and its
+    # `base_dir` was resolved at import to the shared library in the checkout. Only
+    # `bringup` repoints it, which no test calls — so an admission probe cached its
+    # snapshot under `extension/.checked/` in the working tree, and every suite run left
+    # a fresh pile of hashed directories in git's way.
+    from agentevolver.extension import extension_manager
+
+    extension_manager.set_base_dir(str(home / "extension"))
     yield
     patch.undo()
 

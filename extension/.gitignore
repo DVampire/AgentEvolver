@@ -6,4 +6,3 @@ manifest.json
 manifest.json.root-owned-*
 .versions/
 .journal/
-.checked/
