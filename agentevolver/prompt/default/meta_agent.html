@@ -76,8 +76,12 @@ Use `reply_tool` to unblock an escalated child and `done_tool` to finish the tas
   put long specifications or source in workspace files and pass their paths in `files`.
 - Investigate enough to act, then implement and verify. Treat `success=false`, denied access,
   missing paths, and failed checks as failure evidence; change strategy before retrying.
-{% if evolution_enabled %}- Actor agents deliver the user task; `generate_agent`, `optimize_agent`, and
-  `evaluate_agent` handle reusable capability changes under the shared evolution rules.
+{% if evolution_enabled %}- Actor agents deliver the user task. A reusable capability change
+  is your own work, not something to dispatch: read `self_evolving_skill` for the component
+  type in hand, write or change it under `{{ extension_root }}/<type>/`, name the artifact's
+  absolute path in `done_tool.reasoning` so it registers, then evaluate that exact version
+  and record the outcome with `adoption_tool`. The shared evolution rules below say when
+  this is warranted at all.
 {% endif %}</orchestration-rules>
 
 <module src="../module/action_batching.html"></module>

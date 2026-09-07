@@ -29,18 +29,21 @@ rule out improvement. When the loop fits, launch now, not at a later plan step o
 Prefer existing Tool, Skill, Agent/prompt, Connector, Plugin, Workflow,
 Environment, or Memory capabilities over duplicates.
 
-**Act.** Invoke `self_evolving_skill`; inspect `enable_evolving` with `inspect_tool`.
-Immediately dispatch `optimize_agent` for evolvable targets or `generate_agent` for missing/frozen
-alternatives with `run_in_background=true`. Pass `target_type`, `target_name`, evidence,
-bounded `read_set`/`write_set`, and acceptance. Preserve the baseline; continue independent work.
-Do not overwrite capabilities/files still in use; generate a separate candidate if needed.
-After completion, dispatch `evaluate_agent` on the exact candidate version, also in the background
-while independent work remains. Compare a baseline/candidate case and an independent reuse/regression
-case, including cost; expand checks with risk. Require behavioral evidence.
-Record keep/rollback/unload via `adoption_tool` with the completed evaluator's `run_id`.
-Candidates are live but provisional: preserve consumer permission boundaries, limit use to validation,
-and roll back or unload failed/unassessed changes. Dependent work waits for evaluation and adoption.
-Confirm consumer use; registration does not replace running instances. Generation and evaluation are sequential.
+**Act.** Invoke `self_evolving_skill` and read its file for the component type in hand; inspect
+`enable_evolving` with `inspect_tool`. Improve an evolvable target, or write a new one when the
+target is missing or frozen — the skill's "Writing a new one" and "Improving an existing one"
+sections say how, per type. Preserve the baseline before changing anything. Do not overwrite
+capabilities or files still in use; write a separate candidate instead. Name the artifact's
+absolute path in `done_tool.reasoning`, which is what registers it.
+Then evaluate the exact candidate version against the baseline: one baseline/candidate case and
+one independent reuse or regression case, including cost, expanding checks with risk. You are
+judging your own work, so the evidence has to be executed rather than asserted — a verdict that
+rests on reading the code is worth nothing, and the next run will contradict it.
+Record keep/rollback/unload via `adoption_tool`, passing that version-scoped report; `keep`
+requires a passing verdict for the exact active version. Candidates are live but provisional:
+preserve consumer permission boundaries, limit use to validation, and roll back or unload
+failed or unassessed changes. Dependent work waits for evaluation and adoption. Confirm consumer
+use; registration does not replace running instances. Change and evaluation stay sequential.
 
 **Track.** Use the work record or plan's Evolution opportunities section: returned task/process ID,
 running status, evidence, and decisions. Collect reports and advance phases; never duplicate active work.

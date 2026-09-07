@@ -9,9 +9,6 @@ from mmengine.config import read_base
 
 with read_base():
     from .agents.browser_agent import browser_agent
-    from .agents.evaluate_agent import evaluate_agent
-    from .agents.generate_agent import generate_agent
-    from .agents.optimize_agent import optimize_agent
     from .agents.website_builder_agent import website_builder_agent
     from .agents.website_user_agents import website_user_agent
     from .base import max_tokens, memory_config, window_size  # noqa: F401
@@ -58,9 +55,6 @@ memory_names = ["file_system_memory"]
 agent_names = [
     "website_builder_agent",
     "browser_agent",
-    "generate_agent",
-    "optimize_agent",
-    "evaluate_agent",
     "website_user_agent",
 ]
 
@@ -84,9 +78,6 @@ skill_names = [
     "frontend_ui_engineering_skill",
     "webapp_testing_skill",
     "self_evolving_skill",
-    "generate_skill",
-    "optimize_skill",
-    "evaluate_skill",
 ]
 
 connector_names = []
@@ -174,9 +165,6 @@ _EVOLUTION_WORKER = {
     "timeout": WALL_CLOCK,
     "max_token": WORKER_MAX_TOKEN,
 }
-generate_agent.update(**_EVOLUTION_WORKER)
-optimize_agent.update(**_EVOLUTION_WORKER)
-evaluate_agent.update(**_EVOLUTION_WORKER)
 
 _USER = {
     **_AGENT_CORE,

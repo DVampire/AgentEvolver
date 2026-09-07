@@ -10,7 +10,7 @@ from agentevolver.command.default._helpers import AGENT_BACKED_TYPES
 @COMMAND.register_module(force=True)
 class CreateCommand(SkillCommand):
     name: str = "create"
-    description: str = "Dispatch the matching generate agent to create a new capability."
+    description: str = "Create a new capability of the given type."
     usage: str = "/create <type> <description...>"
     permission_mode: str = "workspace_write"
 
@@ -22,6 +22,6 @@ class CreateCommand(SkillCommand):
         if ctype not in AGENT_BACKED_TYPES:
             return self.fail(f"Can't create type '{ctype}'. Options: {AGENT_BACKED_TYPES}")
 
-        self.target_agent = "generate_agent"
+        self.target_agent = "meta_agent"
         return await self.dispatch_agent(f"Create a new {ctype}: {desc}", ctx,
                                          target_type=ctype)

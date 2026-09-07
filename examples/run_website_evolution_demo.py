@@ -260,9 +260,6 @@ def validate_local_artifacts(
     expected_agents = {
         "website_builder_agent",
         "browser_agent",
-        "generate_agent",
-        "optimize_agent",
-        "evaluate_agent",
         "website_user_agent",
     }
     actual_agents = set(config.agent_names)
@@ -329,9 +326,6 @@ def validate_local_artifacts(
     )
     context_roles = (
         "website_builder_agent",
-        "generate_agent",
-        "optimize_agent",
-        "evaluate_agent",
         "website_user_agent",
     )
     policies = {}
@@ -372,9 +366,6 @@ def validate_local_artifacts(
         "frontend_ui_engineering_skill",
         "webapp_testing_skill",
         "self_evolving_skill",
-        "generate_skill",
-        "optimize_skill",
-        "evaluate_skill",
     }
     actual_skills = set(config.skill_names)
     if actual_skills != required_skills:
@@ -546,9 +537,6 @@ def launch(args: argparse.Namespace) -> None:
             f"model_name={args.model}",
             f"website_builder_agent.model_name={args.model}",
             f"browser_agent.model_name={args.model}",
-            f"generate_agent.model_name={args.model}",
-            f"optimize_agent.model_name={args.model}",
-            f"evaluate_agent.model_name={args.model}",
             f"website_user_agent.model_name={args.model}",
         ]
     else:

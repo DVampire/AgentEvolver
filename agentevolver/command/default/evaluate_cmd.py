@@ -10,7 +10,7 @@ from agentevolver.command.default._helpers import AGENT_BACKED_TYPES
 @COMMAND.register_module(force=True)
 class EvaluateCommand(SkillCommand):
     name: str = "evaluate"
-    description: str = "Dispatch the matching evaluate agent to score a capability."
+    description: str = "Score an existing capability."
     usage: str = "/evaluate <type> <name>"
     permission_mode: str = "workspace_write"
 
@@ -21,6 +21,6 @@ class EvaluateCommand(SkillCommand):
         if ctype not in AGENT_BACKED_TYPES:
             return self.fail(f"Can't evaluate type '{ctype}'. Options: {AGENT_BACKED_TYPES}")
 
-        self.target_agent = "evaluate_agent"
+        self.target_agent = "meta_agent"
         return await self.dispatch_agent(f"Evaluate the {ctype} '{name}'.", ctx,
                                          target_type=ctype, target_name=name)

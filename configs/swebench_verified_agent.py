@@ -8,9 +8,6 @@ from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.meta_agent import meta_agent
-    from .agents.generate_agent import generate_agent
-    from .agents.optimize_agent import optimize_agent
-    from .agents.evaluate_agent import evaluate_agent
     from .tools.bash import bash_tool
     from .tools.adoption import adoption_tool
     from .memory.file_system_memory import file_system_memory
@@ -33,9 +30,6 @@ agent_names = [
     # fix, iterate against the grader), the way the reference bash-only SWE agents do.
     "meta_agent",
     # self-evolution roster — the ONLY difference from the baseline arm.
-    "generate_agent",
-    "optimize_agent",
-    "evaluate_agent",
 ]
 tool_names = [
     "bash_tool",
@@ -94,9 +88,6 @@ _EVOLUTION = dict(
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )
-generate_agent.update(**_EVOLUTION)
-optimize_agent.update(**_EVOLUTION)
-evaluate_agent.update(**_EVOLUTION)
 
 #-----------------META AGENT CONFIG-----------------
 meta_agent.update(

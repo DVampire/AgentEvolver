@@ -54,8 +54,8 @@ VersionManager registration during discovery.
 Generation, optimization, evaluation, and rollback remain management/evolution
 operations. They are intentionally not multiplexed through a generic Workflow tool.
 
-The self-evolution layer mirrors Skill: `generate_skill` / `optimize_skill` /
-`evaluate_skill` carry the per-type methodology and `self_evolving_skill` the loop; thin generate/optimize/evaluate Agents perform one phase each; a registration
+The self-evolution layer mirrors Skill: `self_evolving_skill` carries both the loop and,
+in its per-type references, the methodology for writing, changing and judging each kind; thin generate/optimize/evaluate Agents perform one phase each; a registration
 Hook registers validated HTML live, matching Tool/Skill; persisted version-scoped evidence
 guides keep/optimize/rollback decisions through the common `adoption_tool`.
 

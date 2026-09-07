@@ -23,7 +23,7 @@ the grant was needed. It is `grant_tool`.
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from agentevolver.logger import logger
 from agentevolver.registry import TOOL
@@ -42,12 +42,15 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
 - `rollback`: restore a component to a previous version (becomes live immediately). Args: `module`, `name`, `version`.
 - `unload`: unregister an evolved component (its archive is kept). Args: `module`, `name`.
 - `record_workflow_evaluation`: append one version-scoped Workflow evaluation. Successful evidence requires a real terminal `run_id`; static failures require `case_id`. Args: `name`, `version`, `success`, `quality_score`, plus optional `run_id`, `case_id`, `token_cost`, `elapsed_ms`, `notes`.
-- `record_decision`: record the outcome of an evolution the agent chose to start. Args:
-  `run_id` of your completed evaluate_agent child, `decision` (`keep|rollback|unload`),
-  and `evidence` explaining the observed need and outcome. Optional `module`, `name`,
-  `version` must match the validated evaluator report. Keep requires a passing report
-  for the exact active version; perform rollback/unload separately. This is generic
-  across all eight families and does not depend on a website release or task contract.
+- `record_decision`: record the outcome of an evolution you chose to start. Args: `report`
+  (the version-scoped evaluation you performed — `module`, `name`, `version`, `verdict`,
+  `baseline`, `cases`), `decision` (`keep|rollback|unload`), and `evidence` explaining the
+  observed need and outcome. Optional `module`, `name`, `version` must match the report;
+  `run_id` defaults to your own process. The version must already be archived, and keep
+  additionally requires a passing verdict for the exact active version; perform
+  rollback/unload separately. You are recording a judgment on your own work, so ground the
+  verdict in cases you actually executed. This is generic across all eight families and does
+  not depend on a website release or task contract.
 
 `module` is one of: tool | agent | skill | environment | connector | workflow | plugin | memory.
 The associated prompt can also be inspected/restored as an agent's supporting artifact.
@@ -60,6 +63,58 @@ The associated prompt can also be inspected/restored as an agent's supporting ar
 _EXAMPLES = [
     '{"name": "adoption_tool", "args": {"action": "rollback", "module": "tool", "name": "calculator_tool", "version": "1.0.0"}}',
 ]
+
+
+def _require_observed_evidence(report: Dict[str, Any], caller_id: str) -> None:
+    """Every cited evidence id must name a call this run actually made.
+
+    An evaluation is only worth citing if its cases point at real calls. The evaluator that
+    used to enforce this was a separate process whose retained turns were the record; the
+    caller's own conversation is that record now.
+    """
+    cited = {
+        str(evidence)
+        for case in (report.get("cases") or [])
+        if isinstance(case, dict)
+        for evidence in (case.get("evidence_ids") or [])
+    }
+    if not cited:
+        return
+    from agentevolver.message.types import ToolMessage
+    from agentevolver.runtime import kernel
+
+    caller = kernel.get(caller_id) if caller_id else None
+    conversation = getattr(getattr(caller, "agent", None), "conversation", None)
+    observed = {
+        str(message.tool_call_id)
+        for message in (getattr(conversation, "items", ()) or ())
+        if isinstance(message, ToolMessage) and getattr(message, "tool_call_id", None)
+    }
+    if not observed:
+        return  # Nothing retained to check against; the version check below still applies.
+    invented = sorted(cited - observed)
+    if invented:
+        raise ValueError(
+            f"Evaluation cites calls absent from this run's evidence: {invented}. "
+            "Every evidence_id must be a tool call you actually made."
+        )
+
+
+def _require_unchanged_candidate(report: Dict[str, Any]) -> None:
+    """The evaluated version must still be the registered one."""
+    from agentevolver.extension import extension_manager
+
+    module, name = str(report.get("module") or ""), str(report.get("name") or "")
+    version = str(report.get("version") or "")
+    if not (module and name and version):
+        return  # Shape errors are reported field-by-field by the validator below.
+    current = extension_manager.read_manifest().find(module, name)
+    if current is None or current.version != version:
+        found = current.version if current is not None else "nothing registered"
+        raise ValueError(
+            f"Candidate version changed during evaluation: the report is for {version} but "
+            f"{module}:{name} is now {found}. Evaluate the active version again."
+        )
 
 
 @TOOL.register_module(force=True)
@@ -115,6 +170,7 @@ class AdoptionTool(Tool):
         notes: str = "",
         decision: Optional[Literal["keep", "rollback", "unload"]] = None,
         evidence: str = "",
+        report: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> Response:
         """Inspect and roll back evolved components.
@@ -130,13 +186,18 @@ class AdoptionTool(Tool):
             version_b: Comparison version for ``diff``; the live version when omitted.
             success: Whether a workflow evaluation succeeded.
             quality_score: Workflow evaluation score.
-            run_id: Completed evaluator child ID for a decision, or a terminal workflow run ID.
+            run_id: Optional decision provenance (defaults to your own process), or a terminal workflow run ID.
             case_id: Static evaluation case identifier, primarily for failed evidence.
             token_cost: Tokens consumed by a workflow evaluation.
             elapsed_ms: Workflow evaluation duration in milliseconds.
             notes: Optional workflow evaluation notes.
             decision: Evaluated candidate outcome: keep, rollback, or unload.
             evidence: Grounded reason for the task-scoped evolution decision.
+            report: The version-scoped evaluation behind a ``record_decision``: ``module``,
+                ``name``, ``version`` (exactly the one you evaluated), ``verdict``
+                (pass|fail|inconclusive), ``baseline``, and ``cases`` — each with a unique
+                ``case_id``, ``expected``, ``observed``, ``passed`` and non-empty
+                ``evidence_ids`` naming calls you actually made.
             **kwargs: Runtime-only injected values, including the current context.
         """
         from agentevolver.extension import (
@@ -254,27 +315,52 @@ class AdoptionTool(Tool):
                 )
 
             if action == "record_decision":
-                from agentevolver.runtime import kernel
-                from agentevolver.agent.actor.evaluate_agent import EvaluateAgent
-
                 ctx = kwargs.get("ctx")
                 caller_id = str((getattr(ctx, "extra", None) or {}).get("process_pid") or "")
-                evaluator = kernel.get(run_id) if run_id else None
-                if (not caller_id or evaluator is None
-                        or not isinstance(evaluator.agent, EvaluateAgent)
-                        or evaluator.parent_pid != caller_id
-                        or not evaluator._exited.is_set()
-                        or getattr(evaluator.exit_status, "value", "") != "done"):
-                    raise RuntimeError("Decision requires your completed independent evaluation run_id")
-                report = (getattr(evaluator.last_result, "data", None) or {}).get("evaluation")
+                # The judgment is submitted rather than read out of a separate evaluator
+                # process. What binds it is not who produced it but that it is version-scoped
+                # and checked against the archive: `record_decision` below refuses a version
+                # that was never archived, and refuses to keep anything but the exact active
+                # version with a passing verdict. An evaluation naming no version, or one that
+                # does not exist, establishes nothing and is rejected rather than stored.
+                # The missing report is the more useful complaint: a caller that passed
+                # prose, or nothing, needs to be told what shape is expected before being
+                # told anything about process identity.
                 if not report:
-                    raise RuntimeError("Evaluator returned no validated, version-scoped evidence")
+                    raise RuntimeError(
+                        "Decision requires the version-scoped evaluation you performed: pass "
+                        "`report` with module, name, version, verdict, baseline and cases"
+                    )
+                if not caller_id:
+                    raise RuntimeError("Decision requires an identified calling process")
+                # Two checks the separate read-only evaluator used to own. Without them a
+                # report is only a claim: evidence ids could name calls that never
+                # happened, and a candidate could be replaced between evaluating it and
+                # keeping it, so the verdict would describe a version nobody installed.
+                _require_observed_evidence(report, caller_id)
+                _require_unchanged_candidate(report)
                 for key, requested in (("module", module), ("name", name), ("version", version)):
                     if requested is not None and requested != report.get(key):
                         raise ValueError(f"Decision {key} differs from evaluated candidate")
-                record = extension_manager.record_decision(
-                    report=report, run_id=run_id, decision=decision, evidence=evidence,
-                )
+                try:
+                    record = extension_manager.record_decision(
+                        report=report, run_id=run_id or caller_id, decision=decision,
+                        evidence=evidence,
+                    )
+                except ValidationError as invalid:
+                    # A pydantic dump names the model and links its docs; neither tells the
+                    # caller which field to fix. Say the field and the rule instead, or the
+                    # next attempt is a guess at the same shape.
+                    problems = "; ".join(
+                        f"{'.'.join(str(part) for part in error['loc']) or 'report'}: {error['msg']}"
+                        for error in invalid.errors()
+                    )
+                    raise ValueError(
+                        f"The evaluation report is not usable — {problems}. It needs module, "
+                        "name, version (exactly the one you evaluated), verdict, baseline, and "
+                        "cases with unique case_id and non-empty evidence_ids; a 'pass' verdict "
+                        "requires at least one case and every case passing."
+                    ) from None
                 return Response(
                     type=ResponseType.TOOL, success=True,
                     message=f"Recorded {decision}: {report['module']}:{report['name']} v{report['version']}",

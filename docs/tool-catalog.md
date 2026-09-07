@@ -98,10 +98,9 @@ Permission mode: `workspace_write` · does not declare whether it changes state
 | `token_cost` | `int` | no | `0` |
 | `elapsed_ms` | `float` | no | `0.0` |
 | `notes` | `str` | no | `''` |
-| `release_number` | `Optional[int]` | no | `None` |
 | `decision` | `Optional[Literal['keep', 'rollback', 'unload']]` | no | `None` |
 | `evidence` | `str` | no | `''` |
-| `evaluation` | `str` | no | `''` |
+| `report` | `Optional[Dict[str, Any]]` | no | `None` |
 
 ## `apply_patch_tool`
 

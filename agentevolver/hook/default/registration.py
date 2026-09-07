@@ -9,8 +9,8 @@ type had no hook at all, so a generated plugin could never be installed, and onl
 workflow copy read a path out of backticks, which is how agents actually write them.
 
 Splitting by type was never necessary, because the run already says which type it built:
-``generate_agent`` and its two siblings carry ``target_type`` in their context, and that
-is what selects a row of ``_SHAPES`` here. So there is one hook, and the eight rows below
+``target_type`` travels in the run's context, and that is what selects a row of ``_SHAPES``
+here. So there is one hook, and the eight rows below
 are the entire difference between installing a tool and installing a workflow.
 
 A row answers up to five questions; six of the eight answer none of them:

@@ -898,10 +898,14 @@ class Agent(BaseModel):
             routes = {tuple(route) for route in routing.values()}
             routes.update(tuple(item.get("route") or ()) for item in catalog(ctx, self.name)
                           if isinstance(item, dict))
+            # What the policy needs is the means to inspect, to record an adoption, and the
+            # skill that says how — the work itself is this agent's, not a roster of workers
+            # it must be able to dispatch. Requiring those workers here meant removing one of
+            # them switched the policy off silently, which is not a decision a missing roster
+            # entry should be making.
             required = {
-                ("agent", "generate_agent"), ("agent", "optimize_agent"),
-                ("agent", "evaluate_agent"), ("tool", "adoption_tool"),
-                ("tool", "inspect_tool"), ("skill", "self_evolving_skill"),
+                ("tool", "adoption_tool"), ("tool", "inspect_tool"),
+                ("skill", "self_evolving_skill"),
             }
             evolution_enabled = required.issubset(routes)
         self._evolution_policy_enabled = evolution_enabled

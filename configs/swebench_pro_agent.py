@@ -10,11 +10,11 @@ The roster, deliberately minimal:
 - **Local verification only.** The agent runs existing repository tests and writes
   its own regression tests. Hidden grading happens only after submission, outside
   the agent; no official scores are returned to it.
-- **The self-evolution roster** — `generate_agent` / `optimize_agent` /
-  `evaluate_agent`, `adoption_tool`, `self_evolving_skill`. This is the ONLY
-  thing that differs from `swebench_pro_agent_baseline.py`; keep every other value
-  in sync between the two arms or the comparison is meaningless (see
-  test_shipped_configs).
+- **The self-evolution roster** — `adoption_tool` and `self_evolving_skill`. The agent
+  generates, optimizes and evaluates in its own loop; these two are what let it record and
+  adopt the result. This is the ONLY thing that differs from
+  `swebench_pro_agent_baseline.py`; keep every other value in sync between the two arms or
+  the comparison is meaningless (see test_shipped_configs).
 
 Absent by design (same reasons as ProgramBench): no web/browser tools (network
 isolation is the anti-cheat — it stops the agent fetching the upstream fix
@@ -31,9 +31,6 @@ from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.meta_agent import meta_agent
-    from .agents.generate_agent import generate_agent
-    from .agents.optimize_agent import optimize_agent
-    from .agents.evaluate_agent import evaluate_agent
     from .tools.bash import bash_tool
     from .tools.adoption import adoption_tool
     from .memory.file_system_memory import file_system_memory
@@ -56,9 +53,6 @@ agent_names = [
     # fix, verify locally), the way the reference bash-only SWE agents do.
     "meta_agent",
     # self-evolution roster — the ONLY difference from the baseline arm.
-    "generate_agent",
-    "optimize_agent",
-    "evaluate_agent",
 ]
 tool_names = [
     "bash_tool",
@@ -117,9 +111,6 @@ _EVOLUTION = dict(
     timeout=WALL_CLOCK,
     max_token=MAX_TOKEN,
 )
-generate_agent.update(**_EVOLUTION)
-optimize_agent.update(**_EVOLUTION)
-evaluate_agent.update(**_EVOLUTION)
 
 #-----------------META AGENT CONFIG-----------------
 meta_agent.update(

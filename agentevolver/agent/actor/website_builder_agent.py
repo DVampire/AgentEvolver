@@ -33,7 +33,23 @@ from agentevolver.registry import AGENT
 #: The three agents whose runs the contract records. Not a permission list: this agent
 #: may call anything mounted, and these are simply the calls that leave a component
 #: behind worth citing.
-EVOLUTION_WORKERS = frozenset({"generate_agent", "optimize_agent", "evaluate_agent"})
+#: The one call that closes an evolution. Recognising evolution by *what was recorded*
+#: rather than by which worker was dispatched survives the workers themselves: the Builder
+#: now generates, optimizes and evaluates in its own loop, and a roster of agent names would
+#: have quietly stopped matching anything.
+ADOPTION_TOOL = "adoption_tool"
+
+
+def _installed_components() -> Dict[str, str]:
+    """Every registered extension component as ``"module:name" -> version``."""
+    from agentevolver.extension import extension_manager
+
+    try:
+        manifest = extension_manager.read_manifest()
+    except Exception:  # noqa: BLE001 - an unreadable manifest is an empty baseline
+        return {}
+    return {f"{item.module}:{item.name}": item.version
+            for item in getattr(manifest, "components", []) or []}
 
 
 # ---------------------------------------------------------------------------
@@ -318,7 +334,10 @@ async def bootstrap_subscribers(
         # subscriber turn. Keeping this inside the contract makes the feedback
         # handshake survive context conversion without a second registry.
         "collected_turns": {},
-        "evolution_runs": [],
+        # What was already installed before this run started. A component whose version
+        # differs from this baseline — or is absent from it — is one this run changed, which
+        # is how an incomplete evolution is found without trusting anyone's account of it.
+        "extension_baseline": _installed_components(),
         "evolution_decisions": [],
         "initial_step_budget": max(
             8,
@@ -518,38 +537,31 @@ class WebsiteBuilderAgent(MetaAgent):
         for result in results:
             entry = self._evolution_entry(result)
             if entry is not None:
-                contract.setdefault("evolution_runs", []).append(entry)
+                contract.setdefault("evolution_decisions", []).append(entry)
         return results
 
     def _evolution_entry(self, result) -> Optional[Dict[str, Any]]:
-        """One contract row for an evolution-worker result, or None for anything else.
+        """One contract row for a recorded adoption, or None for anything else.
 
         ``None`` is the ordinary case — most actions are not evolution — and says only
-        "nothing to record about this one".
+        "nothing to record about this one". What is worth recording is the decision, since
+        that is the step an incomplete evolution is missing; the changes themselves are read
+        back from the manifest, which is the fact rather than a claim.
         """
-        if result.call.name not in EVOLUTION_WORKERS:
+        if result.call.name != ADOPTION_TOOL:
             return None
-        from agentevolver.extension import extension_manager
-
-        target = dict(result.call.args or {})
-        module = str(target.get("target_type") or "")
-        name = str(target.get("target_name") or "")
-        version = ""
-        if module and name:
-            component = extension_manager.read_manifest().find(module, name)
-            if component is not None:
-                version = component.version
-        history = (getattr(self.ctx, "extra", None) or {}).get(
-            "deployment_release_history"
-        ) or []
+        args = dict(result.call.args or {})
+        if str(args.get("action") or "") != "record_decision":
+            return None
+        report = dict(args.get("report") or {})
+        decision = str(args.get("decision") or "")
         return {
-            "agent": result.call.name,
-            "module": module,
-            "name": name,
-            "version": version,
-            "release_number": len(history),
-            # A run that registered nothing did not evolve anything, whatever it reported.
-            "success": result.ok and bool(version),
+            "module": str(args.get("module") or report.get("module") or ""),
+            "name": str(args.get("name") or report.get("name") or ""),
+            "version": str(args.get("version") or report.get("version") or ""),
+            "decision": decision if result.ok else "",
+            "verdict": str(report.get("verdict") or ""),
+            "success": bool(result.ok and decision),
         }
 
     async def iteration_budget(self, step: int) -> str:
@@ -672,46 +684,26 @@ class WebsiteBuilderAgent(MetaAgent):
         # Runtime never decides whether this task should evolve. It only prevents an
         # evolution the Builder already started from being left as an unvalidated,
         # implicitly-active extension.
-        runs = list(contract.get("evolution_runs") or [])
+        baseline = dict(contract.get("extension_baseline") or {})
         decisions = list(contract.get("evolution_decisions") or [])
         changed = {
-            (
-                str(item.get("module") or ""),
-                str(item.get("name") or ""),
-                str(item.get("version") or ""),
-            )
-            for item in runs
-            if item.get("success")
-            and item.get("agent") in {"generate_agent", "optimize_agent"}
-            and item.get("module")
-            and item.get("name")
-            and item.get("version")
+            (key.split(":", 1)[0], key.split(":", 1)[1], version)
+            for key, version in _installed_components().items()
+            if ":" in key and baseline.get(key) != version
         }
         for module, name, version in sorted(changed):
-            evaluated = any(
-                item.get("success")
-                and item.get("agent") == "evaluate_agent"
-                and item.get("module") == module
-                and item.get("name") == name
-                and item.get("version") == version
-                for item in runs
-            )
             decided = any(
-                item.get("module") == module
+                item.get("success")
+                and item.get("module") == module
                 and item.get("name") == name
                 and item.get("version") == version
                 and item.get("decision") in {"keep", "rollback", "unload"}
                 for item in decisions
             )
-            if not evaluated or not decided:
-                missing = (
-                    "evaluation and decision"
-                    if not evaluated and not decided
-                    else ("evaluation" if not evaluated else "keep/rollback/unload decision")
-                )
+            if not decided:
                 return (
                     f"self-initiated evolution {module}:{name} v{version} is incomplete; "
-                    f"missing {missing}"
+                    "evaluate it and record keep/rollback/unload with `adoption_tool`"
                 )
         return None
 
@@ -740,7 +732,7 @@ class WebsiteBuilderAgent(MetaAgent):
 
 
 __all__ = [
-    "EVOLUTION_WORKERS",
+    "ADOPTION_TOOL",
     "PRIVATE_ATTACHMENT_ROLES",
     "WebsiteBuilderAgent",
     "bind_runtime_input_manifest",

@@ -1,12 +1,9 @@
 from .browser_agent import BrowserAgent
 from .code_agent import CodeAgent
 from .computer_agent import ComputerAgent
-from .evaluate_agent import EvaluateAgent
 from .general_agent import GeneralAgent
-from .generate_agent import GenerateAgent
 from .meta_agent import MetaAgent
 from .monitor_agent import MonitorAgent
-from .optimize_agent import OptimizeAgent
 from .reviewer_agent import ReviewerAgent
 from .ssh_agent import SSHAgent
 from .website_builder_agent import WebsiteBuilderAgent
@@ -16,5 +13,4 @@ from .strategy_mining_agent import StrategyMiningAgent
 
 __all__ = ["GeneralAgent", "CodeAgent", "MetaAgent", "WebsiteBuilderAgent", "MonitorAgent", "BrowserAgent",
            "ComputerAgent", "ReviewerAgent", "SSHAgent",
-           "GenerateAgent", "OptimizeAgent", "EvaluateAgent",
-           "WebsiteUserAgent", "FactorMiningAgent", "StrategyMiningAgent"]
+                      "WebsiteUserAgent", "FactorMiningAgent", "StrategyMiningAgent"]
