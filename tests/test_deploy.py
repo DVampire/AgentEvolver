@@ -96,6 +96,10 @@ def test_adoption_tool_exposes_lifecycle_arguments_to_strict_providers():
         "module",
         "name",
         "version",
+        # `register` installs what the caller wrote, so the path is an argument like any
+        # other — and `model_name` is the one construction fact an installed agent needs.
+        "artifact_path",
+        "model_name",
         "version_a",
         "version_b",
         "success",

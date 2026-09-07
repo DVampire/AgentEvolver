@@ -51,7 +51,7 @@ Two directions, don't confuse them:
   ---
   ```
   The **body** below the frontmatter is a short module intro plus a per-action section documenting what each action does and its arguments — this is what an agent reads to call the connector.
-- **Registration is automatic via a hook**: after writing/editing the files, include the connector directory path in your `done_tool` reasoning — the registration hook picks it up.
+- **Registration is a call you make**: after writing/editing the files, call `adoption_tool` with `action="register"`, `module="connector"`, the connector name, and its directory as `artifact_path`.
 
 ---
 
@@ -86,7 +86,7 @@ Follow the MCP tool-design principles in `references/connector/mcp-best-practice
 
 Fill the frontmatter (`connection` + `actions`) and write the body: a one-paragraph module intro, then a section per action with **what it does**, **when to use it**, and **arguments** (from the discovered schema). Keep the description (frontmatter) both what-it-does and when-to-use, a little pushy so agents reach for it.
 
-Then put the connector directory path in your `done_tool` reasoning so the registration hook installs it.
+Then register it: `adoption_tool` with `action="register"`, `module="connector"` and the connector directory as `artifact_path`.
 
 #### If the server doesn't exist yet
 
@@ -128,7 +128,7 @@ Given evaluation results, make the connector better. Edit its `CONNECTOR.md`:
 - **Tune the description** for triggering (what-it-does + when-to-use, a little pushy).
 - Keep it lean and explain the *why* in docs rather than piling on rigid rules.
 
-Read the transcripts from the test runs, not just the outputs — if the agent misused an action or couldn't find the right one, that points at a doc or coverage fix. Re-register the edited connector by putting its `CONNECTOR.md` path in your `done_tool` reasoning.
+Read the transcripts from the test runs, not just the outputs — if the agent misused an action or couldn't find the right one, that points at a doc or coverage fix. Re-register the edited connector with `adoption_tool` (`action="register"`, `artifact_path` = its `CONNECTOR.md`).
 
 ---
 

@@ -24,7 +24,7 @@ An agent has up to three files:
 - `{extension_root}/prompt/{name}.html` — the HTML prompt (REQUIRED for tool-calling agents; procedural agents omit it).
 - `{extension_root}/configs/agents/{name}.py` — the config dict.
 
-**Registration is automatic via a hook**: after writing the files, include the Python file path in your `done_tool` reasoning — the `registration_hook` locates and registers it. The class name in `done_tool` reasoning helps it resolve.
+**Registration is a call you make**: after writing the files, call `adoption_tool` with `action="register"`, `module="agent"`, the agent name, and the Python file as `artifact_path`.
 
 ---
 
@@ -64,7 +64,7 @@ The base `Agent` owns the loop (`__call__` → `think` → `act`), prompt assemb
 Steps:
 1. Read `tool_calling_agent_template.py`, copy it to `{extension_root}/agent/{name}.py`, rename the class, and fill `name` / `description` (state what it does AND when to use it) / `prompt_name`.
 2. Write the HTML prompt (next section).
-3. `python -m py_compile /abs/path/{name}.py`; then put the `.py` path in `done_tool` reasoning to register.
+3. `python -m py_compile /abs/path/{name}.py`; then register it: `adoption_tool` with `action="register"`, `module="agent"` and the `.py` path as `artifact_path`.
 
 #### Writing the HTML prompt (this is where agent quality lives)
 
@@ -126,7 +126,7 @@ Most agent improvement is **prompt improvement**. The target is named in the tas
 - If you ever edit a `agentevolver/prompt/default/` agent and see a `<module src="../module/NAME.html">` tag, that block is a **shared module** used by many agents — editing the module file changes all of them; to change one agent only, inline the block into that file first.
 - Keep the class a declaration — prefer fixing the prompt over adding loop overrides. An actor that overrides `think`, `act`, or anything in `agent/context/` is a candidate to remove: the loop, the assembler and the executor are the same for every agent, so an override is either a genuine new behaviour or an accident. Advice for the model belongs in a step middleware (`agent/loop/guards.py`), not in an override.
 - Apply the prompt writing principles above: explain the why, cut dead instructions, sharpen the rules the agent kept getting wrong.
-- Verify with `py_compile` (and that the HTML still has valid template variables), then re-register by putting the edited file path in `done_tool` reasoning.
+- Verify with `py_compile` (and that the HTML still has valid template variables), then re-register with `adoption_tool` (`action="register"`, `artifact_path` = the edited file).
 
 ---
 

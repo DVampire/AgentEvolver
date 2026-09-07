@@ -54,11 +54,19 @@ def _evolving(_extra: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def _agent_config(extra: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """An agent is constructed, not merely loaded: it needs a workspace and a model."""
+    """An agent is constructed, not merely loaded: it needs a workspace and a model.
+
+    Both come from the run's configuration, and the model may be overridden by whoever
+    asked for the install — ``adoption_tool``'s ``model_name``, which arrives in this
+    payload. It used to be read off the installing worker, so a generated agent inherited
+    the model of whatever happened to register it, and the fact travelled implicitly
+    rather than being stated. Falling back to the configured model puts it where
+    ``base_dir`` already comes from.
+    """
     from agentevolver.config import config
     return {
         "base_dir": config.workspace_root,
-        "model_name": extra.get("model_name") or "",
+        "model_name": extra.get("model_name") or config.model_name,
         "enable_evolving": True,
     }
 

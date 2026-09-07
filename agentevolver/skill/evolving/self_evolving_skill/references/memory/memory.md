@@ -18,7 +18,7 @@ A memory system is a **single Python file** (like a tool, unlike an environment)
 ```
 {extension_root}/memory/{name}.py
 ```
-**Registration is automatic via a hook**: after writing the file, include its path in your `done_tool` reasoning — the `registration_hook` registers it.
+**Registration is a call you make**: after writing the file, call `adoption_tool` with `action="register"`, `module="memory"`, the memory system's name, and its absolute path as `artifact_path`.
 
 ## Writing a new one
 
@@ -57,13 +57,13 @@ class MyMemory(TieredMemory):
 ### Verify and register
 
 After writing: `python -m py_compile /abs/path/{name}.py`. When it compiles, put the
-file path in your `done_tool` reasoning so the hook registers it.
+file path to `adoption_tool` (`action="register"`, `module="memory"`).
 
 ---
 
 ## Improving an existing one
 
-The target is named in the task. Call `inspect_tool` (`capability_type="memory"`) FIRST for its file path and `enable_evolving` — if `enable_evolving=False`, the memory system is frozen; do NOT edit it, report and stop. Read the file before editing; make the smallest correct change; preserve `@MEMORY_SYSTEM.register_module`, the class `name`, and the existing method signatures unless the task requires changing them. Verify with `py_compile`, then re-register via the file path in `done_tool` reasoning.
+The target is named in the task. Call `inspect_tool` (`capability_type="memory"`) FIRST for its file path and `enable_evolving` — if `enable_evolving=False`, the memory system is frozen; do NOT edit it, report and stop. Read the file before editing; make the smallest correct change; preserve `@MEMORY_SYSTEM.register_module`, the class `name`, and the existing method signatures unless the task requires changing them. Verify with `py_compile`, then re-register with `adoption_tool` (`action="register"`, `artifact_path` = that file).
 
 Typical improvements, in order of how often they matter:
 - retaining a class of fact that was being dropped (the usual cause of a late-session failure)

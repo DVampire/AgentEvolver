@@ -33,8 +33,10 @@ Environment, or Memory capabilities over duplicates.
 `enable_evolving` with `inspect_tool`. Improve an evolvable target, or write a new one when the
 target is missing or frozen — the skill's "Writing a new one" and "Improving an existing one"
 sections say how, per type. Preserve the baseline before changing anything. Do not overwrite
-capabilities or files still in use; write a separate candidate instead. Name the artifact's
-absolute path in `done_tool.reasoning`, which is what registers it.
+capabilities or files still in use; write a separate candidate instead. Then install it with
+`adoption_tool` action `register`, passing the artifact's absolute path: writing the file only
+puts bytes on disk, and nothing you wrote is a version until that call succeeds. A refusal says
+what to fix; fix the artifact and register again.
 Then evaluate the exact candidate version against the baseline: one baseline/candidate case and
 one independent reuse or regression case, including cost, expanding checks with risk. You are
 judging your own work, so the evidence has to be executed rather than asserted — a verdict that

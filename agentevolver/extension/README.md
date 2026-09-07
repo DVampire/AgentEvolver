@@ -16,22 +16,28 @@ functional quality is measured by evaluation and rollout.
 ## Version-scoped evaluation evidence
 
 All eight evolvable families use `ComponentEvaluation`: candidate identity/version,
-baseline, verdict, and cases with expected/observed results and actual evaluator call
-IDs. `EvaluateAgent` binds the initial candidate version and checks it again at the end;
-missing evidence or a changed version produces no adoptable report. This is a
-structured evaluator judgment, not independently proven semantic correctness.
+baseline, verdict, and cases with expected/observed results and the `tool_call_id` of
+each call cited. `adoption_tool.record_decision` binds the report to the manifest's
+active version and checks every cited id against the calls the caller actually made;
+missing evidence, an invented id, or a version that changed under the evaluation
+produces no adoptable report. This is a structured judgment, not independently proven
+semantic correctness.
 
-`adoption_tool.record_decision` accepts only the caller's completed EvaluateAgent child.
-The extension manager persists the decision in `.evaluations.json`; `keep` requires
-a passing report for the exact active, archived version. This contract is independent
-of website releases and task-specific runtime extras. Recording a rollback/unload
-decision does not execute it: use the corresponding operation explicitly.
+The judgment used to come from a separate read-only `EvaluateAgent`, whose own retained
+turns were the record. It is submitted now by the agent that did the work, which trades
+physical isolation of the grader for checks on the submission: what survives is that the
+evidence must name real calls and the version must be the registered one. The extension
+manager persists the decision in `.evaluations.json`; `keep` requires a passing report
+for the exact active, archived version. This contract is independent of website releases
+and task-specific runtime extras. Recording a rollback/unload decision does not execute
+it: use the corresponding operation explicitly.
 
 All eight families pass loading/construction/schema admission in a separate Linux
 bubblewrap interpreter before live import. The probe has a read-only code snapshot,
 isolated network and temporary writable directories; inherited environment credentials
 are excluded. Explicit construction config must not contain secrets. Missing isolation
-fails closed. Probe output and content digests are retained under `.checked/`; changed
+fails closed. Probe output and content digests are retained under `output/.runtime/admission/`
+— beside the machine's other caches rather than inside the library they certify; changed
 or injected cache files require rechecking, and symlink roots are rejected.
 
 Version archives preserve admitted bytes rather than a later edit of the authoring file.
@@ -39,9 +45,9 @@ Reusing a version number with different content is rejected. A failed cold-start
 does not erase the accepted manifest pointer or trigger an unapproved directory rescan.
 
 These are mandatory structural checks, **not functional-quality evaluation**. Candidates
-can still become provisionally active after admission and before EvaluateAgent's functional
-judgment. Mandatory isolated behavioral evaluation before activation for all eight families
-remains incomplete. Existing measured tool rollout remains a separate mechanism.
+can still become provisionally active after admission and before the functional judgment
+is recorded. Mandatory isolated behavioral evaluation before activation for all eight
+families remains incomplete. Existing measured tool rollout remains a separate mechanism.
 
 | File | Responsibility |
 |---|---|

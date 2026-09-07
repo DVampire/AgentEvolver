@@ -19,7 +19,7 @@ A tool is a Python class over the shared base `Tool` that an agent invokes with 
 ## Layout
 
 - A tool is a single Python file: `{extension_root}/tool/{name}.py`.
-- **Registration is automatic via a hook**: after writing the file, include its path in your `done_tool` reasoning — the `registration_hook` registers it.
+- **Registration is a call you make**: after writing the file, call `adoption_tool` with `action="register"`, `module="tool"`, the tool name, and its absolute path as `artifact_path`.
 
 **Start from the template**: read `references/tool/template.py`, copy it, and adapt — it already encodes the convention below.
 
@@ -89,13 +89,13 @@ Design principles:
 
 ### Verify and register
 
-After writing: `python -m py_compile /abs/path/{name}.py`. When it compiles, put the path in your `done_tool` reasoning so the hook registers it.
+After writing: `python -m py_compile /abs/path/{name}.py`. When it compiles, register it with `adoption_tool` (`action="register"`, `artifact_path` = that path).
 
 ---
 
 ## Improving an existing one
 
-The target is named in the task. Call `inspect_tool` (capability_type="tool") FIRST for its source path and `enable_evolving` — if `enable_evolving=False`, the tool is frozen; do NOT edit it, report and stop. Read the source before editing; make the smallest correct change; preserve `@TOOL.register_module` and `name`; keep `_DESCRIPTION` one line and `_GUIDANCE` / `_EXAMPLES` in place. Verify with `py_compile`, then re-register via the path in `done_tool` reasoning.
+The target is named in the task. Call `inspect_tool` (capability_type="tool") FIRST for its source path and `enable_evolving` — if `enable_evolving=False`, the tool is frozen; do NOT edit it, report and stop. Read the source before editing; make the smallest correct change; preserve `@TOOL.register_module` and `name`; keep `_DESCRIPTION` one line and `_GUIDANCE` / `_EXAMPLES` in place. Verify with `py_compile`, then re-register with `adoption_tool` (`action="register"`, `artifact_path` = that path).
 
 ---
 

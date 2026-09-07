@@ -117,17 +117,58 @@ def test_there_is_exactly_one_registration_hook():
 
 
 def test_the_dispatcher_asks_for_that_one_hook_by_name():
-    """`register_generated` names the hook it fires. A stale `{type}_registration_hook`
-    there would resolve to nothing and fail every run, for every type at once."""
+    """`install_generated_component` names the hook it fires. A stale
+    `{type}_registration_hook` there would resolve to nothing and fail every run, for every
+    type at once."""
     import inspect
 
     from agentevolver.hook import promotion
 
-    source = inspect.getsource(promotion.register_generated)
+    source = inspect.getsource(promotion.install_generated_component)
     assert 'name="registration_hook"' in source
     assert '"target_type": target' in source, (
         "the hook selects its row by target_type; the dispatcher must pass it"
     )
+
+
+@pytest.mark.asyncio
+async def test_registering_is_reachable_as_an_action_rather_than_by_ending_a_run(monkeypatch):
+    """The installer needs a caller, and `adoption_tool` is it.
+
+    Installing used to be the last act of the three evolution agents: their `finalize` fired
+    the hook, so deleting them left the hook and all eight of its shapes with no caller at
+    all. A component could be written and evaluated and never become a version — which is
+    what a live run reported, as `record_decision` refusing a candidate that was "nothing
+    registered". The check is that the action reaches the hook with the type it was given.
+    """
+    from agentevolver.hook.types import HookDecision, HookResult
+    from agentevolver.tool.default.adoption import AdoptionTool
+
+    seen = {}
+
+    async def _hook_manager(*, name, input, ctx, required):
+        seen.update(hook=name, payload=input)
+        return HookResult(decision=HookDecision.ALLOW)
+
+    from agentevolver.hook import server
+
+    monkeypatch.setattr(server, "hook_manager", _hook_manager)
+
+    result = await AdoptionTool()(
+        action="register", module="tool", name="calculator_tool",
+        artifact_path="/tmp/calculator_tool.py",
+    )
+    assert result.success is True
+    assert seen["hook"] == "registration_hook"
+    assert seen["payload"]["target_type"] == "tool"
+    assert seen["payload"]["target_name"] == "calculator_tool"
+    assert seen["payload"]["artifact_path"] == "/tmp/calculator_tool.py"
+
+    # An unknown family is refused here rather than reaching a hook that cannot select a row.
+    unknown = await AdoptionTool()(
+        action="register", module="widget", name="x", artifact_path="/tmp/x.py",
+    )
+    assert unknown.success is False and "must be one of" in unknown.message
 
 
 @pytest.mark.parametrize(

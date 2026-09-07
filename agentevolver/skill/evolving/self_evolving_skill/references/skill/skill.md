@@ -24,7 +24,7 @@ triggered at all.
   ├── resources/      # optional — runtime data files loaded by scripts
   └── examples/       # optional — examples.md; only when scripts/ exists
   ```
-- **Registration is automatic via a hook**: after you finish writing/editing the files, include the skill directory path in your `done_tool` reasoning — the registration hook picks it up. Do NOT package a `.skill` file; this framework registers from the directory.
+- **Registration is a call you make**: after you finish writing/editing the files, call `adoption_tool` with `action="register"`, `module="skill"`, the skill name, and the skill directory as `artifact_path`. Do NOT package a `.skill` file; this framework registers from the directory.
 - **Frontmatter** must include `name`, `description`, `version`, and `type`. `type` is one or more labels: `worker` (an SOP for one agent — visible to sub-agents) and/or `orchestrator` (a composition recipe for MetaAgent — how to fan work across sub-agents). Most skills are `worker`.
 
 ---
@@ -123,7 +123,7 @@ See `references/skill/schemas.md` for the full schema (including the `assertions
 python {skill_dir}/scripts/skill/validate.py {path_to_skill_dir}
 ```
 
-When the files are written and validated, put the skill directory path in your `done_tool` reasoning so the registration hook installs it.
+When the files are written and validated, register it: `adoption_tool` with `action="register"`, `module="skill"` and the skill directory as `artifact_path`.
 
 ---
 
@@ -167,7 +167,7 @@ Take your time here — thinking time is not the blocker. Draft a revision, rere
 3. Re-grade and re-aggregate; compare against the previous iteration.
 4. Repeat until the outputs are good, the benchmark stops improving, or you've stopped making meaningful progress.
 
-When re-registering an edited skill, put the edited SKILL.md path in your `done_tool` reasoning so the hook reloads it.
+When re-registering an edited skill, pass the edited `SKILL.md` path to `adoption_tool` (`action="register"`, `module="skill"`).
 
 ---
 

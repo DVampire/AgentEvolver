@@ -1,11 +1,15 @@
 """Adoption tool — does an evolved component stay?
 
-Every action here serves that one question. `list_active` says what has been adopted,
-`list_versions` what could be reverted to, `diff` what a change actually changed;
-`record_workflow_evaluation` and `record_decision` are the evidence and the verdict;
-`rollback` and `unload` un-adopt. The generate and optimize agents *create* versions —
-this is the lever that decides whether one is kept, and the undo that makes a regression
-caught by `reviewer_agent` actionable rather than only re-optimizable.
+Every action here serves that one question. `register` makes a written artifact a real
+version in the first place; `list_active` says what has been adopted, `list_versions` what
+could be reverted to, `diff` what a change actually changed; `record_workflow_evaluation`
+and `record_decision` are the evidence and the verdict; `rollback` and `unload` un-adopt.
+
+`register` arrived when the generate and optimize agents left. Creating a version was
+their last act — the hook fired from `finalize` — so an agent that writes the component
+itself had nowhere to install it, and the rest of the lifecycle had nothing to act on.
+Writes belong here; reading a component's contract stays in `inspect_tool`, which is
+read-only and mounted by runs that never evolve anything.
 
 It was called `evolution_tool`, which named the topic rather than the operation — the
 same way `database_tool` would tell a reader nothing about what it does. Every other
@@ -30,7 +34,9 @@ from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.types import Tool
 
-_DESCRIPTION = "Manage and record the evaluated lifecycle of evolved extension components."
+_DESCRIPTION = (
+    "Register, manage and record the evaluated lifecycle of evolved extension components."
+)
 
 _GUIDANCE = """
 Manage the version lifecycle of evolved components (tools/agents/prompts/skills/environments/connectors/workflows created or optimized under `extension/`). Use it to UNDO a bad evolution a reviewer flagged — roll back to the previous good version, or unload a newly generated component that made things worse.
@@ -39,6 +45,7 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
 - `list_active`: list all active evolved components (module, name, version). No args.
 - `list_versions`: list archived versions of one component. Args: `module`, `name`.
 - `diff`: show the source diff between two versions (see what an optimization actually changed). Args: `module`, `name`, `version_a`, `version_b` (optional; defaults to the live version).
+- `register`: install a component you just wrote, so it becomes a real version. Args: `module`, `name`, `artifact_path` (the absolute path you wrote), and for an `agent` an optional `model_name`. **Nothing you write is live until this succeeds** — writing the file only puts bytes on disk, and `record_decision` refuses a candidate that was never registered. A refusal names what to fix; fix the artifact and call `register` again. New components are installed as evolvable so a later round can optimize them; a frozen component (`enable_evolving=False`) is refused. **The reply names the active version — use exactly that in your evaluation report.** The version is whatever the component declares about itself; registering again does not advance it, so do not assume a bump.
 - `rollback`: restore a component to a previous version (becomes live immediately). Args: `module`, `name`, `version`.
 - `unload`: unregister an evolved component (its archive is kept). Args: `module`, `name`.
 - `record_workflow_evaluation`: append one version-scoped Workflow evaluation. Successful evidence requires a real terminal `run_id`; static failures require `case_id`. Args: `name`, `version`, `success`, `quality_score`, plus optional `run_id`, `case_id`, `token_cost`, `elapsed_ms`, `notes`.
@@ -51,6 +58,12 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
   rollback/unload separately. You are recording a judgment on your own work, so ground the
   verdict in cases you actually executed. This is generic across all eight families and does
   not depend on a website release or task contract.
+
+  **An `evidence_id` is a `tool_call_id`.** Copy it verbatim from a call you made in this
+  conversation — they look like `toolu_...` or `call_...` — one per case, naming the call
+  whose result you are citing. Identifiers you compose yourself (`case-1`, `eval:ACC1`) are
+  rejected: they cannot be checked against anything, which is the whole reason the field
+  exists. If you have no call to cite, you have not run the evaluation yet.
 
 `module` is one of: tool | agent | skill | environment | connector | workflow | plugin | memory.
 The associated prompt can also be inspected/restored as an agent's supporting artifact.
@@ -101,9 +114,19 @@ def _require_observed_evidence(report: Dict[str, Any], caller_id: str) -> None:
     # behind, so a fabricated report passed or failed by accident of ordering.
     invented = sorted(cited - observed)
     if invented:
+        # Name a real id from this very conversation. The rejected values are consistently
+        # invented labels — `case-1`, `eval:ACC1`, or a tool's *name* — because "a call you
+        # actually made" does not say what identifies one, and the ids are sitting in the
+        # transcript unmentioned. Showing one turns an unlearnable refusal into a copy.
+        sample = sorted(observed)[:3]
+        example = (
+            " Ids from this run you can cite: " + ", ".join(sample) + "."
+            if sample else " This run has made no tool calls yet, so run the evaluation first."
+        )
         raise ValueError(
-            f"Evaluation cites calls absent from this run's evidence: {invented}. "
-            "Every evidence_id must be a tool call you actually made."
+            f"Evaluation cites calls absent from this run's evidence: {invented}. Every "
+            f"evidence_id is the `tool_call_id` of a call you made, copied verbatim — not a "
+            f"tool name and not a label you compose.{example}"
         )
 
 
@@ -158,6 +181,7 @@ class AdoptionTool(Tool):
             "list_active",
             "list_versions",
             "diff",
+            "register",
             "rollback",
             "unload",
             "record_workflow_evaluation",
@@ -166,6 +190,8 @@ class AdoptionTool(Tool):
         module: Optional[str] = None,
         name: Optional[str] = None,
         version: Optional[str] = None,
+        artifact_path: Optional[str] = None,
+        model_name: Optional[str] = None,
         version_a: Optional[str] = None,
         version_b: Optional[str] = None,
         success: Optional[bool] = None,
@@ -180,15 +206,20 @@ class AdoptionTool(Tool):
         report: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> Response:
-        """Inspect and roll back evolved components.
+        """Install, inspect and roll back evolved components.
 
         Args:
             action: Which operation to run — ``list_active``, ``list_versions``,
-                ``diff``, ``rollback``, ``unload``, ``record_workflow_evaluation``,
-                or ``record_decision``. Defaults to ``list_active``.
-            module: Component family for version, diff, rollback, unload, or decision actions.
+                ``diff``, ``register``, ``rollback``, ``unload``,
+                ``record_workflow_evaluation``, or ``record_decision``. Defaults to
+                ``list_active``.
+            module: Component family for register, version, diff, rollback, unload, or
+                decision actions.
             name: Registered component or workflow name for the selected action.
             version: Component/workflow version for rollback, evaluation, or decision evidence.
+            artifact_path: For ``register``: the absolute path of the component you wrote.
+            model_name: For ``register`` of an ``agent``: the model it should run on.
+                Defaults to the run's configured model; ignored by the other seven families.
             version_a: Archived base version for ``diff``.
             version_b: Comparison version for ``diff``; the live version when omitted.
             success: Whether a workflow evaluation succeeded.
@@ -263,6 +294,49 @@ class AdoptionTool(Tool):
                         "version_a": version_a,
                         "version_b": version_b,
                     },
+                )
+
+            if action == "register":
+                # The step that used to happen by ending a run. Installing was the last
+                # act of the three evolution agents — their `finalize` fired the hook — so
+                # deleting them left the hook, and all eight of its shapes, with no
+                # caller: a component could be written and evaluated but never made live,
+                # and `record_decision` then correctly refused a candidate that was
+                # "nothing registered".
+                if not module or not name:
+                    raise KeyError("module and name")
+                if not artifact_path:
+                    raise KeyError("artifact_path")
+                from agentevolver.hook.promotion import install_generated_component
+
+                ok, detail = await install_generated_component(
+                    module=module, name=name, artifact_path=artifact_path,
+                    model_name=model_name or "", ctx=kwargs.get("ctx"),
+                )
+                # Say which version is now active. The version is whatever the component
+                # declares about itself, not a counter this call advances, so a caller that
+                # has to guess guesses wrong — and then `record_decision` refuses a report
+                # bound to a version that was never registered, which is exactly what a
+                # live run did: it assumed a bump to 1.0.1 against an active 1.0.0.
+                registered = next(
+                    (c for c in extension_manager.read_manifest().components
+                     if c.module == module and c.name == name),
+                    None,
+                ) if ok else None
+                if registered is not None:
+                    detail = (
+                        f"Registered {module}:{registered.name} v{registered.version}. Live on "
+                        f"the next dispatch. Evaluate that version, and pass it in the report."
+                    )
+                    logger.info(
+                        f"| 📥 adoption_tool: registered {module}:{registered.name} "
+                        f"v{registered.version}"
+                    )
+                return Response(
+                    type=ResponseType.TOOL, success=ok, message=detail,
+                    data={"module": module, "name": name, "artifact_path": artifact_path,
+                          "registered": ok,
+                          "version": getattr(registered, "version", None)},
                 )
 
             if action == "rollback":

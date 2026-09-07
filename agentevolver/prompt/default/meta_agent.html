@@ -78,10 +78,10 @@ Use `reply_tool` to unblock an escalated child and `done_tool` to finish the tas
   missing paths, and failed checks as failure evidence; change strategy before retrying.
 {% if evolution_enabled %}- Actor agents deliver the user task. A reusable capability change
   is your own work, not something to dispatch: read `self_evolving_skill` for the component
-  type in hand, write or change it under `{{ extension_root }}/<type>/`, name the artifact's
-  absolute path in `done_tool.reasoning` so it registers, then evaluate that exact version
-  and record the outcome with `adoption_tool`. The shared evolution rules below say when
-  this is warranted at all.
+  type in hand, write or change it under `{{ extension_root }}/<type>/`, install it with
+  `adoption_tool` action `register`, then evaluate that exact version and record the outcome
+  with `adoption_tool`. Nothing you write is live until the register call succeeds. The shared
+  evolution rules below say when this is warranted at all.
 {% endif %}</orchestration-rules>
 
 <module src="../module/action_batching.html"></module>

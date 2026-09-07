@@ -13,10 +13,15 @@ keep generated candidates in staging so their evaluation and adoption remain rec
 go in `{workspace_root}` — never the project root.
 
 **How registration happens.** You never edit an `__init__.py`, never touch a registry, and never
-restart anything. Put the new component's **absolute path** in your `done_tool.reasoning`; the
-`registration_hook` finds it there, promotes it and registers it. That path is
-the whole handoff — a run that omits it fails at the last step with nothing installed, having
-done all the work.
+restart anything. Call `adoption_tool` with `action="register"`, the component's `module` and
+`name`, and its **absolute path** as `artifact_path`; that promotes it out of staging and
+registers it. Nothing you wrote is a version until this call succeeds — the file is bytes on
+disk, `inspect_tool` still reports it unregistered, and a decision recorded against it is
+refused. A refusal names what to fix; fix the artifact and register again.
+
+Registration used to ride on `done_tool.reasoning`, because installing was the last act of a
+worker whose whole run was the evolution. You do this work yourself now, mid-run, and the
+install is a call you make when the artifact is ready.
 
 **Verify before you finish.** Every type has a check, named in its file: Python compiles
 (`python -m py_compile /abs/path.py && echo "syntax OK"`), a manifest directory has its manifest
@@ -51,9 +56,9 @@ breaks silently.
 **Write to the staging tree.** The improved version goes under `{extension_root}/{target_type}/`,
 never over a file in `{package_root}`.
 
-**Verify, then hand over the path.** Run the type's check after every edit, then any available
-test or a quick functional call. Put the changed component's **absolute path** in
-`done_tool.reasoning` — that is how the new version gets registered.
+**Verify, then register.** Run the type's check after every edit, then any available test or a
+quick functional call. Then call `adoption_tool` with `action="register"` and the changed
+component's **absolute path** — that is how the new version gets registered.
 
 ## Judging one
 
@@ -95,7 +100,9 @@ on arrival, so it has to be the real shape:
 report = {
   "module":  one of tool | skill | agent | connector | environment | memory | workflow | plugin,
   "name":    the component's registered name,
-  "version": the exact version you evaluated — take it from `inspect_tool`, never invent it,
+  "version": the exact version you evaluated — `adoption_tool` action `register` replies with
+             it, and `inspect_tool` reports it; never invent it, and never assume registering
+             again bumped it,
   "verdict": "pass" | "fail" | "inconclusive",
   "baseline": what you compared against, in words,
   "cases": [
@@ -103,7 +110,7 @@ report = {
      "expected": "what should happen",
      "observed": "what did happen",
      "passed": true,
-     "evidence_ids": ["at least one — a trace/step id or artifact path"]},
+     "evidence_ids": ["toolu_… — the tool_call_id of a call you made, copied verbatim"]},
     ...
   ],
 }
@@ -113,7 +120,10 @@ Four rules the validator enforces, each of which rejects the whole record rather
 degrading it:
 
 - `case_id` must be unique inside the report.
-- `evidence_ids` must be non-empty for every case. A case with no evidence is an assertion.
+- `evidence_ids` must be non-empty for every case, and each one must be the `tool_call_id`
+  of a call this run actually made — copy it from the conversation. A tool's *name*, or a
+  label you compose (`case-1`, `eval:ACC1`), is checked against the calls on record and
+  rejected. A case with no evidence is an assertion.
 - **`verdict: "pass"` requires at least one case and every case passing.** A pass with no
   executed cases is refused — this is where a verdict argued from reading the source dies.
 - The `version` must already be archived, and `decision: "keep"` additionally requires that

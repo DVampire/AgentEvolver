@@ -139,9 +139,10 @@ permission or resource limit can block dispatch; record it and retry when it cle
    do not depend on reconstructing an overwritten baseline.
 2. **Change** — read `references/<type>/<type>.md`: "Writing a new one" for a component that
    does not exist yet, "Improving an existing one" for one that does, plus the matching section
-   of `references/conventions.md`. Author the files under `extension/` and name the artifact's
-   absolute path in your `done_tool.reasoning`; the registration hook installs what it finds
-   there. A run that omits the path finishes with nothing installed.
+   of `references/conventions.md`. Author the files under `extension/`, then install what you
+   wrote with `adoption_tool` action `register`, passing its absolute path as `artifact_path`.
+   Until that call succeeds the artifact is bytes on disk, not a version — `inspect_tool` still
+   reports it unregistered, and step 3 has nothing it is allowed to record against.
 3. **Evaluate** — read that type's "Evaluating one" section and judge the exact candidate
    version — the exact candidate version, not the component in general — then record the verdict with `adoption_tool` so it is bound to that version. You are
    grading your own work here, which is why the record is version-scoped and why the evidence

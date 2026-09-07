@@ -34,7 +34,7 @@ program, not an Agent subtype and not a substitute for a Skill's domain instruct
   Schema and keep its `type` consistent with the `<input>` attribute.
 - Define explicit `<outputs>` and reference guaranteed top-level step results.
 - Set node `timeout` and retry/backoff policy where an external capability can stall.
-- Compile the file before completion and include its absolute path in `done_tool.reasoning`.
+- Compile the file, then register it with `adoption_tool` (`action="register"`, `module="workflow"`, `artifact_path` = its absolute path).
 
 ## Improving an existing one
 
@@ -44,7 +44,7 @@ program, not an Agent subtype and not a substitute for a Skill's domain instruct
    unless the task explicitly authorizes a breaking change.
 4. Increment the semantic version and keep status `active`.
 5. Compile and check boundedness, reachability, capability names, and output references.
-6. Include the edited absolute HTML path in `done_tool.reasoning` for registration.
+6. Register the edited file with `adoption_tool` (`action="register"`, `module="workflow"`, `artifact_path` = the absolute HTML path).
 
 Never tune a Workflow to one benchmark case. Prefer parameterization over copying variants.
 
