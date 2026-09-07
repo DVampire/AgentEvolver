@@ -77,6 +77,23 @@ class HostSandbox(Sandbox):
             return None  # Cannot verify; fail closed.
 
     @classmethod
+    async def resource_absent(cls, resource_id: str) -> bool:
+        """A host identity is provably gone when no live process still carries it.
+
+        The leader is named by pid *and* its start ticks, so a recycled pid running
+        something else reads as absent too — which it is: the group this id named no
+        longer exists, and nothing may be signalled on its behalf.
+        """
+        try:
+            pid_text, start_text, group_text = resource_id.split(":", 2)
+            pid, start, group = int(pid_text), int(start_text), int(group_text)
+        except (AttributeError, TypeError, ValueError):
+            return False
+        if pid <= 1 or group <= 1:
+            return False
+        return cls._process_start_ticks(pid) != start
+
+    @classmethod
     async def destroy_resource(cls, resource_id: str) -> bool:
         """Stop a persisted host group only while its leader identity still matches."""
         try:

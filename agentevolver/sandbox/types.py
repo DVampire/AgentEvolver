@@ -181,6 +181,18 @@ class Sandbox:
         """
         return False
 
+    @classmethod
+    async def resource_absent(cls, resource_id: str) -> bool:
+        """Whether this identity is provably gone — not merely unreachable.
+
+        The conservative default is False: "I cannot show it is absent" is the honest
+        answer for a backend that cannot inspect a persisted identity, and callers treat
+        an unproven resource as possibly alive. A backend that can check says so, which
+        is what lets a record whose process really died be cleared without ever
+        reporting a stop that did not happen.
+        """
+        return False
+
     # ------------------------------------------------------------- lifecycle
     async def start(self) -> None:
         """Create/connect the underlying container. Idempotent."""

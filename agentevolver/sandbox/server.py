@@ -251,6 +251,16 @@ class SandboxManagerServer(BaseModel):
             return await cls.destroy_resource(resource_id)
         return False
 
+    async def resource_absent(self, type: str = "opensandbox", *, resource_id: str = "") -> bool:
+        """Whether a persisted identity is provably gone. Unknown backends answer False."""
+        if not resource_id:
+            return False
+        try:
+            cls = await self.get(type)
+        except Exception:  # noqa: BLE001 - an unknown backend proves nothing
+            return False
+        return await cls.resource_absent(resource_id)
+
     async def cleanup(self) -> None:
         """Destroy all cached handles and stop the opensandbox-server daemon."""
         for handle in list(self._handles.values()):

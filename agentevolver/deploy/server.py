@@ -916,7 +916,15 @@ class DeploymentManagerServer(BaseModel):
             reuse_key=site_id,
             resource_id=rec.resource_id,
         )
-        if not stopped and (rec.resource_id or await self._url_reachable(rec.url)):
+        # An unreachable URL never proved a backend gone, so a stored handle kept a dead
+        # record unstoppable — and therefore unrebuildable, since deploy stops first.
+        # Absence has to be demonstrated instead of assumed: a backend that can inspect
+        # its own identity says whether the process is really gone, and only that answer
+        # clears the handle. Backends that cannot inspect still refuse, as before.
+        unverified = bool(rec.resource_id) and not await sandbox_manager.resource_absent(
+            rec.backend or _SANDBOX_KIND, resource_id=rec.resource_id or "",
+        )
+        if not stopped and (unverified or await self._url_reachable(rec.url)):
             raise RuntimeError(
                 f"Site {site_id!r} still has a live or unverified backend identity; "
                 "refusing to report a false stop"
