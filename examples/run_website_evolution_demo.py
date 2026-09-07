@@ -536,9 +536,8 @@ def launch(args: argparse.Namespace) -> None:
         str(site_brief),
         *(str(path) for path in personas),
     ]
-    # Stable across disposable run workspaces. Different scenarios stay isolated;
-    # explicit caller configuration can still override this default.
-    cfg_options = [f"memory_project_id=website:{site_brief.parent.name}", *args.cfg_options]
+    # File notes follow the bound session; restarting a scenario does not share them.
+    cfg_options = list(args.cfg_options)
     forwarded.extend(["--monitor-port", str(args.monitor_port)])
     if args.no_monitor:
         forwarded.append("--no-monitor")

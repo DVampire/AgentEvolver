@@ -1,4 +1,4 @@
-"""Durable, evidence-only project memory shared across sessions."""
+"""Session-scoped file notes and the legacy cross-session Trace evidence store."""
 
 from __future__ import annotations
 
@@ -180,29 +180,27 @@ class ProjectNotes:
     files, each with ``name``/``description``/``type`` frontmatter over a body that may
     cite siblings as ``[[name]]`` — and an agent writes one with the ordinary file tools
     it already has. Wrapping ``cat`` and ``>`` in a bespoke tool would buy nothing and
-    cost a schema in every agent's context; what an agent genuinely cannot derive is
-    where the directory *is*, since the project key is a digest, so :meth:`index` states
-    the resolved path and the format instead.
+    cost a schema in every agent's context. :meth:`index` supplies the directory
+    resolved by PathManager and the note format.
 
-    Stored under PathManager's dedicated memory root rather than disposable output.
-    Actor identities select private namespaces; the default is an explicitly shared
-    project directory. No implicit copying between those scopes is performed.
+    Stored in the bound session's log/memory directory, separate from its workspace.
+    Actor identities select private namespaces; omitting one selects the session's
+    shared notes. Reopening that session restores its notes; another session starts
+    separately. No implicit copying from legacy stores is performed.
     """
 
     def __init__(self, workspace_root: str, source_workspace: Optional[str] = None,
                  *, project_id: str = "", actor_id: str = ""):
+        # Keep legacy constructor arguments for callers, but workspace/project
+        # identity no longer selects storage: the bound session owns all notes.
         self.workspace_root = str(workspace_root or "")
         self.source_workspace = str(source_workspace or "") or None
         self.dir: Optional[Path] = None
         bound = path_manager.session
         if bound is not None and self.workspace_root:
-            owner, _ = bound
-            self.dir = path_manager.get(
-                P.OWNER_PRIVATE_NOTES if actor_id else P.OWNER_PROJECT_NOTES,
-                owner=owner,
-                project_key=_identity(self.workspace_root, self.source_workspace, project_id),
-                **({"actor_id": hashlib.sha256(actor_id.encode()).hexdigest()[:20]}
-                   if actor_id else {}),
+            self.dir = path_manager.under(
+                path_manager.get(P.SESSION_MEMORY_DIR), P.MEMORY_ACTOR_NOTES,
+                actor_id=hashlib.sha256(actor_id.encode()).hexdigest()[:20] if actor_id else "shared",
             )
             if self.dir.resolve() != self.dir:
                 raise ValueError("Memory directory must not redirect through a symlink")
@@ -258,12 +256,13 @@ class ProjectNotes:
             return ""
         found = self.entries()
         lines = [
-            f"Durable project memories live in `{self.dir}` (outside the working tree).",
+            f"Your session memories live in `{self.dir}` (outside the working tree).",
             "",
             "Your thread retains its conversation across resident turns. These notes are for "
-            "knowledge useful beyond that thread, not a copy of its transcript. "
+            "knowledge useful across this actor's turns in the current session, not a copy of its transcript. "
             "Read one in full with Bash when its description below looks "
-            "relevant. To record something a later turn or session would otherwise have to "
+            "relevant. These files persist when this session is reopened; new sessions have separate notes. "
+            "To record something a later turn would otherwise have to "
             "rediscover, write `<name>.md` there — a short kebab-case slug — with this "
             "frontmatter:",
             "",

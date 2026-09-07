@@ -836,11 +836,11 @@ class Agent(BaseModel):
             return ""
 
     async def memory_context(self, ctx: Any) -> str:
-        """An actor's stable notes index; file bodies are read with existing Bash."""
+        """An actor's notes index in this session; bodies are read with existing Bash."""
         import os
-        from agentevolver.config import config
-        from agentevolver.memory.project import ProjectNotes
+
         from agentevolver.memory import memory_manager
+        from agentevolver.memory.project import ProjectNotes
         from agentevolver.paths import path_manager
 
         extra = getattr(ctx, "extra", None) or {}
@@ -856,11 +856,7 @@ class Agent(BaseModel):
         actor = str(extra.get("memory_actor_id") or (
             getattr(ctx, "id", "") if getattr(ctx, "parent_session_id", "") else self.name
         ) or self.name)
-        notes = ProjectNotes(
-            workspace, source_workspace=extra.get("source_workspace"),
-            project_id=str(extra.get("memory_project_id") or config.get("memory_project_id", "")),
-            actor_id=actor,
-        )
+        notes = ProjectNotes(workspace, actor_id=actor)
         if notes.dir is None:
             return ""
         notes.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1336,6 +1332,7 @@ class Agent(BaseModel):
         archive = None
         if self._thread_path is not None:
             from uuid import uuid4
+
             from agentevolver.paths import P, path_manager
 
             archive = path_manager.under(

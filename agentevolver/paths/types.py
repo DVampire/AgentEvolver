@@ -20,6 +20,8 @@ class P(str, Enum):
     #: once in its server and once in its context — so the same rule was written
     #: forty-odd times and the layout table did not know about any of it.
     LOG_MODULE = "log_module"
+    #: Actor-scoped Markdown notes, resolved under SESSION_MEMORY_DIR.
+    MEMORY_ACTOR_NOTES = "memory_actor_notes"
     #: Files a manager keeps beside its own directory, under the same log root.
     LOG_TASKS = "log_tasks"
     LOG_TASKS_ARCHIVE = "log_tasks_archive"
@@ -61,7 +63,7 @@ class P(str, Enum):
     # --- storage roots --------------------------------------------------
     OUTPUT = "output"
     EXTENSION = "extension"
-    MEMORY = "memory"
+    MEMORY = "memory"  # Legacy notes root, retained for explicit migration.
     #: One module's shared components — ``extension/skill``, ``extension/tool``,
     #: ``extension/canvas``, … Parameterised rather than one key per module,
     #: because the extension manager promotes any module type through the same
@@ -91,8 +93,6 @@ class P(str, Enum):
     OWNER_STATE = "owner_state"
     OWNER_FILES = "owner_files"
     OWNER_PROJECT_MEMORY = "owner_project_memory"
-    OWNER_PROJECT_NOTES = "owner_project_notes"
-    OWNER_PRIVATE_NOTES = "owner_private_notes"
     SESSION_AGENT_CONTEXT = "session_agent_context"
     SESSION_RUN_STATE = "session_run_state"
     IDE_EXTENSIONS = "ide_extensions"
@@ -109,6 +109,7 @@ class P(str, Enum):
     #: it validates.
     SESSION_WORKSPACE = "session_workspace"
     SESSION_LOG = "session_log"
+    SESSION_MEMORY_DIR = "session_memory_dir"
     SESSION_EXTENSION = "session_extension"
     #: Where trace writes one JSONL file per run, plus its `index.json`. A session
     #: directory holds several: the run the session was opened for and every
@@ -152,8 +153,8 @@ class P(str, Enum):
 
 
 #: The complete tree, relative to the project directory: ``output/`` for run
-#: artifacts, ``extension/`` for shared components, ``memory/`` for durable notes
-#: that must survive output cleanup. Everything the framework
+#: artifacts (including session notes), ``extension/`` for shared components, and
+#: ``memory/`` for legacy notes retained for migration. Everything the framework
 #: writes is declared here — this table *is* the disk contract.
 #: Keys resolved against a root the caller supplies, through
 #: :meth:`PathManagerServer.under` rather than :meth:`get`. They are fragments — a
@@ -161,7 +162,7 @@ class P(str, Enum):
 #: that every declared path stays inside the two writable roots is enforced on the
 #: root they are joined to, not on them.
 RELATIVE: frozenset = frozenset({
-    P.LOG_MODULE, P.LOG_TASKS, P.LOG_TASKS_ARCHIVE, P.LOG_TRACE_INDEX,
+    P.LOG_MODULE, P.MEMORY_ACTOR_NOTES, P.LOG_TASKS, P.LOG_TASKS_ARCHIVE, P.LOG_TRACE_INDEX,
     P.LOG_INPUTS, P.LOG_MODEL_REQUEST, P.LOG_RUN_MONITOR, P.LOG_CONTEXT_ARCHIVE,
     P.LOG_WORKTREE, P.LOG_WORKTREE_PATCH,
     P.LOG_COMMAND_CHECKPOINTS, P.LOG_COMMAND_CHECKPOINT,
@@ -200,6 +201,7 @@ LAYOUT: Dict[P, str] = {
     #: session binds, and a project root may be any directory — so they are joined
     #: through :meth:`PathManagerServer.under`, not :meth:`get`.
     P.LOG_MODULE: "{module}",
+    P.MEMORY_ACTOR_NOTES: "{actor_id}/notes",
     P.LOG_TASKS: "tasks.json",
     P.LOG_TASKS_ARCHIVE: "tasks_archive.json",
     P.LOG_TRACE_INDEX: "index.json",
@@ -253,8 +255,6 @@ LAYOUT: Dict[P, str] = {
     P.OWNER_STATE: "output/{owner}/state",
     P.OWNER_FILES: "output/{owner}/state/files",
     P.OWNER_PROJECT_MEMORY: "output/{owner}/state/projects/{project_key}/memory.json",
-    P.OWNER_PROJECT_NOTES: "memory/{owner}/{project_key}/shared",
-    P.OWNER_PRIVATE_NOTES: "memory/{owner}/{project_key}/actors/{actor_id}",
     P.SESSION_AGENT_CONTEXT: "output/{owner}/sessions/{session_id}/log/threads/{thread_id}.json",
     P.SESSION_RUN_STATE: "output/{owner}/sessions/{session_id}/log/runtime/{thread_id}.json",
     P.IDE_EXTENSIONS: "output/{owner}/state/ide/extensions",
@@ -264,6 +264,7 @@ LAYOUT: Dict[P, str] = {
     P.SESSION: "output/{owner}/sessions/{session_id}",
     P.SESSION_WORKSPACE: "output/{owner}/sessions/{session_id}/workspace",
     P.SESSION_LOG: "output/{owner}/sessions/{session_id}/log",
+    P.SESSION_MEMORY_DIR: "output/{owner}/sessions/{session_id}/log/memory",
     P.SESSION_EXTENSION: "output/{owner}/sessions/{session_id}/extension",
     P.SESSION_TRACE: "output/{owner}/sessions/{session_id}/log/trace",
     P.SESSION_BASH: "output/{owner}/sessions/{session_id}/log/bash",

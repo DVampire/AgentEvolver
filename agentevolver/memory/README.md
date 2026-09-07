@@ -41,19 +41,24 @@ used.
   `Memory.index(notes)`, so an evolved memory can customize ranking without replacing
   the runtime's conversation or gaining another actor's store. Existing backends
   inherit the default file index; a failed backend falls back visibly in the log.
-- Paths belong to PathManager: `memory/<owner>/<project>/actors/<actor>/`, outside
-  disposable `output/`. Configure `memory_project_id` (or the same context extra) for
-  a stable project across temporary checkouts; `memory_actor_id` selects a stable actor.
-  Root roles default to their name; children default to their independent context id.
-  Without an explicit project id, workspace/source identity preserves case isolation.
-  `AGENTEVOLVER_MEMORY_ROOT` can place notes on a durable volume.
+- Paths belong to PathManager: `output/<owner>/sessions/<session>/log/memory/<actor>/notes/`.
+  `P.SESSION_MEMORY_DIR` resolves the session root and `P.MEMORY_ACTOR_NOTES` resolves
+  the actor's directory beneath it. Actor directory names are hashes of their identity.
+  `memory_actor_id` selects a stable actor within the session; root roles default to
+  their name and children to their independent context id. Reopening the same session
+  restores its notes; another owner or session gets a separate store even for the same
+  project. Changing the workspace does not move memory. Notes and plans are both session
+  artifacts outside the deliverable, with notes under `log/memory/` and plans under `plan/`.
+  `memory_project_id` no longer selects a cross-session store, and the legacy
+  `AGENTEVOLVER_MEMORY_ROOT` override does not relocate current session notes.
 - These are storage namespaces, not OS sandboxing for trusted host Bash. Restricted
   visitors cannot read source or memory through implicit project-context injection.
   Host-controlled benchmark containers are not given unreachable host memory paths;
   explicit per-actor mounts would be needed to enable file memory there.
-- Legacy JSON and old `output/.../memory` notes are preserved, but not silently merged
-  into a new actor's private notes. Review and copy useful entries with Bash when
-  migrating; do not import another participant's private facts.
+- Legacy JSON, top-level `memory/`, and previous note directories are preserved, but
+  not silently merged into a new actor's notes. Review and copy useful entries with Bash
+  when migrating; do not import another participant's private facts. Existing HTML
+  display records remain in the memory backend's directory under `log/memory/`.
 
 ## Evidence, compaction, and cost
 

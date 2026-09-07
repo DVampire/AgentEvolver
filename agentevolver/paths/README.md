@@ -27,9 +27,9 @@ path_manager.get(P.PORTS)                      # machine-level, never needed a s
 
 | Root | Holds | Lifetime |
 |---|---|---|
-| `output/` | generated, machine- and user-specific state | disposable |
+| `output/` | generated state, including each session's Markdown notes in `log/memory/` | retained with the session |
 | `extension/` | shared, durable components (skills, tools, workflows, canvas) | versioned with the project |
-| `memory/` | owner/project/actor-scoped Markdown notes | survives output cleanup; not versioned |
+| `memory/` | legacy owner/project/actor notes, available for explicit migration | preserved; new session notes use `output/` |
 
 `writable_roots()` returns exactly these, so the rule is testable rather than a
 convention people remember — see `tests/test_paths.py`.
@@ -38,7 +38,7 @@ convention people remember — see `tests/test_paths.py`.
 |---|---|
 | `AGENTEVOLVER_HOME` | the whole tree |
 | `AGENTEVOLVER_EXTENSION_ROOT` | `extension/` alone (a shared component library on another volume) |
-| `AGENTEVOLVER_MEMORY_ROOT` | `memory/` alone (a persistent, host-owned volume) |
+| `AGENTEVOLVER_MEMORY_ROOT` | legacy `memory/` alone; does not move session notes |
 
 All are resolved here and nowhere else. `extension/` used to have three
 answers — `extension_root()` resolved it against `cwd`, skill and connector
@@ -55,10 +55,11 @@ created it as **root**, and `scripts/serve-ui.sh`'s chown loop only walks
 `output/`, so the host user could neither edit nor delete it. Those all live
 under `output/.runtime/` now.
 
-`memory/` is a deliberate separate lifetime, not another runtime scratch directory.
-Container ownership cleanup covers the default root; an external memory volume must
-be provisioned with the host user's ownership. Declaring a storage root does not grant
-agents unrestricted access to it. Browser-only agents receive no filesystem memory index.
+New Markdown memory follows the session's log root, including its PathManager override.
+The legacy `memory/` root is kept for explicit inspection or migration; it is not read
+into new sessions automatically. Deleting a session also deletes its notes, just as it
+deletes its plan. Declaring a storage root does not grant agents unrestricted access to
+it. Browser-only agents receive no filesystem memory index.
 
 ## The tree
 
@@ -77,6 +78,8 @@ output/
     sessions/<session_id>/      disposable
       workspace/                the files agent, canvas and IDE all share
       log/                      this run's logs, trace and memory
+        memory/<actor>/notes/   Markdown notes; independent of workspace contents
+      plan/plan.md              session plan
       extension/                staging: what this run built, before promotion
       session.json              identity, so the session survives a restart
     runs/<run_id>/              direct (non-gateway) runs
@@ -116,6 +119,9 @@ session-scoped key answers for that run:
 ```python
 path_manager.get(P.SESSION_EXTENSION)          # this run's staging tree
 path_manager.get(P.SESSION_PLAN)               # sessions/<id>/plan/plan.md
+path_manager.get(P.SESSION_MEMORY_DIR)         # sessions/<id>/log/memory
+path_manager.under(path_manager.get(P.SESSION_MEMORY_DIR), P.MEMORY_ACTOR_NOTES,
+                   actor_id=actor_key)        # log/memory/<actor>/notes
 path_manager.session_roots()["workspace"]      # and the rest of them, by name
 ```
 

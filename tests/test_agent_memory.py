@@ -11,7 +11,12 @@ from agentevolver.agent.context.conversation import Conversation
 from agentevolver.agent.loop.agent import Agent
 from agentevolver.agent.loop.decision import Decision
 from agentevolver.memory.project import ProjectNotes
-from agentevolver.message.types import AssistantMessage, CompactionMessage, HumanMessage, SystemMessage
+from agentevolver.message.types import (
+    AssistantMessage,
+    CompactionMessage,
+    HumanMessage,
+    SystemMessage,
+)
 from agentevolver.paths import P, path_manager
 from agentevolver.runtime.envelopes import TaskEnvelope
 from agentevolver.runtime.kernel import Kernel
@@ -136,13 +141,45 @@ def test_fold_retains_incoming_request_with_its_answer():
     ContextAssembler().build(c)
 
 
-def test_private_notes_have_stable_project_and_separate_actor_identity(bound_session):
+def test_private_notes_belong_to_session_and_actor_not_checkout(bound_session):
     a = ProjectNotes("/run/one", project_id="echo", actor_id="alice")
     again = ProjectNotes("/run/two", project_id="echo", actor_id="alice")
     b = ProjectNotes("/run/one", project_id="echo", actor_id="bob")
     other = ProjectNotes("/run/one", project_id="other", actor_id="alice")
-    assert a.dir == again.dir and a.dir != b.dir and a.dir != other.dir
-    assert not a.dir.is_relative_to(path_manager.get(P.OUTPUT))
+    assert a.dir == again.dir == other.dir and a.dir != b.dir
+    assert a.dir.is_relative_to(bound_session["log"] / "memory")
+    assert a.dir.name == "notes"
+    assert not a.dir.is_relative_to(bound_session["workspace"])
+    assert ProjectNotes("/run/one").dir != a.dir
+
+
+def test_notes_restore_only_in_same_session_and_owner(bound_session):
+    owner, session = path_manager.session
+    a = ProjectNotes("/workspace", actor_id="alice")
+    a.dir.mkdir(parents=True)
+    (a.dir / "decision.md").write_text("---\ndescription: saved decision\n---\noriginal evidence")
+    path_manager.bind_session(owner, session + "-new")
+    fresh = ProjectNotes("/workspace", actor_id="alice")
+    assert fresh.dir != a.dir and fresh.entries() == []
+    path_manager.bind_session(owner + "-other", session)
+    assert ProjectNotes("/workspace", actor_id="alice").entries() == []
+    path_manager.bind_session(owner, session)
+    restored = ProjectNotes("/different-checkout", actor_id="alice")
+    assert restored.dir == a.dir
+    assert "saved decision" in restored.index()
+    assert (restored.dir / "decision.md").read_text().endswith("original evidence")
+
+
+def test_notes_follow_log_override_not_workspace_override(bound_session, tmp_path):
+    path_manager.override(P.SESSION_LOG, tmp_path / "run-log")
+    notes = ProjectNotes("/workspace", actor_id="alice")
+    assert notes.dir.is_relative_to(tmp_path / "run-log" / "memory")
+    with path_manager.workspace(tmp_path / "checkout"):
+        assert ProjectNotes(str(tmp_path / "checkout"), actor_id="alice").dir == notes.dir
+
+
+def test_notes_require_session_and_do_not_create_unbound_store():
+    assert ProjectNotes("/workspace", actor_id="alice").dir is None
 
 
 def test_index_is_stable_skips_unsafe_files_and_does_not_use_seen(bound_session, tmp_path):
@@ -235,13 +272,22 @@ def test_file_memory_bounds_only_numbered_display_records():
     assert "Full numbered events remain in Trace" in memory._render_history(state)
 
 
-def test_memory_root_override_and_owner_isolation(bound_session, tmp_path, monkeypatch):
+def test_legacy_memory_root_is_preserved_but_not_imported(bound_session, tmp_path, monkeypatch):
     monkeypatch.setenv("AGENTEVOLVER_MEMORY_ROOT", str(tmp_path / "persistent"))
+    import hashlib
+
+    from agentevolver.memory.project import _identity
+    owner, _ = path_manager.session
+    # Construct the previous on-disk layout as migration input, not a live path key.
+    legacy = (tmp_path / "persistent" / owner / _identity("/workspace", project_id="project")
+              / "actors" / hashlib.sha256(b"a").hexdigest()[:20])
+    legacy.mkdir(parents=True)
+    old = legacy / "private.md"
+    old.write_text("---\ndescription: old private note\n---\nkeep this")
     a = ProjectNotes("/workspace", project_id="project", actor_id="a")
-    assert a.dir.is_relative_to(tmp_path / "persistent")
-    path_manager.bind_session("other-owner", "s")
-    b = ProjectNotes("/workspace", project_id="project", actor_id="a")
-    assert a.dir != b.dir
+    assert a.dir.is_relative_to(bound_session["log"] / "memory")
+    assert a.entries() == [] and "old private note" not in a.index()
+    assert old.read_text().endswith("keep this")
 
 
 @pytest.mark.asyncio
@@ -270,7 +316,8 @@ async def test_failed_backend_falls_back_to_full_file_index(bound_session, monke
     result = await Agent(use_memory=True, memory_name="broken").memory_context(
         SimpleNamespace(id="a", extra={}),
     )
-    assert "Durable project memories live in" in result
+    assert "Your session memories live in" in result
+    assert str(bound_session["log"] / "memory") in result
 
 
 @pytest.mark.asyncio
