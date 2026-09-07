@@ -12,16 +12,33 @@ metadata: {}
 # Self-Evolving
 
 **How** to investigate and close an opportunity identified by the shared `evolution_rules`.
-This is an orchestrator's document. *How* to write a component is in the three worker skills — `generate_skill`,
-`optimize_skill`, `evaluate_skill` — each covering all eight component types, each read by
-the one agent that does that job.
+This is an orchestrator's document. *How* to write, change or judge a component is in this
+skill's own references, organised by what you are working on rather than by which of the three
+things you are doing to it.
+
+| what you need | where it is |
+|---|---|
+| when evolving is warranted at all | the `evolution_rules` system module, not here |
+| one type: its contract, and how to write / change / judge it | `references/<type>/<type>.md` |
+| what holds across every type, per operation | `references/conventions.md` |
+| a starting point rather than a blank file | `references/<type>/template*.…` |
+| something to run — probe, validate, aggregate | `scripts/<type>/` |
+
+`<type>` is one of `tool`, `skill`, `agent`, `connector`, `environment`, `memory`, `workflow`,
+`plugin`. Read the type's file when the work reaches it; they are not meant to be carried all
+at once. A `template-manifest.md` is the file the loader reads for that type — a skill's
+`SKILL.md`, a connector's `CONNECTOR.md`, an environment's `ENVIRONMENT.md` — under one name
+because it plays one role. It cannot be named `SKILL.md` here: a file by that name is
+discovered as a skill at any depth, so a template carrying the real name would register
+itself.
 
 ## What this is
 
 - **Two directions, never confuse them.** *User work* — write the app, answer the question —
   is done directly by the responsible agent or a suitable bounded worker. *Self-evolution* changes the framework's own
-  components and is done by `generate_agent` / `optimize_agent` / `evaluate_agent`. Evolution
-  serves the task; it is never the deliverable unless the user asked for it.
+  components and is work you do yourself, reading this skill's references for the shape of the
+  component in hand. Evolution serves the task; it is never the deliverable unless the user
+  asked for it.
 - **Register-is-live.** A generated or optimized component becomes the active version the
   moment it registers. Callable rosters refresh according to each consumer's scope; this
   does not replace an already running Agent, Environment, or Memory instance.
@@ -120,11 +137,16 @@ permission or resource limit can block dispatch; record it and retry when it cle
    (missing, or a frozen target) versus optimize (exists and evolvable). Preserve baseline
    evidence and the prior version before registering a change, so comparison and rollback
    do not depend on reconstructing an overwritten baseline.
-2. **Change** — dispatch `generate_agent` or `optimize_agent` with `target_type` and
-   `target_name`, using `run_in_background=true`. It authors the files under `extension/`
-   and registers them. Collect its completion report before the next phase.
-3. **Evaluate** — dispatch `evaluate_agent` for the exact candidate version, in the background
-   while independent work remains. Do not evaluate a candidate still being changed. Compare its
+2. **Change** — read `references/<type>/<type>.md`: "Writing a new one" for a component that
+   does not exist yet, "Improving an existing one" for one that does, plus the matching section
+   of `references/conventions.md`. Author the files under `extension/` and name the artifact's
+   absolute path in your `done_tool.reasoning`; the registration hook installs what it finds
+   there. A run that omits the path finishes with nothing installed.
+3. **Evaluate** — read that type's "Evaluating one" section and judge the exact candidate
+   version, then record the verdict with `adoption_tool` so it is bound to that version. You are
+   grading your own work here, which is why the record is version-scoped and why the evidence
+   has to be executed rather than asserted. Do not evaluate a candidate still being changed.
+   Compare its
    behavior against the observed baseline and an independent case; check regressions and cost.
    For a small method change, use one representative baseline/candidate comparison and one
    independent reuse or regression case. Expand coverage for broader, stateful, permission-
