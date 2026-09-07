@@ -85,13 +85,20 @@ def _require_observed_evidence(report: Dict[str, Any], caller_id: str) -> None:
 
     caller = kernel.get(caller_id) if caller_id else None
     conversation = getattr(getattr(caller, "agent", None), "conversation", None)
+    if conversation is None:
+        raise ValueError(
+            f"Cannot verify the cited evidence: no retained conversation for {caller_id!r}. "
+            "Record the decision from the run that performed the evaluation."
+        )
     observed = {
         str(message.tool_call_id)
         for message in (getattr(conversation, "items", ()) or ())
         if isinstance(message, ToolMessage) and getattr(message, "tool_call_id", None)
     }
-    if not observed:
-        return  # Nothing retained to check against; the version check below still applies.
+    # No retained calls is not "nothing to check against" — it is a run that executed
+    # nothing, which is exactly when a cited id cannot be real. Letting it through here
+    # made the check depend on whether some other run happened to leave a conversation
+    # behind, so a fabricated report passed or failed by accident of ordering.
     invented = sorted(cited - observed)
     if invented:
         raise ValueError(
