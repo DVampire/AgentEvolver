@@ -19,6 +19,7 @@ import shlex
 import sys
 import tempfile
 import threading
+import time
 from urllib.parse import quote, unquote, urlsplit
 
 
@@ -35,6 +36,31 @@ def process_start(pid):
         return None if fields[0] == "Z" else fields[19]
     except (OSError, ValueError, IndexError, TypeError):
         return None
+
+
+#: How long a state file may go unwritten before an unobservable launcher reads as gone.
+LAUNCHER_SILENCE_S = 300
+
+
+def launcher_alive(state, state_path):
+    """Whether the run still has a launcher, judged by what this process can actually see.
+
+    A missing /proc entry is not proof of death — the dashboard is served from inside a
+    PID namespace that cannot see the launcher at all, so every healthy run looked
+    interrupted from the one page meant to report on it. When the pid is observable its
+    start ticks remain the exact answer; when it is not, the honest evidence is whether
+    the run is still writing its state, because a launcher that stopped stops updating it.
+    """
+    start = state.get("launcher_start")
+    if not start:
+        return False
+    observed = process_start(state.get("launcher_pid"))
+    if observed is not None:
+        return observed == start
+    try:
+        return (time.time() - Path(state_path).stat().st_mtime) < LAUNCHER_SILENCE_S
+    except OSError:
+        return False
 
 
 def now():
@@ -144,7 +170,7 @@ class RunView:
             total = {key: sum(a["usage"][key] for a in agents.values()) for key in usage()}
             inputs = total["input_tokens"] + total["cache_read_tokens"] + total["cache_write_tokens"]
             total["cache_hit_ratio"] = total["cache_read_tokens"] / inputs if inputs else None
-            alive = bool(state.get("launcher_start") and process_start(state.get("launcher_pid")) == state["launcher_start"])
+            alive = launcher_alive(state, self.path)
             status = state.get("status", "unknown")
             if status == "running" and not alive:
                 status = "interrupted"
