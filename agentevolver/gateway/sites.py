@@ -20,9 +20,13 @@ from starlette.responses import JSONResponse, RedirectResponse, StreamingRespons
 from starlette.responses import FileResponse
 
 from agentevolver.deploy import deployment_manager
+from agentevolver.deploy.types import DeployRequest, SiteStatus
+from agentevolver.logger import logger
 from agentevolver.port import GATEWAY
 
 site_relay = APIRouter()
+#: One rebuild at a time per site; concurrent visitors to a dead address share it.
+_reviving: dict[str, asyncio.Lock] = {}
 _HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
         "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length"}
 
@@ -36,11 +40,84 @@ def headers_to_upstream(headers, prefix):
     return result
 
 
+async def _backend_alive(url: str) -> bool:
+    """Whether a loopback backend still answers. Remote addresses are not ours to judge."""
+    parts = urlsplit(url)
+    if parts.hostname not in {"127.0.0.1", "localhost", "::1"} or not parts.port:
+        return True
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(parts.hostname, parts.port), timeout=0.3
+        )
+    except (OSError, asyncio.TimeoutError):
+        return False
+    writer.close()
+    with suppress(Exception):
+        await writer.wait_closed()
+    return True
+
+
+async def _revive(name: str) -> None:
+    """Rebuild a site whose record says RUNNING but whose port answers nothing.
+
+    A deployment outlives its own process more often than the record admits: the status
+    was written when the health check passed and nothing revisits it, so the address stays
+    registered, the log stays empty, and every later visit gets a 502 that explains
+    nothing. Rebuilding from the stored request is exactly what a person does by hand;
+    doing it here means the first visitor after a death pays a rebuild instead of finding
+    a dead page. The port changes, the name does not, so no published address breaks.
+    """
+    split = deployment_manager._split_release(name)
+    site_id = split[0] if split else name
+    lock = _reviving.setdefault(site_id, asyncio.Lock())
+    if lock.locked():
+        async with lock:  # another visitor is already rebuilding it; take their result
+            return
+    record = deployment_manager._sites.get(site_id)
+    if record is None or not record.request:
+        return
+    async with lock:
+        logger.warning(f"| ⚠️ Site {site_id!r} is registered but unreachable; rebuilding it")
+        try:
+            # Deploy, not redeploy: redeploy stops first, and stopping refuses to report
+            # a resource it cannot verify as gone — correctly, since an unreachable
+            # address is not proof that a process died. That refusal is exactly what a
+            # site whose backend has already vanished can never satisfy, so the rebuild
+            # goes straight to a fresh deployment and lets the stored request stand up a
+            # new backend under the same name.
+            await deployment_manager.deploy(DeployRequest(**record.request))
+            logger.info(f"| ♻️ Site {site_id!r} rebuilt after an unreachable backend")
+        except Exception as error:  # noqa: BLE001 - a failed revival still answers 502
+            logger.warning(f"| ⚠️ Could not rebuild site {site_id!r}: {error}")
+
+
+def _revivable(name: str) -> bool:
+    """Whether a name has a record the deployer can rebuild from.
+
+    DETACHED is the deployer's own word for "the registry entry outlived its process",
+    and its docstring already says a stored request can bring one back. Nothing ever
+    asked it to, so a gateway restart turned every previously working address into a
+    404 that only a human could fix.
+    """
+    split = deployment_manager._split_release(name)
+    record = deployment_manager._sites.get(split[0] if split else name)
+    return bool(record is not None and record.request
+                and record.status == SiteStatus.DETACHED)
+
+
 async def site_target(name):
     deployment_manager.refresh()
     if deployment_manager._split_release(name):
         await deployment_manager.ensure_release(name)
     url = deployment_manager.resolve_url(name)
+    # Two ways an address goes dead, one answer: the record still claims a live backend
+    # that answers nothing, or the record already knows its process is gone. Either way
+    # the stored request can rebuild it, and the visitor waits for a rebuild instead of
+    # reading an error that names no cause.
+    if (url and not await _backend_alive(url)) or (not url and _revivable(name)):
+        await _revive(name)
+        deployment_manager.refresh()
+        url = deployment_manager.resolve_url(name)
     return url if url and urlsplit(url).scheme in {"http", "https"} else None
 
 
