@@ -12,11 +12,14 @@ from agentevolver.capability.types import COMPONENT_TYPE_NAMES
 from agentevolver.prompt.types import parse_prompt_file
 
 ROOT = Path(__file__).resolve().parents[1]
+#: What the policy needs routable before it will render at all — the means to inspect, the
+#: means to record an adoption, and the skill that says how. Three worker agents used to be
+#: on this list; the work is the agent's own now, so their absence must not switch the
+#: policy off, and every remaining member's absence must.
 ROUTES = {
     name: (kind, name) for kind, name in (
-        ("agent", "generate_agent"), ("agent", "optimize_agent"),
-        ("agent", "evaluate_agent"), ("tool", "adoption_tool"),
-        ("tool", "inspect_tool"), ("skill", "self_evolving_skill"),
+        ("tool", "adoption_tool"), ("tool", "inspect_tool"),
+        ("skill", "self_evolving_skill"),
     )
 }
 
@@ -69,8 +72,11 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, task, defe
         live = "\n".join(await agent._live_blocks(0))
         assert "Evolution opportunities" in live
         assert "self-verification discoveries" in live
-        assert "immediately dispatch" in live and "run_in_background=true" in live
-        assert "returned task/process ID and running status" in live
+        # The decision must reach live planning. It used to say "dispatch in the
+        # background"; the work is the agent's own now, so what has to arrive is that it
+        # starts now and records the version it produced.
+        assert "start the bounded experiment now" in live
+        assert "record what you changed and the version it registered as" in live
         assert not plan_manager.active(ctx.id)
         cfg = parse_prompt_file(str(ROOT / "agentevolver/prompt/default" / f"{agent.name}.html"))
         message = await cfg.to_prompt().get_system_message(values, reload=True)
@@ -78,15 +84,15 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, task, defe
         assert message.text.count("<self-evolution-rules>") == 1
         assert "Do not wait for a task to mention evolution" in message.text
         assert "Repeated cost or inconsistency" in message.text
-        assert "Immediately dispatch" in rendered and "run_in_background=true" in rendered
-        assert "Generation and evaluation are sequential" in rendered
+        assert "Improve an evolvable target, or write a new one" in rendered
+        assert "Change and evaluation stay sequential" in rendered
         assert "Before finishing, join and close" in rendered
         for opportunity in ("Reusable learning", "Expected reuse", "Better method",
                             "Missing capability", "New experience", "Self-verification",
                             "before implementation fails", "repeated failure is not required"):
             assert opportunity in rendered
         for guard in ("preserve consumer permission boundaries", "exact candidate version",
-                      "completed evaluator's `run_id`", "roll back or unload",
+                      "passing that version-scoped report", "roll back or unload",
                       "At CRITICAL, start no new experiment"):
             assert guard in rendered
         for kind in COMPONENT_TYPE_NAMES:
