@@ -50,7 +50,7 @@ from agentevolver.extension.rollout import (
 )
 from agentevolver.extension.types import Manifest, ManifestComponent
 from agentevolver.logger import logger
-from agentevolver.paths import path_manager
+from agentevolver.paths import P, path_manager
 from agentevolver.utils import get_extension_root
 from agentevolver.utils.file_utils import atomic_json_update, file_lock
 
@@ -116,7 +116,12 @@ class ExtensionManagerServer(BaseModel):
             raise ValueError("Candidate is empty")
         digest.update(json.dumps(config or {}, sort_keys=True).encode())
         key = digest.hexdigest()
-        root = Path(self.base_dir) / ".checked" / key
+        # Beside the machine's other caches, never inside the component library. This was
+        # `{base_dir}/.checked/{key}`, so every admission dropped a hashed directory into
+        # the tracked `extension/` tree — noise in `git status` that had to be cleaned by
+        # hand, and a cache living in the very directory whose contents it certifies.
+        # Keyed by content digest, so it is shared across extension trees by construction.
+        root = path_manager.get(P.ADMISSION) / key
         candidate = root / source.name
         if root.parent.is_symlink() or root.is_symlink() or candidate.is_symlink():
             raise ValueError("Candidate cache must not contain symlink roots")

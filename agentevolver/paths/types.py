@@ -77,6 +77,10 @@ class P(str, Enum):
     SSH_HOSTS = "ssh_hosts"
     DEPLOY = "deploy"
     CHECKPOINT = "checkpoint"
+    #: Verified snapshots from isolated component admission, keyed by content digest.
+    #: A cache of work already done, not a component — so it belongs to the machine
+    #: beside the other caches rather than inside the component library it checks.
+    ADMISSION = "admission"
     STAGING_MANIFEST = "staging_manifest"
     #: Where an oversized tool result is parked so the agent keeps a way back to
     #: it. Machine-level rather than per session: the store hashes the session
@@ -247,6 +251,7 @@ LAYOUT: Dict[P, str] = {
     P.SSH_HOSTS: "output/.runtime/ssh_hosts.json",
     P.DEPLOY: "output/.runtime/deploy",
     P.CHECKPOINT: "output/.runtime/checkpoints/{run_id}.json",
+    P.ADMISSION: "output/.runtime/admission",
     P.STAGING_MANIFEST: "output/.runtime/staging/{project_key}/extension-staging.json",
     P.SPILL_SESSION: "output/.runtime/spill/session-{digest}",
     P.ATTACHMENTS: "output/.runtime/attachments",
