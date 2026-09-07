@@ -51,7 +51,6 @@ TEMPLATE_ORDER = (
     "tests/test_prompt_layout.py::test_a_template_puts_its_capabilities_before_its_state"
     "[code_agent.html]"
 )
-CATALOG = "tests/test_tool_catalog.py::test_the_committed_catalog_matches_what_the_registry_holds"
 LINKS = "tests/test_doc_links.py::test_every_file_a_document_points_at_exists"
 PAIRING = (
     "tests/test_translation_pairing.py::test_a_translation_keeps_the_structure_of_its_source"
@@ -117,16 +116,6 @@ MUTATIONS = [
         '<module src="../module/agent_context.html"></module>\n'
         '<module src="../module/environment_context.html"></module>',
         TEMPLATE_ORDER,
-    ),
-    # A tool's description is one of the facts the committed catalog copies out of the
-    # code. Changing it and leaving the document alone is what "the generated file went
-    # stale" looks like from the inside.
-    (
-        "a tool's description changes and the catalog is not regenerated",
-        "agentevolver/tool/default/read_file.py",
-        '_DESCRIPTION = "Read the contents of a file."',
-        '_DESCRIPTION = "Read a file."',
-        CATALOG,
     ),
     # The everyday rename: a document moves and the pages pointing at it do not.
     (

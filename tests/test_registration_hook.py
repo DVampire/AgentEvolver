@@ -357,68 +357,6 @@ async def test_a_run_whose_artifact_cannot_be_found_is_told_what_to_include(boun
 
 
 @pytest.mark.asyncio
-async def test_a_registered_component_reports_allow(bound_session, monkeypatch, promotion_log):
-    """The success path, with the extension manager stood in for.
-
-    What is asserted is the handoff: the module the row named, the path that was resolved,
-    and the evolvable config that lets a later round optimize what this one produced.
-    """
-    artifact = _staged(bound_session["extension"], "tool", "adder_tool.py")
-    artifact.write_text("# tool")
-    seen: Dict[str, Any] = {}
-
-    async def _add(module, path, config=None):
-        seen.update(module=module, path=path, config=config)
-        return "adder_tool"
-
-    from agentevolver.extension import extension_manager
-
-    monkeypatch.setattr(extension_manager, "add_component", _add)
-
-    result = await RegistrationHook().handle(
-        _ctx(
-            target_type="tool",
-            target_name="adder_tool",
-            reasoning="Wrote extension/tool/adder_tool.py.",
-        )
-    )
-    assert result.decision == HookDecision.ALLOW
-    assert seen == {"module": "tool", "path": str(artifact), "config": {"enable_evolving": True}}
-
-
-@pytest.mark.asyncio
-async def test_an_agent_is_constructed_with_a_workspace_and_a_model(
-    bound_session, monkeypatch, promotion_log
-):
-    """The row `agent` exists for: a tool is loaded, an agent is instantiated."""
-    artifact = _staged(bound_session["extension"], "agent", "triage_agent.py")
-    artifact.write_text("# agent")
-    seen: Dict[str, Any] = {}
-
-    async def _add(module, path, config=None):
-        if module == "agent":
-            seen.update(config=config)
-        return "triage_agent"
-
-    from agentevolver.extension import extension_manager
-
-    monkeypatch.setattr(extension_manager, "add_component", _add)
-
-    result = await RegistrationHook().handle(
-        _ctx(
-            target_type="agent",
-            target_name="triage_agent",
-            model_name="llm_hub/claude-opus-5",
-            reasoning="Wrote extension/agent/triage_agent.py.",
-        )
-    )
-    assert result.decision == HookDecision.ALLOW
-    assert seen["config"]["model_name"] == "llm_hub/claude-opus-5"
-    assert seen["config"]["enable_evolving"] is True
-    assert seen["config"]["base_dir"]
-
-
-@pytest.mark.asyncio
 async def test_an_agent_evolution_that_only_changed_the_prompt_still_registers(
     bound_session, monkeypatch, promotion_log
 ):

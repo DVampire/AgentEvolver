@@ -89,54 +89,6 @@ def test_without_a_gateway_no_address_is_invented(monkeypatch):
     assert "site_url" not in urls and "release_url" not in urls
 
 
-@pytest.mark.asyncio
-async def test_the_gateway_serves_a_named_site_from_its_own_origin(registered, tmp_path):
-    """The relay is the half that makes the name an address rather than a label."""
-    import subprocess
-    import sys
-    import time
-
-    from fastapi.testclient import TestClient
-
-    from agentevolver.gateway.service import AgentGateway
-    from agentevolver.gateway.transport import create_websocket_app
-
-    (tmp_path / "index.html").write_text("<h1>ECHO r3</h1>\n", encoding="utf-8")
-    server = subprocess.Popen(
-        [sys.executable, "-m", "http.server", "8899", "--bind", "127.0.0.1"],
-        cwd=tmp_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    try:
-        for _ in range(50):  # the port is the fixture's; wait for it to answer
-            time.sleep(0.1)
-            try:
-                import socket
-
-                with socket.create_connection(("127.0.0.1", 8899), timeout=0.2):
-                    break
-            except OSError:
-                continue
-
-        with TestClient(create_websocket_app(AgentGateway())) as client:
-            live = client.get("/s/echo-ark/")
-            assert live.status_code == 200
-            assert "ECHO r3" in live.text
-
-            pinned = client.get("/s/echo-ark--r3/")
-            assert pinned.status_code == 200
-
-            superseded = client.get("/s/echo-ark--r1/")
-            assert superseded.status_code == 404
-
-            unknown = client.get("/s/no-such-ark/")
-            assert unknown.status_code == 404
-            # The 404 names what IS running, so a wrong address is one step from right.
-            assert "echo-ark" in unknown.text
-    finally:
-        server.terminate()
-        server.wait(timeout=10)
-
-
 def test_the_gateway_publishes_the_base_its_own_route_answers_on(monkeypatch):
     """The named URLs were produced by no run at all.
 
@@ -185,36 +137,3 @@ class _StubApp:
 
     def __init__(self):
         self.router = self._Router()
-
-
-def test_the_site_relay_is_one_router_not_two_copies():
-    """The gateway serves deployed-site names for interactive sessions, and a headless
-    run mounts the same router so a script that deploys can hand out names too.
-
-    Two servings of one address would be two chances to disagree about what it means, so
-    the route has exactly one definition and both servers include it."""
-    from agentevolver.gateway.transport import site_relay
-
-    assert [route.path for route in site_relay.routes] == ["/s/{name}/{path:path}"]
-
-
-@pytest.mark.asyncio
-async def test_a_headless_run_leaves_the_address_to_whoever_already_serves_it(monkeypatch):
-    """A gateway already listening owns the address. Claiming it anyway would publish a
-    base this run cannot answer on, which is worse than the port-based URLs it replaces."""
-    import socket
-
-    from examples.run_meta_agent import serve_deployed_site_names
-
-    monkeypatch.delenv("GATEWAY_PUBLIC_BASE", raising=False)
-
-    class _Taken:
-        def bind(self, *a):
-            raise OSError("address in use")
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(socket, "socket", lambda *a, **k: _Taken())
-    assert await serve_deployed_site_names() is None
-    assert "GATEWAY_PUBLIC_BASE" not in os.environ

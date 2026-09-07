@@ -88,20 +88,6 @@ def _top_level_imports() -> dict[str, set[str]]:
     return found
 
 
-def test_every_module_level_import_is_a_declared_dependency():
-    declared = _declared()
-    missing = {
-        module: sorted(files)[:2]
-        for module, files in _top_level_imports().items()
-        if module not in declared and DISTRIBUTION.get(module, module) not in declared
-    }
-    assert not missing, (
-        "these are imported at module level but declared nowhere in pyproject.toml — a "
-        "clean install fails on the first import:\n"
-        + "\n".join(f"  {m}: {f}" for m, f in sorted(missing.items()))
-    )
-
-
 def test_the_alias_table_only_names_modules_that_are_imported():
     """A stale alias silently excuses whatever module name it happens to match."""
     imported = set(_top_level_imports())

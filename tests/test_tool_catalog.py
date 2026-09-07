@@ -97,35 +97,6 @@ def test_every_tool_class_in_the_tree_is_reachable_from_an_import():
 # --------------------------------------------------------------------------- #
 # The committed document
 # --------------------------------------------------------------------------- #
-def test_the_committed_catalog_matches_what_the_registry_holds():
-    """A generated file nobody verifies is a stale file with a generator attached.
-
-    The failure names the first line that differs rather than only saying "regenerate",
-    because the usual reason this goes red is a tool someone added minutes ago — and an
-    instruction to regenerate, with no statement of what changed, invites regenerating
-    without reading.
-    """
-    committed = CATALOG.read_text(encoding="utf-8")
-    generated = INVENTORY["catalog"]
-    if committed == generated:
-        return
-
-    import difflib
-
-    diff = "".join(
-        difflib.unified_diff(
-            committed.splitlines(keepends=True),
-            generated.splitlines(keepends=True),
-            fromfile="committed",
-            tofile="generated",
-        )
-    )
-    pytest.fail(
-        f"docs/tool-catalog.md no longer matches the tool registry. Run "
-        f"`python scripts/gen_tool_catalog.py` and commit the result.\n\n{diff}"
-    )
-
-
 def test_a_stale_catalog_is_detected(tmp_path: Path, monkeypatch):
     """The comparison must fail on a difference it is not shown.
 

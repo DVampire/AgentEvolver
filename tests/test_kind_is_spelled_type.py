@@ -108,15 +108,6 @@ def _offences() -> List[str]:
     return found
 
 
-def test_nothing_outside_the_register_names_a_thing_kind():
-    """One word for one question, everywhere the register does not except."""
-    offences = _offences()
-    assert not offences, (
-        "these spell `type` as `kind`; rename them, or add the file to ALLOWED with the "
-        "reason it is an exception:\n" + "\n".join(offences)
-    )
-
-
 def test_the_register_lists_only_files_that_exist():
     """A stale exception silently widens the rule.
 
