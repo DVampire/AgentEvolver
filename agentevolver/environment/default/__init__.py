@@ -12,12 +12,14 @@ from .computer.environment import ComputerEnvironment
 from .ssh.environment import SSHEnvironment
 from .terminal.environment import TerminalEnvironment
 from .job.environment import JobEnvironment
+from .factor_mining.environment import FactorMiningEnvironment
 
 __all__ = [
     "ArtifactRendererEnvironment",
     "BrowserEnvironment",
     "ComputerEnvironment",
     "JobEnvironment",
+    "FactorMiningEnvironment",
     "SSHEnvironment",
     "TerminalEnvironment",
 ]

@@ -16,6 +16,17 @@ from agentevolver.registry import BENCHMARK
 CLASSES = list(BENCHMARK._module_dict.values())
 
 
+def source_settings(name, tmp_path):
+    """The market benchmark needs a caller-provided bundle, not a hosted question list."""
+    if name != 'factor_mining':
+        return {}
+    from agentevolver.data.factor_mining import FactorMarketDataset
+    path = tmp_path / 'market_bundle'
+    if not path.exists():
+        FactorMarketDataset.bundle(FactorMarketDataset.synthetic(bars=400, assets=2), path)
+    return {'path': str(path)}
+
+
 def stub_sources(monkeypatch, tmp_path):
     rows = [dict(task_id=str(i), id=str(i), instance_id=str(i), name='Problem',
                  question='Six times seven?', question_md='Six times seven?',
@@ -49,7 +60,8 @@ def stub_sources(monkeypatch, tmp_path):
 @pytest.mark.parametrize('cls', CLASSES, ids=lambda cls: cls.__name__)
 async def test_every_builtin_obeys_lifecycle_and_result_contract(cls, monkeypatch, tmp_path):
     stub_sources(monkeypatch, tmp_path)
-    bench = cls(base_dir=str(tmp_path / cls.__name__))
+    name = cls.model_fields['name'].default
+    bench = cls(base_dir=str(tmp_path / cls.__name__), **source_settings(name, tmp_path))
     for name in Benchmark.PUBLIC_METHODS:
         assert getattr(cls, name) is getattr(Benchmark, name)
     await bench.initialize()
@@ -57,6 +69,12 @@ async def test_every_builtin_obeys_lifecycle_and_result_contract(cls, monkeypatc
     dataset_free = bench.name == 'exact_match'
     if dataset_free:
         assert first is None
+    elif bench.name == 'factor_mining':
+        assert first.task_id == 'factor-study'
+        await bench.initialize()
+        assert await bench.step() is None
+        assert (await bench.reset()).task_id == first.task_id
+        assert await bench.step() is None
     else:
         assert first.task_id in ('1', '0001')
         # Calling initialize twice must not consume or rewind a task.
@@ -129,7 +147,8 @@ async def test_every_builtin_evaluates_and_restores_through_manager_without_agen
     monkeypatch.setattr('agentevolver.agent.agent_manager.initialize', forbidden)
     monkeypatch.setattr('agentevolver.task.task_manager.submit', forbidden)
     manager = BenchmarkManager()
-    await manager.configure(name, base_dir=str(tmp_path / 'state'))
+    settings = source_settings(name, tmp_path)
+    await manager.configure(name, base_dir=str(tmp_path / 'state'), **settings)
     result = await manager.eval(name, Task(task_id='same', result='broken grader'))
     assert result.evaluation.status == 'error' and result.score is None
     assert (await manager.stats(name)).errors == 1
@@ -139,7 +158,7 @@ async def test_every_builtin_evaluates_and_restores_through_manager_without_agen
     await manager.eval(name, Task(task_id='passed', result=1))
     await manager.cleanup(name)
     restored = BenchmarkManager()
-    await restored.configure(name, base_dir=str(tmp_path / 'state'), resume=True)
+    await restored.configure(name, base_dir=str(tmp_path / 'state'), resume=True, **settings)
     stats = await restored.stats(name)
     assert (stats.attempted, stats.scored, stats.correct, stats.wrong, stats.errors) == (2, 2, 1, 1, 0)
     forbidden.assert_not_awaited()

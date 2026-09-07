@@ -8,6 +8,7 @@ from .deepweb import DeepWebDataset
 from .programbench import ProgramBenchDataset
 from .swebench import SWEBenchProDataset, SWEBenchVerifiedDataset
 from .server import DataManager, data_manager
+from .factor_mining import FactorMarketDataset, MarketPanel
 
 __all__ = [
     'AIME24Dataset',
@@ -22,4 +23,6 @@ __all__ = [
     'SWEBenchProDataset',
     'DataManager',
     'data_manager',
+    'FactorMarketDataset',
+    'MarketPanel',
 ]

@@ -1,6 +1,25 @@
 # Factor Mining / Strategy Mining Agent — Requirements & Design
 
-Status: draft (under discussion, not yet implemented)
+Status: implemented; validated with no-model tests. No live agent experiment has been run.
+
+The implementation guide, CLI commands, output layout and supported boundaries are in
+[`agentevolver/environment/default/factor_mining/README.md`](../../agentevolver/environment/default/factor_mining/README.md).
+Data import, aligned panels and split assets live in `agentevolver/data/factor_mining.py`.
+The design below records the original rationale; implementation choices are summarized here:
+
+- `FactorMiningAgent` and `StrategyMiningAgent` use the common Agent loop, with concise
+  specialist prompts and only research-environment actions plus `done_tool`.
+- The data module supports CSV, partitioned Parquet and HF/local DataManager sources.
+- Expressions use a bounded AST interpreter, not Python `eval`; both time-series and
+  cross-sectional operators are available, including `if_else`.
+- Training, independent validation/admission and one final test are wired end to end.
+  Both validation and final evaluation go through BenchmarkManager with separate ledgers.
+- The run script alternates factor and strategy research with objective stopping rules;
+  Linux bubblewrap gives each worker only training files, worker logs and static code.
+- Stateful strategies support a declarative stop-loss/cooldown policy; arbitrary Python
+  strategies and genetic-programming search are not enabled.
+- A deterministic `check` command verifies the complete pipeline without starting an
+  agent or calling a model. Its synthetic-data results are not market-alpha evidence.
 
 ## 0. Background
 
@@ -118,9 +137,10 @@ rank(ts_mean(close, 20) - ts_mean(close, 60))
 ```
 
 Benefits:
-- **Safety**: execution is just `eval(expr, {"__builtins__": {}}, operator_namespace)` —
-  the namespace contains only registered operators and data columns; there is no need for
-  a sandbox capable of running arbitrary Python.
+- **Safety**: a strict AST whitelist is interpreted recursively. Only registered operators,
+  permitted data fields and finite numeric literals can execute. Attributes, indexing,
+  imports, keyword arguments, future shifts and oversized trees are rejected. Clearing
+  Python builtins alone is not used as a security boundary.
 - **Parseable deduplication**: an expression is naturally an AST. Before admission to the
   library, do a **structural comparison** (same operator tree, only the period parameter
   differs → flagged as a variant, not a brand-new factor) — this step touches no data and
@@ -133,9 +153,9 @@ Benefits:
 Strategies work the same way: by default represented as a "weighted factor scoring
 formula" (e.g. `0.6 * zscore(factor_a) + 0.4 * zscore(factor_b)`, followed by a
 threshold/ranking rule that decides position), which covers most systematic strategies
-with the same safety and dedup properties. Strategies that genuinely need path-dependent
-logic (stop-loss, state machines) fall back to Python code as the exception — there will
-be few of these, so most scenarios don't pay for that flexibility.
+with the same safety and dedup properties. Strategies that need the implemented
+path-dependent behavior use a declarative stop-loss/cooldown policy. Arbitrary Python
+strategy execution is not enabled.
 
 ## 7. Operator library: two tracks, both vectorized
 
@@ -167,10 +187,10 @@ not just time-series IC:
   classic multi-factor stock-selection evaluation. This is a capability the data structure
   provides for free; no extra development needed.
 
-The cost of evaluating one candidate factor is essentially a handful of matrix operations
-and does not grow linearly with the number of assets. **Batch-evaluating N candidates**
-means looping N times over matrix operations (the loop is over the number of candidates,
-not "candidates × assets") — this is the core throughput improvement for mining.
+One candidate is evaluated with matrix operations over the whole panel. Work and memory
+still grow with timestamps and assets; vectorization removes per-asset Python dispatch,
+not that computational cost. **Batch-evaluating N candidates** loops over candidates,
+with each candidate evaluated across assets together.
 
 **A new static-validation layer** (missing from the original design, and a real risk):
 before execution, scan the factor expression for look-ahead bias (referencing a future
@@ -228,14 +248,15 @@ the strategy layer can never bypass the factor layer's evaluation standard.
 hundreds of times per mining iteration — an obvious bottleneck. Redesigned as two engines:
 
 - **Default: vectorized backtest** — the signal is a vectorized transform of the factor
-  panel (not a per-bar call); the whole position vector is computed at once, and portfolio
-  return = `position.shift(1) * forward_return - turnover * cost_pct`, cumulated via
-  `cumprod` into an equity curve. The entire backtest is a handful of array operations, not
-  a Python for-loop — one backtest drops from "seconds" to "milliseconds."
+  panel (not a per-bar call). A close[t] score sets the target at open[t+1];
+  `target.shift(1)` is multiplied by the return from the current open to the next open,
+  then charged drift-adjusted turnover costs, including final liquidation. Equity is
+  compounded via `cumprod`. Exact throughput depends on panel size and operators and
+  is not claimed without measurement.
 - **Escape hatch: event-driven engine** — only invoked when a strategy genuinely needs
   path-dependent state (e.g. pausing for a few days after a stop-loss triggers); slower but
-  fully general. A strategy declares its own type (`vectorized`/`stateful`) and the
-  environment picks the matching engine.
+  limited to the supported declarative stop-loss/cooldown policy. A strategy declares
+  its engine (`vectorized`/`stateful`) and the environment picks the matching implementation.
 
 ### 11.3 Evaluation
 
@@ -248,17 +269,17 @@ having failed during that period.
 
 ## 12. Reliability mechanism: physical train/valid/test isolation + an anti-cheat evaluation bridge
 
-Modeled on the anti-cheat pattern already in the repo for ProgramBench
-(`agentevolver/tool/default/programbench_eval.py` +
-the `eval_bridge_watcher` in `examples/run_programbench.py`):
+The implementation keeps the bridge client in the research environment and the host
+watcher in the benchmark. The watcher calls a separately configured BenchmarkManager
+for validation, keeping the validation ledger separate from final scores:
 
 - The agent runs inside a sandbox that **mounts only the train-split data files** — the
   valid/test splits are physically absent from the sandbox, so no amount of `bash`
   poking-around can find them. This is far more robust than "an Environment action simply
   doesn't expose that capability," which in principle can still be routed around (e.g. the
   agent guesses the data file path and reads it directly).
-- When the agent wants a more realistic signal, it calls a **rate-limited** evaluation tool
-  (e.g. 3–5 calls per task); the tool only writes a request to a bind-mounted bridge
+- When the agent wants a more realistic signal, it calls the **quota-limited** `validate`
+  environment action (default 8 calls per study); the client only writes a request to a bridge
   directory. A host-side watcher process, which holds the valid split, does the real
   scoring and returns only "pass/fail + summary metrics" — **never raw data or a value
   series**.
@@ -335,9 +356,10 @@ than inventing a new one:
 |---|---|---|
 | `Environment` (`agentevolver/environment/default/factor_mining/`) | Holds panel data, the operator library, the backtest engine, and factor-library state; actions include `list_symbols`/`get_operator_catalog`/`get_factor_library`/`run_factor_backtest`/`run_strategy_backtest`/`check_correlation`, all reading only the train split | `environment/default/ssh/` (`name` as a class field + `@environment_manager.action` + `ENVIRONMENT.md`) |
 | `Agent` (`agentevolver/agent/actor/factor_mining_agent.py` / `strategy_mining_agent.py`) | A thin subclass reusing the base class's standard think-and-act loop rather than a bespoke fixed pipeline; mounts the `factor_mining` environment plus tools such as `bash`/`write_file`/`done` | `agent/actor/code_agent.py` |
-| `Tool` (anti-cheat evaluation bridge) | Rate-limited request to the host for a valid-split score; returns only a pass/fail summary | `tool/default/programbench_eval.py` + the `eval_bridge_watcher` in `examples/run_programbench.py` |
+| `Data` (`agentevolver/data/factor_mining.py`) | Imports OHLCV from local files or DataManager, aligns panels, stores Parquet partitions and chronological split manifests | Existing `data/` dataset adapters |
+| Validation bridge (`environment/default/factor_mining/bridge.py`) | Quota-limited request to the host; the benchmark-owned watcher dispatches through BenchmarkManager and returns metrics/checks without raw held-out data | File request/response bridge, no separate arbitrary-execution tool |
 | `Benchmark` (`agentevolver/benchmark/default/factor_mining.py`) | A Task = asset list + mining goal + threshold protocol; `eval()` re-evaluates on the private test split across every configured asset, scoring only if all thresholds pass | The `reset/step/eval` structure of `benchmark/default/programbench.py` |
-| Joint-iteration driver | Implement the outer loop as a plain script first (not baked into either agent's internals); consider migrating to a formal `agentevolver/workflow` once the protocol has stabilized | — |
+| Joint-iteration driver (`examples/run_factor_mining.py`) | Owns CLI/config, isolated worker processes, factor/strategy alternation, stopping and shutdown | Existing `examples/run_*.py` |
 
 ## 15. Relationship to `others/FactorStrategyLLM`
 
@@ -347,15 +369,17 @@ factor library plus a contract document, the definitions of IC/RankIC/RankICIR a
 metrics. Those conceptual choices are sound; only the underlying data structure, factor
 representation, and backtest execution are reimplemented per Sections 4–11.
 
-## 16. Open questions (for later discussion)
+## 16. Implemented choices and remaining experimental work
 
-- The exact grammar of the expression DSL — should it support conditional branches
-  (`if_else`) between factors, or stay strictly a composition of pure functions?
-- Whether mutation / genetic-programming search belongs in v1, or whether v1 should stay
-  with "LLM batch generation + two-tier dedup" only.
-- Default values for the outer-loop budget `K` and the no-progress circuit-breaker
-  threshold in the joint-iteration protocol — likely need a few empirical runs to
-  calibrate.
-- Whether cross-sectional factors need their own dedicated strategy templates
-  (rotation/stock-picking), or whether v1 should stay with time-series factors + timing
-  strategies only, leaving cross-sectional for v2.
+- The DSL supports pure operators, arithmetic, comparisons and `if_else`, with bounded
+  AST size and lookback. It accepts neither arbitrary Python nor future data references.
+- The initial search uses LLM batch generation and two-tier dedup. Genetic-programming
+  mutation is an optional future search method, not part of this implementation.
+- Default outer budget is 3 rounds; 2 rounds without improvement stop research. The quality
+  measure is worst-asset validation Sharpe with a 0.05 minimum improvement. These remain
+  configurable and need empirical calibration using real training/validation data.
+- Time-series and cross-sectional factors, plus timing and rank-based strategies, are
+  supported from the first implementation.
+- Verification covers deterministic no-model workflows, acceptance boundaries, accounting,
+  persistence and worker filesystem isolation. Live Agent behavior and real-market factor
+  quality have not been tested; Agent execution was explicitly excluded from this work.

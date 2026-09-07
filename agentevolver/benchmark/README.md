@@ -26,7 +26,7 @@ adding selection logic to the server.
 ## Manager-only public interface
 
 Applications import `benchmark_manager`, `Task` and result/metadata types. They never
-import, construct or receive a concrete benchmark implementation. All 11 built-ins are
+import, construct or receive a concrete benchmark implementation. All 12 built-ins are
 registered internally; only the manager/context own their instances.
 
 ## Run scripts and evaluation boundary
@@ -168,13 +168,14 @@ finally:
 | `swebench_verified` | Resolve a real GitHub issue (Python) | 500 | `SWE-bench/SWE-bench_Verified` | hidden `fail_to_pass`/`pass_to_pass`, graded on the host | `examples/run_swebench_verified.py` |
 | `swebench_pro` | Resolve a real issue (Python/Go/JS/TS) | 731 | `ScaleAI/SWE-bench_Pro` | same, via the official Pro grader | `examples/run_swebench_pro.py` |
 | `exact_match` | Nothing of its own — scores answers it is handed | — | none | numeric-tolerant exact match | in-process |
+| `factor_mining` | Causal factor discovery and multi-asset strategy research | 1 study per bundle | OHLCV via `data.FactorMarketDataset` | independent validation/admission, then frozen final test | `examples/run_factor_mining.py` |
 | *(any Harbor task set)* | e.g. `deep-swe`, `terminal-bench` | varies | Harbor's own | **Harbor's verifier, in Harbor's container** | `harbor/` — see below |
 
 "in-process" means the benchmark yields tasks and the framework's own runtime answers
 them. The three with launchers need per-instance Docker containers and a host-side grader,
 with scheduling owned by the launcher and final grading owned by the Benchmark implementation.
 
-Every maintained launcher publishes the same `visual.BenchmarkMonitor` state and deploys
+The coding and HLE launchers publish the same `visual.BenchmarkMonitor` state and deploy
 its read-only dashboard through `deployment_manager` by default. Use `--no-monitor` for
 headless automation or `--monitor-port` to request a preferred host port; port conflicts
 are resolved centrally by the deploy subsystem.

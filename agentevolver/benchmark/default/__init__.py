@@ -8,6 +8,7 @@ from .deepweb import DeepWebBenchmark
 from .programbench import ProgramBenchmark
 from .swebench import SWEBenchProBenchmark, SWEBenchVerifiedBenchmark
 from .exact_match import ExactMatchBenchmark
+from .factor_mining import FactorMiningBenchmark
 
 __all__ = [
     "AIME24Benchmark",
@@ -21,4 +22,5 @@ __all__ = [
     "SWEBenchVerifiedBenchmark",
     "SWEBenchProBenchmark",
     "ExactMatchBenchmark",
+    "FactorMiningBenchmark",
 ]

@@ -58,7 +58,8 @@ def test_manager_projects_solver_fields_without_oracle_or_runtime_objects():
     assert 'SECRET' not in str(payload)
     assert 'grader_fingerprint' not in payload
     catalog = manager.catalog()
-    assert len(catalog) == 11
+    assert len(catalog) == 12
+    assert any(info.name == 'factor_mining' for info in catalog)
     assert all(isinstance(info, BenchmarkInfo) and not info.initialized for info in catalog)
 
 
