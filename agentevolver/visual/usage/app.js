@@ -92,7 +92,7 @@ export function mountUsage(root, options = {}) {
       focusBefore=document.activeElement;
       const fields={
         'Record ID':r.id,'Granularity':r.granularity,'Timestamp':when(r.timestamp),'Agent':r.agent_name,'Process':r.task_id,
-        'Model':r.model,'Provider':r.provider,'Benchmark task':r.benchmark_task_id,'Attempt':r.attempt_id,
+        'Model':r.model,'Provider':r.provider,'Operation':r.operation,'Benchmark task':r.benchmark_task_id,'Attempt':r.attempt_id,
         'Step':r.step_number==null?null:r.step_number+1,'Matched request starts':r.request_attempts,
         'Uncached input':r.input_tokens,'Cache reads':r.cache_read_tokens,'Cache writes':r.cache_write_tokens,
         'Full input':r.context_input_tokens,'Output':r.output_tokens,'Reasoning (subset of output)':r.reasoning_tokens,
@@ -230,7 +230,7 @@ export function mountUsage(root, options = {}) {
     const s=d.summary;
     const batchSize=Math.max(1,...d.series.map(p=>p.count));
     const grouped=filters.axis==='call'&&batchSize>1?` Chart points group up to ${batchSize} adjacent records; click a point to inspect that range.`:'';
-    find('.u-coverage').textContent=`Real trace data · ${numeric(d.coverage.legacy_steps)} timed step records · ${numeric(s.costed_calls)}/${numeric(s.calls)} calls with cost. Reported ${money(s.sources.reported)} · estimated ${money(s.sources.estimated)} · legacy source ${money(s.sources.legacy)}.${d.coverage.read_errors?' Some trace records could not be read.':''}${grouped}`;
+    find('.u-coverage').textContent=`Real trace data · ${numeric(d.coverage.requests||0)} request receipts · ${numeric(d.coverage.legacy_steps)} legacy step records · ${numeric(s.costed_calls)}/${numeric(s.calls)} calls with cost. Reported ${money(s.sources.reported)} · estimated ${money(s.sources.estimated)} · legacy source ${money(s.sources.legacy)}.${d.coverage.read_errors?' Some trace records could not be read.':''}${grouped}`;
     find('.u-breakdown').replaceChildren(...d.breakdown.slice(0,8).map((r,i)=>{
       const row=el('button',null,'u-rank');row.type='button';row.append(el('span',r.name),el('strong',money(r.cost)));
       const rail=el('span',null,'u-rail'),bar=el('i');bar.style.width=(Number(s.cost)?Number(r.cost)/Number(s.cost)*100:0)+'%';bar.style.background=palette[i%4];rail.append(bar);row.append(rail);

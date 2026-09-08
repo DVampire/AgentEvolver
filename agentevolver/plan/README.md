@@ -26,8 +26,9 @@ website-user and other leaf workers leave it disabled. A worker receives a bound
 assignment and returns evidence; its coordinator owns planning and replanning.
 
 `PlanManagerServer.context()` reads the session's `plan/plan.md` each step.
-The agent loop adds it to the volatile context layer after the cached conversation,
-so revisions appear immediately and survive history compaction. The plan is the
+The agent loop appends changed contents to its conversation once, preserving the latest
+version across history compaction and resume. Stable planning instructions are installed
+once in the fixed layer through `PlanManagerServer.instructions()`. The plan is the
 coordinator's working document, not a separate model or an execution engine.
 
 PathManager owns `P.SESSION_PLAN` and `P.SESSION_PLAN_DIR`. The `plan/` directory is
@@ -39,7 +40,7 @@ The plan belongs to the coordinator runtime, not the execution environment. When
 runs in a peer container, the plan context retains its agent-side path and the agent uses
 `read_file_tool`/`write_file_tool` there. Both SWE Pro configurations mount these tools.
 No plan directory is mounted in the peer, and no benchmark preparation or grading step
-needs to know about it. The plan manager reads updates into the next live context and
+needs to know about it. The plan manager reads updates into the next request and
 persists approved plans at the same path. Workspace translation through
 `path_manager.execution_path()` remains only for execution paths.
 
@@ -57,7 +58,7 @@ accepted/deferred changes and reasons, the next experiment, and its evidence.
 Implementation, technical verification and user confirmation remain separate states.
 Workers do not maintain copies of this document.
 
-When `use_plan` and the shared evolution policy are enabled, the live planning context also
+When `use_plan` and the shared evolution policy are enabled, the planning instructions also
 requires an **Evolution opportunities** section near the top of `plan.md`. This applies
 to Meta and Builder through the shared agent loop; it adds no automatic plan obligation
 to leaf workers and is omitted in `off` mode. An explicitly active review gate still
@@ -104,7 +105,7 @@ on subsequent steps, the Builder sees an explicit reminder to replan before edit
 This detects an unchanged document; it does not grade the plan or certify user satisfaction.
 
 Keep the current plan concise. Detailed feedback and historical evidence can live in
-linked files. The live projection is bounded to 16,000 characters and explicitly asks
+linked files. The projection is bounded to 16,000 characters and explicitly asks
 the coordinator to read the complete file when that limit is exceeded.
 
 

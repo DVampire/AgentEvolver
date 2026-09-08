@@ -146,6 +146,8 @@ class CapabilityRouter(ToolRouter):
 
     def read_only(self, call: ActionCall, routing: Dict[str, Any]) -> Optional[bool]:
         route = routing.get(call.name)
+        if route and route[0] == "capability_search":
+            return True
         if not route or route[0] != "tool":
             return None
         try:
@@ -178,6 +180,16 @@ class CapabilityRouter(ToolRouter):
             )
         capability_type = route[0]
         try:
+            if capability_type == "capability_search":
+                from agentevolver.agent.context.capabilities import catalog, search
+
+                # Refresh scope before searching: permissions may have narrowed
+                # since the request exposing this callable was built.
+                await self.schemas(agent, ctx)
+                return ActionResult(call=call, output=search(
+                    catalog(ctx, agent.name), ctx=ctx, agent_name=agent.name,
+                    query=call.args.get("query", ""), limit=call.args.get("limit", 6),
+                ))
             if capability_type == "tool":
                 return await self._invoke_tool(call, route, ctx, execution, bridge)
             if capability_type == "agent":

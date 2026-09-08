@@ -23,6 +23,33 @@ from pydantic import BaseModel, ConfigDict, Field
 REQUEST_SNAPSHOT_VERSION = 2
 
 
+async def record_model_usage(*, session_id, snapshot_id, model, provider, usage,
+                             request_input, success=True) -> None:
+    """One receipt per completed provider attempt, separate from step aggregates."""
+    if not session_id or not snapshot_id:
+        return
+    try:
+        from agentevolver.trace.server import trace_manager
+        from agentevolver.trace.types import TraceEvent, TraceEventType
+
+        coordinates = request_input.get("trace_context") or {}
+        raw = usage.model_dump() if hasattr(usage, "model_dump") else usage
+        await trace_manager.emit(TraceEvent(
+            event_type=TraceEventType.CUSTOM, ignorable=True,
+            session_id=session_id, task_id=coordinates.get("task_id"),
+            agent_name=coordinates.get("agent_name"), step_number=coordinates.get("step_number"),
+            usage=raw if isinstance(raw, dict) else None, success=bool(success),
+            action_name="model_usage", metadata={
+                "type": "model_usage", "request_snapshot_id": snapshot_id,
+                "model": model, "provider": provider,
+                "operation": request_input.get("operation") or "generation",
+            },
+        ))
+    except Exception as error:
+        from agentevolver.logger import logger
+        logger.warning(f"| Model usage receipt unavailable: {type(error).__name__}")
+
+
 async def record_wire_audit(params: Dict[str, Any], coordinates: Dict[str, Any]) -> None:
     """Observe the final SDK payload, without duplicating prompts, images or credentials.
 

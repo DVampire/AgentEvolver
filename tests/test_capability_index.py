@@ -46,6 +46,16 @@ def test_small_catalog_stays_eager():
     assert not deferred
 
 
+def test_schema_budget_defers_large_definitions_without_evicting_discovered_tools():
+    ctx = SimpleNamespace(extra={})
+    pairs = [_pair("done_tool"), _pair("big_tool", "database " * 4000)]
+    chosen, deferred = select(pairs, ctx=ctx, agent_name="a", threshold=40, schema_tokens=1000)
+    assert deferred and {p[0]["function"]["name"] for p in chosen} == {"done_tool", SEARCH_NAME}
+    search(pairs, ctx=ctx, agent_name="a", query="database")
+    chosen, _ = select(pairs, ctx=ctx, agent_name="a", threshold=40, schema_tokens=1000)
+    assert "big_tool" in {p[0]["function"]["name"] for p in chosen}
+
+
 def test_large_catalog_exposes_core_and_search_then_loads_match():
     ctx = SimpleNamespace(extra={})
     pairs = [
@@ -109,6 +119,36 @@ def test_zero_match_search_does_not_load_arbitrary_capabilities():
     assert "No capability schemas matched" in result
     chosen, _ = select(pairs, ctx=ctx, agent_name="meta_agent", threshold=1)
     assert {pair[0]["function"]["name"] for pair in chosen} == {SEARCH_NAME}
+
+
+@pytest.mark.asyncio
+async def test_search_executes_through_router_and_honors_current_scope(monkeypatch):
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.agent.loop.decision import ActionCall
+    from agentevolver.plan.server import action_is_allowed
+    from unittest.mock import AsyncMock
+
+    ctx = SimpleNamespace(id="router-search", extra={})
+    agent = SimpleNamespace(name="meta_agent")
+    router = CapabilityRouter()
+    pairs = [_pair("done_tool"), _pair("weather_lookup", "forecast city")]
+    async def refresh(*_args):
+        remember_catalog(ctx, agent.name, pairs)
+        return [], {}
+    monkeypatch.setattr(router, "schemas", AsyncMock(side_effect=refresh))
+    route = {SEARCH_NAME: ("capability_search",)}
+    call = ActionCall(id="search", name=SEARCH_NAME, args={"query": "forecast"})
+    result = await router.invoke(call, agent=agent, ctx=ctx, routing=route)
+    assert result.ok and "weather_lookup" in result.output
+    selected, _ = select(pairs, ctx=ctx, agent_name=agent.name, threshold=1)
+    assert "weather_lookup" in {p[0]["function"]["name"] for p in selected}
+    assert router.read_only(call, route)
+    assert action_is_allowed("capability_search", SEARCH_NAME, None)
+    assert not action_is_allowed("capability_search", "unrelated_write", None)
+    pairs.pop()  # Scope narrowed before a repeated search.
+    result = await router.invoke(call, agent=agent, ctx=ctx, routing=route)
+    assert "No capability" in result.output
+    forget(ctx, agent.name)
 
 
 @pytest.mark.asyncio

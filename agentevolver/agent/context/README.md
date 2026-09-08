@@ -44,8 +44,8 @@ session pays for its own history every step.
 |---|---|---|
 | `fixed` | system prompt, task anchor | never |
 | `checkpoint` | the one canonical fold summary | only when history folds again |
-| `recent` | exact assistant/tool turns | appended to |
-| `live` | budgets, errors, delivered events, reminders | every step |
+| `recent` | exact assistant/tool turns, delivered events, changed plan observations | appended to |
+| `live` | budgets, errors, environment state, reminders | every step |
 
 Breakpoints go after `fixed`, after `checkpoint`, and after the last assistant message
 in `recent` — three, against Anthropic's limit of four. Nothing volatile is ever placed
@@ -67,3 +67,15 @@ which is also what keeps the prefix behind the fold point stable for the cache.
 
 Writing the summary needs a model, and this module does not own one: the assembler says
 *when* to fold and *what* to summarise, and the agent supplies the text.
+
+Delivered events are saved immediately in the conversation, deduplicated by envelope ID,
+and included in the source of later compaction. A plan observation is appended only when
+its content or mode changes. The latest observation is retained verbatim across folds
+and resume; its saved index points into history rather than duplicating the document.
+Stable planning rules come from PlanManager once in the fixed layer.
+
+Capability discovery uses the existing catalog and `search_capabilities` route. Besides
+the count threshold, `Agent.capability_schema_tokens` is a soft initial schema budget
+(estimated 8,000 tokens; 0 disables it). Core and explicitly discovered capabilities
+remain visible even above that budget; scope checks still apply. Batch programs use the
+current native schemas instead of a duplicate fixed SDK.

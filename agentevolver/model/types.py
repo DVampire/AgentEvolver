@@ -709,9 +709,14 @@ async def buffered_response_to_events(response: Any) -> "AsyncIterator[StreamEve
             text = getattr(response, "message", "") or ""
         if text:
             yield TextDelta(text)
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        usage = data.get("usage")
+    if hasattr(usage, "model_dump"):
+        usage = usage.model_dump()
     yield StreamDone(
         stop_reason=normalize_stop_reason(data.get("stop_reason") or data.get("finish_reason")),
-        usage=data.get("usage"),
+        usage=usage,
     )
 
 

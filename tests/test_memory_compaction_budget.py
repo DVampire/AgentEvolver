@@ -9,6 +9,27 @@ import pytest
 
 
 @pytest.mark.asyncio
+async def test_summarizer_receives_current_task_and_session_for_accounting(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from agentevolver.hook.default import compact as module
+    from agentevolver.hook.types import HookContext
+
+    model = AsyncMock(return_value=SimpleNamespace(
+        success=True, message="Acceptance conditions: preserve existing public URLs.", usage={"input_tokens": 12}))
+    monkeypatch.setattr(module, "model_manager", model)
+    ctx = HookContext(id="session", name="compact", input={
+        "task": "Preserve existing public URLs.", "items": ["Checked routing"], "model_name": "test",
+        "trace_context": {"agent_name": "builder", "task_id": "p", "step_number": 7}})
+    result = await module.CompactHook().handle(ctx)
+    kwargs = model.await_args.kwargs
+    assert kwargs["ctx"] is ctx
+    assert "Preserve existing public URLs." in kwargs["input"]["messages"][-1].text
+    assert kwargs["input"]["trace_context"]["step_number"] == 7
+    assert result.usage == {"input_tokens": 12}
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["valid", "omitted", "invented", "malformed"])
 async def test_checkpoint_semantic_audit_requires_grounded_evidence(monkeypatch, mode):
     import json

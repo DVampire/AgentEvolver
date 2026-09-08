@@ -74,14 +74,16 @@ contains summary, series, breakdown, facets and paginated calls from one snapsho
   providers or carrying prompt content into responses. Explicit event identities
   deduplicate copied traces. Truncation, file replacement and deletion rebuild the
   affected projection. The current cache is process-local and reconstructible.
-- **Current records are legacy Agent steps**, not a complete physical HTTP request
-  ledger. Model request events provide attribution and matched attempt counts.
-  Matched starts are consumed per completion so a later resident turn reusing step
-  zero does not inherit earlier request attempts.
-- Step duration includes tool execution. The UI calls it *Step duration*; model-only
-  latency and TTFT are not fabricated. Unfinished requests and retries without a
-  completed step may have no recorded usage. Complete per-attempt terminal events
-  in ModelContext remain a subsequent instrumentation change.
+- ModelContext emits one `model_usage` receipt when a provider attempt returns usage,
+  including generation, compaction and checkpoint audits. Receipt IDs identify calls;
+  identical request hashes do not collapse separate charges. Successful generation
+  receipts replace overlapping Agent-step aggregates in this view, avoiding double
+  counting. Older traces retain their step rows; auxiliary-only receipts do not suppress
+  a legacy generation row. A later resident turn reusing step zero is joined separately.
+- These are framework provider attempts, not a complete physical HTTP ledger. Exceptions
+  before usage returns, unfinished requests and provider-internal activity may have no
+  recorded consumption. Missing usage remains unknown. Legacy step duration includes
+  tools; request-only rows do not invent that duration, model latency or TTFT.
 - Complete input already includes caches. Reasoning is not added to output again.
   The cache percentage is a ratio of token sums, including cache writes in input.
   Missing usage and explicitly reported zero usage remain distinct.

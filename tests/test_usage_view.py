@@ -61,6 +61,30 @@ def test_calls_cost_and_cache_are_not_double_counted(tmp_path):
     assert u["coverage"]["legacy_steps"] == 2
 
 
+def test_request_receipts_include_auxiliary_costs_without_double_counting_steps(tmp_path):
+    def receipt(identity, operation, cost, at, success=True):
+        return call(identity) | {
+            "event_type": "custom", "timestamp": f"2026-09-08T00:00:0{at}Z",
+            "success": success, "usage": {"cost": cost, "input_tokens": 100, "output_tokens": 20},
+            "metadata": {"type": "model_usage", "model": "model-A", "provider": "p",
+                         "operation": operation, "request_snapshot_id": "identical-payload-hash"},
+        }
+    records = [receipt("retry", "generation", .2, 0, False),
+               receipt("compact", "compact", .3, 1),
+               receipt("audit", "checkpoint.audit", .4, 2),
+               receipt("main", "generation", .5, 3),
+               call("step") | {"timestamp": "2026-09-08T00:00:04Z", "usage": {"cost": .5}},
+               # A later resident assignment reuses step 0 but has legacy-only telemetry.
+               call("later") | {"timestamp": "2026-09-08T00:00:05Z", "usage": {"cost": .6}}]
+    write(tmp_path, records)
+    result = view(tmp_path).query()
+    assert result["summary"]["calls"] == 5
+    assert float(result["summary"]["cost"]) == 2.0
+    assert result["coverage"]["requests"] == 4
+    assert result["coverage"]["legacy_steps"] == 1
+    assert result["granularity"] == "mixed"
+
+
 def test_missing_usage_and_explicit_zero_are_distinct(tmp_path):
     write(
         tmp_path,
@@ -72,6 +96,23 @@ def test_missing_usage_and_explicit_zero_are_distinct(tmp_path):
     assert u["summary"]["token_calls"] == 1
     assert sorted(p["value"] is None for p in u["series"]) == [False, True]
     assert normalize_usage({"output_tokens": 10})["context_input_tokens"] is None
+
+
+@pytest.mark.parametrize("with_sequences", [True, False])
+def test_equal_timestamps_do_not_double_bill_receipts_and_steps(tmp_path, with_sequences):
+    records = [
+        call("z-receipt", usage={"cost": .5}, seq_no=1) | {
+            "event_type": "custom", "metadata": {
+                "type": "model_usage", "operation": "generation", "model": "m", "provider": "p"}},
+        call("a-step", usage={"cost": .5}, seq_no=2),
+    ]
+    if not with_sequences:
+        for row in records:
+            row.pop("seq_no")
+    write(tmp_path, records)
+    result = view(tmp_path).query()
+    assert result["summary"]["calls"] == 1
+    assert float(result["summary"]["cost"]) == .5
 
 
 def test_snapshot_identity_is_not_call_identity_and_no_prompt_leaks(tmp_path):

@@ -51,11 +51,14 @@ async def test_coordinator_reads_latest_plan_after_feedback_and_folding(planning
     agent.router = SimpleNamespace(schemas=AsyncMock(return_value=([], routes if evolving else {})))
     await agent.prompt_modules(agent.ctx)
     conversation = Conversation(task="Build and improve the website")
+    agent.conversation = conversation
     conversation.system = [SystemMessage(content="Stable instructions")]
     plan = root / "coordinator.md"
-    missing = "\n".join(await agent._live_blocks(0))
+    await agent._live_blocks(0)
+    missing = "\n".join(m.text for m in conversation.items)
     assert "No plan.md exists yet" in missing and str(plan) in missing
-    assert ("Evolution opportunities" in missing) is evolving
+    rules = manager.instructions(enabled=agent.use_plan, evolution_enabled=evolving)
+    assert ("Evolution opportunities" in rules) is evolving
     assert not plan.exists()  # The coordinator authors it; runtime never fabricates a plan.
     opportunity = (
         "\n## Evolution opportunities\n"
@@ -64,13 +67,14 @@ async def test_coordinator_reads_latest_plan_after_feedback_and_folding(planning
     ) if evolving else ""
     plan.write_text("Initial approach: ship a gallery." + opportunity)
     before = agent.assembler.build_envelope(conversation, live=await agent._live_blocks(0))
-    assert "ship a gallery" in before.live[0].text
+    assert "ship a gallery" in before.recent[-1].text
     assert all("ship a gallery" not in m.text for m in before.fixed)
 
     await agent.on_event(SimpleNamespace(text="Participant 2 requests an undo action."), None)
     live = await agent._live_blocks(1)
-    assert "Participant 2 requests an undo action" in "\n".join(live)
-    assert "Before implementing a change" in "\n".join(live)
+    assert "Participant 2 requests an undo action" in "\n".join(m.text for m in conversation.items)
+    assert "Before implementing a change" in rules
+    assert not live
     # The coordinator's next action updates the actual shared document.
     revised_opportunity = opportunity.replace(
         "E1 deferred", "E1 probing",
@@ -84,14 +88,14 @@ async def test_coordinator_reads_latest_plan_after_feedback_and_folding(planning
     conversation.checkpoint = CompactionMessage(content="Older conversation was folded.")
     after = agent.assembler.build_envelope(conversation, live=await agent._live_blocks(2))
     assert [m.text for m in before.fixed] == [m.text for m in after.fixed]
-    assert "add undo for Participant 2" in after.live[0].text
-    assert "ship a gallery" not in after.live[0].text
+    assert "add undo for Participant 2" in after.recent[-1].text
+    assert "ship a gallery" not in after.recent[-1].text
     if evolving:
-        assert "E1 probing" in after.live[0].text
-        assert "call-17" in after.live[0].text
-        assert "E1 deferred" not in after.live[0].text
+        assert "E1 probing" in after.recent[-1].text
+        assert "call-17" in after.recent[-1].text
+        assert "E1 deferred" not in after.recent[-1].text
         assert all("Evolution opportunities" not in m.text for m in after.fixed)
-    assert not after.live[0].cache
+    assert not after.live
     assert not manager.active("coordinator")
     agent.router.schemas.assert_awaited_once()  # Live planning does not rediscover every step.
 

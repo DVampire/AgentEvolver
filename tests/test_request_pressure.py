@@ -330,6 +330,45 @@ class _Client:
         pass
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["buffered", "stream", "buffered_stream"])
+async def test_completed_request_records_usage_at_the_model_boundary(monkeypatch, mode):
+    from unittest.mock import AsyncMock
+    from agentevolver.model.types import StreamDone
+    from agentevolver.trace.server import trace_manager
+
+    class Client(_Client):
+        async def __call__(self, **kwargs):
+            return Response(type=ResponseType.LLM, success=True, message="answer",
+                            usage={"input_tokens": 10, "output_tokens": 5})
+
+    class StreamingClient(Client):
+        async def stream(self, **kwargs):
+            yield StreamDone(stop_reason="end_turn", usage={"input_tokens": 10, "output_tokens": 5})
+
+    manager = _manager(window=10000)
+    manager.model_clients["main"] = StreamingClient() if mode == "stream" else Client()
+    emit = AsyncMock()
+    monkeypatch.setattr(trace_manager, "emit", emit)
+    monkeypatch.setattr("agentevolver.model.context._record_request_snapshot", AsyncMock(return_value="same-hash"))
+    request = {"messages": [HumanMessage(content="question")], "max_retries": 1,
+               "operation": "checkpoint.audit", "trace_context": {
+                   "agent_name": "builder", "task_id": "process-1", "step_number": 3}}
+    for _ in range(2):  # Identical request payloads still have separate costs.
+        if mode == "buffered":
+            assert (await manager("main", request, ctx=ModelContext(id="s"))).success
+        else:
+            events = [event async for event in manager.stream("main", request, ctx=ModelContext(id="s"))]
+            assert isinstance(events[-1], StreamDone)
+    receipts = [args.args[0] for args in emit.await_args_list if args.args[0].action_name == "model_usage"]
+    assert len(receipts) == 2 and receipts[0].id != receipts[1].id
+    for event in receipts:
+        assert event.session_id == "s" and event.agent_name == "builder" and event.step_number == 3
+        assert event.metadata["operation"] == "checkpoint.audit"
+        assert event.metadata["request_snapshot_id"] == "same-hash"
+        assert event.usage["input_tokens"] == 10 and event.usage["output_tokens"] == 5
+
+
 def test_a_request_that_still_does_not_fit_is_marked_over_capacity():
     """`unresolved` cannot carry this: a request above the trigger may still fit.
 

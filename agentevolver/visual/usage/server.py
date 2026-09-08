@@ -212,6 +212,7 @@ class UsageView:
                     "timestamp",
                     "id",
                     "granularity",
+                    "operation",
                     "agent_name",
                     "model",
                     "provider",
@@ -369,11 +370,12 @@ class UsageView:
                 "limit": limit,
                 "historical": total(historical),
                 "coverage": {
-                    "legacy_steps": len(detailed),
+                    "legacy_steps": sum(r["granularity"] == "legacy_step" for r in detailed),
+                    "requests": sum(r["granularity"] == "request" for r in detailed),
                     "summary_rows": len(historical),
                     "read_errors": self.reader.errors,
                 },
-                "granularity": "legacy_step",
+                "granularity": "mixed" if any(r["granularity"] == "request" for r in detailed) else "legacy_step",
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
 

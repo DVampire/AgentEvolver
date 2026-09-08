@@ -50,6 +50,9 @@ class Conversation:
         self.checkpoint: Optional[CompactionMessage] = None
         #: Exact turns: assistant messages and the tool results that answer them.
         self.items: List[Message] = []
+        self._event_ids: set[str] = set()
+        # References to ordinary history messages, for restoring current state on fold.
+        self._observations: Dict[str, HumanMessage] = {}
 
     # ------------------------------------------------------------------
     # Writing
@@ -73,10 +76,35 @@ class Conversation:
         self.items.append(assistant)
         self.items.extend(results)
 
-    def note(self, text: str) -> None:
+    def note(self, text: str, *, event_id: str = "") -> None:
         """Append a runtime note as a user turn — a nudge, a delivered event."""
-        if text.strip():
+        if text.strip() and (not event_id or event_id not in self._event_ids):
+            if not self.complete:
+                raise ValueError("Runtime notes require a closed tool turn")
             self.items.append(HumanMessage(content=text))
+            if event_id:
+                self._event_ids.add(event_id)
+
+    def observe(self, key: str, text: str) -> None:
+        """Append a changed state once; retain its full latest value across folds."""
+        previous = self._observations.get(key)
+        if previous is not None and previous.text == text:
+            return
+        if not self.complete:
+            raise ValueError("Context observations require a closed tool turn")
+        if not text.strip():
+            if previous is not None:
+                self.note(f"Context {key!r} is no longer active.")
+                self._observations.pop(key)
+            return
+        message = HumanMessage(content=text)
+        self.items.append(message)
+        self._observations[key] = message
+
+    @property
+    def observations(self) -> Sequence[HumanMessage]:
+        """Current state retained verbatim across folds, already present in history."""
+        return tuple(self._observations.values())
 
     def set_system(self, messages: Sequence[Message]) -> None:
         """Replace the fixed instructions. Called once, before the first step."""
@@ -96,6 +124,11 @@ class Conversation:
             "system": [m.model_dump(mode="json") for m in self.system],
             "checkpoint": self.checkpoint.model_dump(mode="json") if self.checkpoint else None,
             "items": [m.model_dump(mode="json") for m in self.items],
+            "event_ids": sorted(self._event_ids),
+            "observations": {
+                key: next(i for i, item in enumerate(self.items) if item is message)
+                for key, message in self._observations.items()
+            },
         }
         atomic_write_text(path, json.dumps(document, ensure_ascii=False))
 
@@ -119,6 +152,12 @@ class Conversation:
             checkpoint.setdefault("compaction_scope", "history")
             result.checkpoint = CompactionMessage.model_validate(checkpoint)
         result.items = [parse(m) for m in document["items"]]
+        result._event_ids = set(document.get("event_ids") or ())
+        for key, index in (document.get("observations") or {}).items():
+            if (type(index) is not int or not 0 <= index < len(result.items)
+                    or not isinstance(result.items[index], HumanMessage)):
+                raise ValueError("Invalid saved context observation")
+            result._observations[key] = result.items[index]
         if not result.complete:
             raise ValueError("Saved conversation has unanswered tool calls")
         from agentevolver.agent.context.envelope import ContextEnvelope
@@ -280,6 +319,10 @@ class Conversation:
             compaction_scope="history",
         )
         self.items = self.items[len(folded):]
+        # A summary may condense historical plans; current state remains exact.
+        retained = {id(message) for message in self.items}
+        self.items.extend(message for message in self._observations.values()
+                          if id(message) not in retained)
         return len(folded)
 
     # ------------------------------------------------------------------

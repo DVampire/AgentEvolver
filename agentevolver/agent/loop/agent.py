@@ -157,6 +157,10 @@ class Agent(BaseModel):
         default=2048, description="Size budget for a checkpoint summary."
     )
     compact_verify: bool = Field(default=True, description="Audit semantic coverage before replacing history.")
+    capability_schema_tokens: int = Field(
+        default=8000, ge=0,
+        description="Soft initial schema token budget; core and discovered capabilities stay visible. 0 disables.",
+    )
     # The fold policy, declared rather than inherited. These were accepted by
     # `extra="allow"` and never read: the agent took the shared module-level assembler
     # and rebuilt it only when `compact_output_tokens` differed, so a config asking to
@@ -625,7 +629,7 @@ class Agent(BaseModel):
         """
         from agentevolver.code import BATCH_CALL_TOOL
         from agentevolver.tool import tool_manager
-        from agentevolver.tool.default.execution.sdk import code_mode_section, sdk_for
+        from agentevolver.tool.default.execution.sdk import code_mode_section
 
         allowed = (getattr(self.ctx, "extra", None) or {}).get(
             "tool_allowlist", self.capability_allowlists.get("tool"),
@@ -633,11 +637,9 @@ class Agent(BaseModel):
         names = list(allowed) if allowed is not None else await tool_manager.list()
         if BATCH_CALL_TOOL not in names:
             return ""
-        try:
-            return code_mode_section(await sdk_for(names, tool_manager))
-        except Exception as error:  # noqa: BLE001 - a missing convention is not a stop
-            logger.warning(f"| ⚠️ [{self.name}] could not render code mode: {error}")
-            return ""
+        # Native schemas already describe the arguments. A second fixed SDK becomes
+        # stale when discovery or permissions change; the bridge uses this turn's roster.
+        return code_mode_section()
 
     async def prepare_task(
         self, task: str, files: List[str], ctx: Any, *,
@@ -701,6 +703,13 @@ class Agent(BaseModel):
             messages.extend(await self._render_prompt(ctx))
         if not messages and self.system:
             messages.append(SystemMessage(content=self.system))
+        from agentevolver.plan.server import plan_manager
+
+        planning_rules = plan_manager.instructions(
+            enabled=self.use_plan, evolution_enabled=self._evolution_policy_enabled,
+        )
+        if planning_rules:
+            messages.append(SystemMessage(content=planning_rules))
         project = self.project_context(ctx)
         try:
             notes = await self.memory_context(ctx)
@@ -985,7 +994,10 @@ class Agent(BaseModel):
         published event or a reply is read on the next step like anything else the agent
         learned. Override to act on one immediately.
         """
-        self._notes.append(self.render_event(envelope))
+        self.conversation.note(
+            self.render_event(envelope), event_id=str(getattr(envelope, "id", "") or ""),
+        )
+        self.save_thread()
 
     def render_event(self, envelope: Any) -> str:
         """How a delivered message reads in the prompt."""
@@ -1243,9 +1255,9 @@ class Agent(BaseModel):
         planning = plan_manager.context(
             str(getattr(self.ctx, "id", "") or ""), enabled=self.use_plan,
             evolution_enabled=self._evolution_policy_enabled,
+            include_rules=False,
         )
-        if planning:
-            blocks.append(planning)
+        self.conversation.observe("plan", planning)
         state = await self.environment_state(self.ctx)
         if state:
             blocks.append(state)
@@ -1374,6 +1386,16 @@ class Agent(BaseModel):
             # Do not discard the only readable evidence in favour of an opaque item:
             # the next call may need a provider-neutral fallback.
             return False, "no portable checkpoint was produced; history retained"
+        if not provider_state:
+            # Reject ineffective candidates before paying for semantic verification.
+            candidate = summary + (f"\n\nFull pre-compaction source snapshot: {archive}" if archive else "")
+            valid, reason = self.assembler.valid_checkpoint(
+                candidate, source,
+                self.conversation.checkpoint.text if self.conversation.checkpoint else "",
+                retained=self.conversation.observations,
+            )
+            if not valid:
+                return False, f"checkpoint rejected before audit: {reason}"
         if self.compact_verify:
             from agentevolver.hook.default.compact import CompactHook
 
@@ -1468,6 +1490,7 @@ class Agent(BaseModel):
                     "event": HookEvent.DIRECT_CALL,
                     "items": [self._render_for_checkpoint(m) for m in messages],
                     "existing_summary": existing,
+                    "task": self.conversation.task,
                     "model_name": self.model_name,
                     "max_output_tokens": self.compact_output_tokens,
                     "trace_context": self.trace_coordinates(),

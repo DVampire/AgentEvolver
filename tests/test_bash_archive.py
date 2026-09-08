@@ -58,3 +58,17 @@ def test_archiving_never_raises_when_path_unresolvable(monkeypatch):
     monkeypatch.setattr(bash.path_manager, "get", _boom)
     assert bash._bash_archive_path() is None
     assert bash._write_bash_archive("cmd", "some output") is None
+
+
+def test_large_archived_observation_keeps_diagnostics_and_retrievable_middle(tmp_path):
+    from agentevolver.tool.default.workspace.bash import _write_bash_archive, _with_archive_note
+    raw = "STDOUT: start\n" + "details " * 10_000 + "\nSTDERR: assertion failed\nExit code: 1"
+    path = str(tmp_path / "output.txt")
+    archived = _write_bash_archive("test", raw, path=path)
+    view = _with_archive_note(raw, archived, 4000)
+    assert len(view) < 4500
+    assert "STDOUT: start" in view and "assertion failed" in view and "Exit code: 1" in view
+    assert "omitted inline" in view and path in view
+    assert raw in (tmp_path / "output.txt").read_text()
+    assert _with_archive_note(raw, None, 4000) == raw
+    assert _with_archive_note(raw, archived, 0).startswith(raw)

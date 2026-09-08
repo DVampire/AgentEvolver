@@ -70,6 +70,10 @@ def action_is_allowed(capability_type: str, name: str,
     """
     if name in ALWAYS_ALLOWED:
         return True
+    if capability_type == "capability_search":
+        from agentevolver.agent.context.capabilities import SEARCH_NAME
+
+        return name == SEARCH_NAME
     if capability_type not in _JUDGEABLE_TYPES or not declaration:
         return False
     if declaration.get("mutates") is False:
@@ -100,65 +104,44 @@ async def declaration_of(capability_type: str, name: str) -> Optional[Dict[str, 
     }
 
 
-#: What the agent is told in `auto`. Not a gate — a standing instruction, repeated
-#: every step for the same reason `PLAN_MODE_NOTICE` is: an obligation that applies to
-#: every action has to be legible at the moment of every action.
+#: Stable instructions; the agent installs these separately from the document.
 AUTO_MODE_NOTICE = (
-    "Keep `plan.md` at the exact plan-context path, outside the deliverable workspace. "
-    "For anything that is more than one obvious step, write "
-    "the plan there before you start — the goal, the steps, and anything you had to "
-    "guess — and revise it as what you learn changes it. It is rendered back to you "
-    "every step and the person watching reads the same file, so it is how the two of "
-    "you stay agreed on where this is going. A single-step task does not need one. "
-    "Use this one document as the working plan, not a second plan in memory. "
-    "Record the goal, constraints, chosen approach, ordered steps with status, and "
-    "observable acceptance checks. Before implementing a change prompted by a worker "
-    "report or user feedback, update the plan: cite the source, distinguish observations "
-    "from proposals, select or defer each material need with a reason, and specify the "
-    "next experiment and how to verify it. Preserve outstanding commitments when "
-    "replanning. After execution, record evidence and distinguish implemented, "
-    "technically verified, and user-confirmed. Delegate bounded assignments from the "
-    "plan; workers report results to you and need not maintain their own plans."
+    "Keep one plan.md at the exact plan-context path, outside the deliverable. "
+    "For multi-step work, write the goal, constraints, assumptions, approach, ordered "
+    "steps/status and observable acceptance checks before implementation; a single-step "
+    "task needs no plan. Updates enter your context and the observer reads the same file. "
+    "Before implementing a change from feedback or a worker report, update this plan: "
+    "cite the source, separate observations from proposals, address each material need "
+    "or explain its deferral, and name the next action and verification. Preserve open "
+    "commitments. Record evidence and distinguish implemented, technically verified "
+    "and user-confirmed. Delegate bounded assignments; workers report results without "
+    "maintaining a duplicate plan."
 )
 
-# Only coordinators with evolution enabled receive this planning obligation. The
-# document records decisions; it neither invents candidates nor authorizes adoption.
+# Component procedures and trigger policy belong to the shared evolution rules.
+# This notice specifies the plan record and its lifecycle.
 EVOLUTION_PLAN_NOTICE = (
-    "Maintain a compact 'Evolution opportunities' section near the top of plan.md. "
-    "At initial planning and when feedback, a correction, verification, or replanning "
-    "reveals useful evidence, review both new and outstanding opportunities under the "
-    "shared self-evolution rules. A missing capability is not the only signal: consider "
-    "reusable learning, expected reuse, a better method, new user experiences, and "
-    "self-verification discoveries. After meaningful local tests, debugging, browser "
-    "checks, or final review, distinguish the task defect/setup issue from what the "
-    "result teaches about the implementation or verification method. A first discovery "
-    "or a passing check can expose a reusable improvement; another repository or a "
-    "repeated failure is not required. Before finishing, reassess an earlier 'none "
-    "identified' against new verification evidence. Use permitted local evidence in "
-    "benchmarks, never hidden grader data or reference solutions. "
-    "For each concrete opportunity keep a stable ID and record: evidence/source; the "
-    "reusable operation or method and its intended consumer/next use; expected benefit "
-    "over the current approach; existing capabilities inspected or a bounded discovery "
-    "step; the smallest experiment, baseline comparison and reuse/regression check; "
-    "and status, next action and decision reason. Mark unknowns and expected savings "
-    "honestly. Connect each verification-driven opportunity to the method's cause, "
-    "the prevention/detection improvement, and a concrete next consumer; the consumer "
-    "can be a different check or operation in the same project. When evidence, consumer "
-    "and verification are concrete and the loop fits, start the bounded experiment now "
-    "under the shared evolution rules rather than at a later plan step; the work is your "
-    "own, so record what you changed and the version it registered as, not a dispatched "
-    "task id. Do not duplicate active experiments. Defer only for a "
-    "concrete prerequisite, write conflict, permission, or resource constraint and "
-    "record when to retry; 'product work first' is not a reason to postpone independent work. "
-    "Update the same entry with candidate identity/version, evaluation evidence, "
-    "keep/rollback/unload decision and later actual consumer use as they occur. "
-    "Advance change, evaluation and adoption in dependency order; "
-    "close every open evolution before finishing the parent task. "
-    "Keep proposed, running, evaluated, adopted and used distinct; a plan entry or product edit "
-    "is not evolution. Preserve unresolved entries when rewriting or compacting the "
-    "plan, linking lengthy evidence separately. If no opportunity qualifies, briefly "
-    "record that assessment without inventing a candidate or imposing a quota. Review "
-    "at meaningful boundaries, not with a separate model call or a rewrite every step."
+    "Keep a compact 'Evolution opportunities' section near the top of plan.md. "
+    "Review it at planning, feedback, correction and verification boundaries using the "
+    "shared self-evolution rules: first discoveries, successful checks, expected reuse, "
+    "better methods, missing capabilities and new experiences can qualify. Distinguish "
+    "a product/setup defect from a reusable implementation or verification improvement. "
+    "For each opportunity record a stable ID, source evidence, method/cause, concrete "
+    "consumer/next use, expected benefit, existing capabilities inspected (or discovery "
+    "step), smallest baseline comparison, independent reuse/regression check, status "
+    "and next action. Unknowns and savings remain hypotheses. A different operation "
+    "in this project qualifies; repeated failure or another repository is not required. "
+    "When evidence, consumer and a bounded verification fit, start now; never duplicate "
+    "active experiments. Defer only for a prerequisite, write conflict, permission or "
+    "resource constraint with a retry condition, not merely 'product work first'. "
+    "Track the candidate and registered version, executed evaluation evidence, "
+    "keep/rollback/unload decision and actual consumer use, in dependency order. "
+    "Keep proposed, running, evaluated, adopted and used distinct. Preserve unresolved "
+    "entries through replanning/compaction and close experiments before finishing; "
+    "link lengthy evidence. Reassess 'none identified' after new verification and "
+    "before finishing, without quotas, invented gaps or per-step rewrites. Product "
+    "edits are not evolution; benchmark discovery uses permitted local evidence, "
+    "never hidden grader data or reference solutions."
 )
 
 PLAN_CONTEXT_MAX_CHARS = 16_000
@@ -266,8 +249,9 @@ class PlanManagerServer(metaclass=Singleton):
 
     def context(
         self, session_id: str, *, enabled: bool = False, evolution_enabled: bool = False,
+        include_rules: bool = True,
     ) -> str:
-        """Project the current document into the volatile layer, never cached history.
+        """Read the current document; consumers choose its context lifetime.
 
         Coordinators opt in to automatic planning. A worker gets no automatic plan
         obligation; an explicitly active review gate still explains its way out.
@@ -286,15 +270,15 @@ class PlanManagerServer(metaclass=Singleton):
                 "\n[Plan excerpt truncated. Read the full plan.md before revising it; "
                 "keep the current plan concise and link detailed evidence separately.]"
             )
-        notice = PLAN_MODE_NOTICE if state.active else AUTO_MODE_NOTICE
+        notice = PLAN_MODE_NOTICE if state.active else ""
+        if include_rules:
+            notice += "\n" + self.instructions(enabled=enabled, evolution_enabled=evolution_enabled)
         if os.environ.get("AGENTEVOLVER_EXEC_CONTAINER", "").strip():
             notice += (
                 "\nThis is an agent-side file, not mounted in the task shell. "
                 "Use read_file_tool/write_file_tool at this exact path for the plan; "
                 "use bash_tool for the peer repository."
             )
-        if enabled and evolution_enabled:
-            notice += "\n\n" + EVOLUTION_PLAN_NOTICE
         if not text.strip():
             text = "No plan.md exists yet."
         return (
@@ -302,6 +286,16 @@ class PlanManagerServer(metaclass=Singleton):
             f'active="{str(state.active).lower()}" path="{escape(str(path), quote=True)}">\n'
             f"{notice}\n\n<current-plan>\n{text}\n</current-plan>\n</plan-context>"
         )
+
+    @staticmethod
+    def instructions(*, enabled: bool = False, evolution_enabled: bool = False) -> str:
+        """Stable planning obligations, independent of the mutable plan document."""
+        if not enabled:
+            return ""
+        body = AUTO_MODE_NOTICE
+        if evolution_enabled:
+            body += "\n\n" + EVOLUTION_PLAN_NOTICE
+        return '<planning-rules>\nWhen plan-context is active, follow these rules.\n' + body + '\n</planning-rules>'
 
     def set_mode(self, session_id: str, mode: PlanMode) -> PlanState:
         """Move a run between stances.

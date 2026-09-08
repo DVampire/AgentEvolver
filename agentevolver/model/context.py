@@ -37,6 +37,7 @@ from agentevolver.model.pressure import (
 from agentevolver.model.types import ModelConfig, ModelContext
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.runtime.errors import BudgetExhausted
+from agentevolver.trace.request import record_model_usage
 from agentevolver.utils import hvac_client
 
 load_dotenv(verbose=True)
@@ -1477,6 +1478,12 @@ class ModelContextManager:
             answer["usage"] = price_usage_dict(
                 answer["usage"], getattr(config, "cost", None)
             ) or answer["usage"]
+        await record_model_usage(
+            session_id=session_id, snapshot_id=snapshot_id, model=name, provider=config.provider,
+            usage=answer.get("usage"), request_input={"operation": "compact", "trace_context": {
+                "task_id": task_id, "agent_name": agent_name, "step_number": step_number,
+            }},
+        )
         # The native endpoint has no AGENT_CALL event to refresh its page later. Attach
         # its own usage now; this keeps compaction cost distinct from the next generation.
         if session_id and snapshot_id and answer.get("usage"):
@@ -1846,6 +1853,11 @@ class ModelContextManager:
                 )
                 self._price_result(name, result)
                 self._log_usage(name, result)
+                await record_model_usage(
+                    session_id=session_id, snapshot_id=snapshot_id, model=name,
+                    provider=getattr(model_config, "provider", ""), usage=result.usage,
+                    request_input=input, success=result.success,
+                )
                 if not result.success:
                     if (result.data or {}).get("retryable") is False:
                         return result
@@ -2035,6 +2047,11 @@ class ModelContextManager:
                     )
                     self._price_result(fallback, result)
                     self._log_usage(fallback, result)
+                    await record_model_usage(
+                        session_id=session_id, snapshot_id=snapshot_id, model=fallback,
+                        provider=getattr(fallback_config, "provider", ""), usage=result.usage,
+                        request_input=input, success=result.success,
+                    )
                     if not result.success:
                         if (result.data or {}).get("retryable") is False:
                             return result
@@ -2172,6 +2189,11 @@ class ModelContextManager:
                             ev = _price_event(target, ev)
                             if isinstance(ev, _StreamDone):
                                 ev.usage = settle(ev.usage)
+                                await record_model_usage(
+                                    session_id=session_id, snapshot_id=snapshot_id, model=target,
+                                    provider=getattr(self.models.get(target), "provider", ""),
+                                    usage=ev.usage, request_input=input,
+                                )
                             yield ev
                 else:
                     # Buffer once; do not reserve again while converting to events.
@@ -2182,6 +2204,11 @@ class ModelContextManager:
                         ev = _price_event(target, ev)
                         if isinstance(ev, _StreamDone):
                             ev.usage = settle(ev.usage)
+                            await record_model_usage(
+                                session_id=session_id, snapshot_id=snapshot_id, model=target,
+                                provider=getattr(self.models.get(target), "provider", ""),
+                                usage=ev.usage, request_input=input, success=resp.success,
+                            )
                         yield ev
 
         model_config = self.models.get(name)

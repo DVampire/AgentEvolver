@@ -80,13 +80,21 @@ def render_sdk(schemas: Sequence[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def code_mode_section(sdk: str) -> str:
+def code_mode_section(sdk: Optional[str] = None) -> str:
     """The prompt section: what a program may call, and the rules it is called under.
 
     Empty when nothing is callable. An agent holding `batch_call_tool` and no other tool
     can still run a program, but telling it about a calling convention with nothing to
     call invites a program written around tools that are not there.
     """
+    if sdk is None:
+        # Native schemas are the authoritative signatures, including after discovery.
+        sdk = (
+            "# await tools.<tool_name>(**kwargs)\n"
+            "# Only tool capabilities in the CURRENT native tool list are callable.\n"
+            "# Use their exact parameter names. Discover missing tools before the program.\n"
+            "# Agent, skill, workflow, connector and environment calls remain direct."
+        )
     if not sdk.strip():
         return ""
     return "\n".join([

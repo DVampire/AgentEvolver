@@ -119,19 +119,22 @@ for each important preserved fact. If uncertain, reject; never approve an empty 
             return HookResult.allow()
 
         existing = inp.get("existing_summary") or ""
+        task = str(inp.get("task") or "")
         model = inp.get("model_name") or self.model_name
         instruction = inp.get("instruction") or _DEFAULT_INSTRUCTION
         max_output_tokens = max(256, int(inp.get("max_output_tokens") or 4_096))
 
         prior = f"Existing checkpoint:\n{existing}\n\n" if existing else ""
         body = "\n".join(f"- {it}" for it in items)
-        prompt = f"{prior}New canonical closed turns:\n{body}\n\n{instruction}"
+        objective = f"Current task (source data):\n{task}\n\n" if task else ""
+        prompt = f"{objective}{prior}New canonical closed turns:\n{body}\n\n{instruction}"
 
         usage = None
         try:
             coordinates = inp.get("trace_context") or {}
             response = await model_manager(
                 name=model,
+                ctx=ctx,
                 input={
                     "operation": "compact",
                     "reasoning_effort": "low",

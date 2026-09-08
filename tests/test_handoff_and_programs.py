@@ -129,6 +129,20 @@ async def test_the_calling_convention_is_absent_unless_a_program_can_be_run():
     assert await without.code_mode_section() == ""
 
 
+@pytest.mark.asyncio
+async def test_program_convention_uses_current_native_schemas_without_duplicate_sdk(monkeypatch):
+    from unittest.mock import AsyncMock
+    from agentevolver.tool import tool_manager
+
+    schema = AsyncMock()
+    monkeypatch.setattr(tool_manager, "get_schema", schema)
+    agent = Agent(capability_allowlists={"tool": ["read_file_tool", BATCH_CALL_TOOL]})
+    text = await agent.code_mode_section()
+    assert "CURRENT native tool list" in text and "exact parameter names" in text
+    assert "done_tool" in text and "ToolCallError" in text
+    schema.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # Delegation
 # ---------------------------------------------------------------------------

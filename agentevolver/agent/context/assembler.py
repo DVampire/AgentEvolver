@@ -297,7 +297,8 @@ class ContextAssembler:
         return conversation.foldable(self.retain_turns)
 
     def valid_checkpoint(
-        self, text: str, source: Sequence[Message], existing: str = ""
+        self, text: str, source: Sequence[Message], existing: str = "", *,
+        retained: Sequence[Message] = (),
     ) -> Tuple[bool, str]:
         """Whether a checkpoint may replace the history it summarises.
 
@@ -315,8 +316,11 @@ class ContextAssembler:
         after = int(estimate_tokens([HumanMessage(content=text)]))
         if after > self.compact_output_tokens:
             return False, f"output-limit:{after}>{self.compact_output_tokens}"
+        # Current observations are copied back after a fold; they reclaim no space.
+        retained_ids = {id(message) for message in retained}
+        removed = [message for message in source if id(message) not in retained_ids]
         before = int(estimate_tokens(
-            [*(([HumanMessage(content=existing)]) if existing else []), *source]
+            [*(([HumanMessage(content=existing)]) if existing else []), *removed]
         ))
         if after >= before:
             return False, f"no-token-saving:{before}->{after}"
@@ -339,7 +343,7 @@ class ContextAssembler:
         if not provider_state:
             source = self.summarize_source(conversation)
             existing = conversation.checkpoint.text if conversation.checkpoint else ""
-            ok, reason = self.valid_checkpoint(summary, source, existing)
+            ok, reason = self.valid_checkpoint(summary, source, existing, retained=conversation.observations)
             if not ok:
                 logger.warning(f"| ⚠️ rejected compaction checkpoint ({reason})")
                 return 0

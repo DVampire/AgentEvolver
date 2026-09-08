@@ -93,7 +93,9 @@ class UsageTraceReader:
                             if not isinstance(event, dict):
                                 continue
                             typ = event.get("event_type")
-                            if typ not in {"agent_call", "model_request"}:
+                            metadata = event.get("metadata") or {}
+                            receipt = typ == "custom" and metadata.get("type") == "model_usage"
+                            if typ not in {"agent_call", "model_request"} and not receipt:
                                 continue
                             identity = str(
                                 event.get("id")
@@ -108,9 +110,10 @@ class UsageTraceReader:
                                     "step_number",
                                     "agent_name",
                                     "timestamp",
+                                    "seq_no",
                                 )
                             }
-                            row.update(id=event_id, event_type=typ)
+                            row.update(id=event_id, event_type="model_usage" if receipt else typ)
                             if typ == "model_request":
                                 data = event.get("input") or {}
                                 row.update(
@@ -120,6 +123,16 @@ class UsageTraceReader:
                                         or "Unknown"
                                     ),
                                     provider=str(data.get("provider") or "Unknown"),
+                                    operation=str((data.get("parameters") or {}).get("operation") or "generation"),
+                                )
+                            elif receipt:
+                                row.update(normalize_usage(event.get("usage")))
+                                row.update(
+                                    model=str(metadata.get("model") or "Unknown"),
+                                    provider=str(metadata.get("provider") or "Unknown"),
+                                    operation=str(metadata.get("operation") or "generation"),
+                                    success=event.get("success") is not False,
+                                    snapshot_id=metadata.get("request_snapshot_id"),
                                 )
                             else:
                                 row.update(normalize_usage(event.get("usage")))
@@ -140,12 +153,13 @@ class UsageTraceReader:
         events = {}
         for item in self.by_root.get(root, []):
             events.update(item["events"])
-        requests, rows = {}, []
+        requests, receipts, rows = {}, {}, []
         ordered = sorted(
             events.values(),
             key=lambda e: (
                 e.get("timestamp") or "",
-                0 if e["event_type"] == "model_request" else 1,
+                e["seq_no"] if type(e.get("seq_no")) is int else
+                {"model_request": 0, "model_usage": 1, "agent_call": 2}[e["event_type"]],
                 e["id"],
             ),
         )
@@ -153,9 +167,20 @@ class UsageTraceReader:
             if event["event_type"] == "model_request":
                 requests.setdefault(key(event), []).append(event)
                 continue
+            if event["event_type"] == "model_usage":
+                receipts.setdefault(key(event), []).append(event)
+                rows.append({
+                    **event, "granularity": "request", "calls": 1,
+                    "request_attempts": 1, "latency_ms": None, "step_duration_ms": None,
+                    "status": "completed" if event["success"] else "failed",
+                })
+                continue
             # Step numbers can restart on later resident turns. Consume only starts
             # preceding this completion, never requests belonging to a later turn.
             matches = requests.pop(key(event), [])
+            completed = receipts.pop(key(event), [])
+            if any(r["operation"] == "generation" and r["success"] for r in completed):
+                continue  # The step is a projection of these receipts, not another bill.
             models = {r["model"] for r in matches}
             providers = {r["provider"] for r in matches}
             rows.append(

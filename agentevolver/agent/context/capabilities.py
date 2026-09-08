@@ -133,9 +133,15 @@ def _metadata(item: Any) -> Tuple[str, str, Tuple[Any, ...]]:
 
 def select(
     pairs: Sequence[Any], *, ctx: Any, agent_name: str, threshold: int,
+    schema_tokens: int = 0,
 ) -> Tuple[List[Any], bool]:
     """Return the stable core + session-loaded schemas when a catalog is large."""
-    if threshold <= 0 or len(pairs) <= threshold:
+    over_tokens = False
+    if schema_tokens > 0 and pairs and not isinstance(pairs[0], dict):
+        from agentevolver.model.pressure import estimate_tokens
+
+        over_tokens = estimate_tokens([pair[0] for pair in pairs]) > schema_tokens
+    if not over_tokens and (threshold <= 0 or len(pairs) <= threshold):
         return list(pairs), False
     loaded = set(_loaded(ctx, agent_name))
     chosen = [pair for pair in pairs if _metadata(pair)[0] in CORE_NAMES | loaded]
@@ -422,6 +428,12 @@ async def assemble_native_tools(
         ):
             pairs.append((schema, route))
 
+    # The metadata index stays lightweight. Apply a soft wire-schema budget only
+    # after schema resolution; never evict core or explicitly discovered capabilities.
+    pairs, _ = select(
+        pairs, ctx=ctx, agent_name=agent_name, threshold=0,
+        schema_tokens=int(getattr(agent, "capability_schema_tokens", 0) or 0),
+    )
     tools: List[_SchemaTool] = []
     for fc, route in pairs:
         # Hosted programs are deliberately narrower than direct calls. A Tool must be

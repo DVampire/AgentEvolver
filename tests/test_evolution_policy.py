@@ -63,20 +63,21 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, task, defe
     try:
         values = await agent.prompt_modules(ctx)
         assert values["evolution_enabled"] is True
-        # The same decision must reach live planning, including deferred capabilities.
+        # The same decision reaches the stable plan instructions, even when deferred.
         from agentevolver.plan.server import plan_manager
 
         agent.middleware = []
         agent.ctx = ctx
         agent.environment_state = AsyncMock(return_value="")
-        live = "\n".join(await agent._live_blocks(0))
-        assert "Evolution opportunities" in live
-        assert "self-verification discoveries" in live
+        await agent._live_blocks(0)
+        rules = plan_manager.instructions(enabled=agent.use_plan, evolution_enabled=values["evolution_enabled"])
+        assert "Evolution opportunities" in rules
+        assert "verification boundaries" in rules
         # The decision must reach live planning. It used to say "dispatch in the
         # background"; the work is the agent's own now, so what has to arrive is that it
         # starts now and records the version it produced.
-        assert "start the bounded experiment now" in live
-        assert "record what you changed and the version it registered as" in live
+        assert "start now" in rules
+        assert "registered version" in rules
         assert not plan_manager.active(ctx.id)
         cfg = parse_prompt_file(str(ROOT / "agentevolver/prompt/default" / f"{agent.name}.html"))
         message = await cfg.to_prompt().get_system_message(values, reload=True)

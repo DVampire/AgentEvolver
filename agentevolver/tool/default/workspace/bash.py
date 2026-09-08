@@ -36,8 +36,9 @@ _GUIDANCE = """
   intended.
 - Every command's COMPLETE output is archived to a `.txt` under the session's
   `log/bash/` directory, and the tool result tells you the path. What you are shown
-  inline is preserved in full. Use bounded queries when inspecting large files so the
-  result fits the model context; archives can be searched without re-running a command. A background job's
+  inline may be a head/tail excerpt controlled by max_output_chars (0 requests full
+  output). Read/search the archive for omitted evidence without re-running a command.
+  If archiving fails, the foreground output is returned in full. A background job's
   archive is named by its job id, so it pairs with `job__output(job_id=...)`.
 - One call can carry several known execution steps, and doing so costs one model round-trip
   instead of several: `make && ./run-tests`, `a; b; echo $?`, or a pipeline. Use
@@ -160,10 +161,15 @@ def _write_bash_archive(command: str, text: str, path: Optional[str] = None) -> 
         return None
 
 
-def _with_archive_note(message: str, archived: Optional[str]) -> str:
-    """Append the archive locator to a tool message, when the output was archived."""
+def _with_archive_note(message: str, archived: Optional[str], max_chars: int = 0) -> str:
+    """Bound an archived shell observation, retaining both ends and its retrieval path."""
     if not archived:
         return message
+    if max_chars > 0 and len(message) > max_chars:
+        half = max(1, max_chars // 2)
+        omitted = len(message) - 2 * half
+        message = (message[:half] + f"\n\n[{omitted:,} characters omitted inline; "
+                   "read/search the complete archive for additional evidence.]\n\n" + message[-half:])
     return f"{message}\n\n[📄 full output archived at {archived}]"
 
 
@@ -404,6 +410,7 @@ class BashTool(Tool):
         stdin: str = "",
         timeout: Optional[int] = None,
         run_in_background: bool = False,
+        max_output_chars: int = 32_000,
         **kwargs,
     ) -> Response:
         """Execute a bash command asynchronously.
@@ -419,6 +426,9 @@ class BashTool(Tool):
                      otherwise.
             run_in_background: Return a job id at once instead of waiting. The command
                      outlives the call and is collected through the `job_*` tools.
+            max_output_chars: Inline archived foreground output budget; 0 returns full
+                     output. Both ends and the exit status remain visible; read/search
+                     the archive for omitted evidence. Does not limit command execution.
         """
         limit = int(timeout) if timeout else self.timeout
         if not command.strip():
@@ -537,7 +547,7 @@ class BashTool(Tool):
                 if exit_code:
                     body = f"{body}\n\nExit code: {exit_code}"
                 archived = _write_bash_archive(command, body)
-                message = _with_archive_note(warning_prefix + body, archived)
+                message = _with_archive_note(warning_prefix + body, archived, max_output_chars)
                 return Response(
                     type=ResponseType.TOOL, success=True, message=message,
                     data={"exit_code": exit_code, "command": command, "tty": True,
@@ -603,7 +613,7 @@ class BashTool(Tool):
 
             body = "\n\n".join(parts) if parts else f"Command completed with exit code: {exit_code}"
             archived = _write_bash_archive(command, body)
-            message = _with_archive_note(warning_prefix + body, archived)
+            message = _with_archive_note(warning_prefix + body, archived, max_output_chars)
 
             # The bash *tool call* succeeds whenever the command actually ran to
             # completion — the shell exit code is an observation for the model to read

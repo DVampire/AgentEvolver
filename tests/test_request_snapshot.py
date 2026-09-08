@@ -259,12 +259,18 @@ async def test_compaction_requires_declared_route_capability_and_client_support(
     manager = ModelContextManager()
     manager.models["main"] = _config(provider="anthropic", native_compaction=True)
     manager.model_clients["main"] = Client()
-    with patch("agentevolver.model.context._record_request_snapshot", side_effect=record):
-        result = await manager.compact_history("main", [HumanMessage(content="history")])
+    with patch("agentevolver.model.context._record_request_snapshot", side_effect=record), \
+         patch("agentevolver.model.context.record_model_usage", new_callable=AsyncMock) as receipt:
+        result = await manager.compact_history("main", [HumanMessage(content="history")],
+                                               session_id="compact-session", agent_name="builder", step_number=4)
 
     assert result["summary"] == "checkpoint"
     assert result["provider"] == "anthropic"
     assert order == ["snapshot", "provider"]
+    receipt.assert_awaited_once()
+    assert receipt.await_args.kwargs["session_id"] == "compact-session"
+    assert receipt.await_args.kwargs["request_input"]["operation"] == "compact"
+    assert receipt.await_args.kwargs["usage"]["input_tokens"] == 10
 
 
 @pytest.mark.asyncio
