@@ -7,17 +7,16 @@ from pydantic import Field
 
 from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import TOOL
-from agentevolver.config import config
 from agentevolver.sandbox.project import check_session_path
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.session import isolated_workspace_root
 
-_DESCRIPTION = "Read the contents of a file."
+_DESCRIPTION = "Read numbered file lines (default 200); use offset/limit to continue, limit=null for full text."
 
 _GUIDANCE = """
 - Returns the file content with line numbers prefixed.
-- By default the whole file is read; use offset/limit to read a specific line range.
+- Defaults to 200 lines; follow next_offset to continue. Set limit=null for the full remainder.
 """
 
 _EXAMPLES = [
@@ -55,11 +54,17 @@ class ReadFileTool(Tool):
             op=Operation.READ, target=str(arguments.get("path") or "")
         )
 
+    def model_output_limit(self, arguments: Dict[str, Any]) -> int:
+        # Explicit full retrieval must not be excerpted again by the shared pipeline.
+        if "limit" in arguments and arguments["limit"] is None:
+            return 0
+        return super().model_output_limit(arguments)
+
     async def __call__(
         self,
         path: str,
         offset: int = 1,
-        limit: Optional[int] = None,
+        limit: Optional[int] = 200,
         **kwargs,
     ) -> Response:
         """Read file contents with line numbers.
@@ -67,9 +72,12 @@ class ReadFileTool(Tool):
         Args:
             path:   Absolute path to the file.
             offset: First line to return (1-based).
-            limit:  Maximum number of lines to return. None reads to end of file.
+            limit:  Maximum lines (default 200); null reads to end without model excerpting.
         """
         try:
+            if offset < 1 or (limit is not None and limit < 1):
+                return Response(type=ResponseType.TOOL, success=False,
+                                message="offset and limit must be positive; use limit=null for full text.")
             denial = check_session_path(kwargs.get("ctx"), path, write=False)
             if denial:
                 return Response(type=ResponseType.TOOL, success=False, message=denial)
@@ -100,12 +108,11 @@ class ReadFileTool(Tool):
 
             numbered = "".join(f"{start + i + 1}\t{line}" for i, line in enumerate(selected))
 
-            # Only note when the caller explicitly limited the range (not a default full read).
             truncation_note = ""
             if limit is not None and end < total_lines:
                 truncation_note = (
                     f"\n[Showing lines {start+1}–{end} of {total_lines}. "
-                    f"Use offset/limit to read more.]"
+                    f"Continue with offset={end + 1}, or limit=null for full text.]"
                 )
 
             warning_prefix = f"Warning: {warning}\n\n" if warning else ""
@@ -114,7 +121,8 @@ class ReadFileTool(Tool):
                 success=True,
                 message=warning_prefix + numbered + truncation_note,
                 files=[path],
-                data={"total_lines": total_lines, "start": start + 1, "end": end},
+                data={"total_lines": total_lines, "start": start + 1, "end": end,
+                      "next_offset": end + 1 if end < total_lines else None},
             )
 
         except Exception as e:

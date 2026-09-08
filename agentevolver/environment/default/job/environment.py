@@ -177,14 +177,10 @@ class JobEnvironment(Environment):
         name="output",
         read_only=True,
         description=(
-            "Collect a background job's output.\n\n"
-            "Safe to call repeatedly — reading does not consume, so an early check still "
-            "shows everything when you come back. A finished job keeps its output; a job "
-            "that failed is exactly when you want it.\n\n"
-            "If the job is still running you get what it has printed up to now, not a "
-            "wait; call it again later for more. `tail` returns only the last N lines — "
-            "use it on a chatty job, where the closing lines are almost always the ones "
-            "that say what happened."
+            "Read output without consuming it. Ordinary jobs default to the last 50 lines, "
+            "up to 12,000 characters; tail selects lines and full=true returns all retained "
+            "output. Agent reports stay complete by default; turn selects an exact subscriber "
+            "report. Read status and exit code, not output alone, to decide completion."
         ),
     )
     async def output(
@@ -192,9 +188,12 @@ class JobEnvironment(Environment):
         job_id: str,
         tail: Optional[int] = None,
         turn: Optional[int] = None,
+        full: bool = False,
         ctx=None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
+        if tail is not None and (tail < 1 or full):
+            return _fail("tail must be positive and cannot be combined with full=true")
         job, failure = self._resolve(job_id, ctx)
         if failure:
             return failure
@@ -202,6 +201,7 @@ class JobEnvironment(Environment):
         from agentevolver.runtime import kernel
 
         ref = kernel.get(job_id)
+        effective_tail = tail if tail is not None else (50 if ref is None and not full else None)
         if turn is not None:
             if tail is not None:
                 return _fail("turn and tail are mutually exclusive")
@@ -220,11 +220,13 @@ class JobEnvironment(Environment):
                     f"{json.dumps(diagnostics, ensure_ascii=False, sort_keys=True)}"
                 )
         else:
-            text = job_manager.output(job_id, tail=tail) or ""
+            text = job_manager.output(job_id, tail=effective_tail) or ""
+        # Subscriber reports are acceptance evidence. Never apply log tail defaults
+        # to them or mark a partial report as collected.
         collected_turn = self._record_subscriber_collection(
             job_id,
             ctx,
-            full=tail is None,
+            full=effective_tail is None,
             turn=turn,
         )
         header = f"{job.id} — {job.status.value}"
@@ -244,6 +246,10 @@ class JobEnvironment(Environment):
             header += " (earlier output dropped; the cap keeps the tail)"
         if job.error:
             header += f"\nerror: {job.error}"
+        if ref is None and not full:
+            if len(text) > 12_000:
+                text = "[Earlier characters omitted from this view.]\n" + text[-12_000:]
+            header += f"\n[Output view: last {effective_tail} lines, up to 12,000 characters; full=true reads all retained output.]"
         return _ok(
             f"{header}\n\n{text}" if text else f"{header}\n\n(no output yet)",
             job_id=job_id,

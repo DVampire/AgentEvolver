@@ -102,6 +102,8 @@ class ActionResult:
     final: bool = False
     #: Anything the capability wants carried alongside — files, ids, a child's pid.
     extra: Dict[str, Any] = field(default_factory=dict)
+    #: Optional archived excerpt for the model; programs and hooks use full output/error.
+    model_observation: Optional[str] = None
 
     @property
     def ok(self) -> bool:
@@ -109,8 +111,11 @@ class ActionResult:
 
     def as_message(self) -> ToolMessage:
         """The tool result message answering this call."""
+        content = self.error or self.output or "(no output)"
+        if self.model_observation and not self.final:
+            content = self.model_observation
         return ToolMessage(
-            content=self.error or self.output or "(no output)",
+            content=content,
             tool_call_id=self.call.id,
             caller=self.call.caller,
             name=self.call.name,

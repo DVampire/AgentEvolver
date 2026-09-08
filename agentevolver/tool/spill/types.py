@@ -51,7 +51,7 @@ class SpillStore(BaseModel):
 
     ``save_text`` **raises** on a real storage failure (permissions, disk full,
     backend down). The caller decides how to degrade — the tool pipeline treats a
-    failure as best-effort and keeps the inline excerpt, because turning a
+    failure as best-effort and keeps the complete inline output, because turning a
     successful command into an error because its *transcript* could not be filed
     would be a worse outcome than losing the transcript.
     """

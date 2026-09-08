@@ -74,6 +74,7 @@ meta_agent.update(
     # Codex-style window: token growth after the checkpoint is primary; four exact
     # closed steps preserve enough local causality for portable provider fallbacks.
     retain_recent_steps=4,
-    compact_after_steps=24,
-    compact_body_tokens=100000,
+    compact_after_steps=0,
+    compact_body_tokens=0,
+    compact_input_tokens=100000,
 )

@@ -365,12 +365,14 @@ class CapabilityRouter(ToolRouter):
         success = bool(getattr(response, "success", False))
         message = str(getattr(response, "message", "") or "")
         data = getattr(response, "data", None) or {}
+        observation = (getattr(response, "extra", None) or {}).get("model_observation")
         return ActionResult(
             call=call,
             output=message if success else "",
             error="" if success else (message or "the capability reported a failure"),
             final=bool(data.get("done")) if isinstance(data, dict) else False,
             extra=data if isinstance(data, dict) else {},
+            model_observation=observation if isinstance(observation, str) else None,
         )
 
 

@@ -9,7 +9,7 @@ from agentevolver.session import BaseContext
 from agentevolver.response.types import Response
 
 
-#: Archive threshold, not permission to shorten a tool result.
+#: Default model-facing excerpt size; canonical tool results stay complete.
 OUTPUT_LIMIT = 32_000
 
 def clip_output(text: str, limit: int = OUTPUT_LIMIT) -> str:
@@ -101,6 +101,15 @@ class Tool(BaseModel):
     async def __call__(self, **kwargs) -> Response:
         """Call the tool with the given arguments."""
         raise NotImplementedError("All tools must implement __call__")
+
+    def model_output_limit(self, arguments: Dict[str, Any]) -> int:
+        """Model observation size after durable archiving; zero requests full text.
+
+        Tools with their own output control may expose ``max_output_chars``. This
+        does not change the canonical Response returned to programmatic callers.
+        """
+        limit = arguments.get("max_output_chars", OUTPUT_LIMIT)
+        return max(0, limit) if type(limit) is int else OUTPUT_LIMIT
 
     def permission_request(
         self, arguments: Dict[str, Any], ctx: Optional[ToolContext] = None,

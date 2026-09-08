@@ -29,7 +29,7 @@ class Response(BaseModel):
     files: Optional[List[str]] = None
     parsed_model: Optional[BaseModel] = None
     usage: Optional[Any] = None          # TokenUsage at runtime; Any to avoid circular import
-    extra: Optional[Dict[str, Any]] = None  # caller-defined extension data, not read by framework
+    extra: Optional[Dict[str, Any]] = None  # extension metadata, including archive/model-view hints
 
 
 __all__ = ["Response", "ResponseType"]

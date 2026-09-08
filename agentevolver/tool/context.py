@@ -1033,6 +1033,7 @@ class ToolContextManager(BaseModel):
             before_invoke=before_invoke,
             finalize=lambda response: self._bound_output(
                 response, name=name, ctx=ctx, checkpoint=checkpoint,
+                model_limit=tool_instance.model_output_limit(call_input),
             ),
         )
 
@@ -1163,8 +1164,9 @@ class ToolContextManager(BaseModel):
     async def _bound_output(
         self, response: Response, *, name: str, ctx: ToolContext,
         checkpoint: Optional[Dict[str, Any]] = None,
+        model_limit: int = OUTPUT_LIMIT,
     ) -> Response:
-        """Archive large results without replacing or shortening the observation."""
+        """Preserve canonical output and provide an archived model-facing excerpt."""
         if checkpoint:
             response = response.model_copy(deep=True)
             response.extra = {
@@ -1172,7 +1174,9 @@ class ToolContextManager(BaseModel):
                 "workspace_checkpoint": dict(checkpoint),
             }
         message = response.message
-        if not isinstance(message, str) or len(message) <= OUTPUT_LIMIT:
+        if not isinstance(message, str) or (
+            len(message) <= OUTPUT_LIMIT and (model_limit <= 0 or len(message) <= model_limit)
+        ):
             return response
 
         # The path table, not `ctx.extra["project_root"]` — a key nothing ever wrote, so
@@ -1187,7 +1191,24 @@ class ToolContextManager(BaseModel):
             suggested_name=f"{name}.txt",
         )
         if ref is not None:
+            extra = dict(response.extra or {})
+            extra["output_archive"] = ref.model_dump()
+            # Final answers are deliverables, not observations to abbreviate. Keep
+            # programmatic results complete; only the conversation uses this view.
+            final = bool((response.data or {}).get("done"))
+            if not final:
+                extra["model_observation"] = f"{message}\n\n{ref.retrieval_hint}"
+            if model_limit > 0 and len(message) > model_limit and not final:
+                head = (model_limit + 1) // 2
+                tail = model_limit // 2
+                extra["model_observation"] = (
+                    message[:head]
+                    + f"\n\n[{len(message) - model_limit:,} characters omitted inline; "
+                    "read/search the complete archive for omitted evidence.]\n\n"
+                    + (message[-tail:] if tail else "")
+                    + f"\n\n{ref.retrieval_hint}"
+                )
             response = response.model_copy(update={
-                "message": f"{message}\n\n{ref.retrieval_hint}",
+                "extra": extra,
             })
         return response

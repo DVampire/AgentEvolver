@@ -36,6 +36,20 @@ Tools should remain small and atomic. Reusable guidance belongs to Skill; multi-
 orchestration belongs to Workflow. Domain-specific release gates and benchmark loops do
 not become generic tools merely because they can be expressed as a callable.
 
+## Output size and recovery
+
+The shared tool pipeline archives large text before supplying a model-facing head/tail
+excerpt (32,000 characters by default). `Response.message`, `ActionResult.output/error`,
+programmatic batch calls and trace hooks retain the full returned text; only the conversation
+message uses the excerpt. It includes a full-output locator. Final answers are not excerpted,
+and archive failure leaves the original output intact.
+
+Path Manager places archives in the bound session's `log/spill/` tree; standalone calls use
+runtime storage. Read/search the archive to recover omitted evidence. `read_file_tool` defaults
+to 200 numbered lines with a continuation offset; explicit `limit=null` reads the full remainder
+without further excerpting. Bash retains its existing `max_output_chars` control (`0` for full
+output). These defaults reduce observations, not the underlying files or stored evidence.
+
 ## The built-in tools
 
 Forty-five registered tools, grouped by what they act on. `mutates` is the registry-owned

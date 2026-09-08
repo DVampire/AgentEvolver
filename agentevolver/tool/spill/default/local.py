@@ -1,4 +1,4 @@
-"""The local spill store: private files under the machine-level runtime root."""
+"""Private output archives in session logs, or runtime storage without a session."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def _safe_segment(suggested: str) -> str:
 
 
 class LocalSpillStore(SpillStore):
-    """Write spilled text to owner-only files under ``output/.runtime/spill``.
+    """Write spilled text under the session's logs; standalone calls use runtime storage.
 
     Layout is ``<root>/<session-hash>/<random>-<safe-name>``. The session is hashed
     rather than used literally so a session id carrying a slash cannot climb out of
@@ -59,7 +59,8 @@ class LocalSpillStore(SpillStore):
         suggested_name: str = "output.txt",
     ) -> SpillRef:
         digest = hashlib.sha256((session_key or "shared").encode("utf-8")).hexdigest()[:16]
-        directory = path_manager.get(P.SPILL_SESSION, digest=digest)
+        key = P.SESSION_SPILL if path_manager.session is not None else P.SPILL_SESSION
+        directory = path_manager.get(key, digest=digest)
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
 
         path = directory / f"{secrets.token_hex(4)}-{_safe_segment(suggested_name)}"

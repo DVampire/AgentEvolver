@@ -157,7 +157,9 @@ async def test_native_async_read_overlaps_generation_and_is_not_repeated(monkeyp
         finish.set()
         yield StreamDone("tool_use")
 
-    monkeypatch.setattr("agentevolver.model.model_manager", SimpleNamespace(stream=stream))
+    monkeypatch.setattr("agentevolver.model.model_manager", SimpleNamespace(
+        stream=stream, get_model_config=lambda name: None,
+    ))
     decision = await agent.think(0)
     assert not decision.error
     assert router.invoked == ["read"]

@@ -33,7 +33,8 @@ class _Loud(Tool):
     name: str = "loud_tool"
     description: str = "Returns a great deal of text."
 
-    async def __call__(self, size: int = OUTPUT_LIMIT * 3, ctx=None, **kwargs) -> Response:
+    async def __call__(self, size: int = OUTPUT_LIMIT * 3,
+                       max_output_chars: int = OUTPUT_LIMIT, ctx=None, **kwargs) -> Response:
         body = "HEAD-MARKER" + ("x" * size) + "TAIL-MARKER"
         return Response(type=ResponseType.TOOL, success=True, message=body)
 
@@ -135,10 +136,11 @@ def test_small_results_are_untouched(spill_root, tmp_path):
     assert "saved at `" not in resp.message
 
 
-def test_an_oversized_result_is_referenced_without_splicing_its_text(spill_root, tmp_path):
-    """The model receives the exact result as well as its durable locator."""
-    import re
+def test_an_oversized_result_keeps_canonical_text_and_bounds_only_the_model_view(spill_root, tmp_path):
+    """Programs/Trace keep full output; the Agent gets a retrievable excerpt."""
     from pathlib import Path
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.agent.loop.decision import ActionCall
 
     manager = _manager_for(tmp_path, _Loud())
     resp = asyncio.run(manager(name="loud_tool", input={}, ctx=SimpleNamespace(id="c", extra={})))
@@ -147,13 +149,113 @@ def test_an_oversized_result_is_referenced_without_splicing_its_text(spill_root,
     assert "HEAD-MARKER" in resp.message and "TAIL-MARKER" in resp.message
     assert "omitted inline" not in resp.message
 
-    # The locator is in the message, and what it points at is the whole thing.
-    match = re.search(r"saved at `([^`]+)`", resp.message)
-    assert match, f"no locator in message: {resp.message[-300:]}"
-    saved = Path(match.group(1)).read_text()
+    # The locator accompanies the model view and points to the whole result.
+    archive = resp.extra["output_archive"]
+    saved = Path(archive["locator"]).read_text()
     assert len(saved) == OUTPUT_LIMIT * 3 + len("HEAD-MARKER") + len("TAIL-MARKER")
     assert "HEAD-MARKER" in saved and "TAIL-MARKER" in saved
-    assert resp.message.startswith(saved)
+    assert resp.message == saved
+    action = CapabilityRouter._from_response(ActionCall("c", "loud_tool"), resp)
+    assert action.output == saved
+    shown = action.as_message().text
+    assert len(shown) < OUTPUT_LIMIT + 1000
+    assert "HEAD-MARKER" in shown and "TAIL-MARKER" in shown
+    assert "omitted inline" in shown and archive["locator"] in shown
+
+
+@pytest.mark.parametrize("success", [True, False])
+def test_structured_canonical_output_and_error_status_survive_excerpting(spill_root, tmp_path, success):
+    import json
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.agent.loop.decision import ActionCall
+
+    body = json.dumps({"diagnostics": "X" * (OUTPUT_LIMIT * 2), "exit_code": 7})
+    class _Structured(_Loud):
+        async def __call__(self, **kwargs):
+            return Response(type=ResponseType.TOOL, success=success, message=body,
+                            data={"exit_code": 7})
+    resp = asyncio.run(_manager_for(tmp_path, _Structured())(
+        name="loud_tool", input={}, ctx=SimpleNamespace(id="c", extra={})))
+    assert json.loads(resp.message)["exit_code"] == 7
+    action = CapabilityRouter._from_response(ActionCall("c", "loud_tool"), resp)
+    assert action.ok == success
+    assert action.extra["exit_code"] == 7
+    assert action.as_message().is_error == (not success)
+    assert "omitted inline" in action.as_message().text
+    assert json.loads(action.output if success else action.error)["exit_code"] == 7
+
+
+def test_explicit_full_output_is_not_truncated_again(spill_root, tmp_path):
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.agent.loop.decision import ActionCall
+
+    resp = asyncio.run(_manager_for(tmp_path, _Loud())(
+        name="loud_tool", input={"max_output_chars": 0}))
+    shown = CapabilityRouter._from_response(ActionCall("c", "loud_tool"), resp).as_message().text
+    assert resp.message in shown
+    assert "omitted inline" not in shown
+
+
+@pytest.mark.asyncio
+async def test_batch_dispatch_can_parse_full_result_after_model_excerpting(spill_root, tmp_path):
+    import json
+    from agentevolver.agent.loop import ActionCall, Agent, ToolRouter
+    from agentevolver.agent.loop.executor import ActionExecutor
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.code import BATCH_CALL_TOOL
+
+    body = json.dumps({"payload": "x" * (OUTPUT_LIMIT * 3), "answer": 42})
+
+    class _JSONTool(_Loud):
+        async def __call__(self, **kwargs):
+            return Response(type=ResponseType.TOOL, success=True, message=body)
+
+    manager = _manager_for(tmp_path, _JSONTool())
+
+    class Router(ToolRouter):
+        async def invoke(self, call, **kwargs):
+            response = await manager(name=call.name, input=call.args)
+            result = CapabilityRouter._from_response(call, response)
+            assert "omitted inline" in result.as_message().text
+            return result
+
+    routes = {name: ("tool", name) for name in (BATCH_CALL_TOOL, "loud_tool")}
+    bridge = ActionExecutor(Router())._bridge(
+        ActionCall("program", BATCH_CALL_TOOL), Agent(name="probe"), None, routes, {})
+    result = await bridge.call("loud_tool", {})
+    assert json.loads(result) == json.loads(body)
+
+
+def test_done_deliverable_is_not_excerpted(spill_root, tmp_path):
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.agent.loop.decision import ActionCall
+
+    class _Final(_Loud):
+        async def __call__(self, **kwargs):
+            return Response(type=ResponseType.TOOL, success=True, message="Z" * (OUTPUT_LIMIT * 2),
+                            data={"done": True})
+    resp = asyncio.run(_manager_for(tmp_path, _Final())(name="loud_tool", input={}))
+    action = CapabilityRouter._from_response(ActionCall("c", "loud_tool"), resp)
+    assert action.final and action.output == resp.message
+    assert "model_observation" not in resp.extra
+
+
+def test_bound_session_archive_uses_log_path_and_can_be_read(tmp_path, monkeypatch):
+    from pathlib import Path
+    from agentevolver.paths.server import PathManagerServer
+    from agentevolver.paths import P
+    import agentevolver.tool.spill.default.local as local
+    import agentevolver.sandbox.project as project
+
+    monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
+    paths = PathManagerServer()
+    paths.bind_session("audit", "run")
+    monkeypatch.setattr(local, "path_manager", paths)
+    monkeypatch.setattr(project, "path_manager", paths)
+    ref = asyncio.run(LocalSpillStore().save_text("exact evidence", SpillSource(tool_name="x"), session_key="run"))
+    assert Path(ref.locator).is_relative_to(paths.get(P.SESSION_LOG))
+    assert project.check_session_path(path=ref.locator, write=False) is None
+    assert Path(ref.locator).read_text() == "exact evidence"
 
 
 def test_a_failed_spill_still_returns_the_complete_result(spill_root, tmp_path):

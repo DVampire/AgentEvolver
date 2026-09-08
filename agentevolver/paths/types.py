@@ -126,6 +126,7 @@ class P(str, Enum):
     #: a command printed is ever lost — the same guarantee for foreground and for
     #: background jobs, whose in-memory ring buffer would otherwise drop the head.
     SESSION_BASH = "session_bash"
+    SESSION_SPILL = "session_spill"
     #: Canvas drafts belong to the session that drew them; a finished flow is
     #: promoted to the shared library under ``extension/canvas``.
     SESSION_FLOWS = "session_flows"
@@ -273,6 +274,7 @@ LAYOUT: Dict[P, str] = {
     P.SESSION_EXTENSION: "output/{owner}/sessions/{session_id}/extension",
     P.SESSION_TRACE: "output/{owner}/sessions/{session_id}/log/trace",
     P.SESSION_BASH: "output/{owner}/sessions/{session_id}/log/bash",
+    P.SESSION_SPILL: "output/{owner}/sessions/{session_id}/log/spill/{digest}",
     P.SESSION_FLOWS: "output/{owner}/sessions/{session_id}/flows",
     P.SESSION_RUNS: "output/{owner}/sessions/{session_id}/runs",
     P.CONVERSATIONS: "output/{owner}/sessions/{session_id}/conversations",

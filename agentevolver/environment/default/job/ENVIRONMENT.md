@@ -65,7 +65,7 @@ finished stops collecting.
 | Action | What it does |
 |---|---|
 | `list` | Everything, finished included — the history the state deliberately trims |
-| `output` | What a job has printed. Repeatable; reading does not consume. `tail` for the last N lines |
+| `output` | Repeatable, non-consuming output. Ordinary jobs default to the last 50 lines / 12,000 characters; `tail` selects lines, `full=true` reads the entire retained buffer. Agent reports stay complete by default; `turn` selects a subscriber report. |
 | `wait` | Hold one tool call until jobs finish or continuable agents become idle after a requested turn; returns early on failure/timeout |
 | `kill` | Stop it. Output printed before the kill is kept |
 

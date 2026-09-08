@@ -76,6 +76,77 @@ def _parent_ctx(pid):
 
 
 @pytest.mark.asyncio
+async def test_ordinary_output_defaults_to_tail_but_full_read_and_exit_remain_available():
+    from agentevolver.environment.default.job.environment import JobEnvironment
+    from agentevolver.job import job_manager
+
+    session = "tail-view-regression"
+    job = job_manager.register(type="test", label="log", session_id=session)
+    text = "".join(f"line-{i:04d}\n" for i in range(150))
+    job_manager.append_output(job.id, text)
+    job_manager.finish(job.id, exit_code=7)
+    ctx = SimpleNamespace(id=session, extra={})
+    env = JobEnvironment()
+    try:
+        shown = await env.output(job.id, ctx=ctx)
+        assert shown["success"] and shown["exit_code"] == 7
+        assert "line-0000" not in shown["message"]
+        assert "line-0149" in shown["message"] and "full=true" in shown["message"]
+        full = await env.output(job.id, full=True, ctx=ctx)
+        assert text in full["message"]
+        assert job_manager.output(job.id) == text  # reads never consume
+        bad = await env.output(job.id, tail=10, full=True, ctx=ctx)
+        assert not bad["success"]
+    finally:
+        job_manager.forget(session)
+
+
+@pytest.mark.asyncio
+async def test_default_log_view_bounds_a_single_huge_line():
+    from agentevolver.environment.default.job.environment import JobEnvironment
+    from agentevolver.job import job_manager
+
+    session = "long-line-view-regression"
+    job = job_manager.register(type="test", label="log", session_id=session)
+    text = "BEGIN" + "x" * 40_000 + "END"
+    job_manager.append_output(job.id, text)
+    try:
+        env = JobEnvironment()
+        ctx = SimpleNamespace(id=session, extra={})
+        shown = await env.output(job.id, ctx=ctx)
+        assert len(shown["message"]) < 13_000 and "END" in shown["message"]
+        assert "omitted" in shown["message"]
+        assert text in (await env.output(job.id, full=True, ctx=ctx))["message"]
+    finally:
+        job_manager.kill(job.id)
+        job_manager.forget(session)
+
+
+@pytest.mark.asyncio
+async def test_long_subscriber_report_is_not_a_log_tail(subscriber):
+    proc, environment_manager = subscriber
+    text = "FIRST-FINDING\n" + "evidence\n" * 150 + "LAST-FINDING"
+    proc.turn_results[1] = text
+    ctx = _parent_ctx(proc.pid)
+    result = await environment_manager(
+        name="job", action="output", input={"job_id": proc.pid, "turn": 1}, ctx=ctx,
+    )
+    assert result.success and text in result.message
+    assert ctx.extra["deployment_contract"]["collected_turns"] == {proc.pid: 1}
+
+
+@pytest.mark.asyncio
+async def test_partial_subscriber_read_is_not_marked_collected(subscriber):
+    proc, environment_manager = subscriber
+    ctx = _parent_ctx(proc.pid)
+    result = await environment_manager(
+        name="job", action="output", input={"job_id": proc.pid, "tail": 1}, ctx=ctx,
+    )
+    assert result.success
+    assert ctx.extra["deployment_contract"]["collected_turns"] == {}
+
+
+@pytest.mark.asyncio
 async def test_output_reads_a_subscriber(subscriber):
     """The turn result reaches the parent, rather than a "no such job" failure."""
     proc, environment_manager = subscriber

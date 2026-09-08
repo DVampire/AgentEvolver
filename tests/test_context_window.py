@@ -55,6 +55,38 @@ def layer(messages, name):
     return [message for message in messages if message.context_layer == name]
 
 
+def test_default_compaction_counts_full_input_even_when_history_is_small():
+    held = conversation()
+    pressure = {"estimated_tokens_after": 100_001, "pressure_ratio_after": 0.11}
+    reason = ContextAssembler().fold_reason(held, request_pressure=pressure)
+    assert "full input" in reason
+    assert ContextAssembler(compact_input_tokens=0).fold_reason(held, request_pressure=pressure) == ""
+
+
+@pytest.mark.parametrize("use_memory", [False, True])
+def test_specialist_uses_full_input_policy_independently_of_durable_memory(use_memory):
+    from agentevolver.agent.actor.code_agent import CodeAgent
+
+    agent = CodeAgent(use_memory=use_memory)
+    pressure = {"estimated_tokens_after": 100_001, "pressure_ratio_after": 0.11}
+    assert "full input" in agent.assembler.fold_reason(conversation(), request_pressure=pressure)
+
+
+@pytest.mark.parametrize("benchmark", ["swebench_pro", "swebench_verified", "programbench"])
+def test_baseline_and_evolution_configs_use_the_same_full_input_compaction(benchmark):
+    from pathlib import Path
+    from mmengine.config import Config
+    from agentevolver.agent.loop import Agent
+
+    root = Path(__file__).resolve().parents[1]
+    pressure = {"estimated_tokens_after": 100_001, "pressure_ratio_after": 0.11}
+    for suffix in ("", "_baseline"):
+        cfg = Config.fromfile(str(root / "configs" / f"{benchmark}_agent{suffix}.py"))
+        assembler = Agent(**cfg.meta_agent).assembler
+        assert "full input" in assembler.fold_reason(conversation(), request_pressure=pressure)
+        assert assembler.fold_reason(conversation(30)) == "", "short histories should not fold by turn count"
+
+
 # ---------------------------------------------------------------------------
 # Layout
 # ---------------------------------------------------------------------------

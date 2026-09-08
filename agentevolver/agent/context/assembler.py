@@ -39,11 +39,13 @@ from agentevolver.message.types import AssistantMessage, HumanMessage, Message
 #: tried; more defeats the point of folding at all.
 DEFAULT_RETAIN_TURNS = 4
 
-#: Check for worthwhile history compaction after this many complete turns.
-DEFAULT_COMPACT_AFTER_TURNS = 24
+#: Optional turn/body triggers; full-input accounting is the shared default.
+DEFAULT_COMPACT_AFTER_TURNS = 0
 
-#: Tokens of live body — everything after the checkpoint — past which history is folded.
-DEFAULT_COMPACT_BODY_TOKENS = 100_000
+DEFAULT_COMPACT_BODY_TOKENS = 0
+
+#: Full input includes system, schemas, cached history and current observations.
+DEFAULT_COMPACT_INPUT_TOKENS = 100_000
 
 #: Fraction of the model's window at which folding becomes a capacity matter.
 DEFAULT_FOLD_AT_PRESSURE = 0.85
@@ -72,7 +74,7 @@ class ContextAssembler:
         retain_turns: int = DEFAULT_RETAIN_TURNS,
         compact_after_turns: int = DEFAULT_COMPACT_AFTER_TURNS,
         compact_body_tokens: int = DEFAULT_COMPACT_BODY_TOKENS,
-        compact_input_tokens: int = 0,
+        compact_input_tokens: int = DEFAULT_COMPACT_INPUT_TOKENS,
         fold_at_pressure: float = DEFAULT_FOLD_AT_PRESSURE,
         max_folds: int = DEFAULT_MAX_FOLDS,
         context_window: int = DEFAULT_CONTEXT_WINDOW,
