@@ -6,6 +6,8 @@
   <meta name="color-scheme" content="dark">
   <title>Benchmark · Live</title>
   <link rel="stylesheet" href="./benchmark.css">
+  <link rel="stylesheet" href="./usage.css">
+  <script type="module" src="./usage.js"></script>
 </head>
 <body>
   <div class="ambient ambient-a"></div>
@@ -58,7 +60,8 @@
       </article>
     </section>
 
-    <section class="section-grid">
+    <section data-usage-endpoint="./api/usage" aria-label="Model usage explorer"></section>
+    <section>
       <article class="panel slots-panel">
         <div class="panel-head">
           <div>
@@ -70,23 +73,7 @@
         <div id="slots" class="slots"></div>
       </article>
 
-      <article class="panel telemetry-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Telemetry</p>
-            <h2>Model usage</h2>
-          </div>
-          <span class="pill muted">Live totals</span>
-        </div>
-        <dl class="telemetry">
-          <div><dt>Estimated cost</dt><dd id="cost">—</dd></div>
-          <div><dt>LLM calls</dt><dd id="calls">—</dd></div>
-          <div><dt>Input tokens</dt><dd id="input-tokens">—</dd></div>
-          <div><dt>Output tokens</dt><dd id="output-tokens">—</dd></div>
-          <div><dt>Cache reads</dt><dd id="cache-read">—</dd></div>
-          <div><dt>Cache hit rate</dt><dd id="cache-rate">—</dd></div>
-        </dl>
-      </article>
+
     </section>
 
     <section class="panel recent-panel">

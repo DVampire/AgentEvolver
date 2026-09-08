@@ -23,6 +23,7 @@ preview only.
 | `request/style.css`, `request/app.js` | Canonical LLM request viewer with context-layer, token-growth, cache, and compaction diagnostics |
 | `benchmark/` | Generic live benchmark state, HTTP service, and responsive dashboard |
 | `run/` | Generic Agent run dashboard |
+| `usage/` | Shared real-trace usage charts, filters, call records and CSV export for Run and Benchmark |
 | `sites/` | Unified page index |
 
 Assets are grouped by the view they serve, not by file extension. Each view keeps

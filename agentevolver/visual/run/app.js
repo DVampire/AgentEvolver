@@ -37,9 +37,6 @@ function render(data) {
     return card;
   }));
   if (!data.agents.length) empty('agents', 'No agent events yet.');
-  const u = data.usage;
-  const metrics = [['Uncached input', number(u.input_tokens)], ['Cache reads', number(u.cache_read_tokens)], ['Cache writes', number(u.cache_write_tokens)], ['Output tokens', number(u.output_tokens)], ['Cache hit ratio', u.cache_hit_ratio == null ? '—' : (u.cache_hit_ratio * 100).toFixed(1) + '%']];
-  $('usage').replaceChildren(...metrics.map(([k, v]) => { const el = node('div', null, 'metric'); el.append(node('span', k), node('strong', v)); return el; }));
   $('deployments').replaceChildren(...data.deployments.map(d => {
     const buildLabel = stage => stage === 'preview' ? 'Preview build' : stage === 'published' ? 'Published build' : 'Deployment build';
     const el = node('article', null, 'slot'); el.append(node('h3', d.site_id, 'agent-name'), node('p', (d.status || 'unknown') + (d.release_number ? ' · ' + buildLabel(d.stage) + ' ' + d.release_number : ''), 'muted'));

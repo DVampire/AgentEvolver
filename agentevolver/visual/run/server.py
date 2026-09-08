@@ -7,20 +7,25 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections import deque
-from datetime import datetime, timezone
 import hashlib
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
-from pathlib import Path
 import re
 import shlex
 import sys
 import tempfile
 import threading
 import time
+from collections import deque
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
+
+if __package__:
+    from agentevolver.visual.usage.server import UsageView, deployment_files
+else:
+    from usage_server import UsageView, deployment_files
 
 
 def read_json(path, default):
@@ -51,6 +56,8 @@ def launcher_alive(state, state_path):
     start ticks remain the exact answer; when it is not, the honest evidence is whether
     the run is still writing its state, because a launcher that stopped stops updating it.
     """
+    if state.get("status") in {"done", "completed", "failed", "interrupted", "cancelled", "stopped"}:
+        return False
     start = state.get("launcher_start")
     if not start:
         return False
@@ -143,6 +150,11 @@ class RunView:
         self.path = Path(state_path)
         self.reader = TraceReader()
         self.lock = threading.Lock()
+        self.usage_view = UsageView(self.usage_sources)
+
+    def usage_sources(self):
+        state = read_json(self.path, {})
+        return [{"id": state.get("session_id") or str(self.path), "log_root": state["log_root"]}]
 
     def snapshot(self):
         with self.lock:
@@ -168,8 +180,8 @@ class RunView:
                 row = agents.setdefault(key, dict(id=key, name=proc.get("name"), usage=usage(), requests=0))
                 row.update({k: proc.get(k) for k in ("pid", "parent", "state", "mode", "turns", "busy", "queued", "topics", "grants")})
             total = {key: sum(a["usage"][key] for a in agents.values()) for key in usage()}
-            inputs = total["input_tokens"] + total["cache_read_tokens"] + total["cache_write_tokens"]
-            total["cache_hit_ratio"] = total["cache_read_tokens"] / inputs if inputs else None
+            total = self.usage_view.query()["summary"]
+            total["cost"] = float(total["cost"])
             alive = launcher_alive(state, self.path)
             status = state.get("status", "unknown")
             if status == "running" and not alive:
@@ -275,8 +287,8 @@ class RunMonitor:
 
     async def deploy(self, port=8766):
         from agentevolver.deploy import DeployRequest, deployment_manager
-        from agentevolver.paths import path_manager
         from agentevolver.gateway.sites import ensure_site_gateway
+        from agentevolver.paths import path_manager
 
         self.state["gateway_base"] = await ensure_site_gateway()
         self.publish()
@@ -284,6 +296,7 @@ class RunMonitor:
                   "base.css": ("benchmark", "style.css"), "run.css": ("run", "style.css"),
                   "run.js": ("run", "app.js"), "request.css": ("request", "style.css"), "request.js": ("request", "app.js")}
         files = {name: path_manager.package_resource("visual", *parts).read_text() for name, parts in assets.items()}
+        files.update(deployment_files())
         site_id = "run-monitor-" + hashlib.sha256(str(self.path).encode()).hexdigest()[:12]
         record = await deployment_manager.deploy(DeployRequest(
             site_id=site_id, runtime="custom", backend="host", port=port, files=files,
@@ -328,12 +341,18 @@ def handler(view, assets):
                "/run.css": ("run.css", "text/css"), "/run.js": ("run.js", "text/javascript"),
                "/request.css": ("request.css", "text/css"), "/request.js": ("request.js", "text/javascript")}
 
+    for name, mime in (("usage.js", "text/javascript"), ("usage.css", "text/css")):
+        allowed["/" + name] = (name, mime)
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             route = unquote(urlsplit(self.path).path)
             try:
                 if route == "/api/status":
                     payload, mime = json.dumps(view.snapshot()).encode(), "application/json"
+                elif route == "/api/usage":
+                    payload, mime = view.usage_view.response(urlsplit(self.path).query)
+                    mime = mime.split(";", 1)[0]
                 elif route.startswith("/request/"):
                     prefix = self.headers.get("X-Forwarded-Prefix", "/")
                     if not re.fullmatch(r"/(?:s/[A-Za-z0-9_.%~-]+/)?", prefix):
@@ -349,6 +368,8 @@ def handler(view, assets):
             self.send_response(200)
             self.send_header("Content-Type", mime + "; charset=utf-8")
             self.send_header("Content-Length", str(len(payload)))
+            if mime == "text/csv":
+                self.send_header("Content-Disposition", 'attachment; filename="usage.csv"')
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")

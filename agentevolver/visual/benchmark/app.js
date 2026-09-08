@@ -59,7 +59,6 @@ function renderResults(rows) {
 
 function render(data) {
   const progress = data.progress;
-  const telemetry = data.telemetry;
   const launcher = data.launcher;
   const percent = progress.total ? (progress.completed / progress.total) * 100 : 0;
   const score = data.pass_rate?.percent ?? (progress.completed ? (progress.passed / progress.completed) * 100 : null);
@@ -87,12 +86,6 @@ function render(data) {
     return counts;
   }, {});
   $("slot-summary").textContent = `${phases.solving || 0} solving · ${phases.grading || 0} grading · ${phases.preparing || 0} preparing`;
-  $("cost").textContent = money.format(telemetry.cost_usd);
-  $("calls").textContent = number.format(telemetry.calls);
-  $("input-tokens").textContent = number.format(telemetry.input_tokens);
-  $("output-tokens").textContent = number.format(telemetry.output_tokens);
-  $("cache-read").textContent = number.format(telemetry.cache_read_tokens);
-  $("cache-rate").textContent = `${telemetry.cache_hit_percent.toFixed(1)}%`;
   $("data-path").textContent = data.results_path;
   const labels = {test_compatibility: "test compatibility", grading_setup: "grading setup", evaluation: "other evaluation"};
   const issueSummary = Object.entries(data.issue_counts || {}).map(([kind, count]) => `${count} ${labels[kind] || kind}`).join(" · ");

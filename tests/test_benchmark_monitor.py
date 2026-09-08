@@ -10,22 +10,16 @@ from agentevolver.deploy.types import SiteRecord, SiteStatus
 from agentevolver.visual import BenchmarkMonitor, build_snapshot
 
 
-def test_dashboard_preserves_the_original_live_layout():
+def test_dashboard_keeps_progress_and_embeds_shared_usage():
     root = Path(__file__).parents[1]
     visual = root / "agentevolver/visual/benchmark"
     assert (visual / "style.css").read_text() == (root / "others/swe_dashboard.css").read_text()
-    original = (root / "others/swe_dashboard.html").read_text()
-    expected = original.replace("/swe_dashboard.css", "./benchmark.css").replace(
-        "/swe_dashboard.js", "./benchmark.js"
-    ).replace("<title>SWE-bench Pro · Live</title>", "<title>Benchmark · Live</title>").replace(
-        "<h1>SWE-bench Pro</h1>", '<h1 id="title">Benchmark</h1>'
-    )
     html = (visual / "index.html").read_text()
-    # Translation changes copy, not the original markup or visual layout.
-    html = re.sub(r'\s*<span id="attempt-summary">[^<]*</span>', '', html)
-    assert re.findall(r"<[^>]+>", html) == re.findall(
-        r"<[^>]+>", expected.replace('lang="zh-CN"', 'lang="en-US"')
-    )
+    for required in ('id="completed"', 'id="resolved"', 'id="unresolved"',
+                     'id="slots"', 'id="recent-results"', 'data-usage-endpoint="./api/usage"',
+                     'src="./usage.js"', 'href="./usage.css"'):
+        assert required in html
+    assert 'telemetry-panel' not in html
     for filename in ("index.html", "app.js"):
         assert not re.search(r"[\u3400-\u9fff]", (visual / filename).read_text())
 
@@ -73,7 +67,7 @@ def test_monitor_publishes_progress_and_live_activity(tmp_path):
     assert snapshot["launcher"]["active"][0]["requests"] == 1
     assert snapshot["telemetry"]["calls"] == 3
     assert snapshot["telemetry"]["cost_usd"] == 0.75
-    assert snapshot["telemetry"]["cache_hit_percent"] == 90.0
+    assert snapshot["telemetry"]["cache_hit_percent"] == pytest.approx(135 / 157 * 100)
 
     # The trace reader is incremental: appended calls appear once, not once per refresh.
     with trace.open("a", encoding="utf-8") as stream:
@@ -153,7 +147,8 @@ async def test_monitor_deploys_through_deployment_manager(monkeypatch, tmp_path)
     request = captured["request"]
     assert request.backend == "host"
     assert request.runtime == "custom"
-    assert {"benchmark.py", "index.html", "benchmark.css", "benchmark.js"} == set(request.files)
+    assert {"benchmark.py", "index.html", "benchmark.css", "benchmark.js",
+            "usage_server.py", "usage_trace.py", "usage.js", "usage.css"} == set(request.files)
     assert json.loads(Path(monitor.path).read_text())["monitor_url"].startswith("http://localhost:9876/s/benchmark-")
     monitor.close()
 

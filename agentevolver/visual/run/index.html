@@ -6,6 +6,8 @@
   <title>AgentEvolver · Live Run</title>
   <link rel="stylesheet" href="./base.css">
   <link rel="stylesheet" href="./run.css">
+  <link rel="stylesheet" href="./usage.css">
+  <script type="module" src="./usage.js"></script>
   <script defer src="./run.js"></script>
 </head>
 <body>
@@ -20,9 +22,9 @@
     <article class="card"><div class="card-label">Model calls completed</div><div class="progress-value" id="calls">—</div><p class="muted" id="requests"></p></article>
     <article class="card"><div class="card-label">Recorded cost</div><div class="score-value" id="cost">—</div><p class="muted" id="cost-note"></p></article>
   </section>
-  <section class="section-grid">
+  <section data-usage-endpoint="./api/usage" aria-label="Model usage explorer"></section>
+  <section>
     <article class="panel"><div class="panel-head"><div><p class="eyebrow">Execution</p><h2>Agents</h2></div><span class="pill" id="agent-count">0 observed</span></div><div class="slots" id="agents"></div><p class="note" id="observation"></p></article>
-    <article class="panel"><div class="panel-head"><div><p class="eyebrow">Telemetry</p><h2>Model usage</h2></div></div><div id="usage"></div><p class="note">Usage comes from completed trace calls. In-flight calls are not yet billed here.</p></article>
   </section>
   <section class="panel full"><div class="panel-head"><div><p class="eyebrow">Live products</p><h2>Deployments</h2></div></div><div class="deployments" id="deployments"></div><p class="note">Websites share the gateway port with this monitor. Status is the deployment registry's last observation, not a browser acceptance verdict.</p></section>
   <section class="section-grid">

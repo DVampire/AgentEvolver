@@ -41,6 +41,7 @@ body {
 .shell { width: min(1280px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 28px; }
 
 .masthead { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+.masthead > div:first-child { min-width: 0; max-width: 100%; }
 .eyebrow { margin: 0 0 8px; color: var(--mint); font-size: 11px; font-weight: 750; letter-spacing: 0.18em; text-transform: uppercase; }
 h1, h2 { margin: 0; letter-spacing: -0.035em; }
 h1 { font-size: clamp(36px, 6vw, 68px); line-height: 0.98; font-weight: 680; }
@@ -120,6 +121,7 @@ td.instance { max-width: 660px; overflow: hidden; font-family: ui-monospace, SFM
 .result-mark.error { color: var(--amber); background: rgba(243, 189, 113, 0.1); }
 
 footer { display: flex; justify-content: space-between; gap: 20px; padding: 17px 4px 0; color: #587168; font-size: 10px; }
+footer > span { min-width: 0; overflow-wrap: anywhere; }
 
 @media (max-width: 900px) {
   .hero-grid, .section-grid { grid-template-columns: 1fr; }

@@ -20,6 +20,12 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
+
+if __package__:
+    from agentevolver.visual.usage.server import UsageView, deployment_files
+else:
+    from usage_server import UsageView, deployment_files
 
 SCHEMA_VERSION = 1
 STATE_FILE = "monitor.json"
@@ -368,7 +374,7 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
         usage = task.get("usage") or {}
         _add_usage(telemetry, {name: max(0, _number(value, float) - _number(recorded.get(name), float))
                                for name, value in usage.items()})
-    cache_base = telemetry["input_tokens"] + telemetry["cache_read_tokens"]
+    cache_base = telemetry["input_tokens"] + telemetry["cache_read_tokens"] + telemetry["cache_write_tokens"]
     telemetry["cache_hit_percent"] = (
         100 * telemetry["cache_read_tokens"] / cache_base if cache_base else 0.0
     )
@@ -438,6 +444,49 @@ def build_snapshot(state_path: str | Path) -> dict[str, Any]:
         "recent": list(reversed(recent[-10:])),
         "monitor_url": state.get("monitor_url") or aggregate.get("monitor_url"),
     }
+
+
+def usage_sources(state_path):
+    """Bind recorded attempts and active sessions without importing any benchmark."""
+    state_path = Path(state_path).resolve()
+    state = _read_json(state_path, {})
+    results = Path(state.get('results_path') or state_path.with_name('results.json'))
+    aggregate = _read_json(state_path.with_name('aggregate.json'), {})
+    paths = list(dict.fromkeys([*aggregate.get('history', []), str(results)]))
+    sources = {}
+    current_tasks = set()
+    owner = Path(state['owner_dir']).resolve() if state.get('owner_dir') else None
+
+    def task_log(task_id):
+        if owner is None:
+            return None
+        root = (owner / 'sessions').resolve()
+        for name in (task_id, 'instance_' + task_id):
+            path = (root / name / 'log').resolve()
+            if path.is_relative_to(root) and path.is_dir():
+                return path
+        return None
+
+    for path in paths:
+        for record in _records(_read_json(Path(path), [])):
+            task = _record_id(record)
+            session = record.get('session_path')
+            current = Path(path).resolve() == results.resolve()
+            log = Path(session) / 'log' if session else task_log(task) if current else None
+            identity = record.get('attempt_id') or (
+                str(Path(session).resolve()) + ':' + str(record.get('started_at') or '') if session else _record_digest(record))
+            source_id = hashlib.sha256(str(identity).encode()).hexdigest()
+            sources[source_id] = dict(id=source_id, task_id=task, log_root=str(log) if log else None, summary=record.get('spend'))
+            if current:
+                current_tasks.add(task)
+    for task in (state.get('active') or {}):
+        if task in current_tasks:
+            continue
+        log = task_log(task)
+        if log:
+            source_id = hashlib.sha256(str(log).encode()).hexdigest()
+            sources[source_id] = dict(id=source_id, task_id=task, log_root=str(log))
+    return list(sources.values())
 
 
 class BenchmarkMonitor:
@@ -533,6 +582,7 @@ class BenchmarkMonitor:
             "benchmark.css": (source / "style.css").read_text(encoding="utf-8"),
             "benchmark.js": (source / "app.js").read_text(encoding="utf-8"),
         }
+        files.update(deployment_files())
         request = DeployRequest(
             site_id=site_id,
             title=self.state["title"],
@@ -559,10 +609,13 @@ class BenchmarkMonitor:
 
 
 def _handler(state_path: Path, asset_dir: Path) -> type[BaseHTTPRequestHandler]:
+    usage_view = UsageView(lambda: usage_sources(state_path))
     assets = {
         "/": ("index.html", "text/html; charset=utf-8"),
         "/benchmark.css": ("benchmark.css", "text/css; charset=utf-8"),
         "/benchmark.js": ("benchmark.js", "text/javascript; charset=utf-8"),
+        "/usage.js": ("usage.js", "text/javascript; charset=utf-8"),
+        "/usage.css": ("usage.css", "text/css; charset=utf-8"),
     }
 
     class Handler(BaseHTTPRequestHandler):
@@ -571,6 +624,12 @@ def _handler(state_path: Path, asset_dir: Path) -> type[BaseHTTPRequestHandler]:
             if path == "/api/status":
                 payload = json.dumps(build_snapshot(state_path), ensure_ascii=False).encode()
                 return self.send_payload(payload, "application/json; charset=utf-8", True)
+            if path == "/api/usage":
+                try:
+                    payload, mime = usage_view.response(urlsplit(self.path).query)
+                    return self.send_payload(payload, mime, True)
+                except (ValueError, OSError, KeyError):
+                    return self.send_error(400)
             asset = assets.get(path)
             if not asset:
                 return self.send_error(404)
@@ -584,6 +643,8 @@ def _handler(state_path: Path, asset_dir: Path) -> type[BaseHTTPRequestHandler]:
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(payload)))
+            if content_type.startswith("text/csv"):
+                self.send_header("Content-Disposition", 'attachment; filename="usage.csv"')
             self.send_header("Cache-Control", "no-store" if no_cache else "public, max-age=60")
             self.end_headers()
             self.wfile.write(payload)
