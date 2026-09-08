@@ -59,6 +59,106 @@ KILL_GRACE_SECONDS = 10.0
 Target = Union[Process, str]
 
 
+#: Where a context records which allowlists were granted rather than defaulted. A grant
+#: survives a step; a default is re-derived from the agent's class field each time.
+GRANTED_ALLOWLISTS = "_granted_allowlists"
+
+
+def grant(extra: Dict[str, Any], key: str) -> None:
+    """Mark one allowlist in this context as granted rather than defaulted.
+
+    Without the mark the next step overwrites it from the agent's class field, because
+    that is how a default stays current. One function so the dispatch path and any
+    later grant record it the same way.
+    """
+    marked = list(extra.get(GRANTED_ALLOWLISTS) or ())
+    if key not in marked:
+        marked.append(key)
+    extra[GRANTED_ALLOWLISTS] = marked
+
+
+def child_context(child: Any, brief: Dict[str, Any], parent: Any, ctx: Any) -> Any:
+    """A context of the child's own, carrying only what a child should inherit.
+
+    Not the parent's context. Sharing it would give a child the parent's session id,
+    and with it the parent's memory and budgets — so two agents would be writing one
+    history. What crosses is lineage, the resource and acceptance contract, and the
+    files: the child then knows what it is scoped to and what it will be judged
+    against, rather than learning both from a paraphrase in its task.
+
+    The one place a child's context is built, for every caller that has to build one —
+    including the ones that must build it before a loop exists to dispatch from. The
+    website builder had a second copy for exactly that reason, and the two drifted:
+    this one grants no capability allowlists to a subscriber and never set
+    ``root_session_id``, that one carried neither the task contract nor the dispatch
+    scoping. Removing a key from context inheritance meant finding both.
+    """
+    from agentevolver.agent.types import AgentContext
+
+    contract = {
+        key: brief[key]
+        for key in ("read_set", "write_set", "acceptance", "owner")
+        if brief.get(key)
+    }
+    inherited = dict(getattr(ctx, "extra", None) or {})
+    # Scoping the parent chose for this dispatch travels; the parent's own run state
+    # does not.
+    # `trace_integrity_profile` was inherited here too. It is configuration, read from
+    # `config` where it is declared and validated, so passing it down a dispatch chain
+    # gave a run's descendants a second place to disagree with the setting.
+    keep = {"plugin_allowlist", "workflow_allowlist", "source_workspace",
+            # Topics are namespaced `{root}::{name}`, so a subscriber that resolves a
+            # different root than its publisher subscribes to a string nobody sends
+            # to. A child always has its own session id, which makes every dispatched
+            # subscriber silent unless the root travels — `subscription_topics` is in
+            # the dispatch schema precisely so an agent needs no code of its own, and
+            # without this it needed code of its own to work at all.
+            "root_session_id"}
+    extra = {key: value for key, value in inherited.items() if key in keep}
+    extra.setdefault("root_session_id", str(getattr(ctx, "id", "") or ""))
+    # History sharing is a grant for this dispatch, never inherited transitively.
+    extra["fork"] = brief.get("fork") is True
+    if "reasoning_effort" in brief:
+        extra["child_reasoning_effort"] = brief["reasoning_effort"]
+    # What the parent chose FOR THIS DISPATCH, as opposed to what it inherited. The
+    # evolution roles read their target from the context, because a generate run's
+    # target does not exist yet and so cannot be looked up by name. The dispatch
+    # schema has always declared these two and nothing carried them across, so every
+    # generate run ended `target_type must be one of ...; got ''` — 47 steps and
+    # $3.46 in one measured run, registering nothing.
+    for key in ("target_type", "target_name"):
+        value = str(brief.get(key) or "").strip()
+        if value:
+            extra[key] = value
+    # Capability grants this dispatch makes. The dispatch schema has declared all
+    # five for as long as it has existed and nothing read them, so a parent narrowing
+    # or widening a child's roster was silently ignored and the child's class default
+    # stood — which is how an isolation contract meant to keep a visitor out of the
+    # workspace also made it impossible to hand that visitor a newly evolved tool.
+    #
+    # An empty list is a real grant and means "none of this kind", so presence is
+    # what matters here, not truthiness.
+    for key in ("tool_allowlist", "skill_allowlist", "connector_allowlist",
+                "plugin_allowlist", "workflow_allowlist", "environment_allowlist"):
+        if isinstance(brief.get(key), list):
+            extra[key] = [str(item).strip() for item in brief[key] if str(item).strip()]
+            grant(extra, key)
+    extra["task_contract"] = contract
+    extra["task_files"] = list(brief.get("files") or ())
+    extra["parent_session_id"] = str(getattr(ctx, "id", "") or "")
+    return AgentContext(
+        # The child's, not the parent's. `ctx.name` is read as "the agent this
+        # context belongs to" — it is the `agent_name` a tool execution records, the
+        # publisher an event carries, the asker on a question — so naming a child's
+        # context after its parent filed the child's every action under the parent.
+        name=getattr(child, "name", "") or getattr(parent, "name", ""),
+        extra=extra,
+        parent_session_id=str(getattr(ctx, "id", "") or ""),
+    )
+
+
+
+
 class Kernel:
     """Creates, schedules, connects and reaps agent processes."""
 
@@ -74,6 +174,178 @@ class Kernel:
     # ==================================================================
     # Process lifecycle
     # ==================================================================
+
+    async def bootstrap_subscribers(
+        self,
+        subscribers: Sequence[Dict[str, Any]],
+        *,
+        parent: Any,
+        ctx: Any,
+    ) -> Dict[str, str]:
+        """Register a task's initial subscribers through the normal dispatch path.
+
+        Each declaration contains ``id``, ``agent`` and a dispatch ``brief`` with
+        ``subscription_topics``. The caller supplies domain-specific briefs; runtime
+        owns validation, creation, retry identity and cleanup. No model turn runs
+        until an event is delivered. Repeating the same setup returns the same IDs;
+        changing an established setup requires an explicit lifecycle operation.
+        """
+        import copy
+        import hashlib
+        import json
+
+        from agentevolver.runtime.modes import for_brief, topics_of
+
+        extra = getattr(ctx, "extra", None)
+        if not isinstance(extra, dict):
+            raise ValueError("Subscriber setup requires a context with extra state")
+        declarations = []
+        identifiers = set()
+        for item in subscribers:
+            if not isinstance(item, dict):
+                raise ValueError("Each subscriber must declare id, agent and brief")
+            identifier = str(item.get("id") or "").strip()
+            name = str(item.get("agent") or "").strip()
+            brief = item.get("brief")
+            if not identifier or not name or not isinstance(brief, dict):
+                raise ValueError("Each subscriber must declare id, agent and brief")
+            if identifier in identifiers:
+                raise ValueError(f"Duplicate subscriber id: {identifier}")
+            identifiers.add(identifier)
+            topics = brief.get("subscription_topics")
+            if (
+                not isinstance(topics, list)
+                or not topics
+                or any(not isinstance(topic, str) or not topic.strip() for topic in topics)
+                or for_brief(brief) is not InteractionMode.SUBSCRIBER
+            ):
+                raise ValueError(f"Subscriber {identifier!r} needs subscription_topics")
+            check_topics(InteractionMode.SUBSCRIBER, topics_of(brief))
+            declarations.append((identifier, name, copy.deepcopy(brief)))
+
+        signature = hashlib.sha256(
+            json.dumps(declarations, sort_keys=True, ensure_ascii=False).encode()
+        ).hexdigest()
+        existing = extra.get("_runtime_subscribers")
+        if existing is not None:
+            if existing.get("signature") != signature:
+                raise ValueError("Subscriber setup differs from the established task setup")
+            return dict(existing["jobs"])
+
+        created: List[Process] = []
+        jobs: Dict[str, str] = {}
+        try:
+            for identifier, name, brief in declarations:
+                proc = await self.dispatch(name, brief, parent=parent, ctx=ctx)
+                created.append(proc)
+                jobs[identifier] = proc.pid
+        except BaseException:
+            # A missing later role must not leave a partially registered panel alive.
+            for proc in reversed(created):
+                await self.stop(proc, force=True, reason="Subscriber setup failed")
+            for proc in created:
+                await self.wait(proc)
+            raise
+        extra["_runtime_subscribers"] = {"signature": signature, "jobs": dict(jobs)}
+        return jobs
+
+    async def dispatch(
+        self, name: str, brief: Dict[str, Any], *, parent: Any, ctx: Any,
+    ) -> Process:
+        """Start one child agent by name under ``parent``, and return its process.
+
+        The upper half of :meth:`spawn`: that one takes an agent already built and told
+        what to be, this one takes the name of a registered agent and a dispatch brief,
+        and does everything between. Resolve the template and take a fresh copy of it,
+        narrow its permission to the parent's, apply what the brief overrides, read the
+        mode out of the brief, build the child's context, isolate a worktree when asked.
+
+        Public, and here, because dispatching is not the model's alone. ``modes`` says a
+        subscriber is five facts — resident, idle at start, a topic edge, a standing
+        brief, *and a context of its own* — assembled wrongly at every call site until
+        something named it. Three of those five ended up here; the last two stayed in the
+        agent layer behind a model tool call, so a run needing children before its own
+        first step had to assemble them by hand after all, and did: skipping the
+        permission narrowing, the mode derivation and the worktree, and drifting on what
+        a child inherits. A mode is only one place if the whole of it is in one place.
+
+        Raises:
+            LookupError: nothing is registered under ``name``.
+            ValueError: the brief contradicts itself, or a worktree cannot be isolated.
+        """
+        from contextlib import ExitStack
+
+        from agentevolver.agent.server import agent_manager
+        from agentevolver.permission import permission_manager
+        from agentevolver.runtime.modes import for_brief, topics_of
+
+        template = await agent_manager.get(name)
+        if template is None:
+            raise LookupError(f"Agent {name!r} is not registered")
+        # The registry holds the program; each dispatch is its own process. A template
+        # without `fresh` is used as-is, which is what a stub in a test usually is.
+        fresh = getattr(template, "fresh", None)
+        child = fresh() if callable(fresh) else template
+
+        child.permission_mode = permission_manager.restrict(
+            getattr(child, "permission_mode", None), getattr(parent, "permission_mode", None),
+            getattr(getattr(parent, "proc", None), "permission_mode", None),
+        ).value
+        if brief.get("model"):
+            child.model_name = str(brief["model"]).strip()
+        if "token_budget" in brief and getattr(child, "allow_token_budget_override", True):
+            # A delegation can narrow the host's cap, never raise it.
+            limit = getattr(child, "max_token", None)
+            budget = brief["token_budget"]
+            child.max_token = min(limit, budget) if limit is not None else budget
+        elif "token_budget" in brief:
+            logger.info(
+                f"{name} retains configured token budget {child.max_token}; dispatch "
+                f"override {brief['token_budget']} is disabled for this role"
+            )
+
+        mode, topics = for_brief(brief), topics_of(brief)
+        child_ctx = child_context(child, brief, parent, ctx)
+        tree = None
+        try:
+            with ExitStack() as scope:
+                if brief.get("isolate_worktree"):
+                    tree = await self._isolate_worktree(child, child_ctx, scope)
+                return await self.spawn(
+                    child, str(brief.get("task") or "").strip(), mode=mode,
+                    files=list(brief.get("files") or ()), ctx=child_ctx,
+                    parent=getattr(parent, "proc", None), topics=topics,
+                    **({"worktree": tree} if tree is not None else {}),
+                )
+        except BaseException:
+            if tree is not None:
+                await tree.cleanup()
+            raise
+
+    @staticmethod
+    async def _isolate_worktree(child: Any, child_ctx: Any, scope: Any) -> Any:
+        """A disposable copy of the workspace for one child, entered on ``scope``."""
+        import os
+
+        from agentevolver.paths import path_manager
+        from agentevolver.permission import permission_manager
+        from agentevolver.sandbox.worktree import IsolatedWorktree
+        from agentevolver.utils import make_id
+
+        roots = path_manager.session_roots()
+        if not roots or os.getenv("AGENTEVOLVER_EXEC_CONTAINER"):
+            raise ValueError("Worktree dispatch requires a bound host Git workspace")
+        if set(getattr(child, "env_names", ())) - {"job"}:
+            raise ValueError("Worktree dispatch does not relocate browser/remote environments")
+        source = str(roots["workspace"])
+        tree = await IsolatedWorktree.create(source, str(roots["log"]), make_id())
+        child_ctx.extra.setdefault("source_workspace", source)
+        # The override is the record. `spawn` starts the child with `asyncio.create_task`
+        # inside this scope, so the child's context snapshot carries it for the whole of
+        # its life even after this stack unwinds.
+        scope.enter_context(path_manager.workspace(tree.path))
+        scope.enter_context(permission_manager.relocate(source, str(tree.path)))
+        return tree
 
     async def spawn(
         self,
@@ -131,8 +403,9 @@ class Kernel:
         if start_idle is None:
             start_idle = shape.start_idle
 
-        from agentevolver.paths import P, path_manager
         from hashlib import sha256
+
+        from agentevolver.paths import P, path_manager
 
         pid = make_id()
         stable_thread = thread_id or str(getattr(ctx, "id", "") or "")

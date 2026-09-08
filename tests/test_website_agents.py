@@ -9,21 +9,28 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentevolver.agent.actor import website_builder_agent as builder_module
 from agentevolver.agent.actor.browser_agent import BrowserAgent
 from agentevolver.agent.actor.website_builder_agent import (
     WebsiteBuilderAgent,
-    bind_runtime_environment,
-    bind_runtime_input_manifest,
-    bootstrap_subscribers,
-    bound_runtime_input_manifest,
-    public_manifest,
 )
 from agentevolver.agent.actor.website_user_agent import WebsiteUserAgent
+from agentevolver.deploy import deployment_manager
 from agentevolver.environment.default.browser.service import BrowserService
 from agentevolver.environment.default.job.environment import JobEnvironment
-from agentevolver.tool.default.deployment.deploy import DeployTool
+from agentevolver.task.context import bind_manifest, render_manifest, without_private_paths
 from agentevolver.tool.default.adoption import AdoptionTool
+from agentevolver.tool.default.deployment.deploy import DeployTool
+
+
+def _visible(task, files):
+    """What the Builder sees: the manifest bound to staging, minus the private paths."""
+    bound = bind_manifest(task, files)
+    if bound is None:
+        return str(task)
+    before, explanation, manifest = bound
+    return render_manifest(
+        before, explanation, without_private_paths(manifest, manifest.get("private_attachment_roles", [])),
+    )
 
 
 def _task(manifest=None):
@@ -35,6 +42,7 @@ def _task(manifest=None):
             {"id": "user-c", "role": "user_context", "source_path": "/source/p3.html"},
         ],
         "optimization_cycles": 5,
+        "private_attachment_roles": ["user_context"],
     }
     return (
         "Build the scenario.\n\n"
@@ -46,7 +54,7 @@ def _task(manifest=None):
 
 def test_builder_rebinds_role_manifest_to_staged_files_without_reading_them():
     staged = [f"/session/log/inputs/00{index}_input.html" for index in range(4)]
-    bound = bind_runtime_input_manifest(_task(), staged)
+    bound = _visible(_task(), staged)
     manifest = json.loads(bound[bound.index("{") :])
 
     assert [item["role"] for item in manifest["attachments"]] == [
@@ -67,14 +75,29 @@ def test_builder_rebinds_role_manifest_to_staged_files_without_reading_them():
     assert staged[1] not in bound
 
 
-def test_builder_mounts_job_without_opening_its_own_browser_session():
+@pytest.mark.asyncio
+async def test_builder_mounts_job_without_opening_its_own_browser_session(tmp_path):
+    """Declared like any other agent's scope, so the router applies it every step.
+
+    It was a function reaching into `ctx.extra["environment_allowlist"]` before the first
+    prompt — the same write the router makes from `capability_allowlists`, only earlier
+    and by hand, and invisible to anything reading the agent's declaration.
+    """
+    from agentevolver.agent.loop.router import CapabilityRouter
+
+    builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
+    assert builder.capability_allowlists["environment"] == ["job"]
+
     ctx = SimpleNamespace(extra={})
-    bind_runtime_environment(ctx)
+    try:
+        await CapabilityRouter().schemas(builder, ctx)
+    except Exception:  # noqa: BLE001 - the roster needs managers; the scope write does not
+        pass
     assert ctx.extra["environment_allowlist"] == ["job"]
 
 
 def test_builder_accepts_an_ordinary_task_without_a_manifest():
-    assert bind_runtime_input_manifest("Build a portfolio.", ["brief.md"]) == "Build a portfolio."
+    assert _visible("Build a portfolio.", ["brief.md"]) == "Build a portfolio."
 
 
 def test_builder_manifest_supports_task_defined_attachment_counts():
@@ -86,7 +109,7 @@ def test_builder_manifest_supports_task_defined_attachment_counts():
             ]
         }
     )
-    bound = bind_runtime_input_manifest(task, ["/staged/a", "/staged/b"])
+    bound = _visible(task, ["/staged/a", "/staged/b"])
     manifest = json.loads(bound[bound.index("{") :])
     assert [item["path"] for item in manifest["attachments"]] == [
         "/staged/a",
@@ -103,40 +126,32 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
         path = tmp_path / f"persona_{index}.html"
         path.write_text(f"<main>Private user {index} goal.</main>", encoding="utf-8")
         personas.append(path)
-    manifest = {
-        "attachments": [
-            {"id": "brief", "role": "requirements"},
-            *[{"id": f"persona_{index}", "role": "user_context"} for index in range(1, 4)],
-        ],
-        "optimization_cycles": 5,
-        "participants": [
-            {
-                "id": f"user_{index}",
-                "user_context_attachment": f"persona_{index}",
-                "model": f"provider/model-{index}",
-            }
-            for index in range(1, 4)
-        ],
-        "release_acceptance": {"agent": "browser_agent", "model": "provider/judge"},
-    }
-    task = _task(manifest)
-    private = bound_runtime_input_manifest(
-        task,
-        [str(requirement), *(str(path) for path in personas)],
-    )
-    assert private is not None
-    before, explanation, bound = private
+    from examples.run_website_evolution_demo import build_task_text
+
+    task = build_task_text(requirement, personas,
+                           user_models=[f"provider/model-{i}" for i in range(1, 4)],
+                           acceptance_model="provider/judge")
+    files = [str(requirement), *(str(path) for path in personas)]
 
     calls = []
 
-    async def subscriber(name, **kwargs):
-        calls.append((name, kwargs))
-        return f"job-{len(calls)}"
+    # Each subscriber is an ordinary dispatch now, so the brief is what carries the
+    # private half — and what this checks is that only one participant's persona is in it.
+    from agentevolver.runtime import kernel as runtime_kernel
 
-    monkeypatch.setattr(builder_module, "start_subscriber", subscriber)
+    async def dispatch(name, brief, **kwargs):
+        calls.append((name, brief))
+        return SimpleNamespace(pid=f"job-{len(calls)}")
+
+    monkeypatch.setattr(type(runtime_kernel), "dispatch",
+                        lambda self, name, brief, **kw: dispatch(name, brief, **kw))
     builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
     ctx = SimpleNamespace(extra={})
-    contract = await bootstrap_subscribers(builder, bound, ctx, proc=None)
+    public, public_files = await builder.prepare_task(task, files, ctx)
+    assert "deployment_contract" not in ctx.extra.get("task_state", {})
+    status = await DeployTool()(action="status", ctx=ctx)
+    assert status.success and status.data["ready"] is False
+    contract = ctx.extra["task_state"]["deployment_contract"]
 
     assert [name for name, _kwargs in calls] == [
         "website_user_agent",
@@ -152,6 +167,7 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
             if other != index
         )
         assert kwargs.get("files") is None
+        assert kwargs["subscription_topics"] == ["deployment.ready"]
     assert "Public product requirement." in calls[3][1]["task"]
     assert "bounded, risk-based scope" in calls[3][1]["task"]
     assert "cannot be excluded to obtain PASS" in calls[3][1]["task"]
@@ -160,10 +176,48 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
     assert contract["subscriber_job_ids"] == ["job-1", "job-2", "job-3", "job-4"]
     assert contract["collected_turns"] == {}
 
-    public = public_manifest(before, explanation, bound, contract)
+    assert public_files == [str(requirement)]
+    assert ctx.extra["task_files"] == public_files
     assert all(str(path) not in public for path in personas)
     assert "provider/model" not in public
+    assert "provider/judge" not in public
     assert "Private user" not in public
+    projected = json.loads(public[public.index("{"):])
+    assert status.data["subscription"]["acceptance_job_id"] == "job-4"
+    assert [row["job_id"] for row in projected["subscribers"]] == contract["subscriber_job_ids"]
+
+    # Re-entering task preparation must preserve subscribers and release history.
+    ctx.extra["task_state"]["deployment_release_history"].append({"source_revision": "revision-1"})
+    again = await builder.prepare_task(task, files, ctx)
+    assert again == (public, public_files)
+    assert len(calls) == 4
+    assert ctx.extra["task_state"]["deployment_release_history"] == [{"source_revision": "revision-1"}]
+
+
+@pytest.mark.asyncio
+async def test_invalid_website_acceptance_is_rejected_by_deploy_tool(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from agentevolver.runtime import kernel
+
+    persona = tmp_path / "persona.html"
+    persona.write_text("<main>A private goal.</main>")
+    manifest = {
+        "attachments": [{"id": "persona", "role": "user_context"}],
+        "subscribers": [{"id": "user", "agent": "website_user_agent",
+                         "brief": {"task": "Visit", "subscription_topics": ["deployment.ready"]},
+                         "attachments": ["persona"]}],
+        "deployment": {"required_releases": 1, "acceptance_subscriber": "missing"},
+    }
+    dispatch = AsyncMock(return_value=SimpleNamespace(pid="user-job"))
+    monkeypatch.setattr(type(kernel), "dispatch", lambda self, *a, **kw: dispatch(*a, **kw))
+    builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
+    ctx = SimpleNamespace(extra={})
+
+    await builder.prepare_task(_task(manifest), [str(persona)], ctx)
+    result = await DeployTool()(action="status", ctx=ctx)
+    assert not result.success and "must name a declared subscriber" in result.message
+    assert "deployment_contract" not in ctx.extra["task_state"]
 
 
 @pytest.mark.parametrize(
@@ -179,7 +233,7 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
 )
 def test_builder_rejects_ambiguous_role_routing(task, files, error):
     with pytest.raises(ValueError, match=error):
-        bind_runtime_input_manifest(task, files)
+        _visible(task, files)
 
 
 def test_website_user_is_browser_only_even_when_dispatch_omits_allowlists():
@@ -365,7 +419,7 @@ def test_full_job_output_read_acknowledges_one_subscriber_turn(monkeypatch):
         kernel, "get", lambda pid: ref if pid == "user-job" else None
     )
     contract = {"subscriber_job_ids": ["user-job"], "collected_turns": {}}
-    ctx = SimpleNamespace(extra={"website_runtime_contract": contract})
+    ctx = SimpleNamespace(extra={"deployment_contract": contract})
 
     assert (
         JobEnvironment._record_subscriber_collection(
@@ -431,14 +485,14 @@ def test_next_deploy_waits_until_every_subscriber_feedback_is_read(monkeypatch):
     seed_acceptance(contract, 1, **{"user-1": True, "acceptance": True})
     ctx = SimpleNamespace(
         extra={
-            "website_runtime_contract": contract,
+            "deployment_contract": contract,
             "deployment_release_history": [{"release_number": 1}],
         }
     )
 
-    assert "acceptance" in DeployTool._previous_release_blocker(ctx)
+    assert "acceptance" in deployment_manager.feedback_blocker(ctx)
     contract["collected_turns"]["acceptance"] = 1
-    assert DeployTool._previous_release_blocker(ctx) == ""
+    assert deployment_manager.feedback_blocker(ctx) == ""
 
 
 def test_next_release_does_not_require_an_evolution_decision(monkeypatch):
@@ -460,12 +514,12 @@ def test_next_release_does_not_require_an_evolution_decision(monkeypatch):
     seed_acceptance(contract, 1, user=True)
     ctx = SimpleNamespace(
         extra={
-            "website_runtime_contract": contract,
+            "deployment_contract": contract,
             "deployment_release_history": [{"release_number": 1}],
         }
     )
 
-    assert DeployTool._previous_release_blocker(ctx) == ""
+    assert deployment_manager.feedback_blocker(ctx) == ""
 
 
 @pytest.mark.asyncio
@@ -506,7 +560,7 @@ async def test_keep_decision_rejects_prose_instead_of_an_evaluation_report(monke
         evaluation="Candidate passed the baseline comparison.",
         ctx=SimpleNamespace(
             extra={
-                "website_runtime_contract": contract,
+                "deployment_contract": contract,
                 "deployment_release_history": [{"release_number": 1}],
             }
         ),
@@ -521,7 +575,7 @@ async def test_keep_decision_rejects_prose_instead_of_an_evaluation_report(monke
 
 
 @pytest.mark.asyncio
-async def test_builder_completion_requires_release_feedback_collection(monkeypatch, tmp_path):
+async def test_deploy_status_reports_release_feedback_collection(monkeypatch):
     from agentevolver.runtime import kernel
 
     ready = SimpleNamespace(
@@ -552,87 +606,29 @@ async def test_builder_completion_requires_release_feedback_collection(monkeypat
     seed_acceptance(contract, 1, **{"user-1": True, "acceptance": True})
     ctx = SimpleNamespace(
         extra={
-            "website_runtime_contract": contract,
+            "deployment_contract": contract,
             "deployment_release_history": [{"source_revision": "one", "fanout": 2}],
         }
     )
-    builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
+    async def status():
+        result = await DeployTool()(action="status", ctx=ctx)
+        assert result.success  # Query success is separate from release readiness.
+        return result.data
 
-    assert "acceptance" in await builder.completion_blocker(ctx)
+    assert "acceptance" in (await status())["reason"]
     contract["collected_turns"]["acceptance"] = 1
-    assert await builder.completion_blocker(ctx) is None
+    assert (await status())["ready"] is True
 
     acceptance.turn_results[1] = "VERDICT: FAIL\nCheckout is broken."
-    assert "did not pass" in await builder.completion_blocker(ctx)
+    assert "did not pass" in (await status())["reason"]
     # Turn 3 is a retry about release 1, not release 3.
     acceptance.turn_results[3] = "VERDICT: PASS\nScoped retry passed."
     contract["release_acceptance"]["1"]["acceptance"]["turn"] = 3
-    assert "not been collected" in await builder.completion_blocker(ctx)
+    assert "not been collected" in (await status())["reason"]
     contract["collected_turns"]["acceptance"] = 3
-    assert await builder.completion_blocker(ctx) is None
+    assert (await status())["ready"] is True
 
 
-@pytest.mark.asyncio
-async def test_builder_completion_only_closes_self_initiated_evolution(monkeypatch, tmp_path):
-    from agentevolver.runtime import kernel
-
-    ready = SimpleNamespace(
-        alive=True,
-        busy=False,
-        turns=1,
-        turn_success={1: True},
-        turn_results={1: "VERDICT: PASS\nPassed."},
-        mailbox=(),
-    )
-    monkeypatch.setattr(kernel, "get", lambda _pid: ready)
-    contract = {
-        "required_releases": 1,
-        "subscriber_job_ids": ["acceptance"],
-        "acceptance_job_id": "acceptance",
-        "collected_turns": {"acceptance": 1},
-        # What this run started from. A component whose registered version differs from the
-        # baseline is one this run changed — read from the manifest rather than from anyone's
-        # account of which worker was dispatched.
-        "extension_baseline": {},
-        "evolution_decisions": [],
-        "release_acceptance": {"1": {"acceptance": {"status": "accepted",
-                                                   "attempts": 1, "turn": 1}}},
-    }
-    ctx = SimpleNamespace(
-        extra={
-            "website_runtime_contract": contract,
-            "deployment_release_history": [{"source_revision": "one", "fanout": 1}],
-        }
-    )
-    builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
-
-    assert await builder.completion_blocker(ctx) is None
-
-    # A component now registered at a version the baseline does not carry: this run changed
-    # it, so finishing requires an evaluation recorded through `adoption_tool`.
-    from agentevolver.agent.actor import website_builder_agent as builder_module
-
-    monkeypatch.setattr(builder_module, "_installed_components",
-                        lambda: {"skill:adaptive_ui": "1.0.0"})
-    blocker = await builder.completion_blocker(ctx)
-    assert blocker is not None and "adaptive_ui" in blocker
-    assert "record keep/rollback/unload" in blocker
-
-    # Recording the decision closes it.
-    contract["evolution_decisions"] = [
-        {"module": "skill", "name": "adaptive_ui", "version": "1.0.0",
-         "decision": "keep", "verdict": "pass", "success": True},
-    ]
-    assert await builder.completion_blocker(ctx) is None
-
-    # A decision for a different version does not close this one: the gate compares the
-    # registered version, so an adoption recorded against 0.9.0 leaves 1.0.0 outstanding.
-    contract["evolution_decisions"] = [
-        {"module": "skill", "name": "adaptive_ui", "version": "0.9.0",
-         "decision": "keep", "verdict": "pass", "success": True},
-    ]
-    stale = await builder.completion_blocker(ctx)
-    assert stale is not None and "1.0.0" in stale
 
 
 def test_builder_requires_verification_at_the_exact_deployed_url():
@@ -679,12 +675,13 @@ def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
 
 def test_website_demo_model_roster_matches_launcher_and_vision_catalog():
     from mmengine import Config
+
+    from agentevolver.model.config import llm_hub_models
     from examples.run_website_evolution_demo import (
-        DEFAULT_USER_MODELS,
         DEFAULT_ACCEPTANCE_MODEL,
         DEFAULT_BUILDER_MODEL,
+        DEFAULT_USER_MODELS,
     )
-    from agentevolver.model.config import llm_hub_models
 
     cfg = Config.fromfile(str(Path(__file__).resolve().parents[1] / "configs/website_evolution_demo.py"))
     assert cfg.website_user_models == DEFAULT_USER_MODELS == [
@@ -750,14 +747,15 @@ def test_website_task_manifest_routes_independent_acceptance(tmp_path):
     task = build_task_text(scenario, personas)
     manifest = json.loads(task[task.index("{", task.index("runtime-input-manifest")) :])
 
-    assert manifest["release_acceptance"] == {
-        "agent": "browser_agent",
-        "model": "llm_hub/gpt-6-astra",
-        "after_initial_build": True,
-        "after_each_optimization": True,
-        "exact_deployed_url_only": True,
-        "independent_from_user_codesign": True,
+    assert manifest["deployment"] == {
+        "required_releases": 6, "topic": "deployment.ready",
+        "acceptance_subscriber": "release-acceptance",
     }
+    acceptance = manifest["subscribers"][-1]
+    assert acceptance["agent"] == "browser_agent"
+    assert acceptance["brief"]["model"] == "llm_hub/gpt-6-astra"
+    assert acceptance["attachments"] == ["site_brief"]
+    assert "exact deployed URL" in acceptance["brief"]["task"]
     assert manifest["codesign_policy"]["participants_are_evaluators"] is False
     assert manifest["run_policy"] == {"blind_initial_build": True}
     assert "minimum_kept_evolutions" not in manifest

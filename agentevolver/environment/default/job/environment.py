@@ -137,66 +137,10 @@ class JobEnvironment(Environment):
         )
 
     @staticmethod
-    def _record_subscriber_collection(
-        job_id: str,
-        ctx,
-        *,
-        full: bool,
-        turn: Optional[int] = None,
-    ) -> int:
-        """A full read acknowledges the latest finished subscription turn."""
-        if not full:
-            return 0
-        extra = getattr(ctx, "extra", None) or {}
-        contract = extra.get("website_runtime_contract")
-        if not isinstance(contract, dict):
-            return 0
-        subscriber_ids = {str(item) for item in contract.get("subscriber_job_ids") or []}
-        if job_id not in subscriber_ids:
-            return 0
+    def _record_subscriber_collection(job_id: str, ctx: Any, *, full: bool, turn=None) -> int:
+        from agentevolver.deploy import deployment_manager
 
-        from agentevolver.runtime import kernel
-
-        ref = kernel.get(job_id)
-        if ref is None or ref.turns < 1:
-            return 0
-        completed_turn = int(turn or ref.turns)
-        if completed_turn < 1 or completed_turn > ref.turns:
-            return 0
-        if turn is None and (ref.busy or len(ref.mailbox)):
-            return 0
-        if completed_turn not in ref.turn_results:
-            return 0
-        from hashlib import sha256
-        from agentevolver.plan.server import read_plan
-
-        # Preserve the plan that existed at the first full read, even if the same
-        # report is read again after replanning. This detects stale plans, not quality.
-        contract.setdefault("feedback_plan_baselines", {}).setdefault(
-            f"{job_id}:{completed_turn}",
-            sha256(read_plan(str(getattr(ctx, "id", "") or "")).encode()).hexdigest(),
-        )
-        collected = contract.setdefault("collected_turns", {})
-        collected[job_id] = max(
-            int(collected.get(job_id) or 0),
-            completed_turn,
-        )
-        # Reading a subscriber's turn is also when this protocol learns what that
-        # subscriber said about the CURRENT release. Recorded against the release rather
-        # than inferred from the turn number: a subscriber asked to verify a fix runs a
-        # second turn about the SAME release, and binding the two made a first rejection
-        # permanent — no later release could ever ship.
-        try:
-            from agentevolver.tool.default.deployment.deploy import DeployTool
-
-            DeployTool.record_acceptance(
-                ctx, job_id,
-                success=bool(ref.turn_success.get(completed_turn)),
-                turn=completed_turn,
-            )
-        except Exception as error:  # noqa: BLE001 - reading output must not fail on this
-            logger.warning(f"| ⚠️ could not record release acceptance for {job_id}: {error}")
-        return int(collected[job_id])
+        return deployment_manager.collect_feedback(ctx, job_id, full=full, turn=turn)
 
     # ------------------------------------------------------------------ actions
     @environment_manager.action(
@@ -493,14 +437,17 @@ class JobEnvironment(Environment):
         except Exception as error:  # noqa: BLE001
             logger.warning(f"| ⚠️ could not read job state: {error}")
             return {"success": True, "state": f"[job state unavailable — {error}]"}
-        if not jobs:
-            return {"success": True, "state": ""}
 
         now = job_manager.clock()
         shown = jobs[:STATE_JOB_LIMIT]
         lines = [j.summary(now) for j in shown]
         if len(jobs) > len(shown):
             lines.append(f"... and {len(jobs) - len(shown)} more — job__list for all of them")
+        from agentevolver.deploy import deployment_manager
+
+        feedback = deployment_manager.feedback_context(ctx)
+        if feedback:
+            lines.append(feedback)
         return {"success": True, "state": "\n".join(lines)}
 
 

@@ -24,6 +24,7 @@ from types import SimpleNamespace
 import pytest
 
 from agentevolver.agent.types import AgentContext
+from agentevolver.deploy import deployment_manager
 from agentevolver.deploy.server import DeploymentManagerServer
 from agentevolver.deploy.types import (
     DeploymentSpec,
@@ -35,8 +36,8 @@ from agentevolver.deploy.types import (
 )
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.tool.context import ToolContextManager
-from agentevolver.tool.default.deployment.deploy import DeployTool, deployment_manager
 from agentevolver.tool.default.adoption import AdoptionTool
+from agentevolver.tool.default.deployment.deploy import DeployTool
 from agentevolver.tool.types import ToolContext
 
 
@@ -64,6 +65,7 @@ def test_deploy_tool_native_schema_exposes_every_action_argument():
         "overrides",
     }
     assert parameters["properties"]["action"]["enum"] == [
+        "status",
         "preview",
         "deploy",
         "list",
@@ -525,7 +527,7 @@ async def test_release_publish_receipt_updates_the_parent_context_in_place(monke
     parent = AgentContext(
         id="root",
         extra={
-            "website_runtime_contract": {"subscriber_job_ids": ["a", "b", "c", "d"]},
+            "deployment_contract": {"subscriber_job_ids": ["a", "b", "c", "d"]},
             "deployment_release_history": [],
         },
     )
@@ -539,7 +541,7 @@ async def test_release_publish_receipt_updates_the_parent_context_in_place(monke
         updated_at="now",
     )
 
-    receipt = await DeployTool._publish_ready(record, action="deploy", ctx=tool_ctx)
+    receipt = await deployment_manager.publish_release(record, action="deploy", ctx=tool_ctx)
 
     assert receipt["fanout"] == 4
     assert receipt["release_number"] == 1
@@ -565,7 +567,7 @@ async def test_generic_deploy_context_does_not_publish_a_website_event(monkeypat
     )
 
     assert (
-        await DeployTool._publish_ready(
+        await deployment_manager.publish_release(
             record,
             action="deploy",
             ctx=ToolContext(id="ordinary"),
@@ -575,6 +577,39 @@ async def test_generic_deploy_context_does_not_publish_a_website_event(monkeypat
     assert called is False
 
 
+@pytest.mark.asyncio
+async def test_tool_preview_publish_and_cleanup_use_manager_state(monkeypatch):
+    from agentevolver.runtime import kernel
+
+    requests, stopped = [], []
+
+    async def deploy(request):
+        requests.append(request)
+        return SiteRecord(site_id=request.site_id, runtime="static", status=SiteStatus.RUNNING,
+                          url="http://site.test", source_revision="revision-1", release_number=1)
+
+    async def stop(site_id):
+        stopped.append(site_id)
+
+    async def publish(*args, **kwargs):
+        return 0, "root::deployment.ready", SimpleNamespace(id="event-1")
+
+    monkeypatch.setattr(deployment_manager, "deploy", deploy)
+    monkeypatch.setattr(deployment_manager, "source_revision", lambda req: "revision-1")
+    monkeypatch.setattr(deployment_manager, "stop_site", stop)
+    monkeypatch.setattr(kernel, "publish_scoped", publish)
+    ctx = SimpleNamespace(id="root", extra={})
+    deployment_manager.configure_task(ctx, {"required_releases": 1}, {})
+    tool = DeployTool()
+    preview = await tool(action="preview", site_id="api", content="<main>API</main>", ctx=ctx)
+    assert preview.success
+    published = await tool(action="deploy", site_id="api", content="<main>API</main>", ctx=ctx)
+    assert published.success, published.message
+    assert len(ctx.extra["deployment_release_history"]) == 1
+    assert stopped == [requests[0].site_id]
+    assert "latest_preview" not in ctx.extra["deployment_contract"]
+
+
 def test_website_release_must_match_the_latest_preview_revision():
     contract = {
         "latest_preview": {
@@ -582,15 +617,15 @@ def test_website_release_must_match_the_latest_preview_revision():
             "source_revision": "revision-2",
         }
     }
-    ctx = SimpleNamespace(extra={"website_runtime_contract": contract})
+    ctx = SimpleNamespace(extra={"deployment_contract": contract})
 
-    assert DeployTool._preview_blocker(ctx, "echo", "revision-2") == ""
-    assert "changed after preview" in DeployTool._preview_blocker(
+    assert deployment_manager.preview_blocker(ctx, "echo", "revision-2") == ""
+    assert "changed after preview" in deployment_manager.preview_blocker(
         ctx,
         "echo",
         "revision-3",
     )
-    assert "belongs to site" in DeployTool._preview_blocker(
+    assert "belongs to site" in deployment_manager.preview_blocker(
         ctx,
         "other",
         "revision-2",

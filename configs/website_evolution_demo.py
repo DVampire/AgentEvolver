@@ -13,10 +13,10 @@ with read_base():
     from .agents.website_user_agents import website_user_agent
     from .base import max_tokens, memory_config, window_size  # noqa: F401
     from .memory.file_system_memory import file_system_memory
+    from .tools.adoption import adoption_tool
     from .tools.apply_patch import apply_patch_tool
     from .tools.bash import bash_tool
     from .tools.deploy import deploy_tool
-    from .tools.adoption import adoption_tool
     from .tools.send_message import send_message_tool
 
 
@@ -25,8 +25,6 @@ log_path = "agent.log"
 # Product iteration budget, not a quota of framework capability changes. Evolution is
 # selected by the shared system policy from execution evidence, never by this count.
 optimization_cycles = 5
-initial_step_budget = 36
-iteration_step_budget = 30
 # Keep this demonstration's generated/optimized components isolated from the global
 # extension library.  Besides making rollback auditable, this avoids depending on a
 # machine-wide manifest that may belong to another OS user.
@@ -236,7 +234,5 @@ website_builder_agent.update(
         "max_step": BUILDER_MAX_STEP,
         "timeout": WALL_CLOCK,
         "max_token": BUILDER_MAX_TOKEN,
-        "initial_step_budget": initial_step_budget,
-        "iteration_step_budget": iteration_step_budget,
     }
 )

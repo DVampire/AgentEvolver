@@ -8,7 +8,6 @@ so this tool stays stable as new target types are added.
 
 import os
 import socket
-import time
 from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlsplit, urlunsplit
 
@@ -20,12 +19,6 @@ from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.types import Tool
 
-#: How long a release waits for an independent verdict before shipping without one.
-#: Absent acceptance is a quality fact recorded against the release; it is not a reason
-#: the pipeline may never move again. Long enough for a browser round to finish, short
-#: enough that a subscriber whose process died does not strand the run.
-ACCEPTANCE_TIMEOUT_S = 900.0
-
 _DESCRIPTION = "Deploy and manage web apps — from a one-call inline HTML page to a full frontend/backend project — each bound to a URL."
 
 _GUIDANCE = """
@@ -34,6 +27,10 @@ Deploy a web app and bind it to a reachable URL, then manage deployed sites. Eac
 When available, share `site_url` / `release_url` through the single gateway port, not the internal `url`. The app still serves routes at its internal root. Deploy supplies `BASE_PATH=/s/<site_id>/` during build/start and the gateway supplies `X-Forwarded-Prefix` per request (also for pinned releases). Generate browser resource, API and WebSocket URLs under that prefix; root-absolute `/api/...` or `/assets/...` URLs bypass the site's route. A relative URL must also account for nested client routes. Verify navigation and API calls at the public site_url, not only the internal port. The gateway does not rewrite arbitrary application JavaScript.
 
 ### Actions (pass `action`)
+- `status`: inspect this task's release requirements, completed releases, exact feedback
+  turns and acceptance readiness. No site_id is needed. Check this before handing off a
+  requested deployment; `ready=false` reports unfinished release work, not a failed query.
+  This tool checks deployment policy. It never ends or vetoes the Agent's task.
 - `preview`: start the current source without publishing a release event. Under a website
   iteration contract, test this exact URL before `deploy`; the source hash must still match.
 - `deploy`: publish a site and return its URLs. Args:
@@ -66,7 +63,6 @@ _EXAMPLES = [
     '{"name": "deploy_tool", "args": {"action": "deploy", "site_id": "api", "runtime": "python", "files": {"app.py": "from fastapi import FastAPI\\napp=FastAPI()\\n@app.get(\'/\')\\ndef r(): return {\'ok\': True}", "requirements.txt": "fastapi"}}}',
 ]
 
-
 @TOOL.register_module(force=True)
 class DeployTool(Tool):
     """Deploy/manage sandboxed web services, each bound to a URL."""
@@ -87,6 +83,9 @@ class DeployTool(Tool):
 
     def __init__(self, enable_evolving: bool = False, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
+
+    def will_mutate(self, arguments: Dict[str, Any]) -> bool:
+        return arguments.get("action", "list") not in {"status", "get", "list"}
 
     @staticmethod
     def _site_line(rec) -> str:
@@ -144,220 +143,16 @@ class DeployTool(Tool):
     def _named_urls(rec) -> Dict[str, str]:
         return deployment_manager.public_urls(rec)
 
-    @staticmethod
-    def _previous_release_blocker(ctx: Any) -> str:
-        """Keep the release loop closed: observe feedback before publishing again.
-
-        Acceptance is keyed by (release, subscriber) and NOT by the subscriber's turn
-        number. Those were treated as the same thing — `turn_success[release_number]` —
-        on the assumption that a subscriber's Nth turn is always release N. A subscriber
-        that failed its first turn and was asked to try again produced turn 2, so
-        `turn_success[1]` stayed False for the rest of the run and no later release could
-        ever ship. Measured: 58 of 133 builder steps, 43% of the run, spent retrying
-        deploy and done against a gate that could not open.
-
-        Turn numbers are the runtime's own immutable record of how many times a process
-        ran. Which release a turn was *about* is a fact of this protocol, so this
-        protocol records it.
-        """
-        extra = getattr(ctx, "extra", None) or {}
-        contract = extra.get("website_runtime_contract")
-        history = extra.get("deployment_release_history")
-        if not isinstance(contract, dict) or not isinstance(history, list) or not history:
-            return ""
-
-        release_number = len(history)
-        acceptance = DeployTool._release_acceptance(contract, release_number)
-        subscribers = [str(job_id) for job_id in contract.get("subscriber_job_ids") or []]
-
-        pending, failed = [], []
-        for job_id in subscribers:
-            state = DeployTool._acceptance_state(contract, release_number, job_id)
-            if state == "accepted":
-                continue
-            (failed if state == "failed" else pending).append(job_id)
-
-        if pending:
-            waited = DeployTool._release_wait_seconds(contract, release_number)
-            if waited < ACCEPTANCE_TIMEOUT_S:
-                remaining = int(ACCEPTANCE_TIMEOUT_S - waited)
-                return (
-                    f"release {release_number} subscriber turns are not complete: "
-                    f"{', '.join(pending)} (waiting up to {remaining}s more)"
-                )
-            # Absent acceptance is a quality fact about the release, not a reason the
-            # deployment pipeline may never move again. It is recorded and the gate
-            # opens; the release history carries who never reported.
-            for job_id in pending:
-                acceptance[job_id] = {"status": "absent", "attempts": 0}
-            logger.warning(
-                f"| ⏳ release {release_number} proceeding without acceptance from "
-                f"{', '.join(pending)} after {int(waited)}s"
-            )
-
-        if failed:
-            return (
-                f"release {release_number} was rejected by {', '.join(failed)}. "
-                "Fix what they reported and ask the same subscriber to verify the fix "
-                "with send_message_tool; a passing retry replaces this verdict."
-            )
-
-        collected = dict(contract.get("collected_turns") or {})
-        unread = [
-            job_id for job_id in subscribers
-            if int(collected.get(job_id) or 0) < int((acceptance.get(job_id) or {}).get("turn") or 1)
-        ]
-        if unread:
-            return (
-                f"release {release_number} feedback must be read with job__output "
-                f"before another deploy: {', '.join(unread)}"
-            )
-        return ""
-
     # -- acceptance, keyed by (release, subscriber) ---------------------------
-
-    @staticmethod
-    def _release_acceptance(contract: Dict[str, Any], release_number: int) -> Dict[str, Any]:
-        """The per-subscriber acceptance record for one release, created on demand."""
-        table = contract.setdefault("release_acceptance", {})
-        return table.setdefault(str(release_number), {})
-
-    @staticmethod
-    def _acceptance_state(
-        contract: Dict[str, Any], release_number: int, job_id: str
-    ) -> str:
-        """accepted / failed / absent / pending for one subscriber on one release."""
-        recorded = DeployTool._release_acceptance(contract, release_number).get(job_id)
-        if isinstance(recorded, dict):
-            return str(recorded.get("status") or "pending")
-        return "pending"
-
-    @staticmethod
-    def record_acceptance(
-        ctx: Any, job_id: str, *, success: bool, turn: int
-    ) -> str:
-        """Record what a subscriber said about the CURRENT release.
-
-        Called wherever a subscriber's turn is collected. A later attempt overwrites an
-        earlier verdict for the same release, which is what makes a rejection something
-        a run can recover from rather than a terminal state.
-        """
-        extra = getattr(ctx, "extra", None) or {}
-        contract = extra.get("website_runtime_contract")
-        history = extra.get("deployment_release_history")
-        if not isinstance(contract, dict) or not isinstance(history, list) or not history:
-            return ""
-        release_number = len(history)
-        acceptance = DeployTool._release_acceptance(contract, release_number)
-        previous = acceptance.get(str(job_id)) or {}
-        floor = (contract.get("release_turn_floor", {}).get(str(release_number)) or {}).get(str(job_id), 0)
-        # Re-reading an older result cannot acknowledge a newer release or undo a retry.
-        if int(turn) <= int(floor) or int(turn) <= int(previous.get("turn") or 0):
-            return str(previous.get("status") or "pending")
-        acceptance[str(job_id)] = {
-            "status": "accepted" if success else "failed",
-            "attempts": int(previous.get("attempts") or 0) + 1,
-            "turn": int(turn),
-        }
-        return acceptance[str(job_id)]["status"]
-
-    @staticmethod
-    def _release_wait_seconds(contract: Dict[str, Any], release_number: int) -> float:
-        """How long this release has been waiting for its first acceptance."""
-        started = contract.setdefault("release_wait_started", {})
-        key = str(release_number)
-        if key not in started:
-            started[key] = time.time()
-        return max(0.0, time.time() - float(started[key]))
 
     @staticmethod
     def _preview_site_id(site_id: str, ctx: Any) -> str:
         context_id = str(getattr(ctx, "id", "") or "runtime")[:8]
         return f"{site_id}--preview-{context_id}"
 
-    @staticmethod
-    def _preview_blocker(ctx: Any, site_id: str, revision: str) -> str:
-        extra = getattr(ctx, "extra", None) or {}
-        contract = extra.get("website_runtime_contract")
-        if not isinstance(contract, dict):
-            return ""
-        preview = contract.get("latest_preview")
-        if not isinstance(preview, dict):
-            return "preview the current workspace with deploy_tool action=preview first"
-        if preview.get("site_id") != site_id:
-            return f"latest preview belongs to site {preview.get('site_id')!r}, not {site_id!r}"
-        if not revision or preview.get("source_revision") != revision:
-            return "workspace source changed after preview; preview and verify the current revision again"
-        return ""
-
-    @staticmethod
-    async def _publish_ready(rec, *, action: str, ctx: Any) -> Dict[str, Any]:
-        """Broadcast a successful release to this task tree's live subscribers."""
-        if ctx is None:
-            return {}
-        from agentevolver.runtime import kernel
-
-        extra = getattr(ctx, "extra", None)
-        contract = (extra or {}).get("website_runtime_contract")
-        if not isinstance(contract, dict):
-            return {}
-        # ToolContext copies the ambient mapping but deliberately retains values by
-        # reference. Mutate this Runtime-owned list in place so the parent AgentContext
-        # observes the receipt used by its completion gate.
-        history = (extra or {}).get("deployment_release_history")
-        if not isinstance(history, list):
-            history = []
-            extra["deployment_release_history"] = history
-        release_number = len(history) + 1
-        contract.setdefault("release_turn_floor", {})[str(release_number)] = {
-            str(job_id): int(getattr(kernel.get(str(job_id)), "turns", 0))
-            for job_id in contract.get("subscriber_job_ids") or []
-        }
-        # A task's feedback round is not the persistent site's artifact version.
-        payload = {
-            "release_number": release_number,
-            "version_number": rec.release_number,
-            "action": action,
-            "site_id": rec.site_id,
-            "runtime": rec.runtime,
-            "url": rec.url,
-            "source_revision": rec.source_revision,
-            "subscriber_min_turns": {
-                job_id: floor + 1
-                for job_id, floor in contract["release_turn_floor"][str(release_number)].items()
-            },
-            **DeployTool._access_urls(rec),
-            "deployed_at": rec.updated_at,
-        }
-        try:
-            sent, scoped, event = await kernel.publish_scoped(
-                "deployment.ready",
-                "deployment.ready",
-                payload,
-                ctx=ctx,
-                sender=str(getattr(ctx, "name", "") or "deploy_tool"),
-            )
-            receipt = {
-                **payload,
-                "event_id": event.id,
-                "topic": scoped.split("::", 1)[-1],
-                "fanout": sent,
-            }
-        except Exception as error:  # noqa: BLE001
-            logger.warning(f"| ⚠️ deployment.ready publication failed: {error}")
-            receipt = {
-                **payload,
-                "event_id": "",
-                "topic": "deployment.ready",
-                "fanout": 0,
-                "error": str(error),
-            }
-        history.append(receipt)
-        return receipt
-
     async def __call__(
         self,
-        action: Literal["preview", "deploy", "list", "get", "stop", "redeploy"] = "list",
+        action: Literal["status", "preview", "deploy", "list", "get", "stop", "redeploy"] = "list",
         site_id: Optional[str] = None,
         runtime: str = "static",
         source_dir: Optional[str] = None,
@@ -374,8 +169,8 @@ class DeployTool(Tool):
         """Deploy, inspect, and tear down sites.
 
         Args:
-            action: Operation to run: preview, deploy, list, get, stop, or redeploy.
-            site_id: Stable site identifier. Required except for list.
+            action: Operation to run: status, preview, deploy, list, get, stop, or redeploy.
+            site_id: Stable site identifier. Required except for list and status.
             runtime: Deployment profile, such as static, node, python, or custom.
             source_dir: Absolute host directory containing the application.
             git_url: Repository URL to clone as the application source.
@@ -390,10 +185,18 @@ class DeployTool(Tool):
         """
         action = (action or "list").lower().strip()
         try:
+            if action in {"status", "preview", "deploy", "redeploy"}:
+                deployment_manager.prepare_task(kwargs.get("ctx"))
+            if action == "status":
+                status = deployment_manager.release_status(kwargs.get("ctx"))
+                return Response(
+                    type=ResponseType.TOOL, success=True, data=status,
+                    message=(status["reason"] or "All declared release checks passed."),
+                )
             if action in {"preview", "deploy"}:
                 if not site_id:
                     raise KeyError("site_id")
-                blocker = self._previous_release_blocker(kwargs.get("ctx"))
+                blocker = deployment_manager.feedback_blocker(kwargs.get("ctx"))
                 if blocker:
                     return Response(
                         type=ResponseType.TOOL,
@@ -422,7 +225,7 @@ class DeployTool(Tool):
                 if action == "preview":
                     req.site_id = self._preview_site_id(site_id, ctx)
                 else:
-                    preview_blocker = self._preview_blocker(ctx, site_id, revision)
+                    preview_blocker = deployment_manager.preview_blocker(ctx, site_id, revision)
                     if preview_blocker:
                         return Response(
                             type=ResponseType.TOOL,
@@ -433,7 +236,6 @@ class DeployTool(Tool):
                 ok = rec.status.value == "running"
                 release = {}
                 if ok and action == "preview":
-                    contract = (getattr(ctx, "extra", None) or {}).get("website_runtime_contract")
                     preview = {
                         "site_id": requested_site_id,
                         "preview_site_id": rec.site_id,
@@ -442,8 +244,7 @@ class DeployTool(Tool):
                         "source_revision": rec.source_revision,
                         **self._access_urls(rec),
                     }
-                    if isinstance(contract, dict):
-                        contract["latest_preview"] = preview
+                    deployment_manager.record_preview(ctx, preview)
                     urls = self._access_urls(rec)
                     msg = f"✅ Preview r{rec.release_number} for '{requested_site_id}' is running at {urls.get('release_url') or rec.url}"
                     if urls.get("public_url") and urls["public_url"] != rec.url:
@@ -455,9 +256,10 @@ class DeployTool(Tool):
                         data={**rec.model_dump(), **urls, "preview": True},
                     )
                 if ok:
-                    release = await self._publish_ready(
+                    release = await deployment_manager.publish_release(
                         rec,
                         action="deploy",
+                        urls=self._access_urls(rec),
                         ctx=kwargs.get("ctx"),
                     )
                 msg = (
@@ -476,18 +278,7 @@ class DeployTool(Tool):
                         f"{release['fanout']} subscriber(s)"
                     )
                 if ok:
-                    contract = (getattr(ctx, "extra", None) or {}).get("website_runtime_contract")
-                    preview = (
-                        contract.pop("latest_preview", None) if isinstance(contract, dict) else None
-                    )
-                    preview_id = (preview or {}).get("preview_site_id")
-                    if preview_id:
-                        try:
-                            await deployment_manager.stop_site(preview_id)
-                        except Exception as error:  # noqa: BLE001
-                            logger.warning(
-                                f"| ⚠️ could not stop consumed preview {preview_id}: {error}"
-                            )
+                    await deployment_manager.consume_preview(ctx)
                 return Response(
                     type=ResponseType.TOOL,
                     success=ok,
@@ -540,7 +331,7 @@ class DeployTool(Tool):
             if action == "redeploy":
                 if not site_id:
                     raise KeyError("site_id")
-                blocker = self._previous_release_blocker(kwargs.get("ctx"))
+                blocker = deployment_manager.feedback_blocker(kwargs.get("ctx"))
                 if blocker:
                     return Response(
                         type=ResponseType.TOOL,
@@ -555,7 +346,7 @@ class DeployTool(Tool):
                         message=f"No redeployable request stored for site {site_id!r}.",
                     )
                 revision = deployment_manager.source_revision(DeployRequest(**current.request))
-                preview_blocker = self._preview_blocker(
+                preview_blocker = deployment_manager.preview_blocker(
                     kwargs.get("ctx"),
                     site_id,
                     revision,
@@ -570,7 +361,7 @@ class DeployTool(Tool):
                 ok = rec.status.value == "running"
                 release = {}
                 if ok:
-                    release = await self._publish_ready(
+                    release = await deployment_manager.publish_release(
                         rec,
                         action="redeploy",
                         ctx=kwargs.get("ctx"),

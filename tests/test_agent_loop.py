@@ -94,7 +94,8 @@ TOOLS = {
 async def test_native_async_read_overlaps_generation_and_is_not_repeated(monkeypatch):
     import asyncio
     from types import SimpleNamespace
-    from agentevolver.model.types import ToolCallComplete, TextDelta, StreamDone
+
+    from agentevolver.model.types import StreamDone, TextDelta, ToolCallComplete
 
     started, finish = asyncio.Event(), asyncio.Event()
     class Router(StubRouter):
@@ -131,7 +132,8 @@ async def test_native_async_read_overlaps_generation_and_is_not_repeated(monkeyp
 @pytest.mark.parametrize("ending", ["disconnect", "cancel", "max_tokens"])
 async def test_async_read_is_reaped_when_generation_stops(ending):
     import asyncio
-    from agentevolver.model.types import ToolCallComplete, StreamDone
+
+    from agentevolver.model.types import StreamDone, ToolCallComplete
     started, cancelled = asyncio.Event(), asyncio.Event()
 
     class Router(StubRouter):
@@ -166,7 +168,7 @@ async def test_async_read_is_reaped_when_generation_stops(ending):
 
 @pytest.mark.asyncio
 async def test_async_never_reorders_a_read_after_a_write():
-    from agentevolver.model.types import ToolCallComplete, StreamDone
+    from agentevolver.model.types import StreamDone, ToolCallComplete
     router = StubRouter(TOOLS, read_only=["read"])
     agent = Agent(router=router, async_tool_calling=True)
     async def stream():
@@ -506,8 +508,9 @@ async def test_empty_environment_grant_skips_state_reads(monkeypatch):
 @pytest.mark.asyncio
 async def test_checkpoint_usage_counts_against_same_budget(monkeypatch):
     from types import SimpleNamespace
-    from agentevolver.model import model_manager
+
     from agentevolver.hook.server import hook_manager
+    from agentevolver.model import model_manager
 
     agent = Agent(max_token=50)
 
@@ -632,70 +635,44 @@ async def test_a_fold_that_moves_nothing_still_says_so(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# A gate that cannot open
+# Task termination is independent of deployment and extension policy.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_a_run_lands_when_one_blocker_refuses_it_over_and_over():
-    """A contract gate whose input cannot change is a protocol fault, not a retry.
+@pytest.mark.parametrize("through_tool", [False, True])
+async def test_domain_state_cannot_veto_an_honest_handoff(through_tool, monkeypatch):
+    from agentevolver.agent.types import AgentContext
+    from agentevolver.deploy import deployment_manager
+    from agentevolver.extension import extension_manager
 
-    Measured on a live website run: the deploy gate held on a subscriber verdict that
-    could never be updated, `done_tool` held on the release count that deploy could not
-    raise, and a middleware asked for a preview each step. The agent spent 58 of its 133
-    steps — 43% — alternating between them and ended cancelled by a human. Nothing in
-    the loop could recognise that the same sentence had come back unchanged.
-    """
-    class Blocked(Scripted):
-        async def completion_blocker(self, ctx):
-            return "release 1 subscriber turns failed: sub-b"
+    def unexpected(*args, **kwargs):
+        raise AssertionError("The agent loop must not consult business managers")
 
-    agent = make([Decision(text="done") for _ in range(20)], max_step=20)
-    agent.__class__ = type("BlockedProbe", (Blocked, type(agent)), {})
-
-    response = await agent("build the thing")
-    assert response.success is False
-    assert "Protocol blocker" in response.message
-    assert "sub-b" in response.message
-    # Landed on the threshold rather than burning the rest of the budget.
-    assert agent.step < 19, f"landed at step {agent.step}, budget was 20"
-
-
-@pytest.mark.asyncio
-async def test_an_agent_is_told_how_many_times_the_same_gate_has_refused_it():
-    """The loop counts repeats to decide when to land; the agent needs the same count.
-
-    Told only the reason, an agent reads every refusal as the first one. A builder
-    answered the same gate six times over fifty minutes, each attempt restating the work
-    it had already done, because nothing said that answer had been given and rejected
-    before. The count is what turns "try again" into "try something else", and it belongs
-    to every agent that can be refused rather than to whichever gate refuses it.
-    """
-    class Blocked(Scripted):
-        async def completion_blocker(self, ctx):
-            return "release 1 subscriber turns failed: sub-b"
-
-    agent = make([Decision(text="done") for _ in range(20)], max_step=20)
-    agent.__class__ = type("RepeatProbe", (Blocked, type(agent)), {})
-    await agent("build the thing")
-
-    told = [str(m.content) for m in agent.conversation.items if "not-finished" in str(m.content)]
-    assert told, "the reason has to reach the model at all"
-    assert "You have now been told this" not in told[0], "the first refusal is not a repeat"
-    assert "You have now been told this 2 times" in told[1]
-    assert "repeating your last answer will not move it" in told[1]
+    monkeypatch.setattr(type(deployment_manager), "release_status", unexpected)
+    monkeypatch.setattr(type(extension_manager), "read_manifest", unexpected)
+    ctx = AgentContext(extra={
+        "deployment_contract": {"required_releases": 6},
+        "deployment_release_history": [],
+        "extension_baseline": {},
+    })
+    handoff = "Partial result: delivery is blocked by unavailable infrastructure."
+    agent = make([calls(("done_tool", {}))] if through_tool else [Decision(text=handoff)])
+    if through_tool:
+        class FinishRouter(StubRouter):
+            async def invoke(self, call, **kwargs):
+                return ActionResult(call=call, output=handoff, final=True)
+        agent = Scripted([calls(("done_tool", {}))],
+                         router=FinishRouter({"done_tool": lambda args: handoff}))
+    response = await agent("Return the current result", ctx=ctx)
+    assert response.success and response.message == handoff
+    assert agent.step == 0
+    assert not any("not-finished" in str(item.content) for item in agent.conversation.items)
 
 
 @pytest.mark.asyncio
-async def test_a_blocker_that_keeps_changing_is_progress_and_is_not_cut_short():
-    """A moving gate means the run is getting somewhere; only a frozen one is stuck."""
-    class Moving(Scripted):
-        async def completion_blocker(self, ctx):
-            remaining = 8 - self.step
-            return f"{remaining} releases still required" if remaining > 0 else None
-
-    agent = make([Decision(text="done") for _ in range(20)], max_step=20)
-    agent.__class__ = type("MovingProbe", (Moving, type(agent)), {})
-
-    response = await agent("build the thing")
-    assert response.success is True, response.message
+async def test_domain_tool_failure_returns_to_the_model_for_its_next_decision():
+    agent = make([calls(("boom", {})), Decision(text="Blocked: disk full")])
+    response = await agent("Report whether deployment is possible")
+    assert response.message == "Blocked: disk full"
+    assert "disk full" in str(agent.seen_live[1])

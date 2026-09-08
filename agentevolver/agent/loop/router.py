@@ -17,14 +17,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from agentevolver.agent.loop.decision import ActionCall, ActionResult
 from agentevolver.logger import logger
+from agentevolver.runtime.kernel import GRANTED_ALLOWLISTS, grant
 from agentevolver.runtime.modes import InteractionMode
 
 #: Capability types whose manager is callable as ``manager(name=, input=, ctx=)``.
 _CALLABLE_MANAGERS = ("skill", "connector", "workflow", "plugin", "environment")
-
-#: Where the context records which allowlists were granted rather than defaulted. A
-#: grant survives a step; a default is re-derived from the agent's class field each time.
-GRANTED_ALLOWLISTS = "_granted_allowlists"
 
 def _evolved_names(capability_type: str, *, exclude: Sequence[str] = ()) -> List[str]:
     """Registered extension components of one type, minus what is already listed.
@@ -46,19 +43,6 @@ def _evolved_names(capability_type: str, *, exclude: Sequence[str] = ()) -> List
     except Exception as error:  # noqa: BLE001 - scope must not fail on a bad read
         logger.warning(f"| ⚠️ could not read evolved {capability_type}s: {error}")
         return []
-
-
-def grant(extra: Dict[str, Any], key: str) -> None:
-    """Mark one allowlist in this context as granted rather than defaulted.
-
-    Without the mark the next step overwrites it from the agent's class field, because
-    that is how a default stays current. One function so the dispatch path and any
-    later grant record it the same way.
-    """
-    marked = list(extra.get(GRANTED_ALLOWLISTS) or ())
-    if key not in marked:
-        marked.append(key)
-    extra[GRANTED_ALLOWLISTS] = marked
 
 
 #: The tool that ends a run. Recognised by name, as before: its Response carries the
@@ -271,99 +255,32 @@ class CapabilityRouter(ToolRouter):
     async def _invoke_agent(
         self, call: ActionCall, route: Sequence[Any], parent: Any, ctx: Any
     ) -> ActionResult:
-        """Dispatch a sub-agent: spawn a child process and collect it.
+        """Dispatch a sub-agent: ask the kernel for a child process, and collect it.
 
+        What is left here once dispatching itself is a runtime primitive: validate what
+        the model asked for, and turn a process into something the model can read.
         Blocking or not is the caller's choice at the call site, exactly as it is with a
         shell command. ``background: true`` returns the pid immediately and the child's
         final report arrives in the parent's mailbox when it exits.
         """
-        kernel = self._kernel or self._default_kernel()
-        child = await self._build_child(route[1])
-        if child is None:
-            return ActionResult(call=call, error=f"Agent {route[1]!r} is not registered")
-
-        from agentevolver.permission import permission_manager
-
-        child.permission_mode = permission_manager.restrict(
-            getattr(child, "permission_mode", None), getattr(parent, "permission_mode", None),
-            getattr(getattr(parent, "proc", None), "permission_mode", None),
-        ).value
-
         from agentevolver.agent.server import validate_dispatch_input
+        from agentevolver.runtime.modes import for_brief, topics_of
 
+        kernel = self._kernel or self._default_kernel()
         try:
             brief = validate_dispatch_input(call.args)
         except ValueError as error:
             # The bounded handoff contract. Refused as a result, not raised, so the model
             # reads which limit it crossed and can write the specification to a file.
             return ActionResult(call=call, error=str(error))
-
-        if brief.get("model"):
-            child.model_name = brief["model"].strip()
-        if "token_budget" in brief and getattr(child, "allow_token_budget_override", True):
-            # A delegation can narrow the host's cap, never raise it.
-            limit = getattr(child, "max_token", None)
-            child.max_token = min(limit, brief["token_budget"]) if limit is not None else brief["token_budget"]
-        elif "token_budget" in brief:
-            logger.info(
-                f"{route[1]} retains configured token budget {child.max_token}; "
-                f"dispatch override {brief['token_budget']} is disabled for this role"
-            )
-
-        # The dispatch schema has always declared these; honouring them here is what
-        # lets an agent start a *subscriber* by calling a sub-agent, with no code of its
-        # own. Naming a topic implies residency, because a subscriber that exited could
-        # not receive the next event.
-        topics = [str(item) for item in (brief.get("subscription_topics") or ())]
-        # The dispatch args say what the caller wants; the mode is what that means. One
-        # translation here rather than three booleans assembled at the call site.
-        if topics:
-            mode = InteractionMode.SUBSCRIBER
-        elif brief.get("continuable"):
-            mode = InteractionMode.SERVICE
-        else:
-            mode = InteractionMode.RESPONDER
-        background = bool(brief.get("background") or brief.get("run_in_background")) \
-            or mode is not InteractionMode.RESPONDER
-
-        from contextlib import ExitStack
-
-        child_ctx = self._child_context(child, brief, parent, ctx)
-        tree = None
         try:
-            with ExitStack() as scope:
-                if brief.get("isolate_worktree"):
-                    import os
-                    from agentevolver.paths import path_manager
-                    from agentevolver.sandbox.worktree import IsolatedWorktree
-                    from agentevolver.utils import make_id
+            proc = await kernel.dispatch(route[1], brief, parent=parent, ctx=ctx)
+        except (LookupError, ValueError) as error:
+            return ActionResult(call=call, error=str(error))
 
-                    roots = path_manager.session_roots()
-                    if not roots or os.getenv("AGENTEVOLVER_EXEC_CONTAINER"):
-                        raise ValueError("Worktree dispatch requires a bound host Git workspace")
-                    if set(getattr(child, "env_names", ())) - {"job"}:
-                        raise ValueError("Worktree dispatch does not relocate browser/remote environments")
-                    source = str(roots["workspace"])
-                    tree = await IsolatedWorktree.create(source, str(roots["log"]), make_id())
-                    child_ctx.extra.setdefault("source_workspace", source)
-                    # The override is the record. `kernel.spawn` starts the child with
-                    # `asyncio.create_task` inside this scope, so the child's context
-                    # snapshot carries it for the whole of its life even after this stack
-                    # unwinds — which is why the path did not also need writing into
-                    # `child_ctx.extra["execution_cwd"]`, where it was the copy everyone
-                    # actually read.
-                    scope.enter_context(path_manager.workspace(tree.path))
-                    scope.enter_context(permission_manager.relocate(source, str(tree.path)))
-                options = {"worktree": tree} if tree is not None else {}
-                proc = await kernel.spawn(
-                    child, str(brief["task"]).strip(), mode=mode,
-                    files=list(brief.get("files") or ()), ctx=child_ctx,
-                    parent=getattr(parent, "proc", None), topics=topics, **options,
-                )
-        except BaseException:
-            if tree is not None:
-                await tree.cleanup()
-            raise
+        topics = topics_of(brief)
+        background = bool(brief.get("background") or brief.get("run_in_background")) \
+            or for_brief(brief) is not InteractionMode.RESPONDER
         if background:
             if topics:
                 return ActionResult(
@@ -400,101 +317,10 @@ class CapabilityRouter(ToolRouter):
     # -- helpers -------------------------------------------------------------
 
     @staticmethod
-    def _child_context(child: Any, brief: Dict[str, Any], parent: Any, ctx: Any) -> Any:
-        """A context of the child's own, carrying only what a child should inherit.
-
-        Not the parent's context. Sharing it would give a child the parent's session id,
-        and with it the parent's memory and budgets — so two agents would be writing one
-        history. What crosses is lineage, the resource and acceptance contract, and the
-        files: the child then knows what it is scoped to and what it will be judged
-        against, rather than learning both from a paraphrase in its task.
-
-        The one place a child's context is built, for every caller that has to build one —
-        including the ones that must build it before a loop exists to dispatch from. The
-        website builder had a second copy for exactly that reason, and the two drifted:
-        this one grants no capability allowlists to a subscriber and never set
-        ``root_session_id``, that one carried neither the task contract nor the dispatch
-        scoping. Removing a key from context inheritance meant finding both.
-        """
-        from agentevolver.agent.types import AgentContext
-
-        contract = {
-            key: brief[key]
-            for key in ("read_set", "write_set", "acceptance", "owner")
-            if brief.get(key)
-        }
-        inherited = dict(getattr(ctx, "extra", None) or {})
-        # Scoping the parent chose for this dispatch travels; the parent's own run state
-        # does not.
-        # `trace_integrity_profile` was inherited here too. It is configuration, read from
-        # `config` where it is declared and validated, so passing it down a dispatch chain
-        # gave a run's descendants a second place to disagree with the setting.
-        keep = {"plugin_allowlist", "workflow_allowlist", "source_workspace",
-                # Topics are namespaced `{root}::{name}`, so a subscriber that resolves a
-                # different root than its publisher subscribes to a string nobody sends
-                # to. A child always has its own session id, which makes every dispatched
-                # subscriber silent unless the root travels — `subscription_topics` is in
-                # the dispatch schema precisely so an agent needs no code of its own, and
-                # without this it needed code of its own to work at all.
-                "root_session_id"}
-        extra = {key: value for key, value in inherited.items() if key in keep}
-        extra.setdefault("root_session_id", str(getattr(ctx, "id", "") or ""))
-        # History sharing is a grant for this dispatch, never inherited transitively.
-        extra["fork"] = brief.get("fork") is True
-        if "reasoning_effort" in brief:
-            extra["child_reasoning_effort"] = brief["reasoning_effort"]
-        # What the parent chose FOR THIS DISPATCH, as opposed to what it inherited. The
-        # evolution roles read their target from the context, because a generate run's
-        # target does not exist yet and so cannot be looked up by name. The dispatch
-        # schema has always declared these two and nothing carried them across, so every
-        # generate run ended `target_type must be one of ...; got ''` — 47 steps and
-        # $3.46 in one measured run, registering nothing.
-        for key in ("target_type", "target_name"):
-            value = str(brief.get(key) or "").strip()
-            if value:
-                extra[key] = value
-        # Capability grants this dispatch makes. The dispatch schema has declared all
-        # five for as long as it has existed and nothing read them, so a parent narrowing
-        # or widening a child's roster was silently ignored and the child's class default
-        # stood — which is how an isolation contract meant to keep a visitor out of the
-        # workspace also made it impossible to hand that visitor a newly evolved tool.
-        #
-        # An empty list is a real grant and means "none of this kind", so presence is
-        # what matters here, not truthiness.
-        for key in ("tool_allowlist", "skill_allowlist", "connector_allowlist",
-                    "plugin_allowlist", "workflow_allowlist", "environment_allowlist"):
-            if isinstance(brief.get(key), list):
-                extra[key] = [str(item).strip() for item in brief[key] if str(item).strip()]
-                grant(extra, key)
-        extra["task_contract"] = contract
-        extra["task_files"] = list(brief.get("files") or ())
-        extra["parent_session_id"] = str(getattr(ctx, "id", "") or "")
-        return AgentContext(
-            # The child's, not the parent's. `ctx.name` is read as "the agent this
-            # context belongs to" — it is the `agent_name` a tool execution records, the
-            # publisher an event carries, the asker on a question — so naming a child's
-            # context after its parent filed the child's every action under the parent.
-            name=getattr(child, "name", "") or getattr(parent, "name", ""),
-            extra=extra,
-            parent_session_id=str(getattr(ctx, "id", "") or ""),
-        )
-
-    @staticmethod
     def _default_kernel() -> Any:
         from agentevolver.runtime import kernel
 
         return kernel
-
-    @staticmethod
-    async def _build_child(name: str) -> Any:
-        """A fresh instance of the registered agent — the program, spawned as a process."""
-        from agentevolver.agent import agent_manager
-
-        template = await agent_manager.get(name)
-        if template is None:
-            return None
-        fresh = getattr(template, "fresh", None)
-        return fresh() if callable(fresh) else template
 
     def denial(self, call: ActionCall, routing: Dict[str, Any], agent: Any) -> str:
         """Read-only enforcement, which the tool pipeline cannot do for itself.

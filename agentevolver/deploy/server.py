@@ -50,6 +50,8 @@ from agentevolver.registry import DEPLOYER
 from agentevolver.sandbox import sandbox_manager
 from agentevolver.utils.file_utils import atomic_json_update
 
+ACCEPTANCE_TIMEOUT_S = 900.0
+
 # Directories skipped when uploading a host source tree into a container.
 _SKIP_DIRS = {
     ".git",
@@ -93,6 +95,478 @@ class DeploymentManagerServer(BaseModel):
         self._registry_stamp = None
 
     # --------------------------------------------------------------- lifecycle
+    # Task release policy, shared by all agents and deployment tools.
+
+    @staticmethod
+    def _task_state(ctx: Any) -> dict:
+        """Mutable task state survives conversions between agent and tool contexts."""
+        extra = getattr(ctx, "extra", None)
+        if not isinstance(extra, dict):
+            return {}
+        return extra["task_state"] if "task_state" in extra else extra
+
+    def prepare_task(self, ctx: Any) -> None:
+        """Bind deployment declarations when the deployment capability is called."""
+        manifest = (getattr(ctx, "extra", None) or {}).get("task_manifest") or {}
+        if "deployment" not in manifest:
+            return
+        subscribers = manifest.get("subscribers") or []
+        jobs = {entry["id"]: entry["job_id"] for entry in subscribers}
+        policy = self.validate_task_policy(manifest["deployment"], jobs)
+        if any(policy["topic"] not in entry.get("topics", []) for entry in subscribers):
+            raise ValueError("Every deployment subscriber must listen to its release topic")
+        self.configure_task(ctx, policy, jobs)
+
+    @staticmethod
+    def validate_task_policy(policy: Dict[str, Any], subscriber_ids) -> Dict[str, Any]:
+        """Validate declared release obligations before a deployment operation."""
+        if not isinstance(policy, dict):
+            raise ValueError("deployment policy must be an object")
+        required = policy.get("required_releases", 1)
+        if type(required) is not int or required < 1:
+            raise ValueError("required_releases must be a positive integer")
+        ids = list(subscriber_ids)
+        acceptance = str(policy.get("acceptance_subscriber") or "")
+        if acceptance and acceptance not in ids:
+            raise ValueError("acceptance_subscriber must name a declared subscriber")
+        topic = policy.get("topic", "deployment.ready")
+        if not isinstance(topic, str) or not topic.strip():
+            raise ValueError("deployment topic must be non-empty")
+        return {"topic": topic, "required_releases": required,
+                "acceptance_subscriber": acceptance}
+
+    def configure_task(self, ctx: Any, policy: Dict[str, Any], jobs: Dict[str, str]) -> dict:
+        """Bind declared release obligations to the actual runtime process IDs."""
+        policy = self.validate_task_policy(policy, jobs)
+        extra = self._task_state(ctx)
+        existing = extra.get("deployment_contract")
+        if isinstance(existing, dict):
+            if existing.get("policy") != policy or existing.get("subscriber_job_ids") != list(jobs.values()):
+                raise ValueError("Cannot replace an established deployment contract")
+            return existing
+        contract = {
+            "policy": policy, "topic": policy["topic"],
+            "required_releases": policy["required_releases"],
+            "acceptance_job_id": jobs.get(policy["acceptance_subscriber"], ""),
+            "subscriber_job_ids": list(jobs.values()), "collected_turns": {},
+        }
+        extra["deployment_contract"] = contract
+        extra["deployment_release_history"] = []
+        return contract
+
+    @staticmethod
+    def task_manifest(ctx: Any) -> dict:
+        """Public release bindings; mutable acceptance state stays with the manager."""
+        contract = DeploymentManagerServer._task_state(ctx).get("deployment_contract")
+        if not isinstance(contract, dict):
+            return {}
+        return {
+            "topic": contract.get("topic", "deployment.ready"), "automatic_deploy_publish": True,
+            "required_releases": contract["required_releases"],
+            "subscriber_job_ids": list(contract["subscriber_job_ids"]),
+            "acceptance_job_id": contract.get("acceptance_job_id", ""),
+            "collection": (
+                "After each deploy, wait with condition=idle_after_turn and the receipt's "
+                "subscriber_min_turns. Read every job__output at its actual completed turn "
+                "without tail before selecting the next change. Retries can give different "
+                "subscribers different turn numbers for the same release."
+            ),
+        }
+
+    @staticmethod
+    def record_preview(ctx: Any, preview: Dict[str, Any]) -> None:
+        contract = DeploymentManagerServer._task_state(ctx).get("deployment_contract")
+        if isinstance(contract, dict):
+            contract["latest_preview"] = dict(preview)
+
+    async def consume_preview(self, ctx: Any) -> None:
+        """Release a task's preview service after its source has been published."""
+        contract = DeploymentManagerServer._task_state(ctx).get("deployment_contract")
+        preview = contract.pop("latest_preview", None) if isinstance(contract, dict) else None
+        preview_id = (preview or {}).get("preview_site_id")
+        if preview_id:
+            try:
+                await self.stop_site(preview_id)
+            except Exception as error:  # noqa: BLE001 - publication already succeeded
+                logger.warning(f"| ⚠️ could not stop consumed preview {preview_id}: {error}")
+
+    def collect_feedback(self, ctx: Any, job_id: str, *, full: bool, turn=None) -> int:
+        """Acknowledge only a full, completed subscriber report actually read by its owner."""
+        from agentevolver.runtime import kernel
+
+        contract = DeploymentManagerServer._task_state(ctx).get("deployment_contract")
+        if not full or not isinstance(contract, dict) or job_id not in contract.get("subscriber_job_ids", []):
+            return 0
+        proc = kernel.get(job_id)
+        if proc is None or proc.turns < 1:
+            return 0
+        completed = int(proc.turns if turn is None else turn)
+        if completed < 1 or completed > proc.turns or completed not in proc.turn_results:
+            return 0
+        if turn is None and (proc.busy or len(proc.mailbox)):
+            return 0
+        collected = contract.setdefault("collected_turns", {})
+        collected[job_id] = max(int(collected.get(job_id) or 0), completed)
+        self.record_acceptance(ctx, job_id, success=bool(proc.turn_success.get(completed)), turn=completed)
+        return collected[job_id]
+
+    @staticmethod
+    def feedback_blocker(ctx: Any) -> str:
+        """Keep the release loop closed: observe feedback before publishing again.
+
+        Acceptance is keyed by (release, subscriber) and NOT by the subscriber's turn
+        number. Those were treated as the same thing — `turn_success[release_number]` —
+        on the assumption that a subscriber's Nth turn is always release N. A subscriber
+        that failed its first turn and was asked to try again produced turn 2, so
+        `turn_success[1]` stayed False for the rest of the run and no later release could
+        ever ship. Measured: 58 of 133 builder steps, 43% of the run, spent retrying
+        deploy and done against a gate that could not open.
+
+        Turn numbers are the runtime's own immutable record of how many times a process
+        ran. Which release a turn was *about* is a fact of this protocol, so this
+        protocol records it.
+        """
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = extra.get("deployment_contract")
+        history = extra.get("deployment_release_history")
+        if not isinstance(contract, dict) or not isinstance(history, list) or not history:
+            return ""
+
+        release_number = len(history)
+        acceptance = DeploymentManagerServer._release_acceptance(contract, release_number)
+        subscribers = [str(job_id) for job_id in contract.get("subscriber_job_ids") or []]
+
+        pending, failed = [], []
+        for job_id in subscribers:
+            state = DeploymentManagerServer.acceptance_state(contract, release_number, job_id)
+            if state == "accepted":
+                continue
+            (failed if state == "failed" else pending).append(job_id)
+
+        if pending:
+            waited = DeploymentManagerServer._release_wait_seconds(contract, release_number)
+            if waited < ACCEPTANCE_TIMEOUT_S:
+                remaining = int(ACCEPTANCE_TIMEOUT_S - waited)
+                return (
+                    f"release {release_number} subscriber turns are not complete: "
+                    f"{', '.join(pending)} (waiting up to {remaining}s more)"
+                )
+            # Absent acceptance is a quality fact about the release, not a reason the
+            # deployment pipeline may never move again. It is recorded and the gate
+            # opens; the release history carries who never reported.
+            for job_id in pending:
+                acceptance[job_id] = {"status": "absent", "attempts": 0}
+            logger.warning(
+                f"| ⏳ release {release_number} proceeding without acceptance from "
+                f"{', '.join(pending)} after {int(waited)}s"
+            )
+
+        if failed:
+            return (
+                f"release {release_number} was rejected by {', '.join(failed)}. "
+                "Fix what they reported and ask the same subscriber to verify the fix "
+                "with send_message_tool; a passing retry replaces this verdict."
+            )
+
+        collected = dict(contract.get("collected_turns") or {})
+        unread = [
+            job_id for job_id in subscribers
+            if int(collected.get(job_id) or 0) < int((acceptance.get(job_id) or {}).get("turn") or 1)
+        ]
+        if unread:
+            return (
+                f"release {release_number} feedback must be read with job__output "
+                f"before another deploy: {', '.join(unread)}"
+            )
+        return ""
+
+    @staticmethod
+    def _release_acceptance(contract: Dict[str, Any], release_number: int) -> Dict[str, Any]:
+        """The per-subscriber acceptance record for one release, created on demand."""
+        table = contract.setdefault("release_acceptance", {})
+        return table.setdefault(str(release_number), {})
+
+    @staticmethod
+    def acceptance_state(
+        contract: Dict[str, Any], release_number: int, job_id: str
+    ) -> str:
+        """accepted / failed / absent / pending for one subscriber on one release."""
+        recorded = DeploymentManagerServer._release_acceptance(contract, release_number).get(job_id)
+        if isinstance(recorded, dict):
+            return str(recorded.get("status") or "pending")
+        return "pending"
+
+    @staticmethod
+    def record_acceptance(
+        ctx: Any, job_id: str, *, success: bool, turn: int
+    ) -> str:
+        """Record what a subscriber said about the CURRENT release.
+
+        Called wherever a subscriber's turn is collected. A later attempt overwrites an
+        earlier verdict for the same release, which is what makes a rejection something
+        a run can recover from rather than a terminal state.
+        """
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = extra.get("deployment_contract")
+        history = extra.get("deployment_release_history")
+        if not isinstance(contract, dict) or not isinstance(history, list) or not history:
+            return ""
+        release_number = len(history)
+        acceptance = DeploymentManagerServer._release_acceptance(contract, release_number)
+        previous = acceptance.get(str(job_id)) or {}
+        floor = (contract.get("release_turn_floor", {}).get(str(release_number)) or {}).get(str(job_id), 0)
+        # Re-reading an older result cannot acknowledge a newer release or undo a retry.
+        if int(turn) <= int(floor) or int(turn) <= int(previous.get("turn") or 0):
+            return str(previous.get("status") or "pending")
+        acceptance[str(job_id)] = {
+            "status": "accepted" if success else "failed",
+            "attempts": int(previous.get("attempts") or 0) + 1,
+            "turn": int(turn),
+        }
+        return acceptance[str(job_id)]["status"]
+
+    @staticmethod
+    def _release_wait_seconds(contract: Dict[str, Any], release_number: int) -> float:
+        """How long this release has been waiting for its first acceptance."""
+        started = contract.setdefault("release_wait_started", {})
+        key = str(release_number)
+        if key not in started:
+            started[key] = time.time()
+        return max(0.0, time.time() - float(started[key]))
+
+    @staticmethod
+    def preview_blocker(ctx: Any, site_id: str, revision: str) -> str:
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = extra.get("deployment_contract")
+        if not isinstance(contract, dict):
+            return ""
+        preview = contract.get("latest_preview")
+        if not isinstance(preview, dict):
+            return "preview the current workspace with deploy_tool action=preview first"
+        if preview.get("site_id") != site_id:
+            return f"latest preview belongs to site {preview.get('site_id')!r}, not {site_id!r}"
+        if not revision or preview.get("source_revision") != revision:
+            return "workspace source changed after preview; preview and verify the current revision again"
+        return ""
+
+    @staticmethod
+    async def publish_release(rec, *, action: str, ctx: Any, urls=None) -> Dict[str, Any]:
+        """Broadcast a successful release to this task tree's live subscribers."""
+        if ctx is None:
+            return {}
+        from agentevolver.runtime import kernel
+
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = (extra or {}).get("deployment_contract")
+        if not isinstance(contract, dict):
+            return {}
+        # ToolContext copies the ambient mapping but retains task_state by reference.
+        # Mutate the list in place so later tool calls and feedback reads see the receipt.
+        history = (extra or {}).get("deployment_release_history")
+        if not isinstance(history, list):
+            history = []
+            extra["deployment_release_history"] = history
+        release_number = len(history) + 1
+        topic = str(contract.get("topic") or "deployment.ready")
+        contract.setdefault("release_turn_floor", {})[str(release_number)] = {
+            str(job_id): int(getattr(kernel.get(str(job_id)), "turns", 0))
+            for job_id in contract.get("subscriber_job_ids") or []
+        }
+        # A task's feedback round is not the persistent site's artifact version.
+        payload = {
+            "release_number": release_number,
+            "version_number": rec.release_number,
+            "action": action,
+            "site_id": rec.site_id,
+            "runtime": rec.runtime,
+            "url": rec.url,
+            "source_revision": rec.source_revision,
+            "subscriber_min_turns": {
+                job_id: floor + 1
+                for job_id, floor in contract["release_turn_floor"][str(release_number)].items()
+            },
+            **(urls or DeploymentManagerServer.public_urls(rec)),
+            "deployed_at": rec.updated_at,
+        }
+        try:
+            sent, scoped, event = await kernel.publish_scoped(
+                topic,
+                topic,
+                payload,
+                ctx=ctx,
+                sender=str(getattr(ctx, "name", "") or "deploy_tool"),
+            )
+            receipt = {
+                **payload,
+                "event_id": event.id,
+                "topic": scoped.split("::", 1)[-1],
+                "fanout": sent,
+            }
+        except Exception as error:  # noqa: BLE001
+            logger.warning(f"| ⚠️ deployment.ready publication failed: {error}")
+            receipt = {
+                **payload,
+                "event_id": "",
+                "topic": topic,
+                "fanout": 0,
+                "error": str(error),
+            }
+        history.append(receipt)
+        return receipt
+
+    @staticmethod
+    def _release_blocker(ctx: Any) -> Optional[str]:
+        """Report an unmet release requirement; this never controls Agent termination."""
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = extra.get("deployment_contract")
+        if not isinstance(contract, dict):
+            return None
+        history = list(extra.get("deployment_release_history") or [])
+        required = int(contract.get("required_releases") or 0)
+        if len(history) < required:
+            return f"the task requires {required} releases; only {len(history)} succeeded"
+        revisions = {
+            str(item.get("source_revision") or "")
+            for item in history
+            if item.get("source_revision")
+        }
+        if len(revisions) < required:
+            return (
+                f"the task requires {required} materially distinct releases; only "
+                f"{len(revisions)} unique source revisions were deployed"
+            )
+        expected_fanout = len(contract.get("subscriber_job_ids") or [])
+        incomplete_fanout = [
+            item for item in history if int(item.get("fanout") or 0) != expected_fanout
+        ]
+        if incomplete_fanout:
+            return (
+                f"{len(incomplete_fanout)} release event(s) did not reach all "
+                f"{expected_fanout} subscribers"
+            )
+
+        # The same acceptance table the deploy operation reads, for the same reason: a
+        # subscriber's turn number is not the release it was about, and binding them
+        # made a first rejection appear permanent in later status reports.
+        from agentevolver.runtime import kernel
+
+        release_turn = len(history)
+        pending, failed = [], []
+        for pid in contract.get("subscriber_job_ids") or []:
+            state = DeploymentManagerServer.acceptance_state(contract, release_turn, str(pid))
+            if state in ("accepted", "absent"):
+                continue
+            (failed if state == "failed" else pending).append(str(pid))
+        if pending:
+            return (
+                f"release {release_turn} still awaits subscriber turn completion: "
+                f"{', '.join(pending)}"
+            )
+        if failed:
+            return (
+                "the latest co-design/acceptance turn did not finish successfully for: "
+                + ", ".join(failed)
+            )
+        acceptance_id = str(contract.get("acceptance_job_id") or "")
+        acceptance_records = DeploymentManagerServer._release_acceptance(contract, release_turn)
+        if acceptance_id:
+            acceptance = kernel.get(acceptance_id)
+            verdict_turn = int((acceptance_records.get(acceptance_id) or {}).get("turn") or 0)
+            acceptance_result = (
+                acceptance.turn_results.get(verdict_turn, "")
+                if acceptance is not None
+                else ""
+            )
+            first_line = next(
+                (line.strip().upper() for line in acceptance_result.splitlines() if line.strip()),
+                "",
+            )
+            if first_line != "VERDICT: PASS":
+                return (
+                    f"latest independent acceptance did not pass for release {release_turn}; "
+                    f"received {first_line or '(no verdict)'}"
+                )
+        collected = dict(contract.get("collected_turns") or {})
+        uncollected = [
+            str(job_id)
+            for job_id in contract.get("subscriber_job_ids") or []
+            if int(collected.get(str(job_id)) or 0) < int(
+                (acceptance_records.get(str(job_id)) or {}).get("turn") or 1
+            )
+        ]
+        if uncollected:
+            return f"release {len(history)} feedback has not been collected from: " + ", ".join(
+                uncollected
+            )
+        return None
+
+    def release_status(self, ctx: Any) -> Dict[str, Any]:
+        """Describe release readiness for a tool response, without ending any task."""
+        state = self._task_state(ctx)
+        contract = state.get("deployment_contract")
+        if not isinstance(contract, dict):
+            return {"configured": False, "ready": None,
+                    "reason": "No deployment policy is declared for this task."}
+        reason = self._release_blocker(ctx)
+        return {"configured": True, "ready": reason is None, "reason": reason,
+                "required_releases": contract["required_releases"],
+                "completed_releases": len(state.get("deployment_release_history") or []),
+                "subscription": self.task_manifest(ctx),
+                "feedback": self.feedback_context(ctx)}
+
+    def feedback_context(self, ctx: Any) -> str:
+        """Report unread feedback and the exact subscriber turns to collect.
+
+        The runtime reports facts and exact collection targets. It neither invents
+        participant feedback nor marks a report read merely because it is available.
+        """
+        from agentevolver.runtime import kernel
+
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = extra.get("deployment_contract")
+        history = extra.get("deployment_release_history") or []
+        if not isinstance(contract, dict) or not history:
+            return ""
+        release = len(history)
+        floors = (contract.get("release_turn_floor") or {}).get(str(release), {})
+        collected = contract.get("collected_turns") or {}
+        rows, targets = [], {}
+        for job_id in contract.get("subscriber_job_ids") or []:
+            job_id = str(job_id)
+            proc = kernel.get(job_id)
+            floor = floors.get(job_id)
+            completed = int(getattr(proc, "turns", 0))
+            # Never guess release N == turn N for a legacy contract without a floor.
+            target = int(floor) + 1 if floor is not None else None
+            if target is not None:
+                targets[job_id] = target
+            available = bool(
+                target is not None and completed >= target
+                and completed in (getattr(proc, "turn_results", None) or {})
+            )
+            read = available and int(collected.get(job_id) or 0) >= completed
+            busy = bool(proc and (proc.busy or len(proc.mailbox)))
+            rows.append({
+                "job_id": job_id, "required_turn": target,
+                "completed_turn": completed, "busy": busy,
+                "alive": bool(proc and proc.alive),
+                "feedback": "collected" if read else ("unread" if available else "pending"),
+                "read_turn": completed if available else None,
+            })
+        instructions = (
+            "Collect the full current-release report from every subscriber before choosing "
+            "or implementing the next iteration. Wait with job__wait(condition='idle_after_turn', "
+            "min_turns_by_job=the map below), then read job__output(job_id, turn=the actual "
+            "completed turn), without tail. Pending or unread feedback is not user confirmation. "
+            "If a job ended, read its available report and report the missing scope honestly."
+        )
+        return "<deployment-feedback>\n" + instructions + "\n" + json.dumps({
+            "release_number": release,
+            "source_revision": history[-1].get("source_revision"),
+            "release_url": history[-1].get("release_url") or history[-1].get("url"),
+            "min_turns_by_job": targets, "subscribers": rows,
+        }, ensure_ascii=False) + "\n</deployment-feedback>"
+
     async def initialize(self, workspace_root: Optional[str] = None) -> None:
         """Load the persisted site registry and register built-in profiles. Idempotent."""
         if self._initialized:

@@ -16,6 +16,7 @@ from agentevolver.agent.loop.agent import INHERITED_CONTEXT_MAX
 from agentevolver.agent.loop.executor import ActionExecutor
 from agentevolver.agent.loop.guards import CapabilityChanges
 from agentevolver.agent.loop.router import CapabilityRouter
+from agentevolver.runtime.kernel import Kernel, child_context
 from agentevolver.code import BATCH_CALL_TOOL
 from agentevolver.message.types import AssistantMessage, Function, ToolCall, ToolMessage
 
@@ -131,6 +132,17 @@ async def test_the_calling_convention_is_absent_unless_a_program_can_be_run():
 # ---------------------------------------------------------------------------
 # Delegation
 # ---------------------------------------------------------------------------
+
+
+
+def _register(monkeypatch, child):
+    """Make `child` the agent the registry returns, whatever name is dispatched."""
+    from agentevolver.agent import server as agent_server
+
+    async def get(_name):
+        return child
+
+    monkeypatch.setattr(agent_server.agent_manager, "get", get)
 
 
 def _ctx(**extra):
@@ -260,7 +272,7 @@ def test_a_child_context_carries_lineage_and_scope_but_not_the_parents_run():
         "read_set": ["src/parser.py"],
         "acceptance": ["tests pass"],
     }
-    child_ctx = CapabilityRouter()._child_context(
+    child_ctx = child_context(
         SimpleNamespace(name="worker"),
         brief, SimpleNamespace(name="meta_agent"), parent_ctx,
     )
@@ -286,7 +298,7 @@ def test_parent_history_requires_this_dispatch_to_opt_in(monkeypatch, fork):
         brief["fork"] = fork
     child = Agent(name="child")
     # A parent having opted in must not automatically opt its own children in.
-    child.ctx = CapabilityRouter._child_context(child, brief, parent, _ctx(fork=True))
+    child.ctx = child_context(child, brief, parent, _ctx(fork=True))
     child.proc = SimpleNamespace(parent_pid="parent-pid")
     reads = []
 
@@ -316,27 +328,26 @@ async def test_dispatch_applies_model_budget_reasoning_and_environment(monkeypat
                   allow_token_budget_override=allow_override)
     captured = {}
 
-    async def build(name):
-        return child
-
     async def spawn(agent, task, **kwargs):
-        captured.update(kwargs)
+        # The registry holds the program; a dispatch spawns a fresh copy of it, so what
+        # the brief changed is on the copy rather than on the registered template.
+        captured.update(kwargs, child=agent)
         return SimpleNamespace(pid="child-pid")
 
-    router = CapabilityRouter(kernel=SimpleNamespace(spawn=spawn))
-    monkeypatch.setattr(router, "_build_child", build)
-    call = ActionCall(id="c", name="child", args={
+    kernel = Kernel()
+    monkeypatch.setattr(kernel, "spawn", spawn)
+    _register(monkeypatch, child)
+    await kernel.dispatch("child", {
         "task": "go", "model": "chosen", "reasoning_effort": "high",
-        "token_budget": budget, "environment_allowlist": [], "run_in_background": True,
-    })
-    result = await router._invoke_agent(call, ("agent", "child"), Agent(), _ctx())
-    assert result.ok
-    assert child.model_name == "chosen"
-    assert child.max_token == (expected if allow_override else 100)
-    child.ctx = captured["ctx"]
-    assert child.request_input([], [])["reasoning_effort"] == "high"
-    assert child.ctx.extra["environment_allowlist"] == []
-    assert "environment_allowlist" in child.ctx.extra["_granted_allowlists"]
+        "token_budget": budget, "environment_allowlist": [],
+    }, parent=Agent(), ctx=_ctx())
+    spawned = captured["child"]
+    assert spawned.model_name == "chosen"
+    assert spawned.max_token == (expected if allow_override else 100)
+    spawned.ctx = captured["ctx"]
+    assert spawned.request_input([], [])["reasoning_effort"] == "high"
+    assert spawned.ctx.extra["environment_allowlist"] == []
+    assert "environment_allowlist" in spawned.ctx.extra["_granted_allowlists"]
 
 
 @pytest.mark.parametrize("args", [
@@ -417,9 +428,7 @@ async def test_worktree_dispatch_keeps_parent_clean_and_archives_patch(bound_ses
     kernel = Kernel()
     parent = Agent()
     router = CapabilityRouter(kernel=kernel)
-    async def build(name):
-        return Worker(name=name)
-    monkeypatch.setattr(router, "_build_child", build)
+    _register(monkeypatch, Worker(name="worker"))
     try:
         await kernel.spawn(parent, resident=True, start_idle=True)
         with permission_manager.scope("workspace_write", workspace=str(source)):
@@ -445,17 +454,17 @@ async def test_worktree_dispatch_keeps_parent_clean_and_archives_patch(bound_ses
 async def test_failed_child_reason_reaches_parent_tool_message(monkeypatch):
     from agentevolver.runtime.states import ExitStatus
 
-    async def build(name):
-        return Agent(name=name)
-
     async def spawn(*args, **kwargs):
         return SimpleNamespace(pid="failed-child", exit_status=ExitStatus.FAILED)
 
     async def wait(proc):
         return SimpleNamespace(success=False, message="Token limit reached")
 
-    router = CapabilityRouter(kernel=SimpleNamespace(spawn=spawn, wait=wait))
-    monkeypatch.setattr(router, "_build_child", build)
+    kernel = Kernel()
+    monkeypatch.setattr(kernel, "spawn", spawn)
+    monkeypatch.setattr(kernel, "wait", wait)
+    _register(monkeypatch, Agent(name="child"))
+    router = CapabilityRouter(kernel=kernel)
     result = await router._invoke_agent(
         ActionCall(id="c", name="child", args={"task": "go"}),
         ("agent", "child"), Agent(), _ctx(),
@@ -605,7 +614,7 @@ def test_a_child_is_told_which_kind_of_component_it_is_working_on():
         "target_type": "tool",
         "target_name": "lore_timeline_tool",
     }
-    child = CapabilityRouter._child_context(SimpleNamespace(name="worker"), brief, parent, _ctx())
+    child = child_context(SimpleNamespace(name="worker"), brief, parent, _ctx())
 
     assert child.extra["target_type"] == "tool"
     assert child.extra["target_name"] == "lore_timeline_tool"
@@ -614,7 +623,7 @@ def test_a_child_is_told_which_kind_of_component_it_is_working_on():
 def test_an_ordinary_dispatch_carries_no_target():
     """Only an evolution dispatch names one; a worker must not inherit a stale target."""
     parent = SimpleNamespace(name="meta_agent")
-    child = CapabilityRouter._child_context(SimpleNamespace(name="worker"), {"task": "read the log"}, parent, _ctx())
+    child = child_context(SimpleNamespace(name="worker"), {"task": "read the log"}, parent, _ctx())
     assert "target_type" not in child.extra
     assert "target_name" not in child.extra
 
@@ -624,6 +633,6 @@ def test_a_blank_target_is_not_carried_as_an_empty_string():
     check and then fail the enum, which is the harder failure to read."""
     parent = SimpleNamespace(name="meta_agent")
     brief = {"task": "x", "target_type": "  ", "target_name": ""}
-    child = CapabilityRouter._child_context(SimpleNamespace(name="worker"), brief, parent, _ctx())
+    child = child_context(SimpleNamespace(name="worker"), brief, parent, _ctx())
     assert "target_type" not in child.extra
     assert "target_name" not in child.extra

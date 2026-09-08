@@ -31,7 +31,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import time
-from typing import Any, ClassVar, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -281,8 +281,6 @@ class Agent(BaseModel):
         #: contract gate that never opens is a protocol fault, and a run that cannot
         #: name it as one spends its whole budget retrying: measured at 58 of 133 steps
         #: alternating deploy and done against a gate whose input could not change.
-        self._blocker_repeats = 0
-        self._last_blocker = ""
         self._thread_process: str = ""
         self._thread_path: Any = None
 
@@ -402,8 +400,6 @@ class Agent(BaseModel):
         self._unspent_tokens = 0
         # Per-run, like everything above it: a resident process runs many turns, and a
         # gate that blocked the previous one must not count against this one.
-        self._blocker_repeats = 0
-        self._last_blocker = ""
         await self._emit_start()
 
         for step in range(self.max_step):
@@ -470,48 +466,6 @@ class Agent(BaseModel):
             self._truncated_turns = 0
 
             if decision.final:
-                blocker = await self.completion_blocker(ctx)
-                if blocker and self._stuck_on(blocker):
-                    # The same gate has refused this many times with nothing changing.
-                    # Landing here with the reason stated beats spending the remaining
-                    # budget retrying a gate whose input the agent cannot move.
-                    logger.error(
-                        f"| 🚧 [{self.name}] blocked {self._blocker_repeats}x by the same "
-                        f"contract gate; landing: {blocker}"
-                    )
-                    self.conversation.append(decision.as_assistant())
-                    await self._post_step(step, decision, ())
-                    return self._failed(
-                        f"Protocol blocker, unchanged after {self._blocker_repeats} "
-                        f"completion attempts: {blocker}"
-                    )
-                if blocker:
-                    # Not finished after all. Recorded as an ordinary turn and answered
-                    # in the live layer, so the model reads why and keeps working rather
-                    # than seeing its answer silently ignored.
-                    #
-                    # With the repeat count, because the loop already knows it and the
-                    # agent does not. Told only the reason, an agent reads every refusal
-                    # as the first one: a builder answered the same gate six times over
-                    # fifty minutes, each time restating the work it had already done,
-                    # because nothing said that answer had been given and rejected
-                    # before. The count is what turns "try again" into "try something
-                    # else", and it belongs to every agent that can be refused, not to
-                    # whichever gate happens to refuse it.
-                    again = (
-                        f" You have now been told this {self._blocker_repeats} times and "
-                        f"nothing it names has changed; repeating your last answer will "
-                        f"not move it. Either act on what it names, or report why you "
-                        f"cannot."
-                        if self._blocker_repeats > 1 else ""
-                    )
-                    self.conversation.append(decision.as_assistant())
-                    self.conversation.note(
-                        f"<not-finished>\nThis run cannot complete yet: {blocker}.{again}"
-                        "\n</not-finished>"
-                    )
-                    self._notes.append(f"You cannot finish yet: {blocker}.{again}")
-                    continue
                 self.conversation.append(decision.as_assistant())
                 # Closed like any other step. A text-only ending ran a whole step —
                 # a model call, a recorded turn — and returning here without POST_STEP
@@ -534,11 +488,7 @@ class Agent(BaseModel):
 
             finished = next((result for result in results if result.final), None)
             if finished is not None:
-                blocker = await self.completion_blocker(ctx)
-                if blocker:
-                    self._notes.append(f"You cannot finish yet: {blocker}.")
-                else:
-                    return self._finish(finished.output)
+                return self._finish(finished.output)
 
             self._notes.extend(
                 f"Action {result.call.name!r} failed: {result.error}"
@@ -690,42 +640,53 @@ class Agent(BaseModel):
             return ""
 
     async def prepare_task(
-        self, task: str, files: List[str], ctx: Any
+        self, task: str, files: List[str], ctx: Any, *,
+        private_roles: Sequence[str] = (),
+        manifest_updates: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, List[str]]:
         """What this run is actually about, before the first prompt is built.
 
-        The seam for an agent that must rewrite its own brief — routing private inputs
-        away from what the model sees, for instance. Returns the task and files the run
-        proceeds with.
+        Launchers declare roles and obligations in the task manifest. This common
+        lifecycle resolves attachments, registers subscribers through runtime and
+        projects public input. Domain tools interpret their own task declarations.
+        Domain actors need no override for this flow.
         """
-        return task, files
+        from agentevolver.task.context import (
+            bind_manifest,
+            parse_manifest,
+            public_manifest,
+            subscriber_declarations,
+        )
 
-    #: Completion attempts refused by an unchanged blocker before a run lands anyway.
-    MAX_BLOCKER_REPEATS: ClassVar[int] = 6
+        bound = bind_manifest(task, files)
+        if bound is None:
+            return task, files
+        manifest = bound[2]
+        declared_private = manifest.get("private_attachment_roles", [])
+        if not isinstance(declared_private, list) or any(not isinstance(role, str) for role in declared_private):
+            raise ValueError("private_attachment_roles must be a list of roles")
+        updates = dict(manifest_updates or {})
+        declarations = subscriber_declarations(manifest)
+        if declarations:
+            from agentevolver.runtime import kernel
 
-    def _stuck_on(self, blocker: str) -> bool:
-        """Whether this exact blocker has refused too many times to be worth retrying.
-
-        Compared verbatim: a gate whose message changes is a gate whose input is moving,
-        and a run making progress toward it should not be cut short. What this catches is
-        the other shape — the identical sentence, step after step, because the thing it
-        waits for cannot happen.
-        """
-        if blocker != self._last_blocker:
-            self._last_blocker = blocker
-            self._blocker_repeats = 1
-            return False
-        self._blocker_repeats += 1
-        return self._blocker_repeats >= self.MAX_BLOCKER_REPEATS
-
-    async def completion_blocker(self, ctx: Any) -> Optional[str]:
-        """Why this run may not finish yet, or None to let it.
-
-        Consulted at every exit the model can choose. A domain with a contract to meet —
-        so many releases, so many reviews — states it here instead of hoping the prompt
-        is persuasive, and the reason travels back so the model knows what is missing.
-        """
-        return None
+            jobs = await kernel.bootstrap_subscribers(declarations, parent=self, ctx=ctx)
+            updates["subscribers"] = [
+                {"id": entry["id"], "job_id": jobs[entry["id"]],
+                 "topics": list(entry["brief"]["subscription_topics"])}
+                for entry in declarations
+            ]
+        public_task, public_files = public_manifest(
+            *bound, private_roles=set(private_roles) | set(declared_private), updates=updates,
+        )
+        extra = getattr(ctx, "extra", None)
+        if isinstance(extra, dict):
+            extra["task_files"] = list(public_files)
+            extra["task_manifest"] = parse_manifest(public_task)[2]
+            # Shared across tool-context conversions; child processes get their own
+            # state. The loop neither interprets nor enforces domain policy here.
+            extra.setdefault("task_state", {})
+        return public_task, public_files
 
     async def system_messages(self, ctx: Any) -> List[Message]:
         """The fixed instructions.

@@ -69,7 +69,7 @@ def _parent_ctx(pid):
     return SimpleNamespace(
         id="s1",
         extra={
-            "website_runtime_contract": {"subscriber_job_ids": [pid], "collected_turns": {}},
+            "deployment_contract": {"subscriber_job_ids": [pid], "collected_turns": {}},
             "deployment_release_history": [{"release_number": 1}],
         },
     )
@@ -95,7 +95,7 @@ async def test_reading_records_the_collected_turn(subscriber):
     await environment_manager(
         name="job", action="output", input={"job_id": proc.pid, "turn": 1}, ctx=ctx,
     )
-    contract = ctx.extra["website_runtime_contract"]
+    contract = ctx.extra["deployment_contract"]
     assert contract["collected_turns"] == {proc.pid: 1}
     acceptance = contract["release_acceptance"]["1"][proc.pid]
     assert acceptance["status"] == "accepted"
@@ -128,8 +128,8 @@ async def test_an_unknown_id_still_fails(subscriber):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("outcome", ["exited", "failed", "cancelled", "disappeared"])
 async def test_wait_observes_subagent_changes_after_wait_begins(monkeypatch, outcome):
-    from agentevolver.runtime import kernel
     from agentevolver.environment.default.job import JobEnvironment
+    from agentevolver.runtime import kernel
 
     proc = SimpleNamespace(
         pid="changing-child", state=SimpleNamespace(value="running"), alive=True,

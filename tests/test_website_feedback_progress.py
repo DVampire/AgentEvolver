@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from agentevolver.agent.actor.website_builder_agent import WebsiteBuilderAgent
+from agentevolver.deploy import deployment_manager
 from agentevolver.environment.default.job.environment import JobEnvironment
-from agentevolver.tool.default.deployment.deploy import DeployTool
 
 
 @pytest.fixture
@@ -31,7 +31,7 @@ def feedback_round(tmp_path, monkeypatch):
     monkeypatch.setattr("agentevolver.plan.server.read_plan", lambda *a, **k: plan.read_text())
     monkeypatch.setattr("agentevolver.plan.server.plan_path", lambda *a, **k: plan)
     ctx = SimpleNamespace(id="feedback-replay", extra={
-        "website_runtime_contract": {
+        "deployment_contract": {
             "subscriber_job_ids": list(processes), "collected_turns": {},
             "release_turn_floor": {"1": {p: 0 for p in processes},
                                    "2": {"p01": 1, "p02": 1, "p03": 2}},
@@ -57,8 +57,8 @@ async def test_retry_counts_can_be_waited_together_and_full_feedback_collected(f
     for row in result["jobs"]:
         report = await env.output(row["job_id"], turn=row["turns"], ctx=ctx)
         assert processes[row["job_id"]].turn_results[row["turns"]] in report["message"]
-    assert DeployTool._previous_release_blocker(ctx) == ""
-    assert ctx.extra["website_runtime_contract"]["collected_turns"] == {
+    assert deployment_manager.feedback_blocker(ctx) == ""
+    assert ctx.extra["deployment_contract"]["collected_turns"] == {
         "p01": 2, "p02": 2, "p03": 3,
     }
 
@@ -67,40 +67,40 @@ async def test_retry_counts_can_be_waited_together_and_full_feedback_collected(f
 async def test_stale_report_read_cannot_acknowledge_r2(feedback_round):
     ctx, _, _ = feedback_round
     await JobEnvironment().output("p03", turn=2, ctx=ctx)
-    assert DeployTool._acceptance_state(ctx.extra["website_runtime_contract"], 2, "p03") == "pending"
+    assert deployment_manager.acceptance_state(ctx.extra["deployment_contract"], 2, "p03") == "pending"
     builder = WebsiteBuilderAgent()
     builder.ctx = ctx
-    state = await builder.feedback_progress(0)
+    state = deployment_manager.feedback_context(ctx)
     rows = json.loads(state.splitlines()[-2])["subscribers"]
     assert next(r for r in rows if r["job_id"] == "p03")["feedback"] == "unread"
 
 
 @pytest.mark.asyncio
-async def test_feedback_and_stale_plan_reach_the_next_builder_request(feedback_round, monkeypatch):
+async def test_feedback_and_shared_plan_reach_the_next_builder_request(feedback_round, monkeypatch):
     from agentevolver.agent.context.conversation import Conversation
     from agentevolver.agent.loop.agent import Agent
 
     ctx, _, plan = feedback_round
     builder = WebsiteBuilderAgent()
     builder.ctx = ctx
-    builder.middleware = [lambda agent, step: agent.feedback_progress(step)]
+    builder.middleware = []
 
-    async def no_environment(self, ctx):
-        return ""
+    async def environment(self, ctx):
+        return (await JobEnvironment().get_state(ctx=ctx))["state"]
 
-    monkeypatch.setattr(Agent, "environment_state", no_environment)
+    monkeypatch.setattr(Agent, "environment_state", environment)
     conversation = Conversation(task="Improve the product from R2 feedback")
     envelope = builder.assembler.build_envelope(conversation, live=await builder._live_blocks(59))
     projected = "\n".join(message.text for message in envelope.live)
     assert '"feedback": "unread"' in projected and '"p03": 3' in projected
-    assert not ctx.extra["website_runtime_contract"]["collected_turns"]
+    assert not ctx.extra["deployment_contract"]["collected_turns"]
 
     await JobEnvironment().output("p01", turn=2, ctx=ctx)
-    assert "PLAN UNCHANGED SINCE FEEDBACK READ: p01" in await builder.feedback_progress(60)
+    assert "feedback_plan_baselines" not in ctx.extra["deployment_contract"]
     plan.write_text("R2 P01: fix mirrored compass before journal; test spire left/right.\n")
-    # Re-reading must not reset the baseline and incorrectly make the updated plan stale.
+    # Reading feedback does not maintain a second copy or hash of the working plan.
     await JobEnvironment().output("p01", turn=2, ctx=ctx)
-    assert "PLAN UNCHANGED" not in await builder.feedback_progress(61)
+    assert "PLAN UNCHANGED" not in deployment_manager.feedback_context(ctx)
     current = "\n".join(await builder._live_blocks(61))
     assert "test spire left/right" in current
     assert '"feedback": "unread"' in current  # P02/P03 still must be collected.

@@ -58,7 +58,7 @@ Dispatch here names its worker; nothing hands work to whoever is free.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict, NamedTuple
+from typing import Dict, List, NamedTuple
 
 
 class InteractionMode(str, Enum):
@@ -147,11 +147,32 @@ def infer(resident: bool, topics: object) -> InteractionMode:
     return InteractionMode.SERVICE if resident else InteractionMode.RESPONDER
 
 
+def for_brief(brief: Dict[str, object]) -> InteractionMode:
+    """The mode a dispatch brief asks for.
+
+    The dispatch schema says what the caller wants — a topic to listen on, a process that
+    stays addressable — and the mode is what that means. One translation, because the
+    alternative is each dispatching path reading the same two keys and reaching its own
+    conclusion: naming ``subscription_topics`` is what made the router spawn a subscriber,
+    and a caller outside the router had to know that rule to reproduce it.
+    """
+    if brief.get("subscription_topics"):
+        return InteractionMode.SUBSCRIBER
+    return InteractionMode.SERVICE if brief.get("continuable") else InteractionMode.RESPONDER
+
+
+def topics_of(brief: Dict[str, object]) -> List[str]:
+    """The topic edges a dispatch brief asks for, as the kernel wants them."""
+    return [str(item) for item in (brief.get("subscription_topics") or ())]
+
+
 __all__ = [
     "LIFECYCLES",
     "InteractionMode",
     "Lifecycle",
     "check_topics",
+    "for_brief",
     "infer",
     "lifecycle",
+    "topics_of",
 ]

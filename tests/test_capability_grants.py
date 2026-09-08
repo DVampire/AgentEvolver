@@ -24,7 +24,8 @@ from types import SimpleNamespace
 import pytest
 import pytest_asyncio
 
-from agentevolver.agent.loop.router import GRANTED_ALLOWLISTS, CapabilityRouter, grant
+from agentevolver.agent.loop.router import CapabilityRouter
+from agentevolver.runtime.kernel import GRANTED_ALLOWLISTS, child_context, grant
 from agentevolver.agent.types import AgentContext
 
 
@@ -66,7 +67,7 @@ def _ctx(session: str):
 
 def test_a_dispatch_grant_reaches_the_child():
     """The schema declared these; nothing read them. Same shape as `target_type`."""
-    child = CapabilityRouter._child_context(
+    child = child_context(
         SimpleNamespace(name="worker"),
         {
             "task": "verify the release",
@@ -83,7 +84,7 @@ def test_a_dispatch_grant_reaches_the_child():
 
 def test_an_ordinary_dispatch_grants_nothing():
     """Absent a grant the child keeps its own class default, whatever that is."""
-    child = CapabilityRouter._child_context(
+    child = child_context(
         SimpleNamespace(name="worker"),
         {"task": "read the log"}, SimpleNamespace(name="meta"),
         SimpleNamespace(id="parent", extra={}),

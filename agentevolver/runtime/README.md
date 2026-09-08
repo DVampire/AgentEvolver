@@ -30,6 +30,25 @@ same kind of thing here — each is an object with a `__call__` and some optiona
 
 `Kernel` drives the registered Agent implementations through their `__call__` contract.
 
+Launchers declare task-specific roles in the input manifest. The common
+`Agent.prepare_task(task, files, ctx)` implementation resolves those declarations;
+actors need no custom preparation hook. Initial subscribers are registered with
+`kernel.bootstrap_subscribers(declarations, parent=agent, ctx=ctx)`, where each declaration
+contains `id`, `agent` and a dispatch `brief` with `subscription_topics`. The result maps
+declaration IDs to process IDs. The kernel validates the whole declaration list, uses
+the normal dispatch path for permissions and child contexts, and stops and joins already
+created children if setup fails. Repeating an identical setup in the same context reuses
+its IDs; it does not silently replace failed subscribers or change their standing briefs.
+
+Public task input goes through the base `Agent.prepare_task(...)` implementation, with
+optional `private_roles` and `manifest_updates`. It uses `task.context.public_manifest`
+to return both the text and its matching public file list. The base keeps public
+`task_manifest`, `task_files` and shared `task_state` in context for capabilities to use.
+Tool context conversion shares that state; child processes inherit none of these records.
+Business declarations are interpreted by their tools/managers, never by the Agent exit path.
+This mechanism contains no website-specific roles or verdict rules. It filters model input
+and is separate from sandbox filesystem permissions.
+
 ## Six states, one exit
 
 ```

@@ -26,7 +26,6 @@ The seams that exist for a reason, when a declaration truly is not enough:
     project_context()     what the agent is told about the workspace
     working_memory()      what it carries between steps
     on_step()             advice for this step — prefer middleware in `loop/guards.py`
-    completion_blocker()  a reason this run may not finish yet
     finalize()            shape the final Response
     on_start/on_land/on_exit/on_suspend/on_resume    runtime phases
 """

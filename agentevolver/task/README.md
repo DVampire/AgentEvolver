@@ -43,6 +43,22 @@ agent is the only party that knows whether the objective was met or whether it i
 so `complete` and `blocked` are its to claim, and a human can read the claim and overturn
 it.
 
+## Declarative subscribers
+
+An optional `runtime-input-manifest` declares `attachments`, `private_attachment_roles`,
+and `subscribers`. Each subscriber has `id`, `agent`, a normal dispatch `brief`, and an
+optional list of attachment IDs. `task.context` resolves those IDs against staged files
+and expands only the assigned documents into the child brief. The parent receives public
+subscriber/job bindings, never the expanded child briefs or private file paths.
+
+The common `Agent.prepare_task` invokes runtime creation. A task can also declare a
+`deployment` policy with `topic`, `required_releases` and `acceptance_subscriber`;
+the deploy tool passes it to deployment manager on use. The base Agent preserves this
+declaration without interpreting deployment rules. Other tasks omit this policy. Experiment-specific prompts
+and counts belong to launchers, not to actor implementations.
+
+This is model-input routing. Sandbox permissions remain a separate boundary.
+
 Authority is never a tool argument. `authority_of(ctx)` derives it from two facts the
 model cannot reach: the context is not a dispatched sub-agent, and the host stamped the
 run with `human_turn` when it accepted a request a human actually made. A model that

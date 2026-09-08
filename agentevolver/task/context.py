@@ -17,11 +17,12 @@ content and the view is the document body as-authored.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from html import unescape
 from html.parser import HTMLParser
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Container, Dict, List, Optional, Tuple
 
 from agentevolver.paths import P, path_manager
 from agentevolver.task.types import TaskDocument
@@ -216,3 +217,181 @@ def resolve_task(
         return document.content, [document.source_path, *attachments], metadata
 
     return default_text, (attachments or None), None
+
+
+# ---------------------------------------------------------------------------
+# Input manifests — attachments a task declares, and the half an agent may read
+# ---------------------------------------------------------------------------
+
+#: Where a task document declares what was attached to it and who each part is for.
+MANIFEST_MARKER = "## runtime-input-manifest"
+
+
+def parse_manifest(task: str) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+    """Read a manifest without binding or opening any attachment."""
+    before, marker, after = str(task).partition(MANIFEST_MARKER)
+    if not marker:
+        return None
+    start = after.find("{")
+    if start < 0:
+        raise ValueError("runtime-input-manifest has no JSON object")
+    try:
+        manifest = json.loads(after[start:])
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"runtime-input-manifest is invalid JSON: {error}") from error
+    if not isinstance(manifest, dict):
+        raise ValueError("runtime-input-manifest must be a JSON object")
+    return before, after[:start], manifest
+
+
+def bind_manifest(
+    task: str, files: Optional[List[str]],
+) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+    """Parse a task's input manifest and bind it to the paths staging actually used.
+
+    A launcher declares attachments by id and role while it is writing the task; staging
+    happens afterwards and chooses the paths. So what the document says and where the
+    bytes are only agree once something rebinds them — and it must agree exactly, which
+    is why a count mismatch is refused rather than zipped short.
+
+    Here rather than in an agent because nothing about it is one domain's: a task with
+    attachments, some of which are for the run's children and not for the run, is a shape
+    any orchestrator can have. What is a domain's is which roles those are.
+
+    Returns:
+        ``(text before the marker, the marker's prose, the bound manifest)``, or None
+        when the task declares no manifest at all.
+    """
+    attachments = [str(path) for path in (files or [])]
+    parsed = parse_manifest(task)
+    if parsed is None:
+        return None
+    before, explanation, manifest = parsed
+    declared = manifest.get("attachments")
+    if not isinstance(declared, list):
+        raise ValueError("runtime-input-manifest must contain an attachments list")
+    if len(declared) != len(attachments):
+        raise ValueError(
+            "runtime-input-manifest attachment count does not match staged files: "
+            f"declared={len(declared)}, staged={len(attachments)}"
+        )
+    rebound = []
+    identifiers = set()
+    for index, (entry, staged_path) in enumerate(zip(declared, attachments)):
+        if not isinstance(entry, dict) or not entry.get("id") or not entry.get("role"):
+            raise ValueError(f"runtime-input-manifest attachment {index} requires id and role")
+        identifier = str(entry["id"]).strip()
+        if not identifier or identifier in identifiers:
+            raise ValueError(f"runtime-input-manifest attachment id is empty or duplicated: {identifier!r}")
+        identifiers.add(identifier)
+        bound = dict(entry)
+        bound["id"] = identifier
+        bound.pop("source_path", None)
+        bound["path"] = staged_path
+        bound["staged"] = True
+        rebound.append(bound)
+    manifest["attachments"] = rebound
+    manifest["paths_staged"] = True
+    return before.rstrip(), explanation.strip(), manifest
+
+
+def render_manifest(before: str, explanation: str, manifest: Dict[str, Any]) -> str:
+    """A task text with its manifest written back into it."""
+    return (
+        f"{before}\n\n{MANIFEST_MARKER}\n"
+        f"{explanation}\n"
+        f"{json.dumps(manifest, ensure_ascii=False, indent=2)}"
+    )
+
+
+def without_private_paths(
+    manifest: Dict[str, Any], private_roles: Container[str],
+) -> Dict[str, Any]:
+    """A copy of ``manifest`` in which private attachments have no path to open.
+
+    The privacy boundary itself, and one implementation of it: an agent given the path of
+    a document routed to its children can read what it is being judged against, and the
+    difference between "it has the path" and "it does not" is these three keys.
+    """
+    public = json.loads(json.dumps(manifest))
+    for entry in public.get("attachments") or []:
+        entry.pop("source_path", None)
+        if entry.get("role") in private_roles:
+            entry.pop("path", None)
+            entry.pop("staged", None)
+            entry["routing"] = "runtime_private"
+    return public
+
+
+def public_manifest(
+    before: str,
+    explanation: str,
+    manifest: Dict[str, Any],
+    *,
+    private_roles: Container[str] = (),
+    updates: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, List[str]]:
+    """Project a bound task into public text and its matching attachment list.
+
+    Role policy and public runtime bindings come from the caller. Applying both
+    projections here prevents a private path hidden in JSON from still being loaded
+    through the agent's file list. The original manifest stays available for routing
+    private inputs; this controls model input, not filesystem access permissions.
+    """
+    public = dict(manifest)
+    public.update(updates or {})
+    public = without_private_paths(public, private_roles)
+    files = [
+        str(item["path"])
+        for item in public.get("attachments") or []
+        if item.get("role") not in private_roles and item.get("path")
+    ]
+    return render_manifest(before, explanation, public), files
+
+
+def documents_text(paths: List[str], *, label: str) -> str:
+    """Several task documents as one text, for a reader that has no file tool.
+
+    An empty one is refused: a subscriber handed a blank persona reports having no
+    context at all, which reads as a routing bug rather than as an empty file.
+    """
+    documents = []
+    for path in paths:
+        document = load_task_document(path)
+        if not document.content.strip():
+            raise ValueError(f"{label} attachment is empty: {path}")
+        documents.append(document.content.strip())
+    return "\n\n".join(documents)
+
+
+def subscriber_declarations(manifest: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Resolve explicitly assigned attachments into generic runtime subscriber briefs.
+
+    All files are read before startup. The input manifest stays unmodified so expanded
+    private briefs cannot accidentally be rendered back into the parent's task.
+    """
+    declared = manifest.get("subscribers", [])
+    if not isinstance(declared, list):
+        raise ValueError("subscribers must be a list")
+    attachments = {item["id"]: item for item in manifest.get("attachments", [])}
+    result = []
+    for item in declared:
+        if not isinstance(item, dict) or not isinstance(item.get("brief"), dict):
+            raise ValueError("Each subscriber requires id, agent and brief")
+        entry = json.loads(json.dumps(item))
+        refs = entry.pop("attachments", [])
+        if not isinstance(refs, list):
+            raise ValueError("subscriber attachments must be a list of attachment IDs")
+        paths = []
+        for ref in refs:
+            attachment = attachments.get(str(ref))
+            if not attachment or not attachment.get("path"):
+                raise ValueError(f"Subscriber {entry.get('id')!r} has no staged attachment {ref!r}")
+            paths.append(str(attachment["path"]))
+        if paths:
+            entry["brief"]["task"] = str(entry["brief"].get("task") or "") + (
+                "\n\n--- assigned task context ---\n"
+                + documents_text(paths, label=f"subscriber {entry.get('id')}")
+            )
+        result.append(entry)
+    return result

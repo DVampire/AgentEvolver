@@ -108,14 +108,14 @@ Adapt this loop to the current task; it is a decision framework, not a fixed Wor
    returned deployed URL, including any path prefix. Never substitute a direct source port for the deployed result.
    Keep the returned version number, revision and pinned URL in the handoff so earlier
    previews and releases can be opened for comparison. Do not delete their archives.
-   When the manifest supplies `runtime_subscription`, every successful deploy automatically sends the
+   When `deploy_tool(action="status")` reports an independent acceptance subscription, each deploy sends the
    exact URL and source revision to the pre-registered independent Browser Agent; do not dispatch a
    duplicate post-release acceptance worker. That subscription is a post-publish check and does not
    replace the bounded pre-release Browser task. Do not use its resident job for preview testing:
    its turn numbers belong to published releases.
    Keep preview build numbers, persistent deployment version numbers, and task feedback rounds
    distinct in reports. A second preview is not a second user-informed product iteration.
-5. Co-design: when `runtime_subscription` supplies participant job ids, Runtime has already created
+5. Co-design: when the task declares participant subscriptions, Runtime has already created
    continuable Website User Agents and privately assigned their contexts. A deployment automatically
    becomes each participant's next personalized UI turn. Do not dispatch duplicate participants or ask
    for their hidden contexts; do not use them as the release test team. For an ordinary task without
@@ -178,7 +178,8 @@ When user participation is part of the task:
   or rejected contributions when the task requires an audit trail.
 - Use `send_message_tool` only to continue a known participant or specialist. Do not create a
   long-lived Agent when a single bounded consultation is enough.
-- Under a `runtime_subscription` contract, use its existing job ids. After each deploy, wait for every
+- When the manifest declares `deployment`, call `deploy_tool(action="status")` to inspect its
+  requirements and subscriber bindings; use the existing job ids. After each deploy, wait for every
   id to become `idle_after_turn`, using `min_turns_by_job` from the live feedback context or
   `subscriber_min_turns` in the deploy receipt. Read the actual completed `turn` returned for each
   job, without `tail`, before deciding or implementing the next change. Retries mean a release number
@@ -236,6 +237,8 @@ Before `done_tool`:
 - every task acceptance criterion is implemented or explicitly reported as blocked;
 - relevant checks have run against the final source, and failures or limitations are stated plainly;
 - any requested deployment has been verified at its exact returned URL;
+- for declared release requirements, check `deploy_tool(action="status")` and address its unmet
+  conditions, or report them explicitly as blocked; ending the Agent does not certify acceptance;
 - every self-initiated capability evolution is evaluated and explicitly kept, rolled back, or unloaded;
 - independent Browser Agent acceptance has passed when the task manifest requires it;
 - delegated findings used in the result are backed by product or runtime evidence;

@@ -633,6 +633,93 @@ def test_run_budget_preserves_explicit_context_total(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def _subscriber(identifier, *, agent="watcher", topic="artifact.ready"):
+    return {"id": identifier, "agent": agent, "brief": {
+        "task": f"Review artifacts for {identifier}", "subscription_topics": [topic],
+    }}
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_uses_dispatch_and_reuses_registered_subscribers(kernel, monkeypatch):
+    from agentevolver.agent.server import agent_manager
+    from agentevolver.agent.types import AgentContext
+
+    async def get(name):
+        return Steps(name=name)
+
+    monkeypatch.setattr(agent_manager, "get", get)
+    parent = SimpleNamespace(proc=None, permission_mode="read_only")
+    ctx = AgentContext(name="coordinator", extra={"root_session_id": "root-task"})
+    declarations = [_subscriber("review"), _subscriber("metrics", agent="metrics")]
+    jobs = await kernel.bootstrap_subscribers(declarations, parent=parent, ctx=ctx)
+    await asyncio.sleep(0)
+
+    assert list(jobs) == ["review", "metrics"]
+    processes = [kernel.get(pid) for pid in jobs.values()]
+    assert all(proc.resident and proc.turns == 0 for proc in processes)
+    assert all(proc.ctx.id != ctx.id for proc in processes)
+    assert processes[0].ctx.id != processes[1].ctx.id
+    assert all(proc.ctx.extra["root_session_id"] == "root-task" for proc in processes)
+    assert all(proc.agent.permission_mode == "read_only" for proc in processes)
+    assert await kernel.bootstrap_subscribers(declarations, parent=parent, ctx=ctx) == jobs
+    assert len(kernel.list()) == 2
+
+    # Callers cannot mutate the saved bindings by changing the returned dictionary.
+    jobs.clear()
+    assert len(await kernel.bootstrap_subscribers(declarations, parent=parent, ctx=ctx)) == 2
+    with pytest.raises(ValueError, match="differs from the established"):
+        await kernel.bootstrap_subscribers([_subscriber("other")], parent=parent, ctx=ctx)
+    assert len(kernel.list()) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid", [
+    {"id": "review", "agent": "watcher", "brief": {"task": "no topic"}},
+    {"id": "review", "agent": "watcher", "brief": {"subscription_topics": "not-a-list"}},
+    {"id": "review", "agent": "watcher", "brief": {"subscription_topics": [""]}},
+    _subscriber("first"),  # Duplicate ID after a valid first declaration.
+])
+async def test_bootstrap_validates_entire_panel_before_dispatch(kernel, monkeypatch, invalid):
+    from unittest.mock import AsyncMock
+
+    dispatch = AsyncMock()
+    monkeypatch.setattr(kernel, "dispatch", dispatch)
+    ctx = SimpleNamespace(extra={})
+    with pytest.raises(ValueError):
+        await kernel.bootstrap_subscribers(
+            [_subscriber("first"), invalid], parent=SimpleNamespace(), ctx=ctx,
+        )
+    dispatch.assert_not_awaited()
+    assert "_runtime_subscribers" not in ctx.extra
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_failure_reaps_created_subscribers_and_allows_retry(kernel, monkeypatch):
+    from agentevolver.agent.server import agent_manager
+    from agentevolver.agent.types import AgentContext
+
+    available = {"watcher"}
+
+    async def get(name):
+        return Steps(name=name) if name in available else None
+
+    monkeypatch.setattr(agent_manager, "get", get)
+    parent = SimpleNamespace(proc=None)
+    ctx = AgentContext(name="coordinator")
+    declarations = [_subscriber("review"), _subscriber("metrics", agent="missing")]
+    with pytest.raises(LookupError, match="not registered"):
+        await kernel.bootstrap_subscribers(declarations, parent=parent, ctx=ctx)
+    assert "_runtime_subscribers" not in ctx.extra
+    assert kernel.list() == []
+    assert len(kernel.list(alive_only=False)) == 1
+    assert all(proc.exited for proc in kernel.list(alive_only=False))
+
+    available.add("missing")
+    jobs = await kernel.bootstrap_subscribers(declarations, parent=parent, ctx=ctx)
+    assert len(jobs) == 2
+    assert all(kernel.get(pid).alive for pid in jobs.values())
+
+
 @pytest.mark.asyncio
 async def test_a_subscriber_registers_idle_and_spends_one_turn_per_event(kernel):
     agent = Steps(name="watcher", steps=1)

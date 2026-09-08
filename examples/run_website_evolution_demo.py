@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -42,8 +41,6 @@ SCENARIO_ROOT = ROOT / "examples" / "tasks" / "website_evolution"
 DEFAULT_SCENARIO_DIR = SCENARIO_ROOT / "arkbound_game"
 DEFAULT_CONFIG = ROOT / "configs" / "website_evolution_demo.py"
 OPTIMIZATION_CYCLES = 5
-INITIAL_STEP_BUDGET = 36
-ITERATION_STEP_BUDGET = 30
 DEFAULT_USER_MODELS = [
     "llm_hub/gpt-6-astra",
     "llm_hub/claude-fable-5-1",
@@ -166,71 +163,81 @@ def resolve_inputs(args: argparse.Namespace) -> tuple[Path, Path, list[Path]]:
     return config_path, site_brief, personas
 
 
+USER_VISIT_BRIEF = (
+    'You are {participant_id}, a continuable website co-design participant. For every '
+    'deployment.ready event, open only its exact URL, pursue your own personal goals through '
+    'the visible UI, and return concise grounded needs, preferences, successful outcomes, and '
+    'blockers. In co-design, express a personally meaningful desired experience, not only '
+    'defect reports. On later visits, try prior requested changes and state what is still '
+    'unmet; distinguish observations from new aspirations. '
+).strip()
+
+RELEASE_ACCEPTANCE_BRIEF = (
+    'Act as the independent release acceptance browser. For every deployment.ready event, test '
+    'only the exact deployed URL against the release requirements below. Use a bounded, '
+    'risk-based scope: public entry, one representative complete primary journey, and '
+    'regressions suggested by the release changes or native browser diagnostics. Use prior '
+    'verified evidence for unchanged behavior only when its source identity and scope are '
+    'known; otherwise verify it. The brief defines product obligations, not an instruction to '
+    'exhaust every optional route, setting or performance experiment on every visit. State your '
+    'scope, executed checks and untested limitations. Stop when that scope has a verdict or a '
+    'reproducible blocker; do not use the whole budget on extra polish. The first non-empty '
+    'line of your final result must be exactly `VERDICT: PASS` only when every required journey '
+    'in that scope passes, otherwise `VERDICT: FAIL`; follow it with grounded evidence. A known '
+    'failure of a product requirement cannot be excluded to obtain PASS, and this technical '
+    'verdict is not user satisfaction or exhaustive certification. '
+).strip()
+
 def build_task_text(
     site_brief: Path,
     personas: list[Path],
     user_models: Sequence[str] | None = None,
     acceptance_model: str = DEFAULT_ACCEPTANCE_MODEL,
 ) -> str:
-    from agentevolver.task.context import load_task_document
+    """Declare this experiment; the shared task/runtime lifecycle executes the declaration."""
+    from agentevolver.task.context import load_task_document, render_manifest
 
     document = load_task_document(str(site_brief))
     models = list(user_models or DEFAULT_USER_MODELS)
+    if len(models) != len(personas):
+        raise ValueError("Each persona requires exactly one user model")
+    participants = [
+        {
+            "id": f"participant_{index:02d}", "agent": "website_user_agent",
+            "brief": {"model": model, "subscription_topics": ["deployment.ready"],
+                      "task": USER_VISIT_BRIEF.format(participant_id=f"participant_{index:02d}")},
+            "attachments": [f"persona_{index:02d}"],
+        }
+        for index, model in enumerate(models, start=1)
+    ]
     manifest = {
         "attachments": [
-            {
-                "id": "site_brief",
-                "role": "requirements",
-            },
-            *[
-                {
-                    "id": f"persona_{index:02d}",
-                    "role": "user_context",
-                }
-                for index, _path in enumerate(personas, start=1)
-            ],
+            {"id": "site_brief", "role": "requirements"},
+            *[{"id": f"persona_{index:02d}", "role": "user_context"}
+              for index, _ in enumerate(personas, start=1)],
         ],
-        "optimization_cycles": OPTIMIZATION_CYCLES,
-        "initial_step_budget": INITIAL_STEP_BUDGET,
-        "iteration_step_budget": ITERATION_STEP_BUDGET,
-        "participants": [
-            {
-                "id": f"participant_{index:02d}",
-                "user_context_attachment": f"persona_{index:02d}",
-                "model": model,
-            }
-            for index, model in enumerate(models, start=1)
+        "private_attachment_roles": ["user_context"],
+        "subscribers": [
+            *participants,
+            {"id": "release-acceptance", "agent": "browser_agent",
+             "brief": {"model": acceptance_model, "subscription_topics": ["deployment.ready"],
+                       "task": RELEASE_ACCEPTANCE_BRIEF},
+             "attachments": ["site_brief"]},
         ],
-        "release_acceptance": {
-            "agent": "browser_agent",
-            "model": acceptance_model,
-            "after_initial_build": True,
-            "after_each_optimization": True,
-            "exact_deployed_url_only": True,
-            "independent_from_user_codesign": True,
-        },
-        "codesign_policy": {
-            "participants_are_evaluators": False,
-            "continue_participant_identity": True,
-            "fresh_browser_each_conversation_turn": True,
-        },
-        "run_policy": {
-            "blind_initial_build": True,
-        },
-        "privacy_rule": (
-            "Runtime privately routes each persona attachment to exactly one Website User "
-            "Agent. The Website Builder receives participant and job identifiers, never a "
-            "persona path or its contents."
-        ),
+        "deployment": {"required_releases": OPTIMIZATION_CYCLES + 1,
+                       "topic": "deployment.ready", "acceptance_subscriber": "release-acceptance"},
+        "codesign_policy": {"participants_are_evaluators": False,
+                            "continue_participant_identity": True,
+                            "fresh_browser_each_conversation_turn": True},
+        "run_policy": {"blind_initial_build": True},
     }
-    return (
-        f"{document.content}\n\n"
-        "## runtime-input-manifest\n"
+    return render_manifest(
+        document.content,
         "This manifest configures the Agent experiment, not website features. Participant feedback "
         "and clarification travel through Agent results/messages; no in-product developer chat, "
-        "request inbox, or approval UI is implied. It assigns attachment roles without revealing "
-        "persona contents.\n"
-        f"{json.dumps(manifest, ensure_ascii=False, indent=2)}"
+        "request inbox, or approval UI is implied. Private attachments are routed only to their "
+        "declared subscribers.",
+        manifest,
     )
 
 

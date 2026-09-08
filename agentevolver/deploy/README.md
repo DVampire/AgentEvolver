@@ -59,3 +59,26 @@ databases or mutable application data. Direct `git_url` deployments do not yet
 archive cloned source: use a checked-out local source directory when reproducible
 version history is required. Legacy archives without recipe metadata retain their
 source, but can only fall back to the site's last known recipe.
+
+## Task release contracts
+
+Agent preparation only preserves public task declarations and shared `task_state`.
+On `status`, `preview`, `deploy` or `redeploy`, the deploy tool asks deployment manager
+to bind the declared policy and existing subscriber IDs. Deployment records live under
+`ctx.extra.task_state` (`deployment_contract` and `deployment_release_history`), shared
+across tool-context conversions and distinct from persistent site artifact versions.
+Standalone manager callers may bind a context directly with `configure_task`.
+
+`record_preview`, `preview_blocker`, `publish_release` and `consume_preview` manage the
+preview/publication lifecycle. `collect_feedback` acknowledges a completed report only
+when its owner reads the full output. `feedback_context` reports exact unread/current turns.
+
+`deploy_tool(action="status")` exposes `release_status`: configured, ready, reason, release
+counts, subscriber bindings and feedback. Query success is separate from readiness; a task
+without a policy has `configured=false, ready=null`. The manager checks release count,
+source revisions, fanout, acceptance and collection, but this status does not control
+Agent termination. Before handoff the Agent checks it and either addresses unmet conditions
+or reports them as blocked. Neither the base loop nor `done_tool` calls deployment manager.
+
+Removing the hidden completion veto does not by itself recover an overflowing reviewer
+or fix the separate failed-acceptance precondition that can block a repair preview.
