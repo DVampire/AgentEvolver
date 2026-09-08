@@ -328,7 +328,7 @@ class CapabilityRouter(ToolRouter):
 
         from contextlib import ExitStack
 
-        child_ctx = self._child_context(brief, parent, ctx)
+        child_ctx = self._child_context(child, brief, parent, ctx)
         tree = None
         try:
             with ExitStack() as scope:
@@ -400,7 +400,7 @@ class CapabilityRouter(ToolRouter):
     # -- helpers -------------------------------------------------------------
 
     @staticmethod
-    def _child_context(brief: Dict[str, Any], parent: Any, ctx: Any) -> Any:
+    def _child_context(child: Any, brief: Dict[str, Any], parent: Any, ctx: Any) -> Any:
         """A context of the child's own, carrying only what a child should inherit.
 
         Not the parent's context. Sharing it would give a child the parent's session id,
@@ -408,6 +408,13 @@ class CapabilityRouter(ToolRouter):
         history. What crosses is lineage, the resource and acceptance contract, and the
         files: the child then knows what it is scoped to and what it will be judged
         against, rather than learning both from a paraphrase in its task.
+
+        The one place a child's context is built, for every caller that has to build one —
+        including the ones that must build it before a loop exists to dispatch from. The
+        website builder had a second copy for exactly that reason, and the two drifted:
+        this one grants no capability allowlists to a subscriber and never set
+        ``root_session_id``, that one carried neither the task contract nor the dispatch
+        scoping. Removing a key from context inheritance meant finding both.
         """
         from agentevolver.agent.types import AgentContext
 
@@ -422,8 +429,16 @@ class CapabilityRouter(ToolRouter):
         # `trace_integrity_profile` was inherited here too. It is configuration, read from
         # `config` where it is declared and validated, so passing it down a dispatch chain
         # gave a run's descendants a second place to disagree with the setting.
-        keep = {"plugin_allowlist", "workflow_allowlist", "source_workspace"}
+        keep = {"plugin_allowlist", "workflow_allowlist", "source_workspace",
+                # Topics are namespaced `{root}::{name}`, so a subscriber that resolves a
+                # different root than its publisher subscribes to a string nobody sends
+                # to. A child always has its own session id, which makes every dispatched
+                # subscriber silent unless the root travels — `subscription_topics` is in
+                # the dispatch schema precisely so an agent needs no code of its own, and
+                # without this it needed code of its own to work at all.
+                "root_session_id"}
         extra = {key: value for key, value in inherited.items() if key in keep}
+        extra.setdefault("root_session_id", str(getattr(ctx, "id", "") or ""))
         # History sharing is a grant for this dispatch, never inherited transitively.
         extra["fork"] = brief.get("fork") is True
         if "reasoning_effort" in brief:
@@ -455,7 +470,11 @@ class CapabilityRouter(ToolRouter):
         extra["task_files"] = list(brief.get("files") or ())
         extra["parent_session_id"] = str(getattr(ctx, "id", "") or "")
         return AgentContext(
-            name=getattr(parent, "name", ""),
+            # The child's, not the parent's. `ctx.name` is read as "the agent this
+            # context belongs to" — it is the `agent_name` a tool execution records, the
+            # publisher an event carries, the asker on a question — so naming a child's
+            # context after its parent filed the child's every action under the parent.
+            name=getattr(child, "name", "") or getattr(parent, "name", ""),
             extra=extra,
             parent_session_id=str(getattr(ctx, "id", "") or ""),
         )

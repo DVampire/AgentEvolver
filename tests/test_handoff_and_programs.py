@@ -261,6 +261,7 @@ def test_a_child_context_carries_lineage_and_scope_but_not_the_parents_run():
         "acceptance": ["tests pass"],
     }
     child_ctx = CapabilityRouter()._child_context(
+        SimpleNamespace(name="worker"),
         brief, SimpleNamespace(name="meta_agent"), parent_ctx,
     )
 
@@ -285,7 +286,7 @@ def test_parent_history_requires_this_dispatch_to_opt_in(monkeypatch, fork):
         brief["fork"] = fork
     child = Agent(name="child")
     # A parent having opted in must not automatically opt its own children in.
-    child.ctx = CapabilityRouter._child_context(brief, parent, _ctx(fork=True))
+    child.ctx = CapabilityRouter._child_context(child, brief, parent, _ctx(fork=True))
     child.proc = SimpleNamespace(parent_pid="parent-pid")
     reads = []
 
@@ -604,7 +605,7 @@ def test_a_child_is_told_which_kind_of_component_it_is_working_on():
         "target_type": "tool",
         "target_name": "lore_timeline_tool",
     }
-    child = CapabilityRouter._child_context(brief, parent, _ctx())
+    child = CapabilityRouter._child_context(SimpleNamespace(name="worker"), brief, parent, _ctx())
 
     assert child.extra["target_type"] == "tool"
     assert child.extra["target_name"] == "lore_timeline_tool"
@@ -613,7 +614,7 @@ def test_a_child_is_told_which_kind_of_component_it_is_working_on():
 def test_an_ordinary_dispatch_carries_no_target():
     """Only an evolution dispatch names one; a worker must not inherit a stale target."""
     parent = SimpleNamespace(name="meta_agent")
-    child = CapabilityRouter._child_context({"task": "read the log"}, parent, _ctx())
+    child = CapabilityRouter._child_context(SimpleNamespace(name="worker"), {"task": "read the log"}, parent, _ctx())
     assert "target_type" not in child.extra
     assert "target_name" not in child.extra
 
@@ -623,6 +624,6 @@ def test_a_blank_target_is_not_carried_as_an_empty_string():
     check and then fail the enum, which is the harder failure to read."""
     parent = SimpleNamespace(name="meta_agent")
     brief = {"task": "x", "target_type": "  ", "target_name": ""}
-    child = CapabilityRouter._child_context(brief, parent, _ctx())
+    child = CapabilityRouter._child_context(SimpleNamespace(name="worker"), brief, parent, _ctx())
     assert "target_type" not in child.extra
     assert "target_name" not in child.extra

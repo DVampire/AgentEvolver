@@ -67,6 +67,7 @@ def _ctx(session: str):
 def test_a_dispatch_grant_reaches_the_child():
     """The schema declared these; nothing read them. Same shape as `target_type`."""
     child = CapabilityRouter._child_context(
+        SimpleNamespace(name="worker"),
         {
             "task": "verify the release",
             "tool_allowlist": ["done_tool", "media_probe_tool"],
@@ -83,6 +84,7 @@ def test_a_dispatch_grant_reaches_the_child():
 def test_an_ordinary_dispatch_grants_nothing():
     """Absent a grant the child keeps its own class default, whatever that is."""
     child = CapabilityRouter._child_context(
+        SimpleNamespace(name="worker"),
         {"task": "read the log"}, SimpleNamespace(name="meta"),
         SimpleNamespace(id="parent", extra={}),
     )

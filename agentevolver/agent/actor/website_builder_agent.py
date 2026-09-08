@@ -155,6 +155,7 @@ async def start_subscriber(
     model: str,
     task: str,
     files: Optional[List[str]] = None,
+    agent: Any,
     ctx: Any,
     proc: Any,
 ) -> str:
@@ -164,8 +165,8 @@ async def start_subscriber(
     standing brief and it registers idle — no turn is spent waiting for a release
     that has not happened yet. Its pid is what identifies it afterwards.
     """
+    from agentevolver.agent.loop.router import CapabilityRouter
     from agentevolver.agent.server import agent_manager
-    from agentevolver.agent.types import AgentContext
     from agentevolver.runtime import kernel
     from agentevolver.runtime.modes import InteractionMode
 
@@ -175,7 +176,7 @@ async def start_subscriber(
     # The registry holds the program; each subscriber is its own process.
     child = template.fresh()
     child.model_name = model
-    # Its own session, exactly as a dispatched child gets one. Passing the parent's
+    # Its own session, built the one way a child's context is built. Passing the parent's
     # context gave all four subscribers the builder's session id, and a session id is
     # what `BrowserEnvironment` keys a browser TAB on — so three participants and the
     # acceptance worker, woken by the same event, drove one page at once. Each read a
@@ -183,21 +184,17 @@ async def start_subscriber(
     # about:blank" and "no browser navigation capability was available", neither of
     # which was true: they had eleven browser actions each.
     #
-    # The topic scope is read from the parent, so scoped events still reach them.
-    inherited = dict(getattr(ctx, "extra", None) or {})
-    child_ctx = AgentContext(
-        name=name,
-        parent_session_id=str(getattr(ctx, "id", "") or ""),
-        extra={
-            # A subscriber is a browser user; the builder's job-only scope is not its.
-            # `trace_integrity_profile` was inherited here too, and is configuration —
-            # read from `config`, not carried down a dispatch chain.
-            key: value for key, value in inherited.items()
-            if key in ("root_session_id", "source_workspace")
-        },
-    )
-    child_ctx.extra.setdefault(
-        "root_session_id", str(getattr(ctx, "id", "") or "")
+    # This built its own until the two copies had drifted: the dispatch path grants
+    # capability allowlists and carries the task contract, which subscribers never got,
+    # and it alone knew the topic root, which dispatched subscribers never got. Only the
+    # timing is special here — subscribers exist before the Builder's first step, so
+    # there is no loop to dispatch from — and timing is not a reason to build a context
+    # differently. A subscriber is an ordinary dispatch whose brief names a topic.
+    child_ctx = CapabilityRouter._child_context(
+        child,
+        {"task": task, "files": list(files or ()), "subscription_topics": ["deployment.ready"]},
+        agent,
+        ctx,
     )
     subscriber = await kernel.spawn(
         child,
@@ -279,6 +276,7 @@ async def bootstrap_subscribers(
                 "--- private user context (assigned only to you) ---\n"
                 f"{private_context}"
             ),
+            agent=agent,
             ctx=ctx,
             proc=proc,
         )
@@ -318,6 +316,7 @@ async def bootstrap_subscribers(
             "--- release requirements ---\n"
             f"{acceptance_requirements}"
         ),
+        agent=agent,
         ctx=ctx,
         proc=proc,
     )
