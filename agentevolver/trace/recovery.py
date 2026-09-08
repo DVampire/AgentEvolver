@@ -255,9 +255,12 @@ def reconciliation_event(
             },
         )
 
+    # Asked the other way round now that `action_type` carries the real family: it used
+    # to mean "skill", so anything else — an environment action, an agent dispatch —
+    # would be reconciled as a tool result and land on the wrong lifecycle.
     event_type = (
-        TraceEventType.SKILL_CALL
-        if match.action_type == "skill" else TraceEventType.TOOL_CALL
+        TraceEventType.TOOL_CALL
+        if match.action_type == "tool" else TraceEventType.SKILL_CALL
     )
     return TraceEvent(
         event_type=event_type,

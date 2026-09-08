@@ -151,6 +151,11 @@ class TraceHook(Hook):
                     aargs = json.loads(aargs)
                 except Exception:
                     aargs = {"raw": aargs}
+            # Two lifecycle event types, but the family the action belonged to is its
+            # own field. Choosing the factory on `type == "tool"` and letting the other
+            # one hardcode "skill" flattened six routable families plus environment
+            # actions into one label, so a run that called no skill at all reported
+            # hundreds of them.
             factory = tool_start_event if atype == "tool" else skill_start_event
             event = factory(
                 session_id=ctx.id,
@@ -161,6 +166,7 @@ class TraceHook(Hook):
                 action_name=aname,
                 action_args=aargs,
                 call_id=str(action.get("id") or ""),
+                **({} if atype == "tool" else {"action_type": atype}),
             )
             if action.get("parent_call_id"):
                 event.metadata["parent_call_id"] = str(action["parent_call_id"])
@@ -190,6 +196,7 @@ class TraceHook(Hook):
                 duration_ms=elapsed,
                 error=error,
                 call_id=str(action.get("id") or ""),
+                **({} if atype == "tool" else {"action_type": atype}),
             )
             if action.get("parent_call_id"):
                 event.metadata["parent_call_id"] = str(action["parent_call_id"])

@@ -342,13 +342,23 @@ def skill_start_event(
     session_id: str, task_id: str, agent_name: str,
     step_number: int, action_index: int, action_name: str,
     action_args: Dict[str, Any], call_id: str = "",
+    action_type: str = "skill",
 ) -> TraceEvent:
+    """One non-tool action beginning. ``action_type`` says which kind.
+
+    ``event_type`` is the lifecycle phase — an action started — and the family it belonged
+    to is ``action_type``, the way ``workflow``, ``question`` and ``approval`` already
+    record theirs. This hardcoded "skill", while its only caller chose between two
+    factories on ``type == "tool"``, so every environment action, agent dispatch,
+    connector and plugin call in the system was filed as a skill: 1854 of 2136 action
+    events in one demo run, which used no skills at all.
+    """
     return TraceEvent(
         event_type=TraceEventType.SKILL_START,
         session_id=session_id, task_id=task_id, agent_name=agent_name,
         step_number=step_number, action_index=action_index,
-        action_type="skill", action_name=action_name,
-        label=f"skill: {action_name}", input=action_args,
+        action_type=action_type or "skill", action_name=action_name,
+        label=f"{action_type or 'skill'}: {action_name}", input=action_args,
         metadata={"call_id": call_id} if call_id else {},
     )
 
@@ -359,7 +369,9 @@ def skill_call_event(
     result: Any, success: bool,
     duration_ms: Optional[float] = None, error: Optional[str] = None,
     description: Optional[str] = None, call_id: str = "",
+    action_type: str = "skill",
 ) -> TraceEvent:
+    """One non-tool action returning — see :func:`skill_start_event` for ``action_type``."""
     meta: Dict[str, Any] = {"success": success}
     if description:
         meta["description"] = description
@@ -372,7 +384,7 @@ def skill_call_event(
         event_type=TraceEventType.SKILL_CALL,
         session_id=session_id, task_id=task_id, agent_name=agent_name,
         step_number=step_number, action_index=action_index,
-        action_type="skill", action_name=action_name,
+        action_type=action_type or "skill", action_name=action_name,
         label=f"{action_name} ({'ok' if success else 'fail'})",
         output=result,
         message=str(result) if result is not None else None,
