@@ -621,7 +621,9 @@ async def test_a_fold_that_moves_nothing_still_says_so(monkeypatch):
         seen.append((event, payload or {}))
 
     monkeypatch.setattr(agent._events, "emit", emit)
-    agent._folds = agent.assembler.max_folds
+    # The budget is against folds that reclaimed nothing, not against folds attempted: a
+    # long run folds many times by design, and charging those spent it on healthy work.
+    agent._unproductive_folds = agent.assembler.max_folds
 
     assert await agent.make_room() is False
     assert [event for event, _ in seen] == [HookEvent.PRE_COMPACT, HookEvent.POST_COMPACT]
@@ -657,6 +659,31 @@ async def test_a_run_lands_when_one_blocker_refuses_it_over_and_over():
     assert "sub-b" in response.message
     # Landed on the threshold rather than burning the rest of the budget.
     assert agent.step < 19, f"landed at step {agent.step}, budget was 20"
+
+
+@pytest.mark.asyncio
+async def test_an_agent_is_told_how_many_times_the_same_gate_has_refused_it():
+    """The loop counts repeats to decide when to land; the agent needs the same count.
+
+    Told only the reason, an agent reads every refusal as the first one. A builder
+    answered the same gate six times over fifty minutes, each attempt restating the work
+    it had already done, because nothing said that answer had been given and rejected
+    before. The count is what turns "try again" into "try something else", and it belongs
+    to every agent that can be refused rather than to whichever gate refuses it.
+    """
+    class Blocked(Scripted):
+        async def completion_blocker(self, ctx):
+            return "release 1 subscriber turns failed: sub-b"
+
+    agent = make([Decision(text="done") for _ in range(20)], max_step=20)
+    agent.__class__ = type("RepeatProbe", (Blocked, type(agent)), {})
+    await agent("build the thing")
+
+    told = [str(m.content) for m in agent.conversation.items if "not-finished" in str(m.content)]
+    assert told, "the reason has to reach the model at all"
+    assert "You have now been told this" not in told[0], "the first refusal is not a repeat"
+    assert "You have now been told this 2 times" in told[1]
+    assert "repeating your last answer will not move it" in told[1]
 
 
 @pytest.mark.asyncio

@@ -489,12 +489,28 @@ class Agent(BaseModel):
                     # Not finished after all. Recorded as an ordinary turn and answered
                     # in the live layer, so the model reads why and keeps working rather
                     # than seeing its answer silently ignored.
+                    #
+                    # With the repeat count, because the loop already knows it and the
+                    # agent does not. Told only the reason, an agent reads every refusal
+                    # as the first one: a builder answered the same gate six times over
+                    # fifty minutes, each time restating the work it had already done,
+                    # because nothing said that answer had been given and rejected
+                    # before. The count is what turns "try again" into "try something
+                    # else", and it belongs to every agent that can be refused, not to
+                    # whichever gate happens to refuse it.
+                    again = (
+                        f" You have now been told this {self._blocker_repeats} times and "
+                        f"nothing it names has changed; repeating your last answer will "
+                        f"not move it. Either act on what it names, or report why you "
+                        f"cannot."
+                        if self._blocker_repeats > 1 else ""
+                    )
                     self.conversation.append(decision.as_assistant())
                     self.conversation.note(
-                        f"<not-finished>\nThis run cannot complete yet: {blocker}."
+                        f"<not-finished>\nThis run cannot complete yet: {blocker}.{again}"
                         "\n</not-finished>"
                     )
-                    self._notes.append(f"You cannot finish yet: {blocker}.")
+                    self._notes.append(f"You cannot finish yet: {blocker}.{again}")
                     continue
                 self.conversation.append(decision.as_assistant())
                 # Closed like any other step. A text-only ending ran a whole step —
