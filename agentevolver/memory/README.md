@@ -89,15 +89,17 @@ must have a readable companion before old history is replaced; failed summarizat
 leaves history untouched and spends a bounded attempt. Cross-route opaque-state
 conversion is not implemented: explicit thread resume rejects a different model route.
 
-The Agent loop also defaults to `compact_verify=True`: after either native or portable
-summarization, the existing compact hook audits the proposed text against the full fold
-source, prior checkpoint, and task. It checks semantic omissions and contradictions,
-and requires exact source/checkpoint evidence quotes. Failure, invalid JSON, invented
-quotes, or an inconclusive audit retains the original history. The audit uses the same
-model facade and runtime budget and costs one extra call per proposed replacement;
-`compact_verify=False` is an explicit opt-out, not a silent fallback. This is model-assisted
-coverage checking, not proof of semantic completeness or an evaluation of opaque provider
-state. Standalone memory backends are not automatically covered by this Agent-loop gate.
+Compaction uses a successful, nonempty summary directly, without a second LLM audit or
+a post-generation length/savings veto. `compact_output_tokens` is a soft generation
+target; it does not reject a completed summary. The separate provider completion budget
+leaves room for reasoning and a finished answer. Failed or empty responses keep the
+original history. Scheduled retries wait at least two steps (normally the retained-tail
+length, four steps); an actual provider overflow can request recovery immediately.
+Fixed system instructions, task anchors, current observations and recent complete tool
+cycles remain intact. Trace records whether history was replaced and why an attempt
+failed, alongside the model usage receipts. The event's token estimates describe the
+recent-history body; model usage receipts report actual full input including the
+checkpoint, fixed instructions and tools. The former `compact_verify` gate is removed.
 
 No note body is injected automatically or sliced to a character limit. The index may
 omit complete entries with a notice and directory locator. FileSystemMemory is a bounded

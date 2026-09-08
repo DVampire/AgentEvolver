@@ -155,9 +155,8 @@ class Agent(BaseModel):
         default=3, description="Ceiling for provider-side sub-agent fan-out."
     )
     compact_output_tokens: int = Field(
-        default=2048, description="Size budget for a checkpoint summary."
+        default=2048, description="Soft token target requested from the checkpoint summariser."
     )
-    compact_verify: bool = Field(default=True, description="Audit semantic coverage before replacing history.")
     capability_schema_tokens: int = Field(
         default=8000, ge=0,
         description="Soft initial schema token budget; core and discovered capabilities stay visible. 0 disables.",
@@ -282,6 +281,7 @@ class Agent(BaseModel):
         #: refused to fold, overflowed, and failed — twenty-two minutes of a run that then
         #: reported a rejected release, because a long run is exactly what folding is for.
         self._unproductive_folds = 0
+        self._compact_retry_step = 0
         self._input_token_ratio = 1.0
         #: Reported tokens waiting to be forwarded to optional constraint hooks.
         #: Held rather than counted inline because the guard runs once per step and must
@@ -409,6 +409,7 @@ class Agent(BaseModel):
         self._truncated_turns = 0
         self._folds = 0
         self._unproductive_folds = 0
+        self._compact_retry_step = 0
         self._input_token_ratio = 1.0
         self._unspent_tokens = 0
         # Per-run, like everything above it: a resident process runs many turns, and a
@@ -1292,6 +1293,11 @@ class Agent(BaseModel):
         """Fold history before cost or capacity becomes a problem."""
         from agentevolver.model import model_manager
 
+        # A failed summary leaves the same history above the cost threshold. Let
+        # useful work continue before retrying; a real provider overflow still calls
+        # make_room directly and does not wait for this scheduled retry.
+        if self.step < self._compact_retry_step:
+            return
         pressure = None
         if model_manager.get_model_config(self.model_name) is not None:
             tools, _ = await self.router.schemas(self, self.ctx)
@@ -1333,6 +1339,7 @@ class Agent(BaseModel):
                 "fold": self._folds + 1,
                 "max_folds": self.assembler.max_folds,
                 "tokens": before,
+                "token_scope": "recent_history",
                 "messages": len(self.conversation),
                 **self._identity(),
             },
@@ -1347,6 +1354,14 @@ class Agent(BaseModel):
             self._unproductive_folds = 0
         else:
             self._unproductive_folds += 1
+        self._compact_retry_step = (
+            0 if moved else self.step + max(2, self.assembler.retain_turns)
+        )
+        if not moved:
+            logger.warning(
+                f"| 🗜️ [{self.name}] compaction not applied: {detail}; "
+                f"scheduled retry at step {self._compact_retry_step}"
+            )
         await self._events.emit(
             HookEvent.POST_COMPACT,
             {
@@ -1355,8 +1370,10 @@ class Agent(BaseModel):
                 "detail": detail,
                 "tokens_before": before,
                 "tokens_after": after,
+                "token_scope": "recent_history",
                 "reclaimed": max(0, before - after),
                 "unproductive_folds": self._unproductive_folds,
+                "retry_step": self._compact_retry_step,
                 "messages": len(self.conversation),
                 **self._identity(),
             },
@@ -1409,63 +1426,6 @@ class Agent(BaseModel):
             # Do not discard the only readable evidence in favour of an opaque item:
             # the next call may need a provider-neutral fallback.
             return False, "no portable checkpoint was produced; history retained"
-        for attempt in range(2):
-            if not provider_state:
-                # Reject ineffective candidates before paying for semantic verification.
-                candidate = summary + (f"\n\nFull pre-compaction source snapshot: {archive}" if archive else "")
-                valid, reason = self.assembler.valid_checkpoint(
-                    candidate, source,
-                    self.conversation.checkpoint.text if self.conversation.checkpoint else "",
-                    retained=self.conversation.observations,
-                )
-                if not valid:
-                    return False, f"checkpoint rejected before audit: {reason}"
-            if not self.compact_verify:
-                break
-            from agentevolver.hook.default.compact import CompactHook
-
-            evidence = "\n".join([
-                f"Task: {self.conversation.task}",
-                self.conversation.checkpoint.text if self.conversation.checkpoint else "",
-                *(self._render_for_checkpoint(message) for message in source),
-            ])
-            removed_ids = {id(message) for message in source}
-            observation_ids = {id(message) for message in self.conversation.observations}
-            retained = "\n".join([
-                f"Unchanged task: {self.conversation.task}",
-                *(self._render_for_checkpoint(message) for message in self.conversation.items
-                  if id(message) not in removed_ids or id(message) in observation_ids),
-            ])
-            audit = await CompactHook.verify(
-                source=evidence, summary=summary, model=self.model_name, ctx=self.ctx,
-                trace_context=self.trace_coordinates(),
-                retained_context=retained,
-            )
-            self.count_usage(getattr(audit, "usage", None))
-            self.check_budget()
-            if getattr(audit, "approved", False):
-                break
-            # One targeted repair uses actual findings, rather than regenerating the
-            # same flawed summary on every later step. Transport failures or malformed
-            # audits are not actionable findings. Neither candidate can alter history
-            # until all size and semantic checks pass.
-            try:
-                findings = json.loads(audit.output or "")
-            except (ValueError, TypeError):
-                findings = {}
-            if attempt == 0 and isinstance(findings, dict) and any(
-                isinstance(findings.get(key), list) and findings[key]
-                for key in ("omissions", "contradictions")
-            ):
-                logger.info(f"| 🗜️ [{self.name}] repairing checkpoint from semantic audit (one retry)")
-                summary = await self.text_checkpoint(
-                    source, previous_summary=summary, audit_feedback=audit.output,
-                )
-                provider_state = None
-                if summary:
-                    continue
-            self._notes.append("Checkpoint rejected; exact history retained. Audit: " + (audit.output or "unavailable"))
-            return False, "semantic audit rejected or unavailable; history retained"
         if archive is not None:
             summary += f"\n\nFull pre-compaction source snapshot: {archive}"
         folded = self.assembler.fold(
@@ -1473,7 +1433,7 @@ class Agent(BaseModel):
         )
         if folded:
             return True, "native" if provider_state else "text"
-        return False, "checkpoint was rejected as no improvement"
+        return False, "no closed history was available to replace"
 
     async def native_checkpoint(
         self, messages: Sequence[Message]
@@ -1499,10 +1459,7 @@ class Agent(BaseModel):
                 task_id=getattr(self.proc, "pid", "") or "",
                 agent_name=self.name,
                 step_number=self.step,
-                # Native providers count with their own tokenizer while this side uses a
-                # conservative estimate. Leave headroom so a valid provider summary is
-                # not rejected and regenerated every step.
-                max_output_tokens=max(256, int(self.compact_output_tokens * 0.75)),
+                max_output_tokens=max(256, self.compact_output_tokens),
             )
         except Exception as error:  # noqa: BLE001 - the text checkpoint remains authoritative
             logger.warning(
@@ -1514,13 +1471,11 @@ class Agent(BaseModel):
             return None
         self.count_usage(result.get("usage"))
         logger.info(
-            f"| 🗜️ [{self.name}] installed native {result.get('format')} checkpoint"
+            f"| 🗜️ [{self.name}] received native {result.get('format')} checkpoint"
         )
         return result
 
-    async def text_checkpoint(
-        self, messages: Sequence[Message], *, previous_summary: str = "", audit_feedback: str = "",
-    ) -> str:
+    async def text_checkpoint(self, messages: Sequence[Message]) -> str:
         """The portable checkpoint, written by the shared ``compact`` hook.
 
         The hook rather than a summary prompt of our own: it already owns the instruction
@@ -1546,8 +1501,7 @@ class Agent(BaseModel):
                     "items": [self._render_for_checkpoint(m) for m in messages],
                     "existing_summary": existing,
                     "task": self.conversation.task,
-                    "previous_summary": previous_summary,
-                    "audit_feedback": audit_feedback,
+                    "task_is_retained": True,
                     "model_name": self.model_name,
                     "max_output_tokens": self.compact_output_tokens,
                     "trace_context": self.trace_coordinates(),
@@ -1568,7 +1522,7 @@ class Agent(BaseModel):
         Image parts are named, never rendered. ``Message.text`` stringifies a content
         part, and an image part stringifies to its whole ``data:image/...;base64,`` URL —
         so a single screenshot in the folded history would put megabytes of base64 into
-        the summariser's prompt and again into the auditor's. The provider-native path is
+        the summariser's prompt. The provider-native path is
         different and unaffected: it is handed the real messages precisely so it can
         compact the images themselves.
         """

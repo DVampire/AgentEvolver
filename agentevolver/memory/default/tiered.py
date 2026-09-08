@@ -230,7 +230,7 @@ class TieredMemory(Memory):
     )
     compact_output_tokens: int = Field(
         default=2_048,
-        description="Hard output ceiling for one portable checkpoint.",
+        description="Soft token target requested from the checkpoint summariser.",
     )
 
     persist_debounce: float = Field(default=0.2, description="Seconds to coalesce a burst of events into a single file write per session.")
@@ -591,12 +591,8 @@ class TieredMemory(Memory):
                     logger.warning(f"| ⚠️ {self.name}: summariser failed ({error})")
                     return
 
-            valid, reason = self._valid_checkpoint(text, source_items, existing)
-            if not valid:
-                outcome = reason
-                logger.warning(
-                    f"| ⚠️ {self.name}: rejected compaction checkpoint ({reason})"
-                )
+            if not text.strip():
+                outcome = "empty"
                 return
 
             # Commit only if the exact prefix we summarized is still present. Appends to
@@ -733,22 +729,6 @@ class TieredMemory(Memory):
             f"Complete summary source needs {len(joined)} characters; budget={budget}. "
             "No history was omitted. Use a smaller complete-turn batch or a larger budget."
         )
-
-    def _valid_checkpoint(
-        self, text: str, source_items: List[str], existing: str,
-    ) -> tuple[bool, str]:
-        """Reject output expansion before it can replace canonical history."""
-        from agentevolver.model.pressure import estimate_tokens
-
-        if not text.strip():
-            return False, "empty"
-        output_tokens = estimate_tokens(text)
-        if output_tokens > int(self.compact_output_tokens):
-            return False, f"output-limit:{output_tokens}>{self.compact_output_tokens}"
-        before = estimate_tokens([existing, *source_items])
-        if output_tokens >= before:
-            return False, f"no-token-saving:{before}->{output_tokens}"
-        return True, "ok"
 
     def _summary_items(self, state: _SessionState, chunk: List[MemoryRecord]) -> List[str]:
         """Render complete closed turns from Trace for checkpoint generation.
@@ -907,14 +887,11 @@ class TieredMemory(Memory):
                     (record.step for record in records if record.step is not None),
                     default=None,
                 ),
-                # Native providers count their own tokenizer while the request boundary
-                # uses a conservative portable estimator. Leave headroom so a valid
-                # provider summary cannot be rejected and regenerated on every step.
-                max_output_tokens=max(256, int(self.compact_output_tokens * 0.75)),
+                max_output_tokens=max(256, self.compact_output_tokens),
             )
             if result:
                 logger.info(
-                    f"| 🗜️ {self.name}: installed native {result.get('provider')} "
+                    f"| 🗜️ {self.name}: received native {result.get('provider')} "
                     f"compaction for {state.session_id}"
                 )
             return result

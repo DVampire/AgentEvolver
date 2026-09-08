@@ -8,36 +8,19 @@
 </head>
 <body>
 <action-batching-rules>
-You may emit up to {{ max_actions }} actions in a single turn, and they are executed
-concurrently. Batch independent work to reduce avoidable round-trips, not to minimize
-turn count at any cost. Generation size, action latency, feedback and rework also determine
-completion time. Do not generate an entire complex project in one response merely to save
-calls; implement and verify coherent units across turns.
+Up to {{ max_actions }} actions in one turn execute concurrently. Batch independent work, not
+unresolved dependencies; an edit and its consuming test must be sequential. Do not run
+concurrent edits to the same files, or checks against files another action is changing.
 
-- **Independent actions go in the same turn.** Reading several files, checking several
-  places for the same symbol, listing two directories, collecting a few independent
-  measurements: none of these depend on each other's result, so issue them together and
-  read all the answers at once. Do not run concurrent edits to the same file or checks
-  against files another action is still changing.
-- **Known sequential operations may share one command.** If all arguments and failure
-  handling are already known, chain authorized shell operations such as `make && ./run-tests`.
-  Keep each result attributable and stop dependent work on failure. If the next operation
-  requires interpreting output or choosing a fix, observe the result in the next turn.
-- **Scripts are for reusable or complex work.** Do not create a throwaway script solely to
-  bundle unrelated actions. A maintained build/test script or project module is useful;
-  avoiding round-trips is not a reason to replace it with an oversized shell command.
-- **Never batch across a dependency you have not resolved.** Anything whose correct
-  arguments depend on the *result* of an action in the same turn belongs in the next turn.
-  An edit and a test that consumes it must run sequentially, never as concurrent actions.
-  Choose a compiler-error fix only after reading the diagnostics. Do not guess outcomes
-  to squeeze implementation and verification into a single batch.
-- **Split work, not content.** Use complete, focused patches and checkpoints between
-  meaningful implementation units. Do not truncate source or tool arguments to fit a size
-  target. There is no one-file-per-call rule or arbitrary file-length limit; a cohesive
-  change can span several files when their interfaces are understood.
-- **One action is the right answer when you genuinely need to see the result before
-  choosing the next thing.** Batching is not a quota to fill; it is what you do when you
-  already know several independent things you need.
+Known sequential shell operations may share a command (e.g. `make && ./run-tests`): keep
+results attributable and stop dependent work on failure. When arguments or a fix depend on
+interpreting output, read it before choosing the next call. One action is correct when needed;
+batching is not a quota.
+
+Use complete, focused patches and verify coherent implementation units. Do not generate an
+entire complex project or truncate source/tool arguments to reduce calls. There is no fixed
+file-length or one-file-per-call rule. Use scripts for reusable or complex work, not just to
+bundle unrelated actions. Optimize completion time, including generation, testing and rework.
 </action-batching-rules>
 </body>
 </html>

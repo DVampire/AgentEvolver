@@ -107,41 +107,28 @@ async def declaration_of(capability_type: str, name: str) -> Optional[Dict[str, 
 #: Stable instructions; the agent installs these separately from the document.
 AUTO_MODE_NOTICE = (
     "Keep one plan.md at the exact plan-context path, outside the deliverable. "
-    "For multi-step work, write the goal, constraints, assumptions, approach, ordered "
-    "steps/status and observable acceptance checks before implementation; a single-step "
-    "task needs no plan. Updates enter your context and the observer reads the same file. "
-    "Before implementing a change from feedback or a worker report, update this plan: "
-    "cite the source, separate observations from proposals, address each material need "
-    "or explain its deferral, and name the next action and verification. Preserve open "
-    "commitments. Record evidence and distinguish implemented, technically verified "
-    "and user-confirmed. Delegate bounded assignments; workers report results without "
-    "maintaining a duplicate plan."
+    "For multi-step work, record the goal, constraints/assumptions, approach, steps/status "
+    "and observable acceptance checks before implementation; a single-step task needs no plan. "
+    "Before implementing a change from feedback or a worker report, cite its source, "
+    "separate observations from proposals, address material needs or justify deferrals, "
+    "and name the next action/check. Update completed steps and evidence after meaningful "
+    "work; preserve open commitments. Distinguish implemented, technically verified and "
+    "user-confirmed. Link detailed evidence; workers report results without duplicate plans."
 )
 
-# Component procedures and trigger policy belong to the shared evolution rules.
-# This notice specifies the plan record and its lifecycle.
+# Trigger and procedure policy lives in evolution_rules; this is its plan record.
 EVOLUTION_PLAN_NOTICE = (
-    "Keep a compact 'Evolution opportunities' section near the top of plan.md. "
-    "Review it at planning, feedback, correction and verification boundaries using the "
-    "shared self-evolution rules: first discoveries, successful checks, expected reuse, "
-    "better methods, missing capabilities and new experiences can qualify. Distinguish "
-    "a product/setup defect from a reusable implementation or verification improvement. "
-    "For each opportunity record a stable ID, source evidence, method/cause, concrete "
-    "consumer/next use, expected benefit, existing capabilities inspected (or discovery "
-    "step), smallest baseline comparison, independent reuse/regression check, status "
-    "and next action. Unknowns and savings remain hypotheses. A different operation "
-    "in this project qualifies; repeated failure or another repository is not required. "
-    "When evidence, consumer and a bounded verification fit, start now; never duplicate "
-    "active experiments. Defer only for a prerequisite, write conflict, permission or "
-    "resource constraint with a retry condition, not merely 'product work first'. "
-    "Track the candidate and registered version, executed evaluation evidence, "
-    "keep/rollback/unload decision and actual consumer use, in dependency order. "
-    "Keep proposed, running, evaluated, adopted and used distinct. Preserve unresolved "
-    "entries through replanning/compaction and close experiments before finishing; "
-    "link lengthy evidence. Reassess 'none identified' after new verification and "
-    "before finishing, without quotas, invented gaps or per-step rewrites. Product "
-    "edits are not evolution; benchmark discovery uses permitted local evidence, "
-    "never hidden grader data or reference solutions."
+    "Keep a compact 'Evolution opportunities' section near the top of plan.md, using the "
+    "shared self-evolution rules at planning, feedback and verification boundaries. "
+    "Record each opportunity's stable ID, evidence/cause, concrete consumer, expected "
+    "benefit, existing capability/discovery, bounded baseline and reuse/regression checks, "
+    "status and next action. Track process ID, candidate/registered version, executed "
+    "evaluation, keep/rollback/unload and actual use; keep proposed, running, evaluated, "
+    "adopted and used distinct. Launch qualifying work now; never duplicate active work. "
+    "A deferral needs a concrete dependency/conflict/permission/resource constraint and "
+    "retry condition. Reassess on new evidence and before finishing, preserve unresolved "
+    "entries through compaction, close experiments and link lengthy evidence. No quotas, "
+    "invented gaps or per-step rewrites."
 )
 
 PLAN_CONTEXT_MAX_CHARS = 16_000

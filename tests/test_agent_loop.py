@@ -417,6 +417,38 @@ async def test_the_no_progress_guard_notices_a_run_that_only_inspects():
     assert any("<no-progress>" in "\n".join(blocks) for blocks in agent.seen_live)
 
 
+@pytest.mark.parametrize("command,expected", [
+    ("cat /workspace/main.js", 3),
+    ("cat > /workspace/main.js <<'EOF'\nexport const x = 1;\nEOF", 0),
+    ("sed -i 's/old/new/' /workspace/main.js", 0),
+    ("python /workspace/script.py", 0),
+])
+def test_no_progress_classifies_actual_bash_arguments(command, expected):
+    from agentevolver.tool.default.workspace.bash import BashTool
+
+    class ShellRouter(StubRouter):
+        def read_only(self, call, routing):
+            # Exercise the production effect classifier without executing commands.
+            return BashTool.will_mutate(None, call.args) is False
+
+    agent = Agent(router=ShellRouter({}))
+    for i in range(3):
+        call = ActionCall(id=f"bash-{i}", name="bash_tool", args={"command": command})
+        agent.conversation.add_turn(Decision(calls=[call]).as_assistant(), [
+            ToolMessage(content="done", tool_call_id=call.id),
+        ])
+    assert NoProgress()._idle_turns(agent) == expected
+
+
+@pytest.mark.parametrize("arguments", ["not json", "null", "[]"])
+def test_no_progress_treats_invalid_arguments_as_unknown(arguments):
+    message = calls(("read", {})).as_assistant()
+    message.tool_calls[0].function.arguments = arguments
+    agent = Agent(router=StubRouter({}, read_only=("read",)))
+    agent.conversation.append(message)
+    assert NoProgress()._idle_turns(agent) == 0
+
+
 @pytest.mark.asyncio
 async def test_a_spent_budget_stops_the_run_at_a_step_boundary():
     class Spent:
@@ -634,7 +666,6 @@ async def test_folding_history_is_announced_before_and_after(monkeypatch):
     monkeypatch.setattr(
         agent, "text_checkpoint", lambda source: _completed("a summary of five turns")
     )
-    agent.compact_verify = False  # This test pins compaction event ordering.
     for index in range(6):
         agent.conversation.append(AssistantMessage(content=f"turn {index}", tool_calls=[]))
     agent.assembler.compact_after_turns = 1

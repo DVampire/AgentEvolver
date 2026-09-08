@@ -243,7 +243,7 @@ async def test_only_a_fold_that_reclaims_nothing_spends_the_budget():
         return None
 
     agent = SimpleNamespace(
-        name="probe", ctx=None, _folds=0, _unproductive_folds=0,
+        name="probe", ctx=None, step=0, _folds=0, _unproductive_folds=0,
         conversation=conversation(turns=2), assembler=assembler,
         _events=SimpleNamespace(emit=_emit), _fold=_fold,
         _identity=lambda: {"agent": "probe"},
@@ -292,14 +292,14 @@ def test_a_second_fold_installs_one_replacement_checkpoint():
     assert "second pass" in envelope.checkpoint[0].text
 
 
-def test_a_checkpoint_that_saves_nothing_is_refused():
-    """A summariser can expand, and the result would replace turns nothing can recover."""
+def test_checkpoint_length_does_not_veto_replacement():
     assembler = ContextAssembler(retain_turns=2, compact_after_turns=2)
     held = conversation(turns=6, bulk=1)
     bloated = "x " * 5_000
 
-    assert assembler.fold(held, bloated) == 0
-    assert held.checkpoint is None
+    assert assembler.fold(held, bloated) > 0
+    assert bloated.strip() in held.checkpoint.text
+    assert held.turns == 2 and held.complete
     assert assembler.fold(held, "") == 0
 
 

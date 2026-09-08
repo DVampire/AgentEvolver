@@ -26,7 +26,7 @@ envelope from a persisted trace. Only the source of the history changed.
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 from agentevolver.agent.context.conversation import Conversation
 from agentevolver.agent.context.envelope import ContextEnvelope
@@ -55,8 +55,7 @@ DEFAULT_FOLD_AT_PRESSURE = 0.85
 #: then refused to fold for the rest of the dispatch.
 DEFAULT_MAX_FOLDS = 32
 
-#: Ceiling for a checkpoint's own size. A summariser that writes more than this has
-#: expanded rather than compressed, and its output is refused.
+#: Soft length target for the summariser, not a post-generation acceptance gate.
 DEFAULT_COMPACT_OUTPUT_TOKENS = 2048
 
 #: Assumed window when a route does not state one. Guess high: too low is a wall we
@@ -315,36 +314,6 @@ class ContextAssembler:
         """The messages a fold would remove — what to summarise, or to hand a provider."""
         return conversation.foldable(self.retain_turns)
 
-    def valid_checkpoint(
-        self, text: str, source: Sequence[Message], existing: str = "", *,
-        retained: Sequence[Message] = (),
-    ) -> Tuple[bool, str]:
-        """Whether a checkpoint may replace the history it summarises.
-
-        A summariser can expand rather than compress, and the result would be committed
-        over canonical turns that cannot be recovered. Three refusals: empty, over the
-        output budget, and — the one that matters — no token saving at all, which means
-        the fold would cost a model call and leave the request no smaller.
-
-        Returns ``(ok, reason)``; the reason is for the log, not the model.
-        """
-        from agentevolver.model.pressure import estimate_tokens
-
-        if not text.strip():
-            return False, "empty"
-        after = int(estimate_tokens([HumanMessage(content=text)]))
-        if after > self.compact_output_tokens:
-            return False, f"output-limit:{after}>{self.compact_output_tokens}"
-        # Current observations are copied back after a fold; they reclaim no space.
-        retained_ids = {id(message) for message in retained}
-        removed = [message for message in source if id(message) not in retained_ids]
-        before = int(estimate_tokens(
-            [*(([HumanMessage(content=existing)]) if existing else []), *removed]
-        ))
-        if after >= before:
-            return False, f"no-token-saving:{before}->{after}"
-        return True, "ok"
-
     def fold(
         self,
         conversation: Conversation,
@@ -355,17 +324,12 @@ class ContextAssembler:
         """Fold everything but the retained tail into one checkpoint.
 
         The checkpoint's content is supplied by the caller — writing a summary needs a
-        model, and this class does not own one. ``provider_state`` carries a native
-        checkpoint when the route produced one, and is trusted without the size check:
-        the provider replaced the history itself, so its own item is the saving.
+        model, and this class does not own one. Successful nonempty summaries are used
+        as returned; length is a generation target, never a reason to retry. Native
+        protocol state accompanies its readable summary when the route produced it.
         """
-        if not provider_state:
-            source = self.summarize_source(conversation)
-            existing = conversation.checkpoint.text if conversation.checkpoint else ""
-            ok, reason = self.valid_checkpoint(summary, source, existing, retained=conversation.observations)
-            if not ok:
-                logger.warning(f"| ⚠️ rejected compaction checkpoint ({reason})")
-                return 0
+        if (not summary.strip() and not provider_state) or not conversation.complete:
+            return 0
         folded = conversation.fold(
             summary, self.retain_turns, provider_state=provider_state
         )

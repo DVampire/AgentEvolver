@@ -351,7 +351,7 @@ async def test_opaque_only_compaction_does_not_discard_history(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_compaction_keeps_complete_immutable_source_archives(tmp_path, monkeypatch):
-    agent = Agent(retain_recent_steps=1, compact_verify=False)  # Archive mechanics, not semantic judgment.
+    agent = Agent(retain_recent_steps=1)
     agent._thread_path = tmp_path / "thread.json"
     original = "Important original detail, never slice this. " * 300
     agent.conversation.extend([AssistantMessage(content=original), AssistantMessage(content="recent")])

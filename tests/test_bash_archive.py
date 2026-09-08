@@ -72,3 +72,42 @@ def test_large_archived_observation_keeps_diagnostics_and_retrievable_middle(tmp
     assert raw in (tmp_path / "output.txt").read_text()
     assert _with_archive_note(raw, None, 4000) == raw
     assert _with_archive_note(raw, archived, 0).startswith(raw)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["local", "tty", "container"])
+@pytest.mark.parametrize("full_output", [False, True])
+async def test_foreground_routes_share_default_excerpt_and_explicit_full_output(
+    session, monkeypatch, route, full_output,
+):
+    """A peer container must not silently bypass the same output budget."""
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    stdout = "first line\n" + "detail\n" * 2000 + "MIDDLE_EVIDENCE\n" + "detail\n" * 2000 + "last line"
+    stderr = "important failure diagnostic"
+    monkeypatch.setattr(bash, "permission_manager", SimpleNamespace(
+        check_declared=lambda *a, **kw: SimpleNamespace(allowed=True, warning=""),
+    ))
+    monkeypatch.setattr("agentevolver.session.resolve_workspace_root", lambda ctx: str(session))
+    monkeypatch.setenv(bash._EXEC_CONTAINER_ENV, "fixture-container" if route == "container" else "")
+    monkeypatch.setattr(bash, "_run_in_container", AsyncMock(return_value=(stdout, stderr, 7, False)))
+    monkeypatch.setattr(bash, "_run_under_pty", lambda *a: (stdout + "\n" + stderr, 7, False))
+    process = SimpleNamespace(returncode=7, communicate=AsyncMock(return_value=(stdout.encode(), stderr.encode())))
+    monkeypatch.setattr(bash.asyncio, "create_subprocess_exec", AsyncMock(return_value=process))
+    kwargs = {"max_output_chars": 0} if full_output else {}
+    response = await bash.BashTool()(command="fixture", tty=route == "tty", **kwargs)
+
+    assert response.success and response.data["exit_code"] == 7
+    assert "first line" in response.message and stderr in response.message
+    assert "Exit code: 7" in response.message
+    archive = Path(response.data["archived"])
+    assert stdout in archive.read_text() and stderr in archive.read_text()
+    if full_output:
+        assert "MIDDLE_EVIDENCE" in response.message
+        assert "omitted inline" not in response.message
+    else:
+        assert len(response.message) < 13_000
+        assert "omitted inline" in response.message and str(archive) in response.message
+        assert "MIDDLE_EVIDENCE" not in response.message

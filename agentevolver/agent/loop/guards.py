@@ -21,7 +21,7 @@ from typing import Any, List, Optional, Sequence
 
 from agentevolver.agent.loop.events import events
 from agentevolver.logger import logger
-from agentevolver.message.types import AssistantMessage
+from agentevolver.message.types import AssistantMessage, ToolCall
 from agentevolver.runtime.errors import BudgetExhausted
 
 #: Steps reserved at the end of a run for landing rather than starting.
@@ -96,19 +96,24 @@ class NoProgress:
         for message in reversed(turns):
             if not message.tool_calls:
                 break
-            names = [call.function.name for call in message.tool_calls]
-            if all(self._read_only(router, routing, name) for name in names):
+            if all(self._read_only(router, routing, call) for call in message.tool_calls):
                 idle += 1
                 continue
             break
         return idle
 
     @staticmethod
-    def _read_only(router: Any, routing: dict, name: str) -> bool:
+    def _read_only(router: Any, routing: dict, call: ToolCall) -> bool:
         from agentevolver.agent.loop.decision import ActionCall
 
         try:
-            return router.read_only(ActionCall(id="", name=name), routing) is True
+            arguments = json.loads(call.function.arguments)
+            if not isinstance(arguments, dict):
+                return False
+            return router.read_only(ActionCall(
+                id=call.id, name=call.function.name, args=arguments,
+                caller=call.caller,
+            ), routing) is True
         except Exception:  # noqa: BLE001 - unknown counts as effectful
             return False
 

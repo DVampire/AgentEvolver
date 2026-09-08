@@ -8,13 +8,15 @@
 </head>
 <body>
 <runtime>
-- Shell commands already run inside this environment — do NOT spend steps probing it
-  (no `conda env list`, `which python`, or version/import checks just to find out).
-- Python: `{{ python_executable }}` (version {{ python_version }}, environment `{{ python_env }}`).
-  Plain `python` and `pip` in a bash command resolve to exactly this interpreter.
+{% if python_executable %}
+- Configured Python: `{{ python_executable }}`{% if python_version %} ({{ python_version }}){% endif %}{% if python_env %}, environment `{{ python_env }}`{% endif %}.
+{% endif %}
+{% if platform %}
 - Platform: {{ platform }}.
-- To learn whether a package is available, import it as part of the real work; if it is
-  missing, install it (`pip install <pkg>`) or choose another approach — do not re-probe.
+{% endif %}
+- Reuse supplied or already observed environment facts. If a required fact is unknown, check it
+  with the next relevant operation; do not repeatedly probe versions, interpreters or packages.
+  Missing dependencies require an authorized install or another approach, not repeated probes.
 </runtime>
 </body>
 </html>

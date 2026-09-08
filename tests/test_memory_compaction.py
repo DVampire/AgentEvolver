@@ -570,11 +570,11 @@ def test_a_fold_records_what_it_cost(monkeypatch):
     assert 0 < metadata["savings_ratio"] <= 1
 
 
-def test_a_summary_longer_than_what_it_replaced_is_rejected(monkeypatch):
-    """Compaction must not pay for a model call and then expand future requests."""
-    event = _folded(monkeypatch, records=3, summary="x" * 4_000)
+def test_a_long_summary_is_applied_and_its_size_change_is_recorded(monkeypatch):
+    event = _folded(monkeypatch, records=3, summary="x" * 12_000)
 
-    assert event is None
+    assert event is not None
+    assert event.metadata["tokens_saved"] < 0
 
 
 def test_one_pressure_event_makes_one_portable_summary_call():

@@ -98,6 +98,29 @@ class TraceHook(Hook):
                 }})
             self._timers[f"{ctx.id}:agent"] = time.monotonic()
 
+        elif inp_event in (HookEvent.PRE_COMPACT, HookEvent.POST_COMPACT):
+            finished = inp_event == HookEvent.POST_COMPACT
+            event = TraceEvent(
+                event_type=TraceEventType.CUSTOM,
+                session_id=ctx.id,
+                task_id=self._task_id(ctx),
+                agent_name=agent_name,
+                step_number=inp.get("step"),
+                action_name="context_compaction",
+                label="Compaction finished" if finished else "Compaction started",
+                success=bool(inp.get("folded")) if finished and "folded" in inp else None,
+                ignorable=True,
+                metadata={
+                    "type": "context_compaction",
+                    "phase": "finished" if finished else "started",
+                    **{key: inp[key] for key in (
+                        "trigger", "fold", "max_folds", "tokens", "token_scope", "messages",
+                        "folded", "detail", "tokens_before", "tokens_after",
+                        "reclaimed", "unproductive_folds", "retry_step", "memory",
+                    ) if key in inp},
+                },
+            )
+
         elif inp_event == HookEvent.ON_STOP:
             elapsed = self._pop_timer(f"{ctx.id}:agent")
             # The outcome the run reported, not a constant. This was hardcoded to

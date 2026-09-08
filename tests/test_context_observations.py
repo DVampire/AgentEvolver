@@ -71,32 +71,34 @@ def test_notes_cannot_split_a_native_tool_turn():
     assert len(c.items) == 1
 
 
-def test_a_retained_plan_is_not_counted_as_reclaimed_history():
+def test_length_target_does_not_veto_summary_or_replace_current_plan():
     c = Conversation()
     c.observe("plan", "Keep exact requirements " * 500)
     for index in range(3):
         turn(c, index)
-    assembler = ContextAssembler(retain_turns=1, compact_output_tokens=4000)
+    assembler = ContextAssembler(retain_turns=1, compact_output_tokens=256)
     summary = "Repeated summary " * 200
-    source = assembler.summarize_source(c)
-    assert assembler.valid_checkpoint(summary, source)[0]
-    assert not assembler.valid_checkpoint(summary, source, retained=c.observations)[0]
-    original = list(c.items)
-    assert not assembler.fold(c, summary)
-    assert c.items == original and c.checkpoint is None
+    plan = c.observations[0]
+    assert assembler.fold(c, summary)
+    assert summary.strip() in c.checkpoint.text
+    assert sum(item is plan for item in c.items) == 1
+    assert c.turns == 1 and c.complete
 
 
 @pytest.mark.asyncio
-async def test_oversized_checkpoint_does_not_pay_for_audit(monkeypatch):
+async def test_long_checkpoint_is_applied_after_one_summary_call(tmp_path):
     agent = Agent(retain_recent_steps=1, compact_output_tokens=256)
+    agent._thread_path = tmp_path / "thread.json"
+    agent.conversation.task = "Keep existing public URLs"
     for i in range(3):
         turn(agent.conversation, i)
     agent.native_checkpoint = AsyncMock(return_value=None)
     agent.text_checkpoint = AsyncMock(return_value="too verbose " * 2000)
-    audit = AsyncMock()
-    monkeypatch.setattr("agentevolver.hook.default.compact.CompactHook.verify", audit)
-    original = list(agent.conversation.items)
     moved, reason = await agent._fold("test")
-    assert not moved and "before audit" in reason
-    assert agent.conversation.items == original
-    audit.assert_not_awaited()
+    assert moved and reason == "text"
+    agent.text_checkpoint.assert_awaited_once()
+    assert "too verbose " * 2000 in agent.conversation.checkpoint.text
+    assert agent.conversation.task == "Keep existing public URLs"
+    assert agent.conversation.turns == 1 and agent.conversation.complete
+    archives = list(tmp_path.glob("thread/archive/*.json"))
+    assert len(archives) == 1 and str(archives[0]) in agent.conversation.checkpoint.text

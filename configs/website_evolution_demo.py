@@ -137,7 +137,7 @@ WORKER_MAX_TOKEN = 100_000_000
 BUILDER_MAX_TOKEN = 100_000_000
 
 # Every role uses the shared context assembler. Routes with native compaction use it;
-# others use an audited portable checkpoint. Full input (including cache and tools)
+# others use a portable checkpoint. Full input (including cache and tools)
 # triggers at 50k, independently of the model window and cumulative execution budget.
 _AGENT_CORE = dict(
     # Honor the operator's role budget even when a Builder proposes a smaller child cap.

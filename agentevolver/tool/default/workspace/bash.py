@@ -23,7 +23,7 @@ from agentevolver.utils.terminal import (
     render_terminal,
 )
 
-_DESCRIPTION = "Execute bash commands in the shell."
+_DESCRIPTION = "Run shell commands. Large output is excerpted; read/search the linked full archive for omitted evidence."
 
 _GUIDANCE = """
 - Use this tool to run system commands, scripts, or any bash operations.
@@ -410,24 +410,25 @@ class BashTool(Tool):
         stdin: str = "",
         timeout: Optional[int] = None,
         run_in_background: bool = False,
-        max_output_chars: int = 32_000,
+        max_output_chars: int = 12_000,
         **kwargs,
     ) -> Response:
         """Execute a bash command asynchronously.
 
         Args:
             command: The shell command to run.
-            tty:     Attach a pseudo-terminal. Programs that draw a screen, prompt, or
+            tty:     Attach a pseudo-terminal for interactive or terminal-dependent programs.
+                     Programs that draw a screen, prompt, or
                      colourise take a different path — often refusing to run — when their
                      output is not a terminal, so without this their behaviour cannot be
                      observed at all.
             stdin:   Text fed to the command. Keystrokes, when `tty` is set.
-            timeout: Seconds before the command is abandoned; the tool's own default
-                     otherwise.
-            run_in_background: Return a job id at once instead of waiting. The command
+            timeout: Command timeout in seconds; omit to use the tool default.
+            run_in_background: Return a job id immediately; collect with job__output.
+                     The command
                      outlives the call and is collected through the `job_*` tools.
-            max_output_chars: Inline archived foreground output budget; 0 returns full
-                     output. Both ends and the exit status remain visible; read/search
+            max_output_chars: Inline output characters (default 12000); 0 returns full output.
+                     Both ends and the exit status remain visible; read/search
                      the archive for omitted evidence. Does not limit command execution.
         """
         limit = int(timeout) if timeout else self.timeout
@@ -487,7 +488,7 @@ class BashTool(Tool):
                 return Response(
                     type=ResponseType.TOOL,
                     success=True,
-                    message=_with_archive_note(warning_prefix + body, archived),
+                    message=_with_archive_note(warning_prefix + body, archived, max_output_chars),
                     data={"exit_code": exit_code, "command": command, "archived": archived},
                 )
 
