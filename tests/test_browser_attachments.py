@@ -39,3 +39,26 @@ def test_identical_images_keep_the_latest_label_even_with_different_paths():
 def test_zero_screenshot_budget_really_disables_attachments():
     agent = browser(("current", "x", "Current"), max_screenshots=0)
     assert agent.attachments() == []
+
+
+def test_a_folded_image_is_named_to_the_summariser_not_pasted_into_it():
+    """`Message.text` stringifies an image part to its whole base64 data URL.
+
+    Nothing puts an image in the conversation today — a screenshot is evidence for one
+    step and is dropped after it — but the portable checkpoint renders whatever history
+    holds, so one image reaching it would put megabytes of base64 into the summariser's
+    prompt and again into the auditor's. The guard belongs with the renderer, not with an
+    assumption about who fills the history.
+    """
+    from agentevolver.agent.loop.agent import Agent
+    from agentevolver.message.types import (
+        ContentPartImage, ContentPartText, HumanMessage, ImageURL,
+    )
+
+    message = HumanMessage(content=[
+        ContentPartText(text="the galaxy field renders, ~40 systems"),
+        ContentPartImage(image_url=ImageURL(url="data:image/png;base64," + "x" * 4096)),
+    ])
+    rendered = Agent._render_for_checkpoint(message)
+    assert "base64" not in rendered and "x" * 64 not in rendered
+    assert "[image_url]" in rendered and "galaxy field renders" in rendered

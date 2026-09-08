@@ -218,6 +218,51 @@ def test_the_fold_budget_and_the_retained_tail_both_stop_folding():
     assert ContextAssembler(retain_turns=99).fold_reason(held) == ""
 
 
+@pytest.mark.asyncio
+async def test_only_a_fold_that_reclaims_nothing_spends_the_budget():
+    """The budget guards against a history that will not shrink, not against long work.
+
+    It counted every fold, so a run that folded successfully often enough exhausted it and
+    then refused to fold at all. That is what killed a 90-step browser agent: 32 healthy
+    folds in one dispatch, then twenty-two minutes of overflow on every remaining step,
+    surfacing as a rejected release rather than as anything about compaction.
+    """
+    from types import SimpleNamespace
+
+    from agentevolver.agent.loop.agent import Agent
+
+    assembler = ContextAssembler(retain_turns=2, compact_after_turns=2, max_folds=3)
+    sizes = iter([1000, 400])  # one fold that reclaims, then a floor nothing shrinks
+    assembler.body_tokens = lambda _conversation: next(sizes, 400)
+    reclaimed = {"value": True}
+
+    async def _fold(_trigger):
+        return reclaimed["value"], "text"
+
+    async def _emit(*_args, **_kwargs):
+        return None
+
+    agent = SimpleNamespace(
+        name="probe", ctx=None, _folds=0, _unproductive_folds=0,
+        conversation=conversation(turns=2), assembler=assembler,
+        _events=SimpleNamespace(emit=_emit), _fold=_fold,
+        _identity=lambda: {"agent": "probe"},
+    )
+
+    # A fold that reclaims room leaves the budget untouched, however often it happens.
+    assert await Agent.make_room(agent, trigger="overflow") is True
+    assert agent._unproductive_folds == 0
+
+    # One that reclaims nothing spends it, and enough of those in a row stop folding.
+    reclaimed["value"] = False
+    for expected in (1, 2, 3):
+        await Agent.make_room(agent, trigger="overflow")
+        assert agent._unproductive_folds == expected
+    assert assembler.fold_reason(
+        conversation(turns=6), folds=agent._unproductive_folds,
+    ) == ""
+
+
 def test_a_fold_cuts_at_a_turn_boundary_and_keeps_the_tail_sendable():
     assembler = ContextAssembler(retain_turns=2, compact_after_turns=2)
     held = conversation(turns=6)
