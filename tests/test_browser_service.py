@@ -40,6 +40,41 @@ async def test_keypress_aliases_chords_and_sequences(service):
     assert await page.evaluate("document.activeElement.tagName") == "BUTTON"
     assert (await service.keypress(["ESC", "ESCAPE", "SPACE", "ARROWDOWN"], session_id="keys")).success
     assert not (await service.keypress([], session_id="keys")).success
+    # " " is Playwright's own name for the spacebar. Validating with `key.strip()` refused
+    # it as "an empty list of key names", which is neither true nor about the right thing —
+    # and the spacebar is what a viewer's pause control is bound to.
+    assert (await service.keypress([" "], session_id="keys")).success
+    refused = await service.keypress(["Enter", ""], session_id="keys")
+    assert not refused.success and "not key names" in refused.message
+
+
+@pytest.mark.asyncio
+async def test_a_command_can_read_what_an_earlier_command_bound(service):
+    """Watching a page takes two calls: attach a listener, act, then read what it saw.
+
+    Every call used to get a fresh namespace, so the read failed with a bare NameError
+    several steps after the binding — which is how a browser agent lost the console
+    errors it had set out to collect, and never learned why.
+    """
+    page = await service._page_for("scope")
+    await page.set_content("<button onclick=\"console.log('clicked')\">Go</button>")
+
+    setup = await service.command(
+        "seen = []\n"
+        "page.on('console', lambda message: seen.append(message.text))\n",
+        session_id="scope",
+    )
+    assert setup.success
+
+    assert (await service.command("await page.click('button')", session_id="scope")).success
+    read = await service.command("return seen", session_id="scope")
+    assert read.success and "clicked" in read.message
+
+    # Scoped to the session, and gone with it.
+    other = await service.command("return globals().get('seen')", session_id="elsewhere")
+    assert other.success and "None" in other.message
+    await service.close_session("scope")
+    assert "scope" not in service._command_scopes
 
 
 @pytest.mark.asyncio

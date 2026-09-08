@@ -343,6 +343,9 @@ class BrowserEnvironment(Environment):
             "Use this as a fallback when coordinate-based actions fail (element not clickable, hidden, or moving), "
             "or to read structured data from the page. The code runs inside an async function: use `await` directly "
             "and `return` to send a value back. Timeout: 30s.\n"
+            "Names you bind persist to your next command on the same page, so you can attach a listener in one call "
+            "and read what it collected in a later one — for example bind `errors = []`, then "
+            "`page.on('console', lambda m: errors.append(m.text))`, act, and `return errors`.\n"
             "For JavaScript alert/confirm/prompt, use handle_dialog with an explicit choice when state reports a pending dialog. Do not install dialog callbacks or automatically accept confirmations.\n"
             "Examples:\n"
             '- Click by text (auto-wait, auto-scroll, trusted event): await page.locator("text=Login").click()\n'

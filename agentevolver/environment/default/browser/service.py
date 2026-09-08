@@ -143,6 +143,12 @@ class BrowserService:
         # Per-session isolation: each session_id gets its own BrowserContext + Page
         # (independent cookies/storage) inside the one shared browser process.
         self._sessions: Dict[str, Dict[str, Any]] = {}
+        # Names each session's `command` snippets have bound, kept between calls. Every
+        # call used to get a fresh dict, so the obvious way to watch a page — bind a list,
+        # attach `page.on("console", ...)`, read it back after acting — failed on the read
+        # with a bare NameError three steps later. The page persists across calls; the
+        # names a caller binds to observe it now persist with it.
+        self._command_scopes: Dict[str, Dict[str, Any]] = {}
         self._sandbox = None  # opensandbox Sandbox instance
 
     async def start(self):
@@ -342,6 +348,10 @@ class BrowserService:
 
     async def close_session(self, session_id: str = "default") -> None:
         """Close a session's page and context (if we created it)."""
+        # Dropped whether or not there is a session left to close: the scope holds
+        # whatever the snippets bound, page handles included, and a scope outliving its
+        # page would hand the next session of the same name stale objects.
+        self._command_scopes.pop(session_id, None)
         sess = self._sessions.get(session_id)
         if not sess:
             return
@@ -754,8 +764,18 @@ class BrowserService:
         if not page:
             return self._unavailable("keypress")
         try:
-            if not keys or any(not isinstance(key, str) or not key.strip() for key in keys):
-                raise ValueError("keys must be a non-empty list of key names")
+            # `not key`, not `not key.strip()`: " " is Playwright's own name for the
+            # spacebar, and stripping it made a valid press fail as "an empty list of key
+            # names" — a message about the wrong thing entirely, for a key a 3D viewer is
+            # very likely to want.
+            invalid = [key for key in keys if not isinstance(key, str) or not key]
+            if not keys or invalid:
+                raise ValueError(
+                    f"keys must be a non-empty list of key names; got {keys!r}"
+                    if not keys else
+                    f"these are not key names: {invalid!r}. Use Playwright names such as "
+                    f"'Enter', 'Escape', 'PageDown', 'ArrowLeft', or ' ' for the spacebar."
+                )
             aliases = {"esc": "Escape", "escape": "Escape", "tab": "Tab", "space": "Space",
                        "enter": "Enter", "return": "Enter", "ctrl": "Control", "control": "Control",
                        "shift": "Shift", "alt": "Alt", "meta": "Meta", "cmd": "Meta",
@@ -830,10 +850,22 @@ class BrowserService:
             )
         task: Optional[asyncio.Task] = None
         try:
-            src = "async def __cmd__(page, context):\n" + textwrap.indent(code, "    ")
-            ns: Dict[str, Any] = {}
-            exec(src, ns)
-            task = asyncio.create_task(ns["__cmd__"](page, page.context))
+            # The snippet's own bindings survive to the next call. They are locals of the
+            # wrapper, so they are harvested in a `finally` — which an early `return` runs
+            # too — into the session's scope, and that scope is the wrapper's globals, so
+            # the next call sees them by name.
+            src = (
+                "async def __cmd__(page, context, __scope__):\n"
+                "    try:\n"
+                + textwrap.indent(code, "        ")
+                + "\n    finally:\n"
+                "        __scope__.update({__k: __v for __k, __v in locals().items()\n"
+                "                          if not __k.startswith('__')\n"
+                "                          and __k not in ('page', 'context')})\n"
+            )
+            scope = self._command_scopes.setdefault(session_id, {})
+            exec(src, scope)
+            task = asyncio.create_task(scope["__cmd__"](page, page.context, scope))
             # The command has a total budget; each locator has a shorter page default.
             result = await self._run_action(task, session_id, timeout=timeout + 1.0)
             result_repr = repr(result)
