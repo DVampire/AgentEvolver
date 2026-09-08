@@ -696,7 +696,7 @@ def test_website_demo_model_roster_matches_launcher_and_vision_catalog():
     # own constant so the two can move independently.
     assert cfg.website_builder_agent.model_name == DEFAULT_BUILDER_MODEL == "llm_hub/claude-fable-5-1"
     assert cfg.website_user_agent.model_name == DEFAULT_USER_MODELS[0]
-    assert cfg.browser_agent.model_name == DEFAULT_ACCEPTANCE_MODEL == "llm_hub/gemini-3.8-flash"
+    assert cfg.browser_agent.model_name == DEFAULT_ACCEPTANCE_MODEL == "llm_hub/gpt-6-astra"
     assert cfg.model_name == "llm_hub/claude-opus-5"
     catalog = llm_hub_models(max_tokens=2048, default_temperature=0.0, default_timeout=30.0)
     specs = {entry["model_name"]: entry for group in catalog.values() for entry in group}
@@ -752,7 +752,7 @@ def test_website_task_manifest_routes_independent_acceptance(tmp_path):
 
     assert manifest["release_acceptance"] == {
         "agent": "browser_agent",
-        "model": "llm_hub/gemini-3.8-flash",
+        "model": "llm_hub/gpt-6-astra",
         "after_initial_build": True,
         "after_each_optimization": True,
         "exact_deployed_url_only": True,

@@ -200,7 +200,13 @@ website_user_agent.update(**_USER)
 browser_agent.update(
     **{
         **_AGENT_CORE,
-        "model_name": "llm_hub/gemini-3.8-flash",
+        # gemini-3.8-flash's route caps input near 95k, and acceptance is the longest
+        # single dispatch in the demo: on orbital_simulator (2026-09-08, session
+        # c7556070) its history reached capacity at step ~60 of 90 and every remaining
+        # step overflowed, so the verifier could not be called and the release it was
+        # judging was recorded as rejected. A larger input window is the difference
+        # between a verdict and a silent refusal.
+        "model_name": "llm_hub/gpt-6-astra",
         "prompt_name": "browser_agent",
         "env_name": "browser_environment",
         "use_memory": False,

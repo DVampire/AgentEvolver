@@ -49,7 +49,10 @@ DEFAULT_USER_MODELS = [
     "llm_hub/claude-fable-5-1",
     "llm_hub/gemini-3.8-flash",
 ]
-DEFAULT_ACCEPTANCE_MODEL = "llm_hub/gemini-3.8-flash"
+# Acceptance is the longest single dispatch here, and its history has to survive to the
+# end of the checklist: the previous route capped input near 95k and ran out mid-run,
+# which reads downstream as a rejected release rather than as an unreachable verifier.
+DEFAULT_ACCEPTANCE_MODEL = "llm_hub/gpt-6-astra"
 DEFAULT_BUILDER_MODEL = "llm_hub/claude-fable-5-1"
 
 
