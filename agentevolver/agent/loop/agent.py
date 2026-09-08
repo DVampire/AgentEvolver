@@ -259,10 +259,18 @@ class Agent(BaseModel):
         self._notes: List[str] = []
         self._model_failures = 0
         self._truncated_turns = 0
-        #: Folds spent this run, against `assembler.max_folds`. Bounded because a history
-        #: that cannot shrink further would otherwise be asked once per step for the rest
-        #: of the budget, producing the same request and the same refusal each time.
+        #: Folds attempted this run, for the fold number the compaction events report.
         self._folds = 0
+        #: Consecutive folds that reclaimed nothing — the number the budget is against.
+        #:
+        #: The bound exists because a history that cannot shrink would otherwise be asked
+        #: once per step for the rest of the run, producing the same request and the same
+        #: refusal each time. Counting *every* fold against it made the guard fire on the
+        #: opposite case: a 90-step browser agent folding every few steps is folding
+        #: working, and it spent all 32 in one dispatch, after which every remaining step
+        #: refused to fold, overflowed, and failed — twenty-two minutes of a run that then
+        #: reported a rejected release, because a long run is exactly what folding is for.
+        self._unproductive_folds = 0
         #: Reported tokens waiting to be forwarded to optional constraint hooks.
         #: Held rather than counted inline because the guard runs once per step and must
         #: see each turn's spend exactly once.
@@ -390,6 +398,7 @@ class Agent(BaseModel):
         self._model_failures = 0
         self._truncated_turns = 0
         self._folds = 0
+        self._unproductive_folds = 0
         self._unspent_tokens = 0
         # Per-run, like everything above it: a resident process runs many turns, and a
         # gate that blocked the previous one must not count against this one.
@@ -566,6 +575,21 @@ class Agent(BaseModel):
             )
         return self._decide(accumulated)
 
+    def trace_coordinates(self) -> Dict[str, Any]:
+        """Who this request belongs to, for anything that reaches a model on our behalf.
+
+        Not only the agent's own turn: compaction summarises and audits through the model
+        too, and those calls carried no coordinates at all. Their trace rows arrived with
+        no agent, no task and no step, so the run dashboard listed them as ``unknown``
+        beside the very agent whose history was being folded — 76 rows in one demo, and
+        the usage they reported rolled up to nobody.
+        """
+        return {
+            "task_id": getattr(self.proc, "pid", "") or "",
+            "agent_name": self.name,
+            "step_number": self.step,
+        }
+
     def request_input(self, messages: Sequence[Message], tools: Any) -> Dict[str, Any]:
         """Everything one request carries beyond its messages.
 
@@ -587,11 +611,7 @@ class Agent(BaseModel):
         payload: Dict[str, Any] = {
             "messages": list(messages),
             "tools": tools,
-            "trace_context": {
-                "task_id": getattr(self.proc, "pid", "") or "",
-                "agent_name": self.name,
-                "step_number": self.step,
-            },
+            "trace_context": self.trace_coordinates(),
             "compaction_policy": self.assembler.compaction_policy(),
             "runtime_features": {
                 "programmatic_tool_calling": self.programmatic_tool_calling,
@@ -1269,7 +1289,8 @@ class Agent(BaseModel):
             )
             pressure = model_manager.measure(self.model_name, self.request_input(messages, tools))
         reason = self.assembler.fold_reason(
-            self.conversation, live=live, folds=self._folds, attachments=self.attachments(),
+            self.conversation, live=live, folds=self._unproductive_folds,
+            attachments=self.attachments(),
             request_pressure=pressure,
         )
         if not reason:
@@ -1306,6 +1327,14 @@ class Agent(BaseModel):
             ctx=self.ctx,
         )
         moved, detail = await self._fold(trigger)
+        after = self.assembler.body_tokens(self.conversation)
+        # Only a fold that reclaimed nothing spends the budget. Room recovered is the
+        # whole point of the call, so charging it would make the guard against a history
+        # that cannot shrink fire on one that shrinks every time it is asked.
+        if moved and after < before:
+            self._unproductive_folds = 0
+        else:
+            self._unproductive_folds += 1
         await self._events.emit(
             HookEvent.POST_COMPACT,
             {
@@ -1313,7 +1342,9 @@ class Agent(BaseModel):
                 "folded": moved,
                 "detail": detail,
                 "tokens_before": before,
-                "tokens_after": self.assembler.body_tokens(self.conversation),
+                "tokens_after": after,
+                "reclaimed": max(0, before - after),
+                "unproductive_folds": self._unproductive_folds,
                 "messages": len(self.conversation),
                 **self._identity(),
             },
@@ -1323,10 +1354,11 @@ class Agent(BaseModel):
 
     async def _fold(self, trigger: str) -> Tuple[bool, str]:
         """The fold itself. Returns whether history moved, and why when it did not."""
-        if self._folds >= self.assembler.max_folds:
+        if self._unproductive_folds >= self.assembler.max_folds:
             logger.error(
-                f"| 🛑 [{self.name}] history still does not fit after {self._folds} "
-                "fold(s); not folding further"
+                f"| 🛑 [{self.name}] history still does not fit after "
+                f"{self._unproductive_folds} fold(s) that reclaimed nothing; "
+                "not folding further"
             )
             return False, "fold budget spent"
         source = self.assembler.summarize_source(self.conversation)
@@ -1373,7 +1405,10 @@ class Agent(BaseModel):
                 self.conversation.checkpoint.text if self.conversation.checkpoint else "",
                 *(self._render_for_checkpoint(message) for message in source),
             ])
-            audit = await CompactHook.verify(source=evidence, summary=summary, model=self.model_name, ctx=self.ctx)
+            audit = await CompactHook.verify(
+                source=evidence, summary=summary, model=self.model_name, ctx=self.ctx,
+                trace_context=self.trace_coordinates(),
+            )
             self.count_usage(getattr(audit, "usage", None))
             self.check_budget()
             if not getattr(audit, "approved", False):
@@ -1458,6 +1493,7 @@ class Agent(BaseModel):
                     "existing_summary": existing,
                     "model_name": self.model_name,
                     "max_output_tokens": self.compact_output_tokens,
+                    "trace_context": self.trace_coordinates(),
                 },
                 ctx=self.ctx,
             )
@@ -1470,9 +1506,27 @@ class Agent(BaseModel):
 
     @staticmethod
     def _render_for_checkpoint(message: Message) -> str:
-        """One folded message as a line the summariser can read."""
+        """One folded message as a line the summariser can read.
+
+        Image parts are named, never rendered. ``Message.text`` stringifies a content
+        part, and an image part stringifies to its whole ``data:image/...;base64,`` URL —
+        so a single screenshot in the folded history would put megabytes of base64 into
+        the summariser's prompt and again into the auditor's. The provider-native path is
+        different and unaffected: it is handed the real messages precisely so it can
+        compact the images themselves.
+        """
+        from agentevolver.message.types import ContentPartText
+
         role = getattr(message, "role", "?")
-        text = (getattr(message, "text", "") or "").strip()
+        content = getattr(message, "content", None)
+        if isinstance(content, list):
+            text = "\n".join(
+                f"[{getattr(part, 'type', 'attachment')}]"
+                if not isinstance(part, ContentPartText) else part.text
+                for part in content
+            ).strip()
+        else:
+            text = (getattr(message, "text", "") or "").strip()
         calls = getattr(message, "tool_calls", None) or []
         if calls:
             named = ", ".join(f"{call.function.name}({call.function.arguments})" for call in calls)

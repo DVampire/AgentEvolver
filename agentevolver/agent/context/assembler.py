@@ -47,8 +47,11 @@ DEFAULT_COMPACT_BODY_TOKENS = 100_000
 #: Fraction of the model's window at which folding becomes a capacity matter.
 DEFAULT_FOLD_AT_PRESSURE = 0.85
 
-#: Folds allowed in one run. A history that cannot shrink further would otherwise be
-#: asked once per step for the rest of the budget, producing the same request each time.
+#: Consecutive folds that reclaim nothing, after which folding stops. A history that
+#: cannot shrink further would otherwise be asked once per step for the rest of the run,
+#: producing the same request each time. Productive folds are not counted: a long run
+#: folds many times by design, and charging those spent the budget on healthy work and
+#: then refused to fold for the rest of the dispatch.
 DEFAULT_MAX_FOLDS = 32
 
 #: Ceiling for a checkpoint's own size. A summariser that writes more than this has
