@@ -25,6 +25,7 @@ envelope from a persisted trace. Only the source of the history changed.
 
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from agentevolver.agent.context.conversation import Conversation
@@ -72,6 +73,7 @@ class ContextAssembler:
         retain_turns: int = DEFAULT_RETAIN_TURNS,
         compact_after_turns: int = DEFAULT_COMPACT_AFTER_TURNS,
         compact_body_tokens: int = DEFAULT_COMPACT_BODY_TOKENS,
+        compact_input_tokens: int = 0,
         fold_at_pressure: float = DEFAULT_FOLD_AT_PRESSURE,
         max_folds: int = DEFAULT_MAX_FOLDS,
         context_window: int = DEFAULT_CONTEXT_WINDOW,
@@ -80,6 +82,7 @@ class ContextAssembler:
         self.retain_turns = max(1, int(retain_turns))
         self.compact_after_turns = int(compact_after_turns)
         self.compact_body_tokens = int(compact_body_tokens)
+        self.compact_input_tokens = max(0, int(compact_input_tokens))
         self.fold_at_pressure = float(fold_at_pressure)
         self.max_folds = int(max_folds)
         self.context_window = int(context_window)
@@ -209,6 +212,7 @@ class ContextAssembler:
             "retain_recent_steps": self.retain_turns,
             "compact_after_steps": self.compact_after_turns,
             "compact_body_tokens": self.compact_body_tokens,
+            "compact_input_tokens": self.compact_input_tokens,
             "fold_at_pressure": self.fold_at_pressure,
         }
 
@@ -250,6 +254,7 @@ class ContextAssembler:
         self, conversation: Conversation, *, live: Sequence[str] = (), folds: int = 0,
         attachments: Sequence[Message] = (),
         request_pressure: Optional[Dict[str, Any]] = None,
+        input_token_ratio: float = 1.0,
     ) -> str:
         """Why history should be folded now, or "" for not yet.
 
@@ -268,6 +273,20 @@ class ContextAssembler:
             return ""
 
         reasons: List[str] = []
+        if self.compact_input_tokens:
+            # Full input includes fixed instructions, schemas, images and cached
+            # history, but excludes output reservation. Local tokenizers can greatly
+            # undercount a provider's input; the owning agent supplies its latest
+            # reported/estimated ratio. The shared assembler holds no session state.
+            estimated = (int(request_pressure["estimated_tokens_after"])
+                         if request_pressure is not None else
+                         self.estimate(conversation, live=live, attachments=attachments))
+            full_input = math.ceil(estimated * max(1.0, input_token_ratio))
+            if full_input >= self.compact_input_tokens:
+                reasons.append(
+                    f"full input≈{full_input:,} tokens >= {self.compact_input_tokens:,} "
+                    f"(local={estimated:,}, calibration={input_token_ratio:.2f}x)"
+                )
         if self.compact_after_turns and conversation.turns >= self.compact_after_turns:
             from agentevolver.model.pressure import estimate_tokens
 
@@ -363,6 +382,7 @@ class ContextAssembler:
             f"ContextAssembler(retain_turns={self.retain_turns}, "
             f"compact_after_turns={self.compact_after_turns}, "
             f"compact_body_tokens={self.compact_body_tokens}, "
+            f"compact_input_tokens={self.compact_input_tokens}, "
             f"fold_at_pressure={self.fold_at_pressure}, window={self.context_window})"
         )
 

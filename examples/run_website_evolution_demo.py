@@ -332,6 +332,7 @@ def validate_local_artifacts(
         "retain_recent_steps",
         "compact_after_steps",
         "compact_body_tokens",
+        "compact_input_tokens",
         "fold_at_pressure",
     )
     context_roles = (
@@ -346,7 +347,7 @@ def validate_local_artifacts(
             raise ValueError(f"{role} does not declare a bounded-history policy: {policy}")
         if not role_config.get("use_memory"):
             raise ValueError(f"{role} must keep use_memory=True; compaction depends on it")
-        if not policy["compact_body_tokens"] or not policy["fold_at_pressure"]:
+        if not (policy["compact_body_tokens"] or policy["compact_input_tokens"]) or not policy["fold_at_pressure"]:
             raise ValueError(
                 f"{role} disables compaction ({policy}); a long-running role that never "
                 "folds grows its prefix until the provider refuses the request"

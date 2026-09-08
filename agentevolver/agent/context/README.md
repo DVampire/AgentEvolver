@@ -68,6 +68,21 @@ which is also what keeps the prefix behind the fold point stable for the cache.
 Writing the summary needs a model, and this module does not own one: the assembler says
 *when* to fold and *what* to summarise, and the agent supplies the text.
 
+`Agent.compact_input_tokens` optionally triggers on full input, including fixed prompts,
+tool schemas, images and cached tokens, excluding output. The website demo sets it to
+50,000. Before generation, the assembler checks the current request estimate calibrated
+by that agent's latest provider-reported input / local estimate ratio (never below 1).
+This is an early compaction trigger, not an exact provider token cap: a new large tool
+result or an estimator error can overshoot it. Only closed turns can fold, recent turns
+stay intact, and a failed semantic audit retains the original history. The body and
+context-window triggers remain available; cumulative execution budgets are separate.
+The compact hook reserves completion headroom for reasoning separately from the readable
+checkpoint size. A structured semantic rejection permits one repair using the original
+source and audit findings; the corrected candidate must pass the same size and semantic
+checks. A second rejection or an unavailable audit keeps the original history.
+The audit considers the unchanged task, latest observations and retained tail alongside
+the candidate, so a requirement kept verbatim need not be duplicated in the summary.
+
 Delivered events are saved immediately in the conversation, deduplicated by envelope ID,
 and included in the source of later compaction. A plan observation is appended only when
 its content or mode changes. The latest observation is retained verbatim across folds

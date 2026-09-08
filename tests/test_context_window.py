@@ -310,12 +310,12 @@ def test_a_native_checkpoint_is_trusted_without_the_size_check():
     assert held.checkpoint.provider_state == ANTHROPIC_NATIVE
 
 
-def test_the_compaction_policy_carries_all_four_signals_to_the_model_layer():
+def test_the_compaction_policy_carries_all_signals_to_the_model_layer():
     """Omitted, native compaction never engages and the thresholds fall back."""
     policy = ContextAssembler().compaction_policy()
     assert set(policy) == {
         "retain_recent_steps", "compact_after_steps",
-        "compact_body_tokens", "fold_at_pressure",
+        "compact_body_tokens", "compact_input_tokens", "fold_at_pressure",
     }
 
 
@@ -339,11 +339,13 @@ def test_a_declared_fold_policy_overrides_the_shared_default():
     agent = AgentProbe(
         base_dir="",
         compact_body_tokens=60_000,
+        compact_input_tokens=50_000,
         retain_recent_steps=2,
         compact_after_steps=9,
         fold_at_pressure=0.7,
     )
     assert agent.assembler.compact_body_tokens == 60_000
+    assert agent.assembler.compact_input_tokens == 50_000
     assert agent.assembler.retain_turns == 2
     assert agent.assembler.compact_after_turns == 9
     assert agent.assembler.fold_at_pressure == 0.7
@@ -379,3 +381,42 @@ def test_a_declared_policy_actually_changes_when_history_folds():
     held = conversation(turns=6)
     assert eager.assembler.fold_reason(held) != ""
     assert "body" not in patient.assembler.fold_reason(held)
+
+
+@pytest.mark.parametrize("estimated,ratio,triggers", [
+    (49_999, 1.0, False), (50_000, 1.0, True),
+    (35_000, 1.5, True), (35_000, 1.0, False),
+])
+def test_full_input_trigger_includes_prefix_and_calibrates_provider_undercount(estimated, ratio, triggers):
+    held = conversation()
+    assembler = ContextAssembler(compact_after_turns=0, compact_body_tokens=0,
+                                 compact_input_tokens=50_000, fold_at_pressure=0)
+    assert assembler.body_tokens(held) < 1_000
+    pressure = {"estimated_tokens_after": estimated, "reserved_output_tokens": 128_000}
+    reason = assembler.fold_reason(held, request_pressure=pressure, input_token_ratio=ratio)
+    assert bool(reason) is triggers
+
+
+def test_full_input_trigger_preserves_tool_pairs_and_observations_after_fold():
+    held = conversation(turns=12, bulk=3_000)
+    held.observe("plan", "Do not publish: browser verification is still pending.")
+    assembler = ContextAssembler(compact_after_turns=0, compact_body_tokens=0,
+                                 compact_input_tokens=50_000, fold_at_pressure=0)
+    before = assembler.estimate(held)
+    assert before > 50_000 and assembler.should_fold(held)
+    exact_tail = [m.model_dump() for m in held.items[-8:]]
+    assert assembler.fold(held, "Read the parser; browser verification is still pending.")
+    assembler.build_envelope(held).validate()
+    assert [m.model_dump() for m in held.items[-8:]] == exact_tail
+    assert held.observations[0].text.endswith("verification is still pending.")
+    assert assembler.estimate(held) < 50_000
+    assert not assembler.should_fold(held)
+
+
+def test_full_input_trigger_never_folds_an_open_turn():
+    held = conversation()
+    held.append(AssistantMessage(content="", tool_calls=[ToolCall(
+        id="unanswered", function=Function(name="read_file", arguments="{}"),
+    )]))
+    assembler = ContextAssembler(compact_input_tokens=1)
+    assert not assembler.should_fold(held)

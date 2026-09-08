@@ -91,6 +91,45 @@ TOOLS = {
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("usage,expected", [
+    ({"context_input_tokens": 60_000, "input_tokens": 80,
+      "cache_read_tokens": 59_920, "output_tokens": 20_000}, 2.0),
+    ({"input_tokens": 80, "cache_read_input_tokens": 50_000,
+      "cache_creation_input_tokens": 9_920}, 2.0),
+    ({"context_input_tokens": 15_000}, 1.0),
+    ({"cost": 0.1}, 1.0),
+    (None, 1.0),
+])
+async def test_full_input_calibration_uses_generation_usage_and_stays_agent_local(monkeypatch, usage, expected):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from agentevolver.model.types import StreamDone, TextDelta
+
+    async def stream(**kwargs):
+        yield TextDelta("result")
+        yield StreamDone("end_turn", usage=usage)
+
+    monkeypatch.setattr("agentevolver.model.model_manager", SimpleNamespace(
+        stream=stream, get_model_config=lambda _: object(),
+        measure=lambda *args: {"estimated_tokens_after": 30_000, "pressure_ratio_after": 0.03},
+    ))
+    agent = Agent(router=StubRouter(TOOLS), compact_input_tokens=50_000)
+    other = Agent(router=StubRouter(TOOLS), compact_input_tokens=50_000)
+    assert not (await agent.think(0)).error
+    assert agent._input_token_ratio == expected
+    assert other._input_token_ratio == 1.0
+    # The real pre-step gate must use this receipt even though its raw estimate
+    # is below 50k. No live Agent execution or model call is needed for the gate.
+    for _ in range(6):
+        agent.conversation.note("Continue")
+        agent.conversation.append(AssistantMessage(content="completed turn"))
+    compact = AsyncMock(return_value=False)
+    monkeypatch.setattr(agent, "make_room", compact)
+    await agent._fold_if_needed(())
+    assert compact.await_count == (1 if expected == 2.0 else 0)
+
+
+@pytest.mark.asyncio
 async def test_native_async_read_overlaps_generation_and_is_not_repeated(monkeypatch):
     import asyncio
     from types import SimpleNamespace

@@ -28,6 +28,7 @@ imports this module.
 
 from __future__ import annotations
 
+import json
 import asyncio
 import copy
 import time
@@ -169,6 +170,10 @@ class Agent(BaseModel):
     compact_body_tokens: Optional[int] = Field(
         default=None, description="Fold once history's body exceeds this many tokens."
     )
+    compact_input_tokens: Optional[int] = Field(
+        default=None, ge=0,
+        description="Full input compaction trigger, including cached tokens and schemas; 0 disables."
+    )
     retain_recent_steps: Optional[int] = Field(
         default=None, description="Whole turns kept verbatim after a fold."
     )
@@ -222,6 +227,7 @@ class Agent(BaseModel):
             "retain_turns": self.retain_recent_steps,
             "compact_after_turns": self.compact_after_steps,
             "compact_body_tokens": self.compact_body_tokens,
+            "compact_input_tokens": self.compact_input_tokens,
             "fold_at_pressure": self.fold_at_pressure,
             "compact_output_tokens": self.compact_output_tokens,
         }
@@ -229,6 +235,7 @@ class Agent(BaseModel):
             "retain_turns": self.assembler.retain_turns,
             "compact_after_turns": self.assembler.compact_after_turns,
             "compact_body_tokens": self.assembler.compact_body_tokens,
+            "compact_input_tokens": self.assembler.compact_input_tokens,
             "fold_at_pressure": self.assembler.fold_at_pressure,
             "compact_output_tokens": self.assembler.compact_output_tokens,
         }
@@ -275,6 +282,7 @@ class Agent(BaseModel):
         #: refused to fold, overflowed, and failed — twenty-two minutes of a run that then
         #: reported a rejected release, because a long run is exactly what folding is for.
         self._unproductive_folds = 0
+        self._input_token_ratio = 1.0
         #: Reported tokens waiting to be forwarded to optional constraint hooks.
         #: Held rather than counted inline because the guard runs once per step and must
         #: see each turn's spend exactly once.
@@ -401,6 +409,7 @@ class Agent(BaseModel):
         self._truncated_turns = 0
         self._folds = 0
         self._unproductive_folds = 0
+        self._input_token_ratio = 1.0
         self._unspent_tokens = 0
         # Per-run, like everything above it: a resident process runs many turns, and a
         # gate that blocked the previous one must not count against this one.
@@ -515,12 +524,16 @@ class Agent(BaseModel):
         messages = self.assembler.build(
             self.conversation, live=live, attachments=self.attachments()
         )
+        request = self.request_input(messages, tools)
+        estimated_input = 0
+        if self.assembler.compact_input_tokens and model_manager.get_model_config(self.model_name) is not None:
+            estimated_input = model_manager.measure(self.model_name, request)["estimated_tokens_after"]
 
         logger.info(f"| 🔄 [{self.name}] step {step + 1}/{self.max_step}")
         self._early_results = {}
         try:
             stream = model_manager.stream(
-                name=self.model_name, input=self.request_input(messages, tools), ctx=self.ctx,
+                name=self.model_name, input=request, ctx=self.ctx,
             )
             if self.async_tool_calling:
                 eligible = {tool.name for tool in tools
@@ -543,7 +556,16 @@ class Agent(BaseModel):
                 error=f"{type(error).__name__}: {error}",
                 overflowed=isinstance(error, ContextOverflowError),
             )
-        return self._decide(accumulated)
+        decision = self._decide(accumulated)
+        if estimated_input and not decision.error:
+            from agentevolver.model.types import TokenUsage
+
+            usage = TokenUsage.from_raw(decision.usage)
+            if usage is not None:
+                full_input = usage.total - usage.output_tokens
+                if full_input > 0:
+                    self._input_token_ratio = max(1.0, full_input / estimated_input)
+        return decision
 
     def trace_coordinates(self) -> Dict[str, Any]:
         """Who this request belongs to, for anything that reaches a model on our behalf.
@@ -1281,6 +1303,7 @@ class Agent(BaseModel):
             self.conversation, live=live, folds=self._unproductive_folds,
             attachments=self.attachments(),
             request_pressure=pressure,
+            input_token_ratio=self._input_token_ratio,
         )
         if not reason:
             return
@@ -1386,17 +1409,19 @@ class Agent(BaseModel):
             # Do not discard the only readable evidence in favour of an opaque item:
             # the next call may need a provider-neutral fallback.
             return False, "no portable checkpoint was produced; history retained"
-        if not provider_state:
-            # Reject ineffective candidates before paying for semantic verification.
-            candidate = summary + (f"\n\nFull pre-compaction source snapshot: {archive}" if archive else "")
-            valid, reason = self.assembler.valid_checkpoint(
-                candidate, source,
-                self.conversation.checkpoint.text if self.conversation.checkpoint else "",
-                retained=self.conversation.observations,
-            )
-            if not valid:
-                return False, f"checkpoint rejected before audit: {reason}"
-        if self.compact_verify:
+        for attempt in range(2):
+            if not provider_state:
+                # Reject ineffective candidates before paying for semantic verification.
+                candidate = summary + (f"\n\nFull pre-compaction source snapshot: {archive}" if archive else "")
+                valid, reason = self.assembler.valid_checkpoint(
+                    candidate, source,
+                    self.conversation.checkpoint.text if self.conversation.checkpoint else "",
+                    retained=self.conversation.observations,
+                )
+                if not valid:
+                    return False, f"checkpoint rejected before audit: {reason}"
+            if not self.compact_verify:
+                break
             from agentevolver.hook.default.compact import CompactHook
 
             evidence = "\n".join([
@@ -1404,15 +1429,43 @@ class Agent(BaseModel):
                 self.conversation.checkpoint.text if self.conversation.checkpoint else "",
                 *(self._render_for_checkpoint(message) for message in source),
             ])
+            removed_ids = {id(message) for message in source}
+            observation_ids = {id(message) for message in self.conversation.observations}
+            retained = "\n".join([
+                f"Unchanged task: {self.conversation.task}",
+                *(self._render_for_checkpoint(message) for message in self.conversation.items
+                  if id(message) not in removed_ids or id(message) in observation_ids),
+            ])
             audit = await CompactHook.verify(
                 source=evidence, summary=summary, model=self.model_name, ctx=self.ctx,
                 trace_context=self.trace_coordinates(),
+                retained_context=retained,
             )
             self.count_usage(getattr(audit, "usage", None))
             self.check_budget()
-            if not getattr(audit, "approved", False):
-                self._notes.append("Checkpoint rejected; exact history retained. Audit: " + (audit.output or "unavailable"))
-                return False, "semantic audit rejected or unavailable; history retained"
+            if getattr(audit, "approved", False):
+                break
+            # One targeted repair uses actual findings, rather than regenerating the
+            # same flawed summary on every later step. Transport failures or malformed
+            # audits are not actionable findings. Neither candidate can alter history
+            # until all size and semantic checks pass.
+            try:
+                findings = json.loads(audit.output or "")
+            except (ValueError, TypeError):
+                findings = {}
+            if attempt == 0 and isinstance(findings, dict) and any(
+                isinstance(findings.get(key), list) and findings[key]
+                for key in ("omissions", "contradictions")
+            ):
+                logger.info(f"| 🗜️ [{self.name}] repairing checkpoint from semantic audit (one retry)")
+                summary = await self.text_checkpoint(
+                    source, previous_summary=summary, audit_feedback=audit.output,
+                )
+                provider_state = None
+                if summary:
+                    continue
+            self._notes.append("Checkpoint rejected; exact history retained. Audit: " + (audit.output or "unavailable"))
+            return False, "semantic audit rejected or unavailable; history retained"
         if archive is not None:
             summary += f"\n\nFull pre-compaction source snapshot: {archive}"
         folded = self.assembler.fold(
@@ -1465,7 +1518,9 @@ class Agent(BaseModel):
         )
         return result
 
-    async def text_checkpoint(self, messages: Sequence[Message]) -> str:
+    async def text_checkpoint(
+        self, messages: Sequence[Message], *, previous_summary: str = "", audit_feedback: str = "",
+    ) -> str:
         """The portable checkpoint, written by the shared ``compact`` hook.
 
         The hook rather than a summary prompt of our own: it already owns the instruction
@@ -1491,6 +1546,8 @@ class Agent(BaseModel):
                     "items": [self._render_for_checkpoint(m) for m in messages],
                     "existing_summary": existing,
                     "task": self.conversation.task,
+                    "previous_summary": previous_summary,
+                    "audit_feedback": audit_feedback,
                     "model_name": self.model_name,
                     "max_output_tokens": self.compact_output_tokens,
                     "trace_context": self.trace_coordinates(),

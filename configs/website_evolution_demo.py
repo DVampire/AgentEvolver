@@ -136,11 +136,9 @@ WALL_CLOCK = 28800
 WORKER_MAX_TOKEN = 100_000_000
 BUILDER_MAX_TOKEN = 100_000_000
 
-# Every role uses the same cache-aware context policy as the SWE-bench MetaAgent.  Native
-# compaction is selected by the configured memory model when supported and otherwise falls
-# back to a portable text checkpoint, so a heterogeneous user panel is not a reason to turn
-# compaction off globally. The Builder uses GPT-6; support workers retain Opus 5,
-# while the co-design panel spans three model families.
+# Every role uses the shared context assembler. Routes with native compaction use it;
+# others use an audited portable checkpoint. Full input (including cache and tools)
+# triggers at 50k, independently of the model window and cumulative execution budget.
 _AGENT_CORE = dict(
     # Honor the operator's role budget even when a Builder proposes a smaller child cap.
     allow_token_budget_override=False,
@@ -148,11 +146,11 @@ _AGENT_CORE = dict(
     enable_evolving=False,
     use_memory=True,
     retain_recent_steps=4,
-    # Use token pressure, not turn count: 18 turns was triggering repeated folds
-    # even for 20-30k browser histories. Smaller model windows still fold earlier
-    # via the measured request pressure (including tools/images/output headroom).
+    # Full input is calibrated from provider receipts; body-only estimates miss large
+    # prefixes. Keep the capacity guard for routes with smaller context windows.
     compact_after_steps=0,
-    compact_body_tokens=100000,
+    compact_body_tokens=0,
+    compact_input_tokens=50000,
     fold_at_pressure=0.85,
 )
 

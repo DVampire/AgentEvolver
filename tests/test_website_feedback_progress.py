@@ -101,7 +101,9 @@ async def test_feedback_and_shared_plan_reach_the_next_builder_request(feedback_
     # Reading feedback does not maintain a second copy or hash of the working plan.
     await JobEnvironment().output("p01", turn=2, ctx=ctx)
     assert "PLAN UNCHANGED" not in deployment_manager.feedback_context(ctx)
-    current = "\n".join(await builder._live_blocks(61))
+    current = "\n".join(message.text for message in builder.assembler.build(
+        builder.conversation, live=await builder._live_blocks(61),
+    ))
     assert "test spire left/right" in current
     assert '"feedback": "unread"' in current  # P02/P03 still must be collected.
 
