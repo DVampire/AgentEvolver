@@ -277,6 +277,9 @@ It does not claim to deliver the whole game. Request full campaign development w
 
 Configuration: `configs/game_development_demo.py`. Entry point:
 `examples/run_game_development_demo.py`. Docker/MCP tests require no model credentials.
+Actual GameBuilder runs register a persistent run page on gateway `9876` before
+task submission; open `/sites/` to find it. `--no-monitor` is deprecated and cannot
+disable registration. A registration failure stops startup rather than running invisibly.
 The actual GameBuilder run needs working model credentials and uses GPT-6 Astra by default.
 `--godot-bin PATH` explicitly selects the local CLI-only backend, without native play.
 Test artifacts contain before/after frames and result.json. The test also exports a

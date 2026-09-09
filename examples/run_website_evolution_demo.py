@@ -22,7 +22,7 @@ def parse_args(argv: Sequence[str] | None = None):
     parser.add_argument("--site-brief", help="Override <scenario-dir>/scenario.html.")
     parser.add_argument("--model", "--builder-model", dest="model", help="Builder model; must accept images.")
     parser.add_argument("--plan-mode", choices=["off", "auto", "plan"], default="auto")
-    parser.add_argument("--no-monitor", action="store_true")
+    parser.add_argument("--no-monitor", action="store_true", help="Deprecated; the shared launcher always registers the run on gateway 9876.")
     parser.add_argument("--monitor-port", type=int, default=8766)
     parser.add_argument("--cfg-options", nargs="+", default=[], metavar="KEY=VALUE")
     parser.add_argument("--validate-only", action="store_true")

@@ -25,7 +25,7 @@ def parse_args(argv: Sequence[str] | None = None):
     parser.add_argument("--godot-bin", help="Select the local CLI-only backend with this Godot executable (no native play).")
     parser.add_argument("--model", help="GameBuilder model; must support screenshot input.")
     parser.add_argument("--plan-mode", choices=["off", "auto", "plan"], default="auto")
-    parser.add_argument("--no-monitor", action="store_true")
+    parser.add_argument("--no-monitor", action="store_true", help="Deprecated; the shared launcher always registers the run on gateway 9876.")
     parser.add_argument("--monitor-port", type=int, default=8766)
     parser.add_argument("--cfg-options", nargs="+", default=[], metavar="KEY=VALUE")
     parser.add_argument("--print-task", action="store_true", help="Print task text without starting the agent or engine.")

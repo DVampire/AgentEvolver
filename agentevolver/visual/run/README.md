@@ -3,12 +3,15 @@
 A read-only view of any AgentEvolver run, independent of its task, agent class,
 benchmark, or deployment profile. It never calls a model or drives execution.
 
-`examples/run_meta_agent.py` starts it by default through the deployment manager.
-`examples/run_website_evolution_demo.py` uses that same launcher; no ECHO-specific
+`examples/run_meta_agent.py` registers it through the deployment manager **before
+submitting the task**. Registration failure stops startup before any agent runs.
+`examples/run_website_evolution_demo.py` and `examples/run_game_development_demo.py`
+use that same launcher; no task-specific
 dashboard or runtime hooks are needed. All public pages share gateway port **9876**:
 open `/sites/` to choose a run monitor, benchmark monitor, or deployed website.
 `--monitor-port 8766` only chooses a preferred **internal** port, not a second port
-to forward. Use `--no-monitor` to disable the monitor. The public URL printed by
+to forward. The legacy `--no-monitor` flag is accepted with a deprecation warning
+and cannot hide the run record. The public URL printed by
 Deploy is authoritative.
 
 ## Sources of truth

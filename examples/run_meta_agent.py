@@ -59,7 +59,7 @@ from agentevolver.utils import make_id
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run MetaAgent on a task")
-    parser.add_argument("--no-monitor", action="store_true", help="Disable the read-only run dashboard.")
+    parser.add_argument("--no-monitor", action="store_true", help="Deprecated compatibility flag; runs are always registered on gateway 9876.")
     parser.add_argument("--monitor-port", type=int, default=8766, help="Internal monitor port; public pages share gateway port 9876.")
     parser.add_argument(
         "--config",
@@ -211,6 +211,28 @@ async def serve_deployed_site_names():
     logger.info(f"| 🌐 Unified site entry: {address}/s/<site>/ (forward port 9876 once)")
 
 
+async def start_run_record(args, session_id):
+    """Register the public run before any task can execute, including legacy flags."""
+    from agentevolver.visual.run import RunMonitor
+
+    if args.no_monitor:
+        logger.warning("| --no-monitor is deprecated and ignored: every run must appear on gateway 9876.")
+    monitor = RunMonitor(config.log_root, session_id=session_id,
+                         title=args.agent_name.replace("_", " ").title(),
+                         extension_root=config.extension_root)
+    # A failed registration is a startup failure, not an invisible paid model run.
+    try:
+        url = await monitor.start(args.monitor_port)
+    except asyncio.CancelledError:
+        monitor.publish(status="interrupted")
+        raise
+    except Exception:
+        monitor.publish(status="failed")
+        raise
+    logger.info(f"| 🌐 Run record: {url} (listed at /sites/; forward port 9876)")
+    return monitor
+
+
 async def run_with_lifecycle() -> None:
     """Run the configured launcher and turn SIGINT/SIGTERM into graceful teardown."""
     loop = asyncio.get_running_loop()
@@ -356,6 +378,7 @@ async def main():
         log_root=task_log_root,
         handler=lambda record: run_agent(record, ctx, args.agent_name),
     )
+    monitor = await start_run_record(args, session_id)
     await task_manager.start(num_workers=1)
 
     # --- Build the task (inline --task string or --task-file document) ---
@@ -388,20 +411,8 @@ async def main():
 
     # --- Wait for completion ---
     from agentevolver.runtime import kernel
-    from agentevolver.visual.run import RunMonitor
-
-    monitor = None
     outcome = "interrupted"
     try:
-        if not args.no_monitor:
-            try:
-                monitor = RunMonitor(config.log_root, session_id=session_id,
-                                     title=args.agent_name.replace("_", " ").title(),
-                                     extension_root=config.extension_root)
-                url = await monitor.start(args.monitor_port)
-                logger.info(f"| 🌐 Run dashboard: {url} (read-only; forward its port for remote access)")
-            except Exception as error:
-                logger.warning(f"| ⚠️ Run dashboard unavailable: {error}; agent execution continues")
         tick = 0
         while True:
             record = await task_manager.get(task_id)
