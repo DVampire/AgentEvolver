@@ -43,6 +43,36 @@ through `agentevolver/visual/task/task.css` and `task.js`, referenced from the H
 The brief contains no embedded styles or scripts; keep these relative resources available
 when moving or serving the document. Runtime previews use the same assets.
 
+## Art sources and visual production
+
+The [Godot skill](../../../agentevolver/skill/game/godot_game_development_skill/SKILL.md)
+includes an on-demand [asset library and download guide](../../../agentevolver/skill/game/godot_game_development_skill/references/asset-library.md).
+It lists specific Quaternius creature/character/village packs, Kenney nature/UI packs
+and optional Poly Haven resources, with official links, free-edition limitations and
+Godot format guidance. Base Bash downloads assets into the shared workspace; Godot
+imports the local resources. No additional environment or download tool is required.
+
+The skill also bundles `scripts/assets.py` with a uniform `search / info / download`
+JSON interface, a bilingual curated catalog, live Godot Store/AssetLib search, Kenney
+ZIP discovery, free itch.io downloads for KayKit/selected Quaternius packs, and a
+commit-pinned GDQuest sky download. Use its [CLI guide](../../../agentevolver/skill/game/godot_game_development_skill/references/assets-cli.md)
+for provider boundaries, version selection and staging commands. Download receipts
+include hashes and license metadata; extraction validates paths and never auto-installs
+addons or modifies the game. Manual-only sources remain explicit in search/info results.
+
+GameBuilder first chooses a coherent art direction and reviews a small representative
+scene with imported characters, environment and UI before expanding content. Visible
+blockout primitives remain replacement work. Track provenance in
+`game/assets/ASSET_SOURCES.md`, visual observations in `reports/art_review.md`, and only
+their current status/paths in the plan Brief. These are agent instructions, not an
+automatic aesthetic score or a new approval gate.
+
+On 2026-09-09, an isolated `python:3.12-slim` container with bridge networking downloaded
+Kenney Nature Kit (10,537,521 bytes, including GLB) and UI Pack (1,229,750 bytes).
+Both archives passed ZIP integrity checks and contained license files. Local download
+receipts/hashes are in `output/asset-library-verification/result.json`. This verifies
+acquisition of these two packs, not every catalog download or in-game visual quality.
+
 ## Existing Agent integrations and Docker assessment
 
 Research update, 2026-09-09: existing Godot MCP backends should be evaluated before

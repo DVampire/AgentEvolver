@@ -1,0 +1,241 @@
+{
+  "checked_at": "2026-09-09",
+  "assets": [
+    {
+      "id": "catalog:kenney-nature",
+      "name": "Kenney Nature Kit",
+      "author": "Kenney",
+      "page": "https://kenney.nl/assets/nature-kit",
+      "tags": [
+        "nature",
+        "trees",
+        "forest",
+        "rocks",
+        "stylized",
+        "glb",
+        "自然",
+        "森林",
+        "树木"
+      ],
+      "adapter": "kenney",
+      "license": "CC0-1.0",
+      "price_cent": 0
+    },
+    {
+      "id": "catalog:kenney-ui",
+      "name": "Kenney UI Pack",
+      "author": "Kenney",
+      "page": "https://kenney.nl/assets/ui-pack",
+      "tags": [
+        "ui",
+        "panels",
+        "buttons",
+        "interface",
+        "界面",
+        "按钮"
+      ],
+      "adapter": "kenney",
+      "license": "CC0-1.0",
+      "price_cent": 0
+    },
+    {
+      "id": "catalog:kaykit-forest",
+      "name": "KayKit Forest Nature",
+      "author": "Kay Lousberg",
+      "page": "https://kaylousberg.itch.io/kaykit-forest",
+      "tags": [
+        "nature",
+        "forest",
+        "stylized",
+        "gltf",
+        "森林",
+        "场景"
+      ],
+      "adapter": "itch",
+      "license": "CC0-1.0",
+      "price_cent": 0
+    },
+    {
+      "id": "catalog:kaykit-adventurers",
+      "name": "KayKit Adventurers",
+      "author": "Kay Lousberg",
+      "page": "https://kaylousberg.itch.io/kaykit-adventurers",
+      "tags": [
+        "characters",
+        "player",
+        "npc",
+        "rigged",
+        "gltf",
+        "角色",
+        "人物"
+      ],
+      "adapter": "itch",
+      "license": "CC0-1.0",
+      "price_cent": 0
+    },
+    {
+      "id": "catalog:kaykit-animations",
+      "name": "KayKit Character Animations",
+      "author": "Kay Lousberg",
+      "page": "https://kaylousberg.itch.io/kaykit-character-animations",
+      "tags": [
+        "characters",
+        "animations",
+        "humanoid",
+        "movement",
+        "gltf",
+        "角色",
+        "动画"
+      ],
+      "adapter": "itch",
+      "license": "CC0-1.0",
+      "price_cent": 0
+    },
+    {
+      "id": "catalog:quaternius-monsters",
+      "name": "Quaternius Cute Animated Monsters",
+      "author": "Quaternius",
+      "page": "https://quaternius.com/packs/cutemonsters.html",
+      "tags": [
+        "creatures",
+        "monsters",
+        "companions",
+        "animated",
+        "gltf",
+        "怪物",
+        "伙伴",
+        "生物"
+      ],
+      "adapter": "manual",
+      "license": "CC0-1.0",
+      "price_cent": 0,
+      "download_note": "The official button links to a Google Drive folder, not one archive. Inspect the folder and acquire the chosen public file manually; this adapter does not automate Drive folder downloads."
+    },
+    {
+      "id": "catalog:quaternius-characters",
+      "name": "Quaternius Universal Base Characters",
+      "author": "Quaternius",
+      "page": "https://quaternius.itch.io/universal-base-characters",
+      "tags": [
+        "characters",
+        "humanoid",
+        "rigged",
+        "gltf",
+        "角色",
+        "人物"
+      ],
+      "adapter": "itch",
+      "license": "CC0-1.0",
+      "price_cent": 0,
+      "source_page": "https://quaternius.com/packs/universalbasecharacters.html",
+      "edition_note": "Free edition only; Source edition shaders and engine project may not be included."
+    },
+    {
+      "id": "catalog:phantom-camera",
+      "name": "Phantom Camera",
+      "author": "Ramokz",
+      "page": "https://phantom-camera.dev/",
+      "tags": [
+        "camera",
+        "third-person",
+        "镜头",
+        "相机"
+      ],
+      "adapter": "store",
+      "license": "MIT",
+      "price_cent": 0,
+      "remote_id": "store:ramokz/phantom-camera"
+    },
+    {
+      "id": "catalog:dialogue-manager",
+      "name": "Dialogue Manager",
+      "author": "Nathan Hoad",
+      "page": "https://github.com/nathanhoad/godot_dialogue_manager",
+      "tags": [
+        "dialogue",
+        "narrative",
+        "branching",
+        "剧情",
+        "对话"
+      ],
+      "adapter": "store",
+      "license": "MIT",
+      "price_cent": 0,
+      "remote_id": "store:nathanhoad/dialogue-manager"
+    },
+    {
+      "id": "catalog:terrain3d",
+      "name": "Terrain3D",
+      "author": "Tokisan Games",
+      "page": "https://github.com/TokisanGames/Terrain3D",
+      "tags": [
+        "terrain",
+        "landscape",
+        "island",
+        "地形",
+        "岛屿"
+      ],
+      "adapter": "store",
+      "license": "MIT",
+      "price_cent": 0,
+      "remote_id": "store:tokisangames/terrain3d",
+      "compatibility_note": "Check release renderer, GDExtension Linux architecture and engine requirements; provider filtering is not runtime verification."
+    },
+    {
+      "id": "catalog:stylized-sky",
+      "name": "GDQuest Stylized Sky",
+      "author": "GDQuest contributors",
+      "page": "https://github.com/gdquest-demos/godot-4-stylized-sky",
+      "tags": [
+        "sky",
+        "clouds",
+        "stars",
+        "stylized",
+        "天空",
+        "云"
+      ],
+      "adapter": "github",
+      "license": "MIT code; CC-BY-NC-SA-4.0 art",
+      "price_cent": 0,
+      "repo": "gdquest-demos/godot-4-stylized-sky",
+      "license_note": "The downloaded LICENSE distinguishes code from image/model art. Review each before reuse; do not treat bundled art as MIT or CC0."
+    },
+    {
+      "id": "catalog:godot-water",
+      "name": "Godot Shaders stylized water",
+      "author": "MinhCreatorVN and credited shader authors",
+      "page": "https://godotshaders.com/shader/stylized-water-for-godot-4-x/",
+      "tags": [
+        "water",
+        "ocean",
+        "foam",
+        "shader",
+        "海水",
+        "水",
+        "特效"
+      ],
+      "adapter": "manual",
+      "license": "MIT code; artwork has separate terms",
+      "price_cent": 0,
+      "download_note": "This resource is published as shader text, not an official ZIP. Inspect/copy the licensed shader and its declared dependencies manually, then verify the renderer."
+    },
+    {
+      "id": "catalog:poly-haven",
+      "name": "Poly Haven public asset catalog",
+      "author": "Poly Haven",
+      "page": "https://polyhaven.com/",
+      "tags": [
+        "hdri",
+        "sky",
+        "pbr",
+        "textures",
+        "天空",
+        "材质"
+      ],
+      "adapter": "manual",
+      "license": "CC0-1.0",
+      "price_cent": 0,
+      "download_note": "Poly Haven resources have per-file resolution/dependency choices. Use https://api.polyhaven.com/assets and /files/{id} with an identifying User-Agent; this ZIP interface does not automatically download a multi-file PBR resource."
+    }
+  ]
+}
