@@ -113,6 +113,18 @@ observations do not. Each sequence has a 15-second deadline and at most 10000 ms
 of explicit waits. All steps are schema-validated before the first input. Runtime
 rejection releases held controls; transport failure/cancellation closes the engine.
 
+The MCP owner sends a read-only `game_input_state(action="query")` probe after
+15 seconds without commands while a game is running. This keeps the pinned bridge's
+60-second TCP idle lease alive during model reasoning, compaction and file authoring.
+It does not send player input, advance a manual clock, consume the log cursor or
+refresh the held-input lease. Probes stop after `stop_game` or session cleanup.
+
+A failed probe marks the bridge unavailable and hides stale screenshots from the next
+prompt. The process may still exist: the last known running state keeps explicit
+`stop_game` recovery possible. The runtime never automatically restarts the game or
+replays player input after a lost connection. Backend `ok: false` / `success: false`
+envelopes are failures even if the enclosing MCP transport returned normally.
+
 `stop_game` stops the game and removes its transient bridge. If the game quits
 through its own UI, subsequent observation recognizes the exit and permits restart.
 No privileged hidden-state mutation tools are exposed. The pinned upstream image

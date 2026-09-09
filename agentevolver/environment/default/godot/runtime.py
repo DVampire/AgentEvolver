@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import uuid
 from contextlib import suppress
@@ -11,6 +12,21 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from agentevolver.tool.default.workspace.container import bind_container, unbind_container
+
+
+def mcp_succeeded(result) -> bool:
+    """Both MCP transport errors and backend envelopes can report failure."""
+    if result.isError:
+        return False
+    payloads = [getattr(result, "structuredContent", None)]
+    for part in result.content:
+        if part.type == "text":
+            try:
+                payloads.append(json.loads(part.text))
+            except ValueError:
+                pass
+    return not any(isinstance(p, dict) and (p.get("ok") is False or p.get("success") is False)
+                   for p in payloads)
 
 
 async def docker_command(*args: str, timeout: float = 30) -> str:
@@ -46,6 +62,11 @@ class DockerRuntime:
         self.base_ready = False
         self.schemas = {}
         self.lock = asyncio.Lock()
+        self.game_running = False
+        self.bridge_error = ""
+        self.heartbeat_interval = 15.0
+        self.heartbeat_timeout = 5.0
+        self.heartbeat_count = 0
 
     def mount_args(self, paths, read_only=False):
         from agentevolver.sandbox.default.base import to_host_path
@@ -117,7 +138,6 @@ class DockerRuntime:
                   "--env", f"XDG_DATA_HOME={self.workspace / '.godot-agent' / 'userdata'}",
                   *self.mount_args([self.workspace]), "--workdir", str(self.workspace), self.image],
         )
-        current = None
         log_dir = self.workspace / ".godot-agent"
         log_dir.mkdir(exist_ok=True)
         try:
@@ -128,26 +148,62 @@ class DockerRuntime:
                         catalog = await client.list_tools()
                         self.schemas = {tool.name: tool.inputSchema for tool in catalog.tools}
                         self.ready.set_result(True)
-                        while True:
-                            request = await self.queue.get()
-                            if request is None:
-                                break
-                            tool, arguments, current = request
-                            result = await client.call_tool(tool, arguments)
-                            if not current.done():
-                                current.set_result(result)
-                            current = None
+                        await self._serve_requests(client)
         except BaseException as error:
             failure = RuntimeError(f"Godot MCP connection failed: {error}; see {log_dir / 'mcp-stderr.log'}")
+            self.bridge_error = str(failure)
             if not self.ready.done():
                 self.ready.set_exception(failure)
-            if current is not None and not current.done():
-                current.set_exception(failure)
         finally:
             while not self.queue.empty():
                 request = self.queue.get_nowait()
                 if request and not request[2].done():
                     request[2].set_exception(RuntimeError("Godot MCP connection closed"))
+
+    async def _serve_requests(self, client):
+        """One owner serializes commands and idle probes inside the AnyIO session.
+
+        The pinned game bridge expires idle TCP sessions after 60 seconds. Query
+        actual input state without touching controls, consuming logs, or taking images.
+        This runs while the agent is awaiting an LLM or authoring files. Never retry
+        player input: a lost response may already have changed gameplay.
+        """
+        while True:
+            interval = self.heartbeat_interval if self.game_running and not self.bridge_error else None
+            try:
+                request = await asyncio.wait_for(self.queue.get(), interval)
+            except asyncio.TimeoutError:
+                try:
+                    result = await asyncio.wait_for(
+                        client.call_tool("game_input_state", {"action": "query"}), self.heartbeat_timeout)
+                    if not mcp_succeeded(result):
+                        detail = "\n".join(p.text for p in result.content if p.type == "text")
+                        raise RuntimeError(f"Read-only game bridge heartbeat failed: {detail[:1000]}")
+                    self.heartbeat_count += 1
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:
+                    self.bridge_error = str(error) or type(error).__name__
+                    from agentevolver.logger import logger
+                    logger.warning(f"| ⚠️ Godot bridge heartbeat failed: {self.bridge_error}")
+                continue
+            if request is None:
+                return
+            tool, arguments, future = request
+            if future.cancelled():
+                continue
+            try:
+                result = await client.call_tool(tool, arguments)
+                if mcp_succeeded(result):
+                    self.bridge_error = ""
+                    if tool in {"run_project", "stop_project"}:
+                        self.game_running = tool == "run_project"
+                if not future.done():
+                    future.set_result(result)
+            except BaseException:
+                if not future.done():
+                    future.set_exception(RuntimeError("Godot MCP connection closed during command"))
+                raise
 
     async def call(self, tool: str, arguments: dict, timeout: float = 60):
         async with self.lock:
@@ -176,6 +232,7 @@ class DockerRuntime:
                 raise
 
     async def close(self, remove_base=True):
+        self.game_running = False
         if remove_base:
             unbind_container(self.workspace, self.base_name)
         if self.task is not None:
@@ -188,6 +245,7 @@ class DockerRuntime:
                     await asyncio.gather(self.task, return_exceptions=True)
             self.task = None
         await self.remove(self.name)
+        self.bridge_error = ""
         if remove_base:
             await self.remove(self.base_name)
             self.base_ready = False

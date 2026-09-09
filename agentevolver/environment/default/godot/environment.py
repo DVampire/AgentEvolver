@@ -409,9 +409,11 @@ class GodotEnvironment(Environment):
         return {"success": True, "message": str(last), "extra": last}
 
     async def _mcp(self, sid, rec, tool, arguments):
+        from .runtime import mcp_succeeded
+
         result = await self._runtime(sid, rec).call(tool, arguments)
         messages = [part.text for part in result.content if part.type == "text"]
-        ok = not result.isError
+        ok = mcp_succeeded(result)
         structured = getattr(result, "structuredContent", None)
         if isinstance(structured, dict) and structured.get("success") is False:
             ok = False
@@ -451,6 +453,12 @@ class GodotEnvironment(Environment):
             messages.append("MCP returned no rendered PNG")
         if shots:
             rec["screenshots"] = shots
+        if not ok:
+            rec["screenshots"] = []
+            if any("Not connected to game interaction server" in message for message in messages):
+                rec["bridge_error"] = "Game process may still be running, but its interaction bridge is disconnected. Stop/start explicitly to recover; inputs were not retried."
+        else:
+            rec.pop("bridge_error", None)
         last = {"operation": tool, "success": ok, "output": "\n".join(messages)[-12000:]}
         rec["last"] = last
         return {"success": ok, "message": last["output"],
@@ -715,6 +723,11 @@ class GodotEnvironment(Environment):
         state += f"status={last.get('status', '')}; exit={last.get('exit_code')}; log={last.get('log_path', '')}\n"
         state += str(last.get("output") or last.get("message") or "")[-2000:]
         state += f"\nBackend: {self.backend}; native game running={rec.get('running', False)}"
+        runtime = self._runtimes.get(self._sid(ctx))
+        bridge_error = rec.get("bridge_error") or getattr(runtime, "bridge_error", "")
+        if bridge_error:
+            rec["screenshots"] = []
+            state += f"\nInteraction bridge unavailable: {bridge_error}. Running is the last known process state, not proof of a working connection."
         state += f"\nHeld inputs: {list(rec.get('held_inputs', {}))}; idle release after {self.input_idle_seconds}s"
         return {"success": True, "state": state,
                 "extra": {"screenshots": rec.get("screenshots", [])}}
