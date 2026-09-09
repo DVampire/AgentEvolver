@@ -17,8 +17,36 @@ def turn(agent, index, size=20):
 
 
 @pytest.mark.asyncio
+async def test_default_checkpoint_uses_one_summary_and_can_replace_old_native_state(tmp_path):
+    from agentevolver.message.types import CompactionMessage
+
+    agent = Agent(retain_recent_steps=1)
+    agent._thread_path = tmp_path / "thread.json"
+    agent.conversation.task = "Keep the acceptance contract"
+    agent.conversation.checkpoint = CompactionMessage(
+        content="Prior verified facts", compaction_scope="history",
+        provider_state={"responses": {"compaction_items": [
+            {"type": "compaction", "encrypted_content": "opaque-prior-state"},
+        ]}},
+    )
+    for i in range(3):
+        turn(agent, i)
+    agent.native_checkpoint = AsyncMock(side_effect=AssertionError("second paid request"))
+    agent.text_checkpoint = AsyncMock(return_value="Prior facts plus new observations")
+    folded, detail = await agent._fold("test")
+    assert folded and detail == "text"
+    agent.native_checkpoint.assert_not_awaited()
+    agent.text_checkpoint.assert_awaited_once()
+    assert agent.conversation.task == "Keep the acceptance contract"
+    assert not agent.conversation.checkpoint.provider_state
+    assert agent.conversation.complete and agent.conversation.turns == 1
+    archives = list(tmp_path.glob("thread/archive/*.json"))
+    assert len(archives) == 1 and "opaque-prior-state" in archives[0].read_text()
+
+
+@pytest.mark.asyncio
 async def test_native_growth_uses_existing_portable_summary_and_shrinks_full_request(monkeypatch):
-    agent = Agent(retain_recent_steps=4, compact_input_tokens=2000, compact_output_tokens=256)
+    agent = Agent(compact_strategy="native", retain_recent_steps=4, compact_input_tokens=2000, compact_output_tokens=256)
     agent.conversation.task = "Keep the exact acceptance contract"
     for i in range(5):
         turn(agent, i, 10_000 if i < 4 else 20)
@@ -85,7 +113,7 @@ async def test_fixed_floor_waits_for_both_steps_and_growth_without_repeated_summ
 @pytest.mark.asyncio
 @pytest.mark.parametrize("native", [False, True])
 async def test_live_image_counts_toward_trigger_but_never_enters_checkpoint(monkeypatch, native):
-    agent = Agent(retain_recent_steps=1, compact_input_tokens=3000, compact_output_tokens=256)
+    agent = Agent(compact_strategy="native", retain_recent_steps=1, compact_input_tokens=3000, compact_output_tokens=256)
     for i in range(4):
         turn(agent, i, 1000)
     # An unknown-size image has a conservative 4096-token visual budget. Its bytes
@@ -159,7 +187,7 @@ async def test_a_larger_text_checkpoint_is_rejected_without_losing_exact_history
 
 @pytest.mark.asyncio
 async def test_cancellation_during_summary_keeps_history_and_archive(monkeypatch, tmp_path):
-    agent = Agent(retain_recent_steps=1)
+    agent = Agent(compact_strategy="native", retain_recent_steps=1)
     agent._thread_path = tmp_path / "thread.json"
     for i in range(3):
         turn(agent, i)

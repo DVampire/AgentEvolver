@@ -46,7 +46,7 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
 - `list_active`: list all active evolved components (module, name, version). No args.
 - `list_versions`: list archived versions of one component. Args: `module`, `name`.
 - `diff`: show the source diff between two versions (see what an optimization actually changed). Args: `module`, `name`, `version_a`, `version_b` (optional; defaults to the live version).
-- `register`: install a component you just wrote, so it becomes a real version. Args: `module`, `name`, `artifact_path` (the absolute path you wrote), and for an `agent` an optional `model_name`. **Nothing you write is live until this succeeds** — writing the file only puts bytes on disk, and `record_decision` refuses a candidate that was never registered. A refusal names what to fix; fix the artifact and call `register` again. New components are installed as evolvable so a later round can optimize them; a frozen component (`enable_evolving=False`) is refused. **The reply names the active version — use exactly that in your evaluation report.** The version is whatever the component declares about itself; registering again does not advance it, so do not assume a bump.
+- `register`: install a component you just wrote, so it becomes a real version. Args: `module`, `name`, `artifact_path` (the absolute path you wrote), and for an `agent` an optional `model_name`. **Nothing you write is live until this succeeds** — writing the file only puts bytes on disk, and `record_decision` refuses a candidate that was never registered. A refusal names what to fix; fix the artifact and call `register` again. New components are installed as evolvable so a later round can optimize them; a frozen component (`enable_evolving=False`) is refused. **The reply distinguishes candidate_version from active_version and reports rollout phase.** Use the returned candidate version in its evaluation report; ordinary calls can still use the baseline during shadow/canary rollout. Keep/use requires the evaluated candidate to be active. Managers may assign a new version when source changes; never guess a bump or re-register just to repair evidence IDs.
 - `rollback`: restore a component to a previous version (becomes live immediately). Args: `module`, `name`, `version`.
 - `unload`: unregister an evolved component (its archive is kept). Args: `module`, `name`.
 - `record_workflow_evaluation`: append one version-scoped Workflow evaluation. Successful evidence requires a real terminal `run_id`; static failures require `case_id`. Args: `name`, `version`, `success`, `quality_score`, plus optional `run_id`, `case_id`, `token_cost`, `elapsed_ms`, `notes`.
@@ -370,30 +370,41 @@ class AdoptionTool(Tool):
                     module=module, name=name, artifact_path=artifact_path,
                     model_name=model_name or "", ctx=kwargs.get("ctx"),
                 )
-                # Say which version is now active. The version is whatever the component
-                # declares about itself, not a counter this call advances, so a caller that
-                # has to guess guesses wrong — and then `record_decision` refuses a report
-                # bound to a version that was never registered, which is exactly what a
-                # live run did: it assumed a bump to 1.0.1 against an active 1.0.0.
+                # Registration can start shadow rollout, which restores the serving
+                # baseline. The manifest alone cannot identify the new candidate.
                 registered = next(
                     (c for c in extension_manager.read_manifest().components
                      if c.module == module and c.name == name),
                     None,
                 ) if ok else None
+                rollout = extension_manager.rollout_status(module, name) if ok else None
+                active_version = getattr(registered, "version", None)
+                candidate_version = active_version
+                if rollout and rollout.get("phase") in ("shadow", "canary"):
+                    candidate_version = rollout["candidate_version"]
                 if registered is not None:
                     detail = (
-                        f"Registered {module}:{registered.name} v{registered.version}. Live on "
-                        f"the next dispatch. Evaluate that version, and pass it in the report."
+                        f"Registered {module}:{registered.name} candidate v{candidate_version}. "
+                        f"Active manifest version: {active_version}. "
                     )
+                    if candidate_version != active_version:
+                        detail += (
+                            f"Rollout phase: {rollout['phase']}; ordinary calls may still use the baseline. "
+                            "Do not attribute baseline results to the candidate. Keep/use requires the "
+                            "evaluated candidate to be active. Do not re-register just to align evidence IDs."
+                        )
+                    else:
+                        detail += "The candidate is active. Evaluate this exact version and pass it in the report."
                     logger.info(
                         f"| 📥 adoption_tool: registered {module}:{registered.name} "
-                        f"v{registered.version}"
+                        f"candidate v{candidate_version}, active v{active_version}"
                     )
                 return Response(
                     type=ResponseType.TOOL, success=ok, message=detail,
                     data={"module": module, "name": name, "artifact_path": artifact_path,
                           "registered": ok,
-                          "version": getattr(registered, "version", None)},
+                          "version": candidate_version, "candidate_version": candidate_version,
+                          "active_version": active_version, "rollout": rollout},
                 )
 
             if action == "rollback":

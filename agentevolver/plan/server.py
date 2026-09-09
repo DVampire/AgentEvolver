@@ -132,17 +132,23 @@ EVOLUTION_PLAN_NOTICE = (
     "invented gaps or per-step rewrites."
 )
 
-PLAN_BRIEF_MAX_CHARS = 2_000
+PLAN_BRIEF_MAX_CHARS = 2_000  # Legacy plan.md projection only.
+PLAN_INDEX_MAX_CHARS = 2_000
 
-PLAN_BRIEF_NOTICE = (
-    "Keep a `## Brief` section at the top of plan.md, at most 2,000 characters. "
-    "Use it as a progress index: stable work IDs, short titles, actual status, and "
-    "links or heading names for the detailed sections below; include blockers and the "
-    "next action. Distinguish implemented from verified/completed. Update the Brief "
-    "together with the detailed plan after meaningful progress. Only this Brief and "
-    "the plan path enter the live prompt; read the file for designs, requirements, "
-    "implementation details and evidence before relying on or changing them. Keep "
-    "those details in the full plan, not in the Brief."
+PLAN_INDEX_NOTICE = (
+    "The shared plan directory defines only index.md and plan.md. Keep index.md as the "
+    "single live summary, at most 2,000 characters total: current objective, progress, "
+    "blockers, next action and links with short summaries/status for important records. "
+    "Keep the detailed plan in plan.md, without duplicating the live summary. "
+    "Choose headings, additional files and subdirectories to suit the task, using relevant "
+    "skills for domain guidance; no extra document types or directory layout are required. "
+    "Use relative Markdown links within this directory. Update the relevant document and "
+    "index entry after meaningful progress, not after each tool call. Keep superseded "
+    "detail on disk instead of growing the live index. Only index.md is projected "
+    "automatically; read linked files before relying on their summaries. Preserve original "
+    "evidence references and distinguish observed results from plans or claims. Runtime "
+    "does not scan documents, generate summaries or verify status claims. The existing "
+    "review gate still applies to document-writing tools."
 )
 
 
@@ -154,7 +160,7 @@ def plan_brief(text: str) -> str:
     Fenced examples cannot accidentally supply headings or terminate the Brief.
     """
     if not text.strip():
-        return "No plan.md exists yet. Create it with a ## Brief progress index."
+        return "No plan.md exists yet. Create plan.md for detail and index.md for the Brief."
     lines = text.splitlines()
     headings = []
     fence = ""
@@ -178,15 +184,15 @@ def plan_brief(text: str) -> str:
         end = next((i for i, depth, _ in headings if i > start and depth <= level), len(lines))
         body = "\n".join(lines[start + 1:end]).strip()
         if not body:
-            body = "Brief is empty. Read plan.md and update its progress index."
+            body = "Legacy Brief is empty. Read plan.md and author the progress index in index.md."
     else:
         body = (
-            "No ## Brief section exists. Progress is not inferred. Read plan.md and add "
-            "a concise progress index. Document headings (line numbers):\n"
+            "No legacy ## Brief section exists. Progress is not inferred. Read plan.md and add "
+            "a concise progress index to index.md. Document headings (line numbers):\n"
             + "\n".join(f"- L{i + 1}: {title}" for i, _, title in headings[:20])
         )
     if len(body) > PLAN_BRIEF_MAX_CHARS:
-        notice = "\n[Brief truncated; read plan.md for omitted status and shorten ## Brief.]"
+        notice = "\n[Brief truncated; read plan.md for omitted status and move a concise Brief to index.md.]"
         body = body[:PLAN_BRIEF_MAX_CHARS - len(notice)].rsplit("\n", 1)[0] + notice
     return body
 
@@ -210,6 +216,40 @@ def read_plan(session_id: str = "", *, owner: str = "") -> str:
     except (OSError, ValueError) as error:                            # noqa: BLE001
         logger.warning(f"| ⚠️ Could not read plan.md: {error}")
         return ""
+
+
+def plan_index_path(session_id: str = "", *, owner: str = ""):
+    """Resolve beside the authoritative plan, including session path overrides."""
+    return plan_path(session_id, owner=owner).with_name("index.md")
+
+
+def read_plan_index(session_id: str = "", *, owner: str = "") -> str:
+    """Read only the bounded authored index; never crawl linked documents."""
+    path = plan_index_path(session_id, owner=owner)
+    legacy_fallback = False
+    try:
+        with path.open(encoding="utf-8") as stream:
+            text = stream.read(PLAN_INDEX_MAX_CHARS + 1)
+    except FileNotFoundError:
+        legacy_fallback = True
+        legacy = read_plan(session_id, owner=owner)
+        if not legacy:
+            return "No index.md yet. Create its Brief and document links when planning multi-step work."
+        text = ("Legacy plan.md Brief (index.md is missing). Move this summary into index.md "
+                "at the next meaningful plan update.\n" + plan_brief(legacy))
+    except (OSError, UnicodeError) as error:
+        logger.warning(f"| ⚠️ Could not read document index: {error}")
+        return "Document index is unreadable. Inspect index.md before relying on its contents."
+    if len(text) > PLAN_INDEX_MAX_CHARS:
+        notice = (
+            "\n[Legacy Brief truncated; read plan.md and author a concise index.md.]"
+            if legacy_fallback else
+            "\n[Index truncated; read index.md for remaining entries and shorten its live summary.]"
+        )
+        prefix = text[:PLAN_INDEX_MAX_CHARS - len(notice)]
+        # Never advertise a partially cut Markdown link as an actual locator.
+        text = (prefix.rsplit("\n", 1)[0] if "\n" in prefix else "") + notice
+    return text.strip() or "Document index is empty. Add a concise Brief and links for records worth retaining."
 
 
 def write_plan(text: str, session_id: str = "", *, owner: str = "") -> bool:
@@ -295,7 +335,7 @@ class PlanManagerServer(metaclass=Singleton):
         self, session_id: str, *, enabled: bool = False, evolution_enabled: bool = False,
         include_rules: bool = True,
     ) -> str:
-        """Read the current Brief for the live layer, outside foldable history.
+        """Read the current task index for the live layer, outside foldable history.
 
         Coordinators opt in to automatic planning. A worker gets no automatic plan
         obligation; an explicitly active review gate still explains its way out.
@@ -308,7 +348,8 @@ class PlanManagerServer(metaclass=Singleton):
         if state.mode is PlanMode.OFF or (not enabled and not state.active):
             return ""
         path = plan_path(session_id)
-        text = plan_brief(read_plan(session_id))
+        index_path = plan_index_path(session_id)
+        documents = read_plan_index(session_id)
         notice = PLAN_MODE_NOTICE if state.active else ""
         if include_rules:
             notice += "\n" + self.instructions(enabled=enabled, evolution_enabled=evolution_enabled)
@@ -318,11 +359,14 @@ class PlanManagerServer(metaclass=Singleton):
                 "Use read_file_tool/write_file_tool at this exact path for the plan; "
                 "use bash_tool for the peer repository."
             )
-        notice += "\nCurrent progress index only. Read the plan at this path for details."
+        notice += "\nProgress and document summaries only. Read linked files for details; document links resolve from the plan directory."
         return (
             f'<plan-context mode="{state.mode.value}" '
             f'active="{str(state.active).lower()}" path="{escape(str(path), quote=True)}">\n'
-            f"{notice}\n\n<plan-brief>\n{text}\n</plan-brief>\n</plan-context>"
+            f"{notice}\n\n"
+            f'<plan-index path="{escape(str(index_path), quote=True)}" '
+            f'root="{escape(str(path.parent), quote=True)}">\n'
+            f"{escape(documents)}\n</plan-index>\n</plan-context>"
         )
 
     @staticmethod
@@ -330,7 +374,7 @@ class PlanManagerServer(metaclass=Singleton):
         """Stable planning obligations, independent of the mutable plan document."""
         if not enabled:
             return ""
-        body = AUTO_MODE_NOTICE + "\n\n" + PLAN_BRIEF_NOTICE
+        body = AUTO_MODE_NOTICE + "\n\n" + PLAN_INDEX_NOTICE
         if evolution_enabled:
             body += "\n\n" + EVOLUTION_PLAN_NOTICE
         return '<planning-rules>\nWhen plan-context is active, follow these rules.\n' + body + '\n</planning-rules>'
@@ -413,6 +457,8 @@ __all__ = [
     "PlanManagerServer",
     "plan_path",
     "read_plan",
+    "plan_index_path",
+    "read_plan_index",
     "write_plan",
     "plan_manager",
     "action_is_allowed",

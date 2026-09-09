@@ -32,7 +32,7 @@ import json
 import asyncio
 import copy
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -157,6 +157,10 @@ class Agent(BaseModel):
     )
     compact_output_tokens: int = Field(
         default=2048, description="Soft token target requested from the checkpoint summariser."
+    )
+    compact_strategy: Literal["text", "native"] = Field(
+        default="text",
+        description="Text uses one portable summary. Native opts into provider state and may also need a portable summary.",
     )
     capability_schema_tokens: int = Field(
         default=8000, ge=0,
@@ -1536,10 +1540,10 @@ class Agent(BaseModel):
                 logger.warning(f"| ⚠️ [{self.name}] compaction source archive failed: {error}")
                 return False, "source archive failed; history retained"
 
-        # Native first, and its own summary counts as the readable checkpoint. Asking
-        # the summariser as well would spend a second model call on text the provider
-        # already wrote — the portable path exists for routes that produced none.
-        native = await self.native_checkpoint(source)
+        # A portable summary is sufficient for normal replay and route switching.
+        # Opaque native state needs a second paid summary, so request it only when
+        # explicitly selected. Native routes with readable summaries still reuse it.
+        native = await self.native_checkpoint(source) if self.compact_strategy == "native" else None
         self.check_budget()
         provider_state = (native or {}).get("provider_state") or None
         summary = str((native or {}).get("summary") or "").strip()

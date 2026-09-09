@@ -75,6 +75,12 @@ calls are not all answered is unsendable, so the skipped calls come back as expl
 
 ## Resource limits and optional middleware
 
+`compact_strategy="text"` (default) creates one readable, portable checkpoint and
+archives the complete source history. Fixed task/reference blocks and live environment
+images remain outside the fold. `compact_strategy="native"` explicitly requests the
+provider's checkpoint first; an opaque result also requires a paid readable summary for
+fallback and inspection. A native readable summary is reused without resummarizing it.
+
 `max_token` is enforced by the base loop without installing a hook. It counts reported
 input (including cached input) and output, including native/portable checkpoint usage
 when available. Reasoning already included in output is not added twice. Usage arrives

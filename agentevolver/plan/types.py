@@ -28,7 +28,7 @@ class PlanMode(str, Enum):
 
     ``AUTO`` is the default. The agent decides whether the task warrants a plan and
     writes ``plan.md`` itself if it does — no gate, so a trivial task costs nothing, and
-    the document is in front of both the agent and the person for the whole run.
+    its index is in front of both the agent and the person for the whole run.
 
     A caveat worth stating where the mode is defined: an agent that decides whether to
     be reviewed will often decide not to be. This session's own test run reached for
@@ -41,7 +41,7 @@ class PlanMode(str, Enum):
     #: No plan is asked for and nothing is gated.
     OFF = "off"
     #: The agent decides. It is told to keep `plan.md` current for anything that is not
-    #: a single obvious step, and the document is rendered back to it every step.
+    #: a single obvious step, and index.md is rendered back to it every step.
     AUTO = "auto"
     #: A person will approve the approach first. Every action that changes anything is
     #: refused until they do, and the approved plan is written to `plan.md`.

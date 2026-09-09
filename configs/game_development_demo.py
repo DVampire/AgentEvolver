@@ -48,4 +48,5 @@ game_builder_agent.update(
     include_agents=False, max_actions=3,
     allow_token_budget_override=False, retain_recent_steps=4,
     fold_at_pressure=0.85,
+    compact_strategy="text",
 )

@@ -25,13 +25,48 @@ The gate itself is `agentevolver/hook/default/plan_mode.py`, which runs on
 website-user and other leaf workers leave it disabled. A worker receives a bounded
 assignment and returns evidence; its coordinator owns planning and replanning.
 
-`PlanManagerServer.context()` reads the session's `plan/plan.md` each step and projects
-only its `## Brief` section (at most 2,000 characters), plus the exact file path, into the
-live layer. The Brief is a progress index with work IDs, short titles, actual status,
-detailed-section references, blockers and the next action. The coordinator updates it
-together with the detailed plan. Designs, acceptance requirements, implementation details
-and evidence remain in the file and are read on demand. A missing Brief produces a
-bounded heading index and a request to author one; runtime never guesses progress.
+`PlanManagerServer.context()` reads only the session's `plan/index.md` into the live
+layer, with a shared limit of 2,000 characters for Brief and document entries together.
+`index.md` is the single summary: goal/current milestone, compact progress, blockers,
+next action, and links to important records with a short summary and authored status.
+`plan.md` contains the detailed plan; do not maintain another Brief in it.
+
+The framework defines only these two filenames. It does not scaffold a tree or require
+additional files, headings or document categories. Relevant skills can suggest a layout;
+the agent chooses and revises it to suit the task, creating extra records only when useful.
+
+```text
+plan/
+  index.md   # Compact live summary and links
+  plan.md    # Detailed plan
+```
+
+A minimal `index.md` can be plain Markdown:
+
+```markdown
+Current objective: finish the first deliverable.
+Progress: implementation complete; verification pending.
+Next: check the outstanding acceptance requirements.
+[Detailed plan](plan.md): approach, work items and verification steps.
+```
+
+The agent can add concise links to any other records it creates. Those records' names,
+formats, contents and locations within the directory are task decisions, not framework
+conventions. The index reader does not require `## Brief` or `## Documents` headings.
+
+Relative document links resolve from the plan directory. Authors use the existing file
+or Bash tools; there is no new document tool, automatic directory crawler, model summarizer,
+or per-step rewrite requirement. Update the relevant document and index entry together
+after meaningful progress. Keep older detail on disk, outside the bounded live index.
+Long indexes are visibly truncated at a line boundary; the full index path remains available.
+Statuses are authored claims, not runtime certification. Preserve original evidence
+references; a summary never replaces the underlying observations or execution receipts.
+
+For old runs without `index.md`, runtime temporarily projects the legacy `plan.md` Brief
+and asks the agent to move that summary into the index at its next meaningful update.
+This fallback writes nothing. Once an index exists, runtime no longer reads the full plan
+for live context, even if an obsolete Brief remains there. Missing, empty and unreadable
+indexes have explicit notices; document content and progress are never invented.
 
 Automatic plan projections do not become conversation turns and are not sent to either
 native or text history compaction. Real user feedback and tool interactions (including
@@ -50,10 +85,17 @@ relocate the coordinator's plan.
 The plan belongs to the coordinator runtime, not the execution environment. When Bash
 runs in a peer container, the plan context retains its agent-side path and the agent uses
 `read_file_tool`/`write_file_tool` there. Both SWE Pro configurations mount these tools.
-No plan directory is mounted in the peer, and no benchmark preparation or grading step
-needs to know about it. The plan manager reads Brief updates into the next request and
+Those benchmark peers do not mount the plan directory. GameBuilder's owned base container
+does mount it at the canonical path, so Bash can author the index and documents directly.
+No benchmark preparation or grading step needs to know about these records.
+The plan manager reads index updates into the next request and
 persists approved plans at the same path. Workspace translation through
 `path_manager.execution_path()` remains only for execution paths.
+
+Game continuation copies the complete plan directory. It updates old workspace/plan
+prefixes in `plan.md` and `index.md`; relative document links remain valid. Other records
+retain their historical evidence identity. A copied evaluation is not a verification
+of the new run.
 
 - `auto`: maintain the plan before multi-step work and revise it before acting on
   new feedback. The agent writes it with its normal workspace tools. No approval gate.

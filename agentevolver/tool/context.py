@@ -1034,6 +1034,7 @@ class ToolContextManager(BaseModel):
             finalize=lambda response: self._bound_output(
                 response, name=name, ctx=ctx, checkpoint=checkpoint,
                 model_limit=tool_instance.model_output_limit(call_input),
+                observation=tool_instance.model_observation(response),
             ),
         )
 
@@ -1165,6 +1166,7 @@ class ToolContextManager(BaseModel):
         self, response: Response, *, name: str, ctx: ToolContext,
         checkpoint: Optional[Dict[str, Any]] = None,
         model_limit: int = OUTPUT_LIMIT,
+        observation: Optional[str] = None,
     ) -> Response:
         """Preserve canonical output and provide an archived model-facing excerpt."""
         if checkpoint:
@@ -1173,7 +1175,16 @@ class ToolContextManager(BaseModel):
                 **dict(response.extra or {}),
                 "workspace_checkpoint": dict(checkpoint),
             }
-        message = response.message
+        final = bool((response.data or {}).get("done"))
+        explicit = (response.extra or {}).get("model_observation")
+        message = response.message if final else (
+            explicit if isinstance(explicit, str) else
+            observation if observation is not None else response.message
+        )
+        if message != response.message and not final:
+            response = response.model_copy(update={
+                "extra": {**dict(response.extra or {}), "model_observation": message},
+            })
         if not isinstance(message, str) or (
             len(message) <= OUTPUT_LIMIT and (model_limit <= 0 or len(message) <= model_limit)
         ):

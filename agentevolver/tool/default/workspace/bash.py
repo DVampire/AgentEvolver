@@ -262,6 +262,11 @@ def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
 class BashTool(Tool):
     """A tool for executing bash commands asynchronously."""
 
+    def model_observation(self, response: Response) -> str:
+        # The message contains output, status and archive/job locators. Data also
+        # echoes the submitted command, which must not be repeated in context.
+        return response.message
+
     name: str = "bash_tool"
     description: str = _DESCRIPTION
     guidance: str = _GUIDANCE

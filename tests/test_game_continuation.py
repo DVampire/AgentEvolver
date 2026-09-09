@@ -1,4 +1,4 @@
-"""Continuation preserves authored work and planning reminders detect stale content."""
+"""Continuation preserves authored work without adding a separate planning lifecycle."""
 import json
 import os
 from types import SimpleNamespace
@@ -9,8 +9,6 @@ import pytest
 from agentevolver.agent.actor.game_builder_agent import GameBuilderAgent
 from examples.run_game_development_demo import seed_game_session
 from agentevolver.agent.actor.meta_agent import MetaAgent
-from agentevolver.plan.server import plan_manager, plan_path
-from agentevolver.plan.types import PlanMode
 
 
 def test_continuation_preserves_source_saves_and_design_without_reusing_cache(tmp_path):
@@ -29,6 +27,10 @@ def test_continuation_preserves_source_saves_and_design_without_reusing_cache(tm
     previous_plan = f"Design: companion remembers choices.\nProject: {game}\nVerification pending."
     (source / "plan/plan.md").write_text(previous_plan)
     (source / "plan/story.md").write_text("A rescue changes the harbor alliance.")
+    (source / "plan/index.md").write_text(
+        f"## Brief\nVerify rescue.\n## Documents\n[Plan]({source / 'plan/plan.md'})\n"
+        "[Story](story.md): designed, not played.\n"
+    )
     workspace, plan = tmp_path / "new/workspace", tmp_path / "new/plan"
     workspace.mkdir(parents=True)
     plan.mkdir()
@@ -38,6 +40,8 @@ def test_continuation_preserves_source_saves_and_design_without_reusing_cache(tm
     assert (workspace / ".godot-agent/userdata/save.json").read_text() == '{"chapter":1}'
     assert str(workspace / "game") in (plan / "plan.md").read_text()
     assert (plan / "story.md").is_file()
+    assert str(plan / "plan.md") in (plan / "index.md").read_text()
+    assert "[Story](story.md): designed, not played." in (plan / "index.md").read_text()
     assert (source / "plan/plan.md").read_text() == previous_plan
     assert receipt["requires_plan_reconciliation"]
     with pytest.raises(ValueError, match="must be empty"):
@@ -106,20 +110,10 @@ async def test_failed_preparation_stops_before_manager_initialization(tmp_path, 
 
 
 @pytest.mark.asyncio
-async def test_plan_reminder_requires_content_change_and_respects_off(bound_session, monkeypatch):
-    monkeypatch.setattr(MetaAgent, "on_step", AsyncMock(return_value="base note"))
+async def test_game_builder_keeps_shared_plan_step_lifecycle(monkeypatch):
+    shared = AsyncMock(return_value="shared plan review gate")
+    monkeypatch.setattr(MetaAgent, "on_step", shared)
     agent = GameBuilderAgent(use_plan=True)
-    agent.ctx = SimpleNamespace(id=bound_session["workspace"].parent.name)
-    path = plan_path(agent.ctx.id)
-    assert "game-plan-update-required" in await agent.on_step(1)
-    path.write_text("# Design\nChapter: rescue. Loop: explore → bond → consequence.")
-    assert await agent.on_step(2) == "base note"
-    path.touch()  # Touching alone must not pretend progress was recorded.
-    assert "game-plan-update-required" in await agent.on_step(5)
-    path.write_text(path.read_text() + "\nImplemented rescue trigger; import failed; fix syntax next.")
-    assert await agent.on_step(6) == "base note"
-    plan_manager.set_mode(agent.ctx.id, PlanMode.OFF)
-    try:
-        assert await agent.on_step(20) == "base note"
-    finally:
-        plan_manager.set_mode(agent.ctx.id, PlanMode.AUTO)
+    for step in (1, 4, 20):
+        assert await agent.on_step(step) == "shared plan review gate"
+    assert shared.await_count == 3

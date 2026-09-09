@@ -278,3 +278,54 @@ def test_a_failed_spill_still_returns_the_complete_result(spill_root, tmp_path):
     assert len(resp.message) == OUTPUT_LIMIT * 3 + len("HEAD-MARKER") + len("TAIL-MARKER")
     assert "characters elided" not in resp.message
     assert "saved at `" not in resp.message  # honest about having no locator
+
+
+@pytest.mark.parametrize("success", [True, False])
+def test_data_only_evidence_reaches_model_and_remains_retrievable(spill_root, tmp_path, success):
+    from pathlib import Path
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.agent.loop.decision import ActionCall
+
+    data = {"font": "Missing.ttf", "diagnostics": "x" * (OUTPUT_LIMIT * 2), "weight": 600}
+    class _Evidence(_Loud):
+        async def __call__(self, **kwargs):
+            return Response(type=ResponseType.TOOL, success=success,
+                            message="Font metadata inspected", data=data)
+    response = asyncio.run(_manager_for(tmp_path, _Evidence())(name="loud_tool", input={}))
+    action = CapabilityRouter._from_response(ActionCall("c", "loud_tool"), response)
+    assert response.message == "Font metadata inspected"
+    assert response.data == data
+    assert action.ok == success
+    shown = action.as_message().text
+    assert "Missing.ttf" in shown and '"weight": 600' in shown
+    assert "omitted inline" in shown
+    archive = Path(response.extra["output_archive"]["locator"]).read_text()
+    assert data["diagnostics"] in archive
+
+
+def test_tool_projection_avoids_duplicate_json_and_bash_command():
+    import json
+    from agentevolver.tool.default.workspace.bash import BashTool
+
+    data = {"weight": 600}
+    response = Response(type=ResponseType.TOOL, success=True,
+                        message=json.dumps(data), data=data)
+    assert _Loud().model_observation(response) == response.message
+    bash_result = Response(type=ResponseType.TOOL, success=True, message="STDOUT: result; exit 0",
+                           data={"command": "VERY LARGE SUBMITTED SCRIPT", "exit_code": 0})
+    assert BashTool().model_observation(bash_result) == bash_result.message
+
+
+def test_explicit_projection_precedes_data_and_extra_is_not_rendered(spill_root, tmp_path):
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.agent.loop.decision import ActionCall
+
+    class _Explicit(_Loud):
+        async def __call__(self, **kwargs):
+            return Response(type=ResponseType.TOOL, success=True, message="status",
+                            data={"raw": "not for inline"},
+                            extra={"model_observation": "selected evidence",
+                                   "screenshots": ["large base64 PNG"]})
+    response = asyncio.run(_manager_for(tmp_path, _Explicit())(name="loud_tool", input={}))
+    action = CapabilityRouter._from_response(ActionCall("c", "loud_tool"), response)
+    assert action.as_message().text == "selected evidence"

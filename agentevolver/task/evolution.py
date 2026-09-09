@@ -46,10 +46,12 @@ def observe(ctx, results, routing):
             action = call.args.get("action")
             if action == "register" and data.get("registered") and data.get("version"):
                 key = identity(data)
-                audit["candidates"][key] = {
+                # An immutable version keeps its original provenance and verdict
+                # when a caller repeats registration; no new candidate was created.
+                audit["candidates"].setdefault(key, {
                     "module": data["module"], "name": data["name"],
                     "version": data["version"], "registration": call.id,
-                }
+                })
             elif action == "record_decision" and isinstance(data.get("decision"), dict):
                 decision = data["decision"]
                 candidate = audit["candidates"].get(identity(decision["evaluation"]))

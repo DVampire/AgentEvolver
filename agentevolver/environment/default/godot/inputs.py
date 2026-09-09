@@ -15,35 +15,62 @@ TOOLS = {
     "mouse_mode": "game_input_state", "wait_frames": "game_wait",
 }
 
-# Keep the common argument vocabulary compact; operation-specific requirements
-# are validated against the connected MCP server by compile_steps below.
+# Describe each operation separately so a keyboard step cannot acquire unrelated
+# mouse/gamepad fields. The connected MCP schema remains the runtime authority.
+_ARGUMENT_PROPERTIES = {
+    **{k: {"type": "string"} for k in (
+        "key", "action", "text", "direction", "actionName", "mode", "frameType")},
+    **{k: {"type": "boolean"} for k in ("ctrl", "shift", "alt", "meta", "physical")},
+    **{k: {"type": "number"} for k in (
+        "x", "y", "relative_x", "relative_y", "fromX", "fromY", "toX", "toY", "value")},
+    "type": {"type": "string", "enum": ["button", "axis"]},
+    "button": {"type": "integer", "enum": [1, 2, 3, 8, 9]},
+    "index": {"type": "integer"}, "device": {"type": "integer"},
+    "duration_ms": {"type": "integer", "minimum": 0, "maximum": 10000},
+    "steps": {"type": "integer", "minimum": 1, "maximum": 300},
+    "frames": {"type": "integer", "minimum": 1, "maximum": 600},
+    "amount": {"type": "integer", "minimum": 1, "maximum": 100},
+    "strength": {"type": "number", "minimum": 0, "maximum": 1},
+}
+
+_STEP_FIELDS = {
+    "key_down": "key action", "key_up": "key action",
+    "key_tap": "key action ctrl shift alt meta physical", "text": "text",
+    "click": "x y button", "double_click": "x y button",
+    "mouse_down": "x y button", "mouse_up": "x y button",
+    "mouse_move": "x y relative_x relative_y", "drag": "fromX fromY toX toY button steps",
+    "scroll": "x y direction amount", "gamepad": "type index value device",
+    "touch": "action x y index toX toY steps", "action_strength": "actionName strength",
+    "mouse_mode": "mode", "wait": "duration_ms", "wait_frames": "frames frameType",
+    "release_all": "",
+}
+_STEP_REQUIRED = {
+    "text": "text", "click": "x y", "double_click": "x y",
+    "mouse_down": "x y", "mouse_up": "x y", "mouse_move": "x y",
+    "drag": "fromX fromY toX toY", "scroll": "x y direction",
+    "gamepad": "type index value", "touch": "action x y",
+    "action_strength": "actionName strength", "mouse_mode": "mode", "wait": "duration_ms",
+}
 INPUT_STEPS_SCHEMA = {
     "type": "array", "minItems": 1, "maxItems": 32,
-    "items": {
-        "type": "object", "additionalProperties": False, "required": ["type"],
-        "properties": {
-            "type": {"type": "string", "enum": [*TOOLS, "wait", "release_all"]},
-            "arguments": {
-                "type": "object", "additionalProperties": False,
-                "description": "Nest all input parameters here, never beside type. Omit only for release_all. Required fields depend on type; see the action description.",
-                "properties": {
-                    **{k: {"type": "string"} for k in (
-                        "key", "action", "text", "direction", "actionName", "mode", "frameType")},
-                    **{k: {"type": "boolean"} for k in ("ctrl", "shift", "alt", "meta", "physical")},
-                    **{k: {"type": "number"} for k in (
-                        "x", "y", "relative_x", "relative_y", "fromX", "fromY", "toX", "toY", "value")},
-                    "type": {"type": "string", "enum": ["button", "axis"]},
-                    "button": {"type": "integer", "enum": [1, 2, 3, 8, 9]},
-                    "index": {"type": "integer"}, "device": {"type": "integer"},
-                    "duration_ms": {"type": "integer", "minimum": 0, "maximum": 10000},
-                    "steps": {"type": "integer", "minimum": 1, "maximum": 300},
-                    "frames": {"type": "integer", "minimum": 1, "maximum": 600},
-                    "amount": {"type": "integer", "minimum": 1, "maximum": 100},
-                    "strength": {"type": "number", "minimum": 0, "maximum": 1},
+    "description": "Ordered inputs. Each type accepts only its own arguments; omit unused optional fields.",
+    "items": {"anyOf": [
+        {
+            "type": "object", "additionalProperties": False,
+            "required": ["type"] if kind == "release_all" else ["type", "arguments"],
+            "properties": {
+                "type": {"type": "string", "enum": [kind]},
+                "arguments": {
+                    "type": "object", "additionalProperties": False,
+                    "properties": {key: _ARGUMENT_PROPERTIES[key] for key in fields.split()},
+                    "required": _STEP_REQUIRED.get(kind, "").split(),
+                    **({"oneOf": [{"required": ["key"]}, {"required": ["action"]}]}
+                       if kind in ("key_down", "key_up", "key_tap") else {}),
                 },
             },
-        },
-    },
+        }
+        for kind, fields in _STEP_FIELDS.items()
+    ]},
     "examples": [[{"type": "key_tap", "arguments": {"key": "Enter"}},
                   {"type": "wait", "arguments": {"duration_ms": 200}}]],
 }

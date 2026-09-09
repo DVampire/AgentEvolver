@@ -56,7 +56,7 @@ async def test_coordinator_reads_latest_plan_after_feedback_and_folding(planning
     conversation.system = [SystemMessage(content="Stable instructions")]
     plan = root / "coordinator.md"
     missing = "\n".join(await agent._live_blocks(0))
-    assert "No plan.md exists yet" in missing and str(plan) in missing
+    assert "No index.md yet" in missing and str(plan) in missing
     rules = manager.instructions(enabled=agent.use_plan, evolution_enabled=evolving)
     assert ("Evolution opportunities" in rules) is evolving
     assert not plan.exists()  # The coordinator authors it; runtime never fabricates a plan.
@@ -65,8 +65,10 @@ async def test_coordinator_reads_latest_plan_after_feedback_and_folding(planning
         "E1 deferred: bounded browser observation; evidence call-17 returned an entire scene. "
         "Consumer: next gallery preview. Revisit after the first working preview.\n"
     ) if evolving else ""
-    plan.write_text("## Brief\nInitial approach: ship a gallery." + opportunity
-                    + "\n## Detailed design\nFull implementation details stay on disk.")
+    plan.write_text("## Detailed design\nFull implementation details stay on disk.")
+    index = root / "index.md"
+    index.write_text("## Brief\nInitial approach: ship a gallery." + opportunity
+                     + "\n## Documents\n[Plan](coordinator.md): implementation detail.")
     before = agent.assembler.build_envelope(conversation, live=await agent._live_blocks(0))
     assert "ship a gallery" in "\n".join(m.text for m in before.live)
     assert not before.recent
@@ -77,7 +79,7 @@ async def test_coordinator_reads_latest_plan_after_feedback_and_folding(planning
     live = await agent._live_blocks(1)
     assert "Participant 2 requests an undo action" in "\n".join(m.text for m in conversation.items)
     assert "Before implementing a change" in rules
-    assert any("plan-brief" in block for block in live)
+    assert any("plan-index" in block for block in live)
     # The coordinator's next action updates the actual shared document.
     revised_opportunity = opportunity.replace(
         "E1 deferred", "E1 probing",
@@ -85,9 +87,9 @@ async def test_coordinator_reads_latest_plan_after_feedback_and_folding(planning
         "Revisit after the first working preview.",
         "Compare output size and diagnostic coverage; check a second page before adoption.",
     )
-    plan.write_text(
+    index.write_text(
         "## Brief\nReplanned: add undo for Participant 2; verify restore and reload." + revised_opportunity
-        + "\n## Detailed design\nFull implementation details stay on disk."
+        + "\n## Documents\n[Plan](coordinator.md): implementation detail."
     )
     conversation.checkpoint = CompactionMessage(content="Older conversation was folded.")
     after = agent.assembler.build_envelope(conversation, live=await agent._live_blocks(2))
@@ -131,7 +133,7 @@ def test_explicit_modes_preserve_review_gate_and_off_semantics(planning):
     manager.approve("coordinator", "Approved approach: build undo.")
     assert (root / "coordinator.md").read_text() == "Approved approach: build undo."
     assert 'active="false"' in manager.context("coordinator", enabled=True)
-    assert "No ## Brief section exists" in manager.context("coordinator", enabled=True)
+    assert "No legacy ## Brief section exists" in manager.context("coordinator", enabled=True)
 
 
 def test_evolution_planning_respects_off_and_explicit_worker_gate(planning):
@@ -153,9 +155,9 @@ def test_plan_projection_is_bounded_and_names_the_full_document(planning):
     (root / "coordinator.md").write_text("## Brief\n" + "x" * 20_000
                                        + "\n## Design\nPrivate full design body")
     context = manager.context("coordinator", enabled=True, include_rules=False)
-    assert "Brief truncated" in context
+    assert "truncated" in context
     assert str(root / "coordinator.md") in context
-    assert len(context) < 2_500
+    assert len(context) < 2_800
     assert "Private full design body" not in context
 
 

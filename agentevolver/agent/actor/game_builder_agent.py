@@ -1,9 +1,8 @@
 """A solo game developer using the shared plan, capability and evolution lifecycle."""
 
-import hashlib
 from typing import Any, Dict, List
 
-from pydantic import Field, PrivateAttr
+from pydantic import Field
 
 from agentevolver.agent.actor.meta_agent import MetaAgent
 from agentevolver.registry import AGENT
@@ -21,9 +20,6 @@ class GameBuilderAgent(MetaAgent):
     include_agents: bool = Field(default=False)
     enable_evolving: bool = Field(default=True)
     max_step: int = Field(default=400)
-    plan_refresh_steps: int = Field(default=3, ge=1)
-    _plan_digest: str = PrivateAttr(default="")
-    _plan_updated_step: int = PrivateAttr(default=0)
     env_names: List[str] = Field(default_factory=lambda: ["godot_environment"])
     capability_allowlists: Dict[str, List[str]] = Field(default_factory=lambda: {
         "environment": ["godot_environment"], "agent": [],
@@ -43,31 +39,6 @@ class GameBuilderAgent(MetaAgent):
         result = await environment.prepare_workspace(ctx=self.ctx)
         if not result["success"]:
             raise RuntimeError(result["message"])
-
-    async def on_step(self, step):
-        from agentevolver.plan.server import plan_manager, plan_path
-        from agentevolver.plan.types import PlanMode
-
-        note = await super().on_step(step)
-        sid = str(getattr(self.ctx, "id", "") or "")
-        if not self.use_plan or plan_manager.mode(sid) is PlanMode.OFF:
-            return note
-        path = plan_path(sid)
-        content = path.read_bytes() if path.is_file() else b""
-        digest = hashlib.sha256(content).hexdigest()
-        if content and digest != self._plan_digest:
-            self._plan_digest, self._plan_updated_step = digest, step
-        if not content or step - self._plan_updated_step >= self.plan_refresh_steps:
-            reason = "The plan is missing or has not changed during recent steps."
-            note += (f"\n<game-plan-update-required>\n{reason}\n"
-                     f"Update {path} before starting another implementation item. The task HTML is an outline; "
-                     "author concrete story beats, character motives, quest branches, gameplay rules, "
-                     "scene/module design and acceptance checks. Record work IDs, changed files, actual "
-                     "results, blockers and next steps; distinguish designed, implemented, verified and played. "
-                     "Summarize long narrative/design documents here with links. Do not just touch the file "
-                     "or invent progress. This reminder does not change an active plan review gate.\n"
-                     "</game-plan-update-required>")
-        return note
 
     async def on_exit(self, status):
         from agentevolver.environment.server import environment_manager

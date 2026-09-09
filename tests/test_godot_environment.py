@@ -65,6 +65,17 @@ async def test_native_game_through_shared_base_and_godot(bound_session, monkeypa
         runtime = env._runtimes[ctx.id]
         assert (await docker_command("inspect", "--format", "{{.HostConfig.NetworkMode}}", runtime.base_name)).strip() == "bridge"
         assert container_for(str(root))[0] == runtime.base_name
+        # A component can be admitted after containers start. Its inspected source
+        # must be readable at the same path, but never writable from Bash.
+        from agentevolver.paths import P, path_manager
+        admitted = path_manager.get(P.ADMISSION) / "native-test" / "probe.py"
+        admitted.parent.mkdir(parents=True, exist_ok=True)
+        admitted.write_text("ADMITTED_SOURCE = True\n")
+        read = await bash(command="cat " + shlex.quote(str(admitted)), ctx=ctx)
+        assert read.data["exit_code"] == 0 and "ADMITTED_SOURCE = True" in read.message
+        with pytest.raises(RuntimeError, match="Read-only file system"):
+            await docker_command("exec", runtime.base_name, "sh", "-c",
+                                 "echo overwrite > " + shlex.quote(str(admitted)))
         fixture = Path(__file__).parent / "fixtures" / "godot_native"
         sources = {path.name: path.read_text() for path in fixture.iterdir() if path.is_file()}
         plan = bound_session["plan"] / "plan.md"

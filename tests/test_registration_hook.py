@@ -28,6 +28,48 @@ from agentevolver.hook.default.registration import (
 from agentevolver.hook.types import HookContext, HookDecision
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", [None, "shadow", "canary", "active", "reverted"])
+async def test_registration_receipt_distinguishes_candidate_from_serving_version(monkeypatch, phase):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from agentevolver.extension import extension_manager
+    from agentevolver.hook import promotion
+    from agentevolver.tool.default.adoption import AdoptionTool
+    from agentevolver.agent.loop.decision import ActionCall
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.task.evolution import observe, state
+
+    active = "1.0.1" if phase in (None, "active") else "1.0.0"
+    rollout = None if phase is None else {
+        "phase": phase, "candidate_version": "1.0.1", "baseline_version": "1.0.0",
+    }
+    comp = SimpleNamespace(module="tool", name="font_probe", version=active)
+    monkeypatch.setattr(promotion, "install_generated_component", AsyncMock(return_value=(True, "installed")))
+    monkeypatch.setattr(type(extension_manager), "read_manifest", lambda self: SimpleNamespace(components=[comp]))
+    monkeypatch.setattr(type(extension_manager), "rollout_status", lambda *args: rollout)
+    result = await AdoptionTool()(action="register", module="tool", name="font_probe",
+                                  artifact_path="/source/font_probe.py")
+    assert result.success
+    expected = "1.0.1" if phase in (None, "shadow", "canary", "active") else "1.0.0"
+    assert result.data["version"] == result.data["candidate_version"] == expected
+    assert result.data["active_version"] == active
+    if phase in ("shadow", "canary"):
+        assert "ordinary calls may still use the baseline" in result.message
+
+    ctx = SimpleNamespace(extra={"task_manifest": {"evolution": {"require_verified_improvement": True}}})
+    call = ActionCall("register-1", "adoption_tool", {"action": "register"})
+    observe(ctx, [CapabilityRouter._from_response(call, result)], {"adoption_tool": ("tool", "adoption_tool")})
+    candidate = state(ctx)["candidates"][f"tool:font_probe:{expected}"]
+    candidate["decision"] = {"decision": "keep", "evaluation": {"verdict": "pass"}}
+    candidate["use"] = {"consumer_call_id": "later-real-use"}
+    # Registering the same immutable version again must not erase its prior evidence.
+    repeat = ActionCall("register-2", "adoption_tool", {"action": "register"})
+    observe(ctx, [CapabilityRouter._from_response(repeat, result)], {"adoption_tool": ("tool", "adoption_tool")})
+    assert candidate["registration"] == "register-1"
+    assert state(ctx)["candidates"][f"tool:font_probe:{expected}"]["use"] == {"consumer_call_id": "later-real-use"}
+
+
 def _ctx(**payload: Any) -> HookContext:
     return HookContext(id="reg-test", name="registration_hook", input=payload)
 

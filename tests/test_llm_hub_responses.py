@@ -495,6 +495,14 @@ def test_tool_schemas_are_flattened():
     assert serialized["name"] == "read_file_tool"
     assert "function" not in serialized, "still in the chat shape"
     assert serialized["parameters"]["required"] == ["path"]
+    assert serialized["strict"] is False
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_tool_flattening_preserves_explicit_strict_mode(strict):
+    tool = _tool()
+    tool.function_calling["function"]["strict"] = strict
+    assert serialize_tools([tool])[0]["strict"] is strict
 
 
 def test_a_tool_turn_becomes_separate_call_and_output_items():

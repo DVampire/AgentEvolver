@@ -337,7 +337,7 @@ async def test_pressure_estimate_counts_live_attachments(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_opaque_only_compaction_does_not_discard_history(monkeypatch):
-    agent = Agent(retain_recent_steps=1)
+    agent = Agent(compact_strategy="native", retain_recent_steps=1)
     agent.conversation.extend([AssistantMessage(content="old"), AssistantMessage(content="recent")])
     async def native(self, messages):
         return {"provider_state": {"responses": {"opaque": "x"}}}

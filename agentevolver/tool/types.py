@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -110,6 +111,26 @@ class Tool(BaseModel):
         """
         limit = arguments.get("max_output_chars", OUTPUT_LIMIT)
         return max(0, limit) if type(limit) is int else OUTPUT_LIMIT
+
+    def model_observation(self, response: Response) -> str:
+        """Expose structured results as well as their human-readable status.
+
+        Keep canonical message/data intact for programmatic consumers. Tools whose
+        message already renders their data can override this projection.
+        """
+        message = response.message
+        if not response.data:
+            return message
+        try:
+            rendered = json.loads(message)
+        except (ValueError, TypeError):
+            rendered = None
+        if isinstance(rendered, dict) and all(
+            key in rendered and rendered[key] == value
+            for key, value in response.data.items()
+        ):
+            return message
+        return message + "\n\nResult data:\n" + json.dumps(response.data, ensure_ascii=False, default=str)
 
     def permission_request(
         self, arguments: Dict[str, Any], ctx: Optional[ToolContext] = None,

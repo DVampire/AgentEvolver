@@ -78,14 +78,12 @@ def build_task_text(brief: Path, milestone: str, require_evolution: bool) -> str
         "You are the sole GameBuilder. No user/persona/reviewer agents or subscriptions. "
         "Design, implement, visually play the native Godot game, critique, improve, "
         "and track campaign progress yourself.\n\n"
-        "The task HTML is the product outline, not the detailed implementation design. Before coding, "
-        "expand it in the authoritative plan.md: chapter beats, character motives/arcs, dialogue and "
-        "branch consequences, quest state transitions, exploration/companion/combat loops, controls, "
-        "progression, save rules, scene/module/data design and concrete acceptance journeys. Keep "
-        "current details in plan.md; link long dialogue/content ledgers from it. Update design and "
-        "progress after each coherent implementation batch, check/play result, blocker or changed "
-        "decision. On continuation, inspect the existing project and reconcile the plan before "
-        "changing code; historical artifacts do not certify the new run.\n\n"
+        "The task HTML is the product outline, not the detailed implementation design. "
+        "Use godot_game_development_skill and its planning reference to expand the outline. "
+        "Follow the shared index.md/plan.md contract; choose any additional records and "
+        "directory structure according to this game's needs. Update records after meaningful "
+        "work. On continuation, reconcile the plan with actual artifacts before changing code; "
+        "historical records do not certify the new run.\n\n"
         "On continuation, visually reassess the inherited game's presentation before expanding "
         "content. Use the prompt and skill's art-first self-review workflow; keep observed defects "
         "and the next concrete art fix in the existing plan.\n\n"
@@ -129,7 +127,9 @@ def seed_game_session(source_session: str, workspace: Path, plan: Path) -> dict:
         raise ValueError("Continuation requires a separate destination session")
     if any(workspace.iterdir()) or (plan.exists() and any(plan.iterdir())):
         raise ValueError("Continuation destination workspace and plan must be empty")
-    if (source / "plan/plan.md").is_symlink() or (source / "workspace/continuation.json").is_symlink():
+    if any((source / path).is_symlink() for path in (
+        "plan/plan.md", "plan/index.md", "workspace/continuation.json",
+    )):
         raise ValueError("Continuation metadata and plan must be ordinary files")
     # Copy links as links, never follow them into unrelated host files. Imported
     # Godot caches are regenerated; authored files, saves and old screenshots stay.
@@ -140,10 +140,11 @@ def seed_game_session(source_session: str, workspace: Path, plan: Path) -> dict:
     plan_file = plan / "plan.md"
     if plan_file.is_symlink():
         raise ValueError("Continuation plan.md must be an ordinary file")
-    if plan_file.is_file():
-        text = plan_file.read_text()
-        text = text.replace(str(source / "workspace"), str(workspace)).replace(str(source / "plan"), str(plan))
-        plan_file.write_text(text)
+    for navigation in (plan_file, plan / "index.md"):
+        if navigation.is_file():
+            text = navigation.read_text()
+            text = text.replace(str(source / "workspace"), str(workspace)).replace(str(source / "plan"), str(plan))
+            navigation.write_text(text)
     receipt = {
         "source_session": str(source), "mode": "authored_files_and_plan",
         "plan": str(plan_file), "requires_plan_reconciliation": True,

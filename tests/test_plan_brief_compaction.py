@@ -44,7 +44,7 @@ FULL DESIGN MUST STAY ON DISK
 @pytest.mark.asyncio
 @pytest.mark.parametrize("native", [False, True])
 async def test_live_brief_never_reaches_either_compactor_but_feedback_and_tools_do(monkeypatch, native):
-    agent = Agent(retain_recent_steps=1, use_plan=True)
+    agent = Agent(retain_recent_steps=1, use_plan=True, compact_strategy="native")
     agent.ctx = SimpleNamespace(id="test", extra={})
     monkeypatch.setattr("agentevolver.plan.server.plan_manager.context",
                         lambda *a, **k: '<plan-context path="/plan.md"><plan-brief>W1 DONE</plan-brief></plan-context>')

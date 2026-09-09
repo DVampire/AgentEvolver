@@ -49,54 +49,21 @@ holds across calls, explicitly release_inputs within the idle lease. input_state
 actual held state. Validate each input against visible game outcomes. stop_game
 must precede CLI imports/checks/exports or project switching. Missing images, rendering
 or input failures remain blockers; do not invent evidence or claim unobserved play.
+Discover the project layout once and reuse observed file paths; search before guessing a
+module name. Check command availability before depending on optional utilities. Use failure
+propagation for dependent shell commands and inspect stderr even when the final command exits
+zero. Group changes before import/restart, then play a coherent acceptance journey. Read the
+archived process log only for a specific diagnostic question, not after every lifecycle call.
 </scope>
 <project-plan>
-The task HTML is the project brief: product intent, story, constraints, milestones and
-acceptance requirements. You own the detailed implementation plan. When plan-context is
-supplied, create and maintain its exact plan.md before multi-step implementation. Use the
-existing session plan outside the deliverable; do not create a competing workspace/plan.md.
-Respect an explicitly disabled planning mode or active review gate.
-Start plan.md with a `## Brief` progress index of at most 2,000 characters: milestone,
-work IDs/status, references to detailed sections, blockers and next action. Only that index
-and the plan path are supplied live each step; the full design is read on demand. Read the
-relevant plan sections before implementing or revising them, and keep the Brief synchronized.
-
-Expand the outline into your own concrete game design before implementing the next slice.
-For narrative, specify chapter beats, character motives/arcs, dialogue objectives, quest
-states, branch conditions and consequences visible to the player. For gameplay, specify
-the exploration/companion/combat loops, controls, rules, progression, failure/recovery and
-save behavior. Connect each design to scenes/modules/data and observable acceptance journeys.
-A copied task outline or a checklist of feature names is not a detailed design. Keep the
-current slice concrete in plan.md and link long scripts/content ledgers for the full campaign.
-
-Keep the following in that plan:
-- Current milestone, scope, constraints, assumptions, unresolved questions and next action.
-- Evolution opportunities near the top, following the shared planning rules.
-- Design and implementation decisions: scene/module responsibilities, resource and save
-  schemas, stable content IDs, quest transitions and branch conditions, combat rules,
-  controls and UI flows. Explain important tradeoffs and link the affected source paths.
-- A work breakdown with stable item IDs, dependencies, acceptance criteria and status.
-  For each active or completed item, record the actual implementation approach, changed
-  files/resources, remaining gaps and evidence. Keep planned, in_progress, implemented,
-  verified and blocked distinct; record played separately where a player journey is needed.
-- A concise campaign/content coverage summary and links to detailed ledgers. Do not mark
-  an outlined chapter implemented, or an implemented feature verified without execution.
-- Decisions and progress updates: what changed, why, affected requirements, observed
-  results, blockers and the concrete next step. Preserve unresolved work through compaction.
-
-Update plan.md after each coherent implementation item, meaningful verification/self-play
-result, blocker or design decision, and before acting on changed requirements. Update it
-again before handoff or completion. Do not rewrite it after every trivial tool call. Runtime
-reads only the latest Brief on the next step; it does not infer progress from source changes.
-When game-plan-update-required appears, reconcile and update the plan before the next
-implementation item. The reminder checks whether plan content changed; it cannot judge
-whether your design or progress claims are correct. Record actual changes and evidence.
-The plan must summarize current implementation details, not just carry checkboxes. Keep
-large schemas, full dialogue, historical logs and verbose evidence in linked design/report
-files so the current plan stays readable within its bounded context projection. On resume,
-reconcile the plan with actual source, artifacts and evidence before choosing the next item.
-When tests are deferred, explicitly record implemented / verification pending and the
-checks still required. Report the exact plan path in the final handoff.
+Treat the task HTML as the product outline and acceptance contract. Expand it into an
+implementable design using godot_game_development_skill and its planning reference.
+Follow the shared plan-context paths and rules for index.md and plan.md. Let the skill
+guide the game-specific records; choose their filenames and layout based on actual needs.
+Do not create a competing plan in the game workspace or duplicate the live summary.
+After meaningful work, update the affected records and concise index. Read those records
+on demand. On continuation, reconcile historical claims with the current source and evidence;
+copied records do not verify the new run. Preserve pending work when checks are deferred.
 </project-plan>
 <development-loop>
 1. Invoke godot_game_development_skill. Inspect the actual workspace and tools. When execution

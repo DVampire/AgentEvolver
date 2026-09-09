@@ -97,7 +97,7 @@ class GodotEnvironment(Environment):
         return str(Path(found).resolve())
 
     def _runtime(self, sid, rec):
-        from agentevolver.paths import path_manager
+        from agentevolver.paths import P, path_manager
 
         from .runtime import DockerRuntime
 
@@ -106,6 +106,9 @@ class GodotEnvironment(Environment):
             mounts = [roots[key] for key in ("plan", "log", "extension") if key in roots]
             references = [roots[key] for key in ("package", "shared_extension")
                           if key in roots and roots[key].is_dir()]
+            # inspect_tool points to immutable admitted source snapshots. Mount the
+            # directory before registration too, so later snapshots are readable.
+            references.append(path_manager.get(P.ADMISSION, create=True))
             self._runtimes[sid] = DockerRuntime(
                 rec["workspace"], self.image, self.base_image, mounts,
                 read_only_mounts=references, base_network=self.base_network)
@@ -162,14 +165,27 @@ class GodotEnvironment(Environment):
     @staticmethod
     def _read_log(path):
         error = False
-        # Stream the archive for diagnostics; keep only a bounded tail in context.
+        excerpts = []
+        remaining = 4000
+        context_lines = 0
+        # Preserve the first errors and their stack context even when shutdown
+        # diagnostics push the original failure out of the bounded tail.
         with path.open("r", encoding="utf-8", errors="replace") as stream:
             for line in stream:
                 if re.search(r"(?:^|\s)(?:SCRIPT ERROR|ERROR|Parse Error):", line):
                     error = True
+                    context_lines = 4
+                if context_lines and remaining:
+                    excerpt = line[:remaining]
+                    excerpts.append(excerpt)
+                    remaining -= len(excerpt)
+                    context_lines -= 1
         with path.open("rb") as stream:
             stream.seek(max(0, path.stat().st_size - 12000))
             tail = stream.read().decode("utf-8", errors="replace")
+        diagnostics = "".join(excerpts)
+        if diagnostics and diagnostics not in tail:
+            tail = "First engine errors (with context):\n" + diagnostics + "\nLog tail:\n" + tail[-7000:]
         return tail, error
 
     async def _execute(self, sid, rec, arguments, timeout, ctx, operation, output_path=None):
@@ -379,7 +395,7 @@ class GodotEnvironment(Environment):
         Args:
             scene: Project-relative, res:// or absolute .tscn/.scn path inside the selected project; omit for its main scene. Cannot combine with script.
             script: SceneTree/MainLoop .gd file inside the selected project, e.g. tests/baseline.gd. Absolute paths outside the project are rejected. Cannot combine with scene.
-            frames: Engine iteration limit; does not assert test success.
+            frames: Engine iteration limit, not physics frames or elapsed time. May stop an awaiting test before completion; require its completion marker. Does not assert test success.
             timeout: Wall-clock limit in seconds.
         """
         return await self._perform("run_headless", ctx, timeout, scene=scene, script=script, frames=frames)
@@ -459,10 +475,34 @@ class GodotEnvironment(Environment):
                 rec["bridge_error"] = "Game process may still be running, but its interaction bridge is disconnected. Stop/start explicitly to recover; inputs were not retried."
         else:
             rec.pop("bridge_error", None)
-        last = {"operation": tool, "success": ok, "output": "\n".join(messages)[-12000:]}
+        output = "\n".join(messages)
+        archive = None
+        if tool in ("run_project", "stop_project"):
+            archive = rec["workspace"] / ".godot-agent" / f"{tool}-{uuid.uuid4().hex}.log"
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            # Lifecycle responses include the whole process's captured output,
+            # often dominated by old input/heartbeat events. Keep it retrievable.
+            archive.write_text(output, encoding="utf-8")
+            if len(output) > 4000:
+                errors = []
+                budget = 1500
+                for line in output.splitlines():
+                    if budget and any(marker in line for marker in ("ERROR:", "Parse Error:", '"error"')):
+                        errors.append(line[:budget])
+                        budget -= len(errors[-1])
+                output = (output[:1000] + "\n[Process log omitted inline]\n"
+                          + ("Engine diagnostics:\n" + "\n".join(errors) + "\n" if errors else "")
+                          + output[-1000:])
+            output = f"Godot {tool}: success={ok}. Full process log: {archive}\n{output}"
+        else:
+            output = output[-12000:]
+        last = {"operation": tool, "success": ok, "output": output}
+        if archive is not None:
+            last["log_path"] = str(archive)
         rec["last"] = last
         return {"success": ok, "message": last["output"],
-                "extra": {"structured": structured, "screenshots": shots}}
+                "extra": {"structured": structured, "screenshots": shots,
+                          **({"log_path": str(archive)} if archive is not None else {})}}
 
     def _cancel_input_watchdog(self, sid):
         task = self._input_watchdogs.pop(sid, None)

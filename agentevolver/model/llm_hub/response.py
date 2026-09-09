@@ -248,6 +248,10 @@ def serialize_tools(
             "name": function.get("name", ""),
             "description": function.get("description", ""),
             "parameters": function.get("parameters") or {"type": "object", "properties": {}},
+            # Preserve Chat's non-strict default explicitly. Responses may normalize
+            # an omitted strict flag by requiring every optional property, forcing
+            # callers to invent values for mutually exclusive operation arguments.
+            "strict": function.get("strict", False),
         }
         eligible = bool((getattr(source, "metadata", None) or {}).get("programmatic"))
         if asynchronous and eligible:
