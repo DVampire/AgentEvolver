@@ -3,7 +3,7 @@
 game_builder_agent = dict(
     name="game_builder_agent",
     type="Agent",
-    model_name="llm_hub/claude-fable-5-1",
+    model_name="llm_hub/gpt-6-astra",
     prompt_name="game_builder_agent",
     memory_name="file_system_memory",
     include_agents=False,

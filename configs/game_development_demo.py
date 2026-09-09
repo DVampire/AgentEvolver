@@ -14,7 +14,7 @@ with read_base():
 tag = "game_development_demo"
 log_path = "agent.log"
 extension_root = "output/game_development_demo/extension"
-model_name = "llm_hub/claude-fable-5-1"
+model_name = "llm_hub/gpt-6-astra"
 model_roles = dict(main=model_name, judge=model_name, summarize=model_name)
 agent_model_policy = "per_agent"
 agent_names = ["game_builder_agent"]
