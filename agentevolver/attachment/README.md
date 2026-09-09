@@ -35,6 +35,14 @@ live set to the turn it is about to send. That is the same route `BrowserAgent` 
 takes for screenshots — it appends `ContentPartImage` onto the user message it is
 building — generalised so that any tool can use it.
 
+The base Agent's existing `attachments()` also projects standard `ScreenshotInfo`
+frames from its current mounted-environment observations. GameBuilder and WebsiteBuilder
+use this shared path without actor-specific message assembly. These frames are volatile:
+they disappear when the environment reports none, whereas explicitly read images remain
+in this manager's bounded live set. `prepare_task()` binds initial task inputs; it does
+not acquire or refresh game/browser frames during play. Environment frames are bounded
+by `max_screenshots` per environment (default one), with identical frames deduplicated.
+
 The second is persistence, and it is the reason this is a module rather than three lines in
 the tool. This framework rebuilds the entire prompt from memory on every step. An image
 appended to one request is simply not in the next one. So an attachment is not a

@@ -204,4 +204,5 @@ def test_skill_loader_discovers_cli_catalog_and_reference():
     assert str(SCRIPT) in config.scripts
     assert str(SCRIPT.parents[1] / 'resources/catalog.json') in config.resources
     assert str(SCRIPT.parents[1] / 'references/assets-cli.md') in config.references
-    assert config.version == '1.2.0'
+    assert str(SCRIPT.parents[1] / 'references/presentation-review.md') in config.references
+    assert config.version == '1.3.0'

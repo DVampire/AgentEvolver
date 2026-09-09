@@ -160,6 +160,24 @@ Godot Docker, checks movement through telemetry and rendered pixels, clicks a bu
 checks model image routing, rejects invalid source and tests restart/cleanup.
 This is environment verification; it does not deliver or certify the campaign.
 
+## Visual sample before content expansion
+
+The GameBuilder prompt and skill put visual self-review before content expansion.
+On fresh runs and continuations, unfinished characters, sparse/repetitive scenery,
+lighting or UI select the next art iteration before new quests/maps and release packaging.
+Essential engine/control repairs and affected regression checks remain allowed.
+Assets must address player, companion, environment and interface roles; downloading
+vegetation alone does not satisfy the intended creature RPG presentation.
+
+The skill's `references/presentation-review.md` guides the agent's own screenshot
+and play critique. Observations, remaining defects and the next fix belong in the
+existing plan's ART item; its Brief stays concise. There is no additional structured
+review file, runtime aesthetic checker or presentation-specific completion gate.
+The builder reinspects affected views after relevant changes and reports unfinished
+art separately from gameplay verification and agent-system evolution. Explicit
+source-only/testing restrictions still take precedence. Changing the prompt and skill
+does not automatically change an already-produced game's appearance.
+
 ## Current integration architecture
 
 Godot belongs in **Environment**, with **GameBuilderAgent** owning development decisions
@@ -342,7 +360,10 @@ copies source/saves/historical artifacts and planning files, and regenerates God
 import caches. It starts a fresh conversation, budget and evolution audit; it does
 not replay old calls or credit historical artifacts as new verification. The new
 `workspace/continuation.json` records provenance. The first work item is reconciling
-the inherited plan with actual files and expanding any missing story/gameplay design.
+the existing project with current requirements. The experiment launcher copies these
+artifacts before manager/environment initialization; GameBuilder itself has no
+session-copy or continuation configuration. Reconcile the inherited plan with actual
+files and expand any missing story/gameplay design.
 GameBuilder emits a plan-update reminder after three steps without a content change;
 the agent remains responsible for meaningful updates and truthful evidence.
 `--godot-bin PATH` explicitly selects the local CLI-only backend, without native play.

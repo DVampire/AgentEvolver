@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agentevolver.agent.actor.game_builder_agent import GameBuilderAgent
-from agentevolver.agent.actor.game_continuation import seed_game_session
+from examples.run_game_development_demo import seed_game_session
 from agentevolver.agent.actor.meta_agent import MetaAgent
 from agentevolver.plan.server import plan_manager, plan_path
 from agentevolver.plan.types import PlanMode
@@ -58,6 +58,53 @@ def test_continuation_refuses_live_source(tmp_path):
         seed_game_session(str(source), tmp_path / "new/workspace", tmp_path / "new/plan")
 
 
+def test_continue_cli_prepares_artifacts_without_agent_configuration(tmp_path, monkeypatch):
+    from examples import run_game_development_demo as entry, run_meta_agent as runner
+
+    source = tmp_path / "old"
+    (source / "workspace/game").mkdir(parents=True)
+    (source / "session.json").write_text("{}")
+    (source / "workspace/game/project.godot").write_text("config_version=5")
+    (source / "plan").mkdir()
+    (source / "plan/plan.md").write_text("ART: replace placeholders before new quests")
+    workspace, plan = tmp_path / "new/workspace", tmp_path / "new/plan"
+    workspace.mkdir(parents=True)
+    plan.mkdir()
+    prepared = []
+
+    async def launch_stub(*, prepare_session):
+        import sys
+        assert not any("game_builder_agent.continue_from=" in value for value in sys.argv)
+        prepare_session(workspace, plan)
+        prepared.append((workspace / "game/project.godot").read_text())
+
+    monkeypatch.setattr(runner, "run_with_lifecycle", launch_stub)
+    entry.launch(entry.parse_args(["--continue-from", str(source)]))
+    assert prepared == ["config_version=5"]
+    assert (plan / "plan.md").read_text().startswith("ART:")
+
+
+@pytest.mark.asyncio
+async def test_failed_preparation_stops_before_manager_initialization(tmp_path, monkeypatch):
+    from examples import run_meta_agent as runner
+
+    roots = SimpleNamespace(workspace_root=tmp_path / "workspace", plan_root=tmp_path / "plan")
+    monkeypatch.setattr(runner, "parse_args", lambda: SimpleNamespace(config="unused"))
+    monkeypatch.setattr(runner, "config", SimpleNamespace(initialize=lambda **kw: None, extension_root="unused"))
+    monkeypatch.setattr(runner, "ensure_session_sandbox", lambda *a, **kw: roots)
+    monkeypatch.setattr(runner, "bind_session_roots", lambda *a: None)
+    initialize = AsyncMock()
+    monkeypatch.setattr(runner.version_manager, "initialize", initialize)
+
+    def cannot_prepare(workspace, plan):
+        assert (workspace, plan) == (roots.workspace_root, roots.plan_root)
+        raise ValueError("source still running")
+
+    with pytest.raises(ValueError, match="source still running"):
+        await runner.main(prepare_session=cannot_prepare)
+    initialize.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_plan_reminder_requires_content_change_and_respects_off(bound_session, monkeypatch):
     monkeypatch.setattr(MetaAgent, "on_step", AsyncMock(return_value="base note"))
@@ -71,8 +118,6 @@ async def test_plan_reminder_requires_content_change_and_respects_off(bound_sess
     assert "game-plan-update-required" in await agent.on_step(5)
     path.write_text(path.read_text() + "\nImplemented rescue trigger; import failed; fix syntax next.")
     assert await agent.on_step(6) == "base note"
-    agent._plan_reconcile = True
-    assert "Reconcile the carried plan" in await agent.on_step(7)
     plan_manager.set_mode(agent.ctx.id, PlanMode.OFF)
     try:
         assert await agent.on_step(20) == "base note"

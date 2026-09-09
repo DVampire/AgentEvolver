@@ -114,10 +114,10 @@ class ContextAssembler:
     ) -> ContextEnvelope:
         """The validated envelope. Raises if the conversation is not sendable.
 
-        ``attachments`` are whole messages rather than text — images a tool read during
-        the run. They ride in the live layer and are re-sent every step: the request is
-        rebuilt each time, so an image appended once is absent from the next one, and
-        re-attaching is what makes "look at this screenshot" hold for more than a turn.
+        ``attachments`` are whole messages rather than text: explicitly read images
+        and screenshots from the current environment observation. They ride in the
+        live layer, rebuilt every step, outside the conversation being compacted.
+        The caller supplies retained read images and only currently available frames.
         """
         fixed = self._fixed(conversation)
         checkpoint = tuple(

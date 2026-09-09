@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from functools import partial
 from pathlib import Path
 from typing import Sequence
 
@@ -85,6 +86,9 @@ def build_task_text(brief: Path, milestone: str, require_evolution: bool) -> str
         "progress after each coherent implementation batch, check/play result, blocker or changed "
         "decision. On continuation, inspect the existing project and reconcile the plan before "
         "changing code; historical artifacts do not certify the new run.\n\n"
+        "On continuation, visually reassess the inherited game's presentation before expanding "
+        "content. Use the prompt and skill's art-first self-review workflow; keep observed defects "
+        "and the next concrete art fix in the existing plan.\n\n"
         + scope + "\n\n" + experiment + "\n\n"
         "Use Bash for project files and bounded foreground commands; godot_environment is "
         "the only mounted environment and owns engine operations. The base and Godot Docker "
@@ -107,6 +111,48 @@ def build_task_text(brief: Path, milestone: str, require_evolution: bool) -> str
     })
 
 
+def seed_game_session(source_session: str, workspace: Path, plan: Path) -> dict:
+    """Prepare a new experiment from authored artifacts, not agent conversation state."""
+    import json
+    import shutil
+
+    source = Path(source_session).expanduser().resolve()
+    workspace, plan = workspace.resolve(), plan.resolve()
+    if not (source / "session.json").is_file() or not (source / "workspace").is_dir():
+        raise ValueError("continue_from must name an existing session with session.json and workspace/")
+    from agentevolver.visual.run.server import process_start, read_json
+
+    monitor = read_json(source / "log/run_monitor.json", {})
+    if monitor.get("launcher_start") and process_start(monitor.get("launcher_pid")) == monitor["launcher_start"]:
+        raise ValueError("Stop the source session before copying its live game files")
+    if workspace.is_relative_to(source) or source.is_relative_to(workspace):
+        raise ValueError("Continuation requires a separate destination session")
+    if any(workspace.iterdir()) or (plan.exists() and any(plan.iterdir())):
+        raise ValueError("Continuation destination workspace and plan must be empty")
+    if (source / "plan/plan.md").is_symlink() or (source / "workspace/continuation.json").is_symlink():
+        raise ValueError("Continuation metadata and plan must be ordinary files")
+    # Copy links as links, never follow them into unrelated host files. Imported
+    # Godot caches are regenerated; authored files, saves and old screenshots stay.
+    shutil.copytree(source / "workspace", workspace, dirs_exist_ok=True,
+                    symlinks=True, ignore=shutil.ignore_patterns(".godot"))
+    if (source / "plan").is_dir():
+        shutil.copytree(source / "plan", plan, dirs_exist_ok=True, symlinks=True)
+    plan_file = plan / "plan.md"
+    if plan_file.is_symlink():
+        raise ValueError("Continuation plan.md must be an ordinary file")
+    if plan_file.is_file():
+        text = plan_file.read_text()
+        text = text.replace(str(source / "workspace"), str(workspace)).replace(str(source / "plan"), str(plan))
+        plan_file.write_text(text)
+    receipt = {
+        "source_session": str(source), "mode": "authored_files_and_plan",
+        "plan": str(plan_file), "requires_plan_reconciliation": True,
+        "note": "Fresh model conversation, budget and evolution audit. Copied artifacts are historical, not verification of this run.",
+    }
+    (workspace / "continuation.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    return receipt
+
+
 def launch(args):
     config_path = _existing_file(args.config, "config")
     brief = _existing_file(args.task_file or str(Path(args.task_dir) / "task.html"), "game task")
@@ -115,10 +161,11 @@ def launch(args):
         print(task)
         return
     options = list(args.cfg_options)
+    prepare_session = None
     if args.continue_from:
         source = Path(args.continue_from).expanduser().resolve()
         _existing_file(str(source / "session.json"), "source session manifest")
-        options.insert(0, f"game_builder_agent.continue_from={source}")
+        prepare_session = partial(seed_game_session, str(source))
     if args.model:
         options[:0] = [f"model_name={args.model}", f"game_builder_agent.model_name={args.model}"]
     if args.godot_bin:
@@ -136,7 +183,7 @@ def launch(args):
     previous = sys.argv
     try:
         sys.argv = forwarded
-        asyncio.run(run_meta_agent.run_with_lifecycle())
+        asyncio.run(run_meta_agent.run_with_lifecycle(prepare_session=prepare_session))
     finally:
         sys.argv = previous
 

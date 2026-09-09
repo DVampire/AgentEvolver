@@ -89,6 +89,7 @@ class Agent(BaseModel):
     )
     max_step: int = Field(default=30, description="Steps before the run is cut off.")
     max_actions: int = Field(default=10, description="Actions accepted from one turn.")
+    max_screenshots: int = Field(default=1, ge=0, description="Current screenshots per observed environment; zero disables environment images.")
     permission_mode: str = Field(
         default="workspace_write",
         description="read_only | workspace_write | danger_full_access",
@@ -969,32 +970,59 @@ class Agent(BaseModel):
         }
 
     def attachments(self) -> List[Message]:
-        """Images this run has read, re-sent with every request.
+        """Read-image attachments and current environment frames in the live layer.
 
-        Held by the attachment manager for the session rather than by the conversation:
-        they are bytes a tool produced, not a turn anyone took, and replaying them as
-        history would put a picture where an assistant message belongs.
+        Task preparation binds initial inputs. Environment frames come from the same
+        per-step observation as the textual state; never poll an environment here or
+        retain its old frame after it stops returning images. Domain actors need no
+        override merely to deliver their environment's standard ScreenshotInfo payload.
         """
-        session = str(getattr(self.ctx, "id", "") or "")
-        if not session:
-            return []
-        try:
-            from agentevolver.attachment import attachment_manager
-            from agentevolver.message.types import ContentPartText, HumanMessage
+        from agentevolver.message.types import ContentPartImage, ContentPartText, ImageURL
 
-            live = attachment_manager.live(session)
-            if not live:
-                return []
-            parts: List[Any] = [
-                ContentPartText(text="Images you read, in the order you read them:")
-            ]
-            for attachment in live:
-                parts.append(ContentPartText(text=f"\n[{attachment.source_path}]"))
-                parts.append(attachment_manager.content_part(attachment))
-            return [HumanMessage(content=parts)]
-        except Exception as error:  # noqa: BLE001 - no images is the normal case
-            logger.debug(f"| ⚙️ [{self.name}] attachments unavailable: {error}")
-            return []
+        messages: List[Message] = []
+        session = str(getattr(self.ctx, "id", "") or "")
+        if session:
+            try:
+                from agentevolver.attachment import attachment_manager
+
+                live = attachment_manager.live(session)
+                if live:
+                    parts: List[Any] = [ContentPartText(text="Images you read, in the order you read them:")]
+                    for attachment in live:
+                        parts.append(ContentPartText(text=f"\n[{attachment.source_path}]"))
+                        parts.append(attachment_manager.content_part(attachment))
+                    messages.append(HumanMessage(content=parts))
+            except Exception as error:  # noqa: BLE001 - retain usable environment observations
+                logger.debug(f"| ⚙️ [{self.name}] attachments unavailable: {error}")
+
+        if self.max_screenshots:
+            for name, observation in self._environment_observations.items():
+                if not isinstance(observation, dict):
+                    continue
+                extra = observation.get("extra") or {}
+                if not isinstance(extra, dict):
+                    continue
+                shots = extra.get("screenshots") or []
+                if not isinstance(shots, (list, tuple)):
+                    continue
+                selected, seen = [], set()
+                for shot in reversed(shots):
+                    encoded = shot.get("screenshot") if isinstance(shot, dict) else getattr(shot, "screenshot", None)
+                    if not isinstance(encoded, str) or not encoded or encoded in seen:
+                        continue
+                    label = shot.get("screenshot_description", "") if isinstance(shot, dict) else getattr(shot, "screenshot_description", "")
+                    seen.add(encoded)
+                    selected.append((encoded, label))
+                    if len(selected) == self.max_screenshots:
+                        break
+                if selected:
+                    parts = [ContentPartText(text=f"Current observation from {name}:")]
+                    for encoded, label in reversed(selected):
+                        parts.append(ContentPartText(text=f"\n[{label or 'Screenshot'}]"))
+                        parts.append(ContentPartImage(image_url=ImageURL(
+                            url=f"data:image/png;base64,{encoded}", media_type="image/png")))
+                    messages.append(HumanMessage(content=parts))
+        return messages
 
     def allow_read_only(self, name: str, args: Dict[str, Any]) -> bool:
         """Whether a read_only agent may make this one otherwise-refused call.

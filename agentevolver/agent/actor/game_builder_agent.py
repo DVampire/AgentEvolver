@@ -21,11 +21,9 @@ class GameBuilderAgent(MetaAgent):
     include_agents: bool = Field(default=False)
     enable_evolving: bool = Field(default=True)
     max_step: int = Field(default=400)
-    continue_from: str = Field(default="", description="Stopped session whose game files and plan seed this new run.")
     plan_refresh_steps: int = Field(default=3, ge=1)
     _plan_digest: str = PrivateAttr(default="")
     _plan_updated_step: int = PrivateAttr(default=0)
-    _plan_reconcile: bool = PrivateAttr(default=False)
     env_names: List[str] = Field(default_factory=lambda: ["godot_environment"])
     capability_allowlists: Dict[str, List[str]] = Field(default_factory=lambda: {
         "environment": ["godot_environment"], "agent": [],
@@ -39,17 +37,6 @@ class GameBuilderAgent(MetaAgent):
         # all own the same session instead of creating a second default runtime.
         self.ctx = proc.ctx
         await super().on_start(task, proc)
-        if self.continue_from:
-            from agentevolver.paths import path_manager
-
-            from .game_continuation import seed_game_session
-
-            roots = path_manager.session_roots()
-            seed_game_session(self.continue_from, roots["workspace"], roots["plan"])
-            self._plan_reconcile = True
-            plan = roots["plan"] / "plan.md"
-            if plan.is_file():
-                self._plan_digest = hashlib.sha256(plan.read_bytes()).hexdigest()
         environment = await environment_manager.get("godot_environment")
         if environment is None:
             raise RuntimeError("GameBuilder requires godot_environment")
@@ -70,11 +57,8 @@ class GameBuilderAgent(MetaAgent):
         digest = hashlib.sha256(content).hexdigest()
         if content and digest != self._plan_digest:
             self._plan_digest, self._plan_updated_step = digest, step
-            self._plan_reconcile = False
-        if not content or self._plan_reconcile or step - self._plan_updated_step >= self.plan_refresh_steps:
-            reason = ("Reconcile the carried plan with actual source and historical evidence first."
-                      if self._plan_reconcile else
-                      "The plan is missing or has not changed during recent steps.")
+        if not content or step - self._plan_updated_step >= self.plan_refresh_steps:
+            reason = "The plan is missing or has not changed during recent steps."
             note += (f"\n<game-plan-update-required>\n{reason}\n"
                      f"Update {path} before starting another implementation item. The task HTML is an outline; "
                      "author concrete story beats, character motives, quest branches, gameplay rules, "
@@ -84,26 +68,6 @@ class GameBuilderAgent(MetaAgent):
                      "or invent progress. This reminder does not change an active plan review gate.\n"
                      "</game-plan-update-required>")
         return note
-
-    def attachments(self):
-        from agentevolver.message.types import (
-            ContentPartImage,
-            ContentPartText,
-            HumanMessage,
-            ImageURL,
-        )
-
-        observation = self._environment_observations.get("godot_environment") or {}
-        shots = (observation.get("extra") or {}).get("screenshots") or []
-        result = super().attachments()
-        if shots:
-            shot = shots[-1]
-            result.append(HumanMessage(content=[
-                ContentPartText(text=shot.screenshot_description),
-                ContentPartImage(image_url=ImageURL(
-                    url=f"data:image/png;base64,{shot.screenshot}", media_type="image/png")),
-            ]))
-        return result
 
     async def on_exit(self, status):
         from agentevolver.environment.server import environment_manager

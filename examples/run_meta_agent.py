@@ -233,8 +233,8 @@ async def start_run_record(args, session_id):
     return monitor
 
 
-async def run_with_lifecycle() -> None:
-    """Run the configured launcher and turn SIGINT/SIGTERM into graceful teardown."""
+async def run_with_lifecycle(*, prepare_session=None) -> None:
+    """Run with graceful teardown and optional example-owned workspace preparation."""
     loop = asyncio.get_running_loop()
     stop_requested = asyncio.Event()
     received: list[signal.Signals] = []
@@ -252,7 +252,7 @@ async def run_with_lifecycle() -> None:
             pass
 
     await serve_deployed_site_names()
-    run_task = asyncio.create_task(main(), name="agent-launcher")
+    run_task = asyncio.create_task(main(prepare_session=prepare_session), name="agent-launcher")
     signal_task = asyncio.create_task(stop_requested.wait(), name="launcher-stop-signal")
     try:
         done, _ = await asyncio.wait(
@@ -275,7 +275,7 @@ async def run_with_lifecycle() -> None:
             loop.remove_signal_handler(sig)
 
 
-async def main():
+async def main(*, prepare_session=None):
     args = parse_args()
 
     config.initialize(config_path=args.config, args=args)
@@ -289,6 +289,10 @@ async def main():
         shared_extension_root=config.extension_root,
     )
     bind_session_roots(config, sandbox)
+    # Example-owned artifact preparation happens before managers or agents can
+    # write to the workspace. It does not belong in an agent's lifecycle hooks.
+    if prepare_session is not None:
+        prepare_session(sandbox.workspace_root, sandbox.plan_root)
     # Named here rather than in the config, because which plugins a run may call is a
     # property of the run. `Agent._get_*_context` and the native projection both read it
     # off the context.

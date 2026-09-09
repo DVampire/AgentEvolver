@@ -1,7 +1,13 @@
 """Whole screenshot selection; no browser, model, or network needed."""
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
 
 from agentevolver.agent.actor.browser_agent import BrowserAgent
+from agentevolver.agent.actor.game_builder_agent import GameBuilderAgent
+from agentevolver.agent.actor.website_builder_agent import WebsiteBuilderAgent
+from agentevolver.agent.types import Agent
 
 
 def browser(*shots, **kwargs):
@@ -16,6 +22,122 @@ def browser(*shots, **kwargs):
 def images(agent):
     return [part.image_url.url for message in agent.attachments() for part in message.content
             if part.type == "image_url"]
+
+
+@pytest.mark.parametrize("agent_type", [Agent, GameBuilderAgent, WebsiteBuilderAgent])
+def test_builders_share_current_environment_image_projection(agent_type):
+    from agentevolver.agent.context.assembler import ContextAssembler
+    from agentevolver.agent.context.conversation import Conversation
+
+    agent = agent_type()
+    agent._environment_observations = {"visual_environment": {"extra": {"screenshots": [
+        SimpleNamespace(screenshot="before", screenshot_description="Before"),
+        {"screenshot": "after", "screenshot_description": "Current"},
+    ]}}}
+    assert images(agent) == ["data:image/png;base64,after"]
+    assert "visual_environment" in agent.attachments()[0].text
+    conversation = Conversation(task="Inspect the current game")
+    envelope = ContextAssembler().build_envelope(
+        conversation, attachments=agent.attachments(),
+    )
+    assert [part.image_url.url for message in envelope.live for part in message.content
+            if part.type == "image_url"] == ["data:image/png;base64,after"]
+    assert conversation.items == []
+    assert envelope.recent == () and envelope.checkpoint == ()
+    agent._environment_observations = {"visual_environment": {"state": "Stopped", "extra": {"screenshots": []}}}
+    assert images(agent) == []  # No old frame retained after stop/failure.
+
+
+def test_shared_environment_screenshot_budget_and_deduplication():
+    agent = Agent(max_screenshots=2)
+    agent._environment_observations = {"visual": {"extra": {"screenshots": [
+        {"screenshot": "a", "screenshot_description": "Old label"},
+        {"screenshot": "a", "screenshot_description": "New label"},
+        {"screenshot": "b", "screenshot_description": "Other frame"},
+    ]}}}
+    assert images(agent) == ["data:image/png;base64,a", "data:image/png;base64,b"]
+    assert "Old label" not in agent.attachments()[0].text
+    agent.max_screenshots = 0
+    assert images(agent) == []
+
+
+@pytest.mark.parametrize("protocol", ["responses", "responses_explicit", "chat", "anthropic"])
+@pytest.mark.parametrize("checkpoint", [False, True])
+def test_changing_environment_frame_preserves_serialized_cache_prefix(protocol, checkpoint):
+    import json
+
+    from agentevolver.agent.context.assembler import ContextAssembler
+    from agentevolver.message import AssistantMessage, CompactionMessage, SystemMessage
+    from agentevolver.model.anthropic.serializer import AnthropicChatSerializer
+    from agentevolver.model.llm_hub.response import serialize_input
+    from agentevolver.model.llm_hub.serializer import LLMHubChatSerializer
+
+    agent = GameBuilderAgent()
+    agent.conversation.system = [SystemMessage(content="Stable rules")]
+    agent.conversation.task = "Build the game"
+    if checkpoint:
+        state = {}
+        if protocol.startswith("responses"):
+            state = {"responses": {"compaction_items": [
+                {"type": "compaction", "encrypted_content": "opaque-history"},
+            ]}}
+        elif protocol == "anthropic":
+            state = {"anthropic": {"compaction_blocks": [
+                {"type": "compaction", "content": "Earlier work"},
+            ]}}
+        agent.conversation.checkpoint = CompactionMessage(
+            content="Earlier work", provider_state=state, compaction_scope="history",
+        )
+    agent.conversation.add_turn(AssistantMessage(content="Inspect the game"))
+    requests = []
+    for frame in ("frame-before", "frame-after"):
+        agent._environment_observations = {"godot_environment": {"extra": {
+            "screenshots": [{"screenshot": frame, "screenshot_description": "Game view"}],
+        }}}
+        messages = ContextAssembler().build(agent.conversation, attachments=agent.attachments())
+        assert messages[-1].context_layer == "live" and not messages[-1].cache
+        if protocol.startswith("responses"):
+            wire = serialize_input(messages, cache=protocol == "responses_explicit")
+        elif protocol == "chat":
+            wire = LLMHubChatSerializer.serialize_messages(messages)
+        else:
+            wire = AnthropicChatSerializer.serialize_messages(messages)
+        requests.append(json.dumps(wire, sort_keys=True))
+    before, after = requests
+    # Includes native checkpoint replay and actual serializer cache annotations.
+    marker = "Current observation from godot_environment:"
+    assert marker in before and marker in after
+    assert before.split(marker)[0] == after.split(marker)[0]
+    assert "frame-before" in before and "frame-before" not in after
+    assert "frame-after" in after
+    suffix = after.split(marker)[1]
+    assert "cache_control" not in suffix and "prompt_cache_breakpoint" not in suffix
+    assert "frame-" not in json.dumps([m.model_dump() for m in agent.conversation.items])
+
+
+@pytest.mark.asyncio
+async def test_base_observation_scope_and_failure_cannot_leak_previous_frame(monkeypatch):
+    from agentevolver.environment.server import environment_manager
+
+    state = {"state": "Live", "extra": {"screenshots": [{"screenshot": "frame"}]}}
+    get_state = AsyncMock(side_effect=[state, OSError("disconnected")])
+    monkeypatch.setattr(environment_manager, "get_state", get_state)
+    agent = Agent(env_names=["visual"])
+    ctx = SimpleNamespace(id="image-scope", extra={})
+    await agent.environment_state(ctx)
+    assert images(agent) == ["data:image/png;base64,frame"]
+    assert "unavailable" in await agent.environment_state(ctx)
+    assert images(agent) == []
+    ctx.extra["environment_allowlist"] = []
+    assert await agent.environment_state(ctx) == ""
+    assert get_state.await_count == 2
+
+
+@pytest.mark.parametrize("extra", [{"screenshots": [{"screenshot": []}]}, {"screenshots": "invalid"}, "invalid"])
+def test_malformed_environment_image_payload_does_not_break_other_attachments(extra):
+    agent = Agent()
+    agent._environment_observations = {"broken": {"extra": extra}}
+    assert agent.attachments() == []
 
 
 def test_normal_step_only_attaches_current_image_but_failure_keeps_both():

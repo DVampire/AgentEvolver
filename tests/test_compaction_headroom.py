@@ -83,6 +83,47 @@ async def test_fixed_floor_waits_for_both_steps_and_growth_without_repeated_summ
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("native", [False, True])
+async def test_live_image_counts_toward_trigger_but_never_enters_checkpoint(monkeypatch, native):
+    agent = Agent(retain_recent_steps=1, compact_input_tokens=3000, compact_output_tokens=256)
+    for i in range(4):
+        turn(agent, i, 1000)
+    # An unknown-size image has a conservative 4096-token visual budget. Its bytes
+    # stay outside history, even when that irreducible live floor triggers a fold.
+    agent._environment_observations = {"visual": {"extra": {"screenshots": [
+        {"screenshot": "live-frame", "screenshot_description": "Current game"},
+    ]}}}
+    agent.native_checkpoint = AsyncMock(return_value=(
+        {"summary": "Facts and next action", "provider_state": {
+            "responses": {"compaction_items": [{"type": "compaction", "encrypted_content": "small"}]},
+        }} if native else None
+    ))
+    agent.text_checkpoint = AsyncMock(return_value="Facts and next action")
+    events = AsyncMock()
+    monkeypatch.setattr(agent._events, "emit", events)
+    assert agent.assembler.estimate(agent.conversation) < 3000
+    agent.step = 10
+    await agent._fold_if_needed(())
+    agent.native_checkpoint.assert_awaited_once()
+    for call in [*agent.native_checkpoint.await_args_list, *agent.text_checkpoint.await_args_list]:
+        assert all(isinstance(m, (AssistantMessage, ToolMessage)) for m in call.args[0])
+        assert "live-frame" not in str(call.args[0])
+    assert agent.conversation.checkpoint is not None
+    assert "live-frame" not in agent.conversation.checkpoint.text
+    final = events.await_args.args[1]
+    assert final["full_input_before"] > 4096 and final["full_input_after"] > 4096
+    assert final["productive"] and not final["headroom_reached"]
+    # Refreshing same-size frames must not repeatedly re-arm compaction.
+    for step in range(11, 31):
+        agent.step = step
+        agent._environment_observations["visual"]["extra"]["screenshots"][0]["screenshot"] = f"frame-{step}"
+        await agent._fold_if_needed(())
+    agent.native_checkpoint.assert_awaited_once()
+    assert agent.text_checkpoint.await_count == (0 if native else 1)
+    assert "frame-30" in str(agent.attachments())
+
+
+@pytest.mark.asyncio
 async def test_capacity_bypasses_scheduled_backoff(monkeypatch):
     agent = Agent(retain_recent_steps=1)
     for i in range(3):

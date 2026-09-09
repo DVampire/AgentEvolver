@@ -32,7 +32,6 @@ class WebsiteBuilderAgent(MetaAgent):
     capability_allowlists: Dict[str, List[str]] = Field(
         default_factory=lambda: {"environment": ["job"]},
     )
-    max_screenshots: int = Field(default=1, ge=0)
 
     async def prompt_modules(self, ctx):
         values = await super().prompt_modules(ctx)
@@ -42,14 +41,6 @@ class WebsiteBuilderAgent(MetaAgent):
             and (allowed is None or "browser_environment" in allowed)
         )
         return values
-
-    def attachments(self):
-        from agentevolver.agent.actor.browser_agent import browser_images
-
-        return [*super().attachments(), *browser_images(
-            self._environment_observations.get("browser_environment"),
-            max_screenshots=self.max_screenshots,
-        )]
 
     async def on_exit(self, status):
         try:

@@ -1,7 +1,7 @@
 ---
 name: godot_game_development_skill
 description: "Develop original Godot 4 games with curated downloadable art, a coherent visual direction, playable slices, visual self-play and evidence-based capability improvement."
-version: "1.2.0"
+version: "1.3.0"
 type: worker
 category: game_development
 requirements: [cpu]
@@ -89,6 +89,16 @@ acceptable when it meets the same visual criteria. If a download is blocked, rec
 and try a compatible catalog alternative; do not silently lower the presentation target.
 Keep visual acceptance pending when rendering is deferred. No automatic user approval
 gate is added: perform this self-review within the authorized development work.
+
+Use [the presentation review procedure](references/presentation-review.md) to turn this
+into an actual work sequence and persist current visual evidence. This applies to inherited
+projects too. A visible placeholder/sparse-scene blocker selects the next art batch; do not
+merely append another criticism while adding quests or packaging another release. Complete
+the arrival/player/companion/dialogue/battle sample before expanding content. Necessary
+engine or input repairs remain allowed; user-deferred execution remains deferred. Maintain
+observations and next fixes in the existing plan's ART item, with a concise status in the
+Brief. You judge the actual images and play experience; passing pixel/geometry helpers
+or writing a report is insufficient. No extra runtime gate or structured review file is needed.
 
 ## Project shape
 
