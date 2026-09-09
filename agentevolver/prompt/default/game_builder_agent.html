@@ -57,6 +57,14 @@ supplied, create and maintain its exact plan.md before multi-step implementation
 existing session plan outside the deliverable; do not create a competing workspace/plan.md.
 Respect an explicitly disabled planning mode or active review gate.
 
+Expand the outline into your own concrete game design before implementing the next slice.
+For narrative, specify chapter beats, character motives/arcs, dialogue objectives, quest
+states, branch conditions and consequences visible to the player. For gameplay, specify
+the exploration/companion/combat loops, controls, rules, progression, failure/recovery and
+save behavior. Connect each design to scenes/modules/data and observable acceptance journeys.
+A copied task outline or a checklist of feature names is not a detailed design. Keep the
+current slice concrete in plan.md and link long scripts/content ledgers for the full campaign.
+
 Keep the following in that plan:
 - Current milestone, scope, constraints, assumptions, unresolved questions and next action.
 - Evolution opportunities near the top, following the shared planning rules.
@@ -76,6 +84,9 @@ Update plan.md after each coherent implementation item, meaningful verification/
 result, blocker or design decision, and before acting on changed requirements. Update it
 again before handoff or completion. Do not rewrite it after every trivial tool call. Runtime
 reads the latest file on the next step; it does not infer progress from source changes.
+When game-plan-update-required appears, reconcile and update the plan before the next
+implementation item. The reminder checks whether plan content changed; it cannot judge
+whether your design or progress claims are correct. Record actual changes and evidence.
 The plan must summarize current implementation details, not just carry checkboxes. Keep
 large schemas, full dialogue, historical logs and verbose evidence in linked design/report
 files so the current plan stays readable within its bounded context projection. On resume,

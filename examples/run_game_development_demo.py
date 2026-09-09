@@ -24,6 +24,7 @@ def parse_args(argv: Sequence[str] | None = None):
                         help="Required mode audits a verified capability improvement at completion.")
     parser.add_argument("--godot-bin", help="Select the local CLI-only backend with this Godot executable (no native play).")
     parser.add_argument("--model", help="GameBuilder model; must support screenshot input.")
+    parser.add_argument("--continue-from", help="Stopped session directory; copy its game files and living plan into a fresh run.")
     parser.add_argument("--plan-mode", choices=["off", "auto", "plan"], default="auto")
     parser.add_argument("--no-monitor", action="store_true", help="Deprecated; the shared launcher always registers the run on gateway 9876.")
     parser.add_argument("--monitor-port", type=int, default=8766)
@@ -76,6 +77,14 @@ def build_task_text(brief: Path, milestone: str, require_evolution: bool) -> str
         "You are the sole GameBuilder. No user/persona/reviewer agents or subscriptions. "
         "Design, implement, visually play the native Godot game, critique, improve, "
         "and track campaign progress yourself.\n\n"
+        "The task HTML is the product outline, not the detailed implementation design. Before coding, "
+        "expand it in the authoritative plan.md: chapter beats, character motives/arcs, dialogue and "
+        "branch consequences, quest state transitions, exploration/companion/combat loops, controls, "
+        "progression, save rules, scene/module/data design and concrete acceptance journeys. Keep "
+        "current details in plan.md; link long dialogue/content ledgers from it. Update design and "
+        "progress after each coherent implementation batch, check/play result, blocker or changed "
+        "decision. On continuation, inspect the existing project and reconcile the plan before "
+        "changing code; historical artifacts do not certify the new run.\n\n"
         + scope + "\n\n" + experiment + "\n\n"
         "Use Bash for project files and bounded foreground commands; godot_environment is "
         "the only mounted environment and owns engine operations. The base and Godot Docker "
@@ -106,6 +115,10 @@ def launch(args):
         print(task)
         return
     options = list(args.cfg_options)
+    if args.continue_from:
+        source = Path(args.continue_from).expanduser().resolve()
+        _existing_file(str(source / "session.json"), "source session manifest")
+        options.insert(0, f"game_builder_agent.continue_from={source}")
     if args.model:
         options[:0] = [f"model_name={args.model}", f"game_builder_agent.model_name={args.model}"]
     if args.godot_bin:

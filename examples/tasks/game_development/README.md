@@ -274,6 +274,7 @@ It does not claim to deliver the whole game. Request full campaign development w
 | `--evolution opportunistic` | Investigate opportunities without requiring an adopted improvement to finish |
 | `--model NAME` | Select a configured model that accepts screenshots |
 | `--print-task` | Render task text without starting the agent or engine |
+| `--continue-from SESSION_DIR` | Copy a stopped session's game files and plan into a new run using current configuration |
 
 Configuration: `configs/game_development_demo.py`. Entry point:
 `examples/run_game_development_demo.py`. Docker/MCP tests require no model credentials.
@@ -281,6 +282,16 @@ Actual GameBuilder runs register a persistent run page on gateway `9876` before
 task submission; open `/sites/` to find it. `--no-monitor` is deprecated and cannot
 disable registration. A registration failure stops startup rather than running invisibly.
 The actual GameBuilder run needs working model credentials and uses GPT-6 Astra by default.
+To apply changed budgets to an existing project, stop its previous launcher and run
+`python -m examples.run_game_development_demo --continue-from output/game_development_demo/sessions/SESSION_ID`.
+This creates a new session and gateway record. It preserves the original session,
+copies source/saves/historical artifacts and planning files, and regenerates Godot
+import caches. It starts a fresh conversation, budget and evolution audit; it does
+not replay old calls or credit historical artifacts as new verification. The new
+`workspace/continuation.json` records provenance. The first work item is reconciling
+the inherited plan with actual files and expanding any missing story/gameplay design.
+GameBuilder emits a plan-update reminder after three steps without a content change;
+the agent remains responsible for meaningful updates and truthful evidence.
 `--godot-bin PATH` explicitly selects the local CLI-only backend, without native play.
 Test artifacts contain before/after frames and result.json. The test also exports a
 Linux executable and runs it headlessly with a completion marker. A full campaign,

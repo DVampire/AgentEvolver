@@ -37,6 +37,14 @@ session's `plan.md`. The task HTML supplies the project specification; this plan
 the detailed design, implementation decisions and current progress. Do not create a
 second plan inside the game workspace. Respect explicit planning-mode overrides.
 
+Treat the HTML as an outline to expand, not a design to copy. Specify concrete chapter
+beats, character motivations, dialogue goals, quest transitions and branch consequences;
+design the exploration/companion/combat rules, player controls, progression, failure and
+save/recovery loops. Map these decisions to scene/module/data responsibilities and a
+playable acceptance journey. Put the current slice's design in plan.md, with links to
+long dialogue scripts and campaign ledgers. Resolve open design choices before coding
+the dependent feature and revise them when play reveals a problem.
+
 Keep stable work-item IDs with dependencies, status, implementation notes, source/resource
 paths, acceptance checks, evidence and remaining work. Record scene/module boundaries,
 data/save schemas, quest state transitions, branch conditions and combat/UI decisions.
@@ -46,6 +54,10 @@ meaningful check/self-play result, blocker or design change, before acting on ne
 requirements, and before handoff. A deferred check stays pending. On resume, reconcile
 the recorded state with actual artifacts. Runtime rereads the plan each step but does
 not write progress automatically or certify the accuracy of an Agent's status labels.
+GameBuilder also reminds you when plan content stays unchanged for three steps. Respond
+with actual design/progress updates before the next implementation item; editing a
+timestamp alone does not maintain the plan. A continuation starts from copied source
+and planning files with a fresh conversation and audit; reconcile stale claims first.
 
 Use Godot 4 + typed GDScript. Native delivery is primary and Web export is optional.
 For shared Web/native 3D content, start with Compatibility
