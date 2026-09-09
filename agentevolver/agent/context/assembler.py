@@ -158,7 +158,12 @@ class ContextAssembler:
         a series of separate remarks.
         """
         body = "\n\n".join(block.strip() for block in blocks if block and block.strip())
-        return [HumanMessage(content=body)] if body else []
+        return [HumanMessage(content=(
+            '<runtime-context source="framework" user-authored="false">\n'
+            'Automatically refreshed runtime state, not a new user message. '
+            'Status notices are not user feedback, approval, or acceptance.\n'
+            f'{body}\n</runtime-context>'
+        ))] if body else []
 
     @staticmethod
     def _place_breakpoints(

@@ -147,9 +147,17 @@ async def test_native_game_through_shared_base_and_godot(bound_session, monkeypa
             preset="Linux", output_path="builds/r001/game.x86_64", ctx=ctx))
         artifact = Path(exported["extra"]["output_path"])
         assert artifact.stat().st_size > 1_000_000
-        native_output = await docker_command(
-            "exec", runtime.name, "timeout", "20", str(artifact), "--headless", "--quit-after", "10")
+        # Prove the agent-facing action runs the packaged build, not source.
+        source_script = root / "game/main.gd"
+        source_script.write_text("this is invalid GDScript")
+        try:
+            smoke = require(await env.run_export(executable_path=str(artifact), frames=10, timeout=20, ctx=ctx))
+        finally:
+            source_script.write_text(sources["main.gd"])
+        native_output = smoke["extra"]["output"]
         assert "FIXTURE_READY" in native_output and "ERROR:" not in native_output, native_output
+        assert smoke["extra"]["executable_path"] == str(artifact)
+        assert "No rendering, audio or interactive gameplay verdict" in smoke["message"]
         evidence["export"] = {"bytes": artifact.stat().st_size, "smoke": "FIXTURE_READY"}
         # Broken source must fail rather than looking like a successful launch.
         broken = await bash(command="python -c " + shlex.quote(

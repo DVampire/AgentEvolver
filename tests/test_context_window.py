@@ -120,6 +120,19 @@ def test_no_live_block_means_no_live_message():
     assert layer(messages, "live") == []
 
 
+def test_runtime_notice_cannot_be_confused_with_original_user_feedback():
+    held = conversation()
+    held.note("Please improve the companion animation.")
+    messages = ContextAssembler().build(held, live=["System evolution evidence complete: tool:a:1.0"])
+    runtime = layer(messages, "live")[0]
+    assert 'source="framework" user-authored="false"' in runtime.text
+    assert "not user feedback, approval, or acceptance" in runtime.text
+    feedback = [m for m in layer(messages, "recent") if "Please improve" in m.text][0]
+    assert feedback.text == "Please improve the companion animation."
+    assert "runtime-context" not in feedback.text
+    assert runtime.cache is False
+
+
 def test_images_ride_in_the_live_layer_so_they_survive_more_than_one_step():
     held = conversation()
     picture = HumanMessage(content="[screenshot]")

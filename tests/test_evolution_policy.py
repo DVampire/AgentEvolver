@@ -24,6 +24,16 @@ ROUTES = {
 }
 
 
+def test_evolution_notice_accepts_native_environment_evidence(monkeypatch):
+    from agentevolver.task import evolution
+
+    monkeypatch.setattr(evolution, "status", lambda ctx: {
+        "required": True, "ready": False, "reasons": ["missing consumer evidence"]})
+    notice = evolution.live_notice(SimpleNamespace())
+    assert "environment interaction" in notice
+    assert "browser" not in notice
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("arm, enabled", [("swebench_pro_agent", True),
                                          ("swebench_pro_agent_baseline", False)])

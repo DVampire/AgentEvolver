@@ -145,6 +145,35 @@ def test_headless_log_preserves_original_error_before_shutdown_noise(tmp_path):
     assert len(shown) < 12000
 
 
+@pytest.mark.asyncio
+async def test_export_smoke_validates_artifact_before_starting_engine(bound_session, monkeypatch):
+    root = bound_session["workspace"]
+    project = root / "game"
+    project.mkdir()
+    (project / "project.godot").write_text("config_version=5\n")
+    build = root / "builds"
+    build.mkdir()
+    pck = build / "game.pck"
+    pck.write_bytes(b"GDPCdata")
+    pck.chmod(0o755)
+    nonexec = build / "not-executable"
+    nonexec.write_bytes(b"\x7fELF")
+    escaped = build / "escape"
+    escaped.symlink_to("/bin/true")
+    ctx = SimpleNamespace(id="export-contract")
+    env = GodotEnvironment()
+    assert (await env.open_project(project_path="game", ctx=ctx))["success"]
+    execute = AsyncMock()
+    monkeypatch.setattr(GodotEnvironment, "_execute", execute)
+    for path in ("builds/missing", "builds/game.pck", "builds/not-executable", "builds/escape",
+                 "game/project.godot", "/bin/true", ""):
+        result = await env.run_export(executable_path=path, ctx=ctx)
+        assert not result["success"], path
+    execute.assert_not_called()
+    schema = parameters(GodotEnvironment.run_export)
+    jsonschema.validate({"executable_path": "builds/r1/game.x86_64", "frames": 10, "timeout": 20}, schema)
+
+
 def test_headless_pass_marker_does_not_hide_exit_resource_error(tmp_path):
     log = tmp_path / "engine.log"
     body = "PASS battle return\nERROR: 1 resources still in use at exit\n"

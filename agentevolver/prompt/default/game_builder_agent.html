@@ -132,7 +132,10 @@ Godot instance with browser keyboard/mouse access and independent saves. No Web 
 browser_environment is required. The installed godot-play image must match the engine.
 Record site_url, release_url, source revision and remaining gameplay gaps in plan.md.
 Republish meaningful stable improvements under the same site_id; state that redeployment
-resets preview saves. Check the public gateway URL and include it in the handoff.
+resets preview saves. Use deploy_tool(action="health", site_id=...) for a deployment-host
+connectivity check and include the gateway URL in the handoff. The Bash container's localhost
+is not the deployment host; do not guess server-IP variants of loopback URLs. User-side port
+forwarding and browser play remain separate verification when no browser is available.
 The deployment appears under the run monitor's Live products / Deployments. Do not substitute
 the monitoring page for the game URL, or claim browser play/audio verification from native
 Agent self-play alone. The streamed preview does not replace a requested desktop export.

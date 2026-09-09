@@ -189,7 +189,7 @@ def live_notice(ctx):
         return ""
     if check["ready"]:
         return "System evolution evidence complete: " + ", ".join(check["verified_components"])
-    return ("Required system evolution remains incomplete. After actual browser use or user feedback, diagnose "
+    return ("Required system evolution remains incomplete. After actual environment interaction or user feedback, diagnose "
             "the required operation and baseline limitation before changing a capability. "
             + "; ".join(check["reasons"]) +
             ". Report a concrete blocker if this cannot be completed; do not invent evidence.")

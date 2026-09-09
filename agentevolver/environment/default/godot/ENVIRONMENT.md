@@ -1,7 +1,7 @@
 ---
 name: godot_environment
 description: Shared Docker workspace, Godot CLI checks and native MCP gameplay observation/input.
-version: 2.1.0
+version: 2.2.0
 type: worker
 ---
 
@@ -42,7 +42,13 @@ backend=local and binary_path/GODOT_BIN, but local mode does not provide native 
    installed export templates. Use fresh output such as
    `builds/r001/desktop/game.x86_64` outside `game/`. No old output directory is reused.
    A nonempty artifact and clean command are necessary, not sufficient, for a good build.
-7. `logs`: last operation, bounded output, exit, timeout, error flag and full log path.
+7. `run_export(executable_path="builds/r001/desktop/game.x86_64")`: execute the
+   actual Linux build in the engine environment using its packaged resources, with
+   bounded headless iterations and a wall-time deadline. This does not reload source.
+   A clean exit establishes startup only; tests still need their own completion markers.
+   Interactive exports, rendering and sound remain separate checks. The source-project
+   MCP bridge/input actions cannot control this exported process.
+8. `logs`: last operation, bounded output, exit, timeout, error flag and full log path.
 
 Commands use argv, session/project locks, deadlines and archived diagnostics under
 `<workspace>/.godot-agent/`. Stop the native game before CLI imports/checks/exports.

@@ -6,10 +6,8 @@ The per-framework knowledge lives in pluggable deploy *profiles* (``runtime``),
 so this tool stays stable as new target types are added.
 """
 
-import os
-import socket
 from typing import Any, Dict, List, Literal, Optional
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from pydantic import Field
 
@@ -48,6 +46,9 @@ When available, share `site_url` / `release_url` through the single gateway port
   - `overrides` (dict, optional): field-level spec overrides — `image`, `build` (list of shell cmds), `start` (server cmd, MUST bind 0.0.0.0:$PORT), `workspace_root`, `health` ({type: http|command|none, path, command, timeout_s}). `custom` runtime REQUIRES `overrides.start`.
 - `list`: list all sites with status + URL. No args.
 - `get`: one site's full record. Args: `site_id`.
+- `health`: probe the registered service from the deployment host. Args: `site_id`.
+  Use this for connectivity failures; `status` only reports task release policy.
+  This does not start stopped deployments or certify gameplay/browser acceptance.
 - `stop`: stop a site. Args: `site_id`.
 - `redeploy`: tear down and rebuild a site from its stored request (URL may change). Args: `site_id`.
 
@@ -68,6 +69,10 @@ acceptance or a native export. Republish stable revisions as development progres
 `stop` and `redeploy` manage the game, display and streaming server together.
 The direct Docker backend also works for other image-based deployment profiles;
 its published port is loopback-only and reached through the gateway.
+`internal_url` belongs to the deployment host, not the Bash container. Do not
+replace its loopback hostname with a server IP: that does not change the listener.
+Loopback gateway URLs require forwarding the gateway port on the user's computer.
+Use `health` to check the service without guessing addresses from inside Bash.
 """
 
 _EXAMPLES = [
@@ -99,7 +104,7 @@ class DeployTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     def will_mutate(self, arguments: Dict[str, Any]) -> bool:
-        return arguments.get("action", "list") not in {"status", "get", "list"}
+        return arguments.get("action", "list") not in {"status", "get", "list", "health"}
 
     @staticmethod
     def _site_line(rec) -> str:
@@ -121,36 +126,17 @@ class DeployTool(Tool):
 
     @staticmethod
     def _access_urls(rec) -> Dict[str, str]:
-        """Return loopback for agents plus a routable host URL for remote users."""
+        """Report registered addresses without inventing a public listener."""
         internal = str(rec.url or "")
         urls = {"internal_url": internal, **DeployTool._named_urls(rec)}
-        if not internal:
-            return urls
-        parsed = urlsplit(internal)
-        if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
-            urls["public_url"] = internal
-            return urls
-        host = (os.environ.get("DEPLOY_PUBLIC_HOST") or "").strip()
-        if not host:
-            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            try:
-                probe.connect(("8.8.8.8", 80))
-                host = str(probe.getsockname()[0])
-            except OSError:
-                host = ""
-            finally:
-                probe.close()
-        if host and parsed.port:
-            urls["public_url"] = urlunsplit(
-                (
-                    parsed.scheme,
-                    f"{host}:{parsed.port}",
-                    parsed.path,
-                    parsed.query,
-                    parsed.fragment,
-                )
-            )
-        urls.update(DeployTool._named_urls(rec))
+        browser_url = urls.get("site_url") or internal
+        if browser_url and urlsplit(browser_url).hostname not in {"localhost", "127.0.0.1", "::1"}:
+            urls["public_url"] = browser_url
+        urls["access_note"] = (
+            "internal_url is in the deployment host network namespace, not the Bash container. "
+            "Share site_url/release_url when available; loopback gateway URLs require user port forwarding. "
+            "Use action=health with site_id for a host-side probe. Client reachability is not verified."
+        )
         return urls
 
     @staticmethod
@@ -166,7 +152,7 @@ class DeployTool(Tool):
 
     async def __call__(
         self,
-        action: Literal["status", "preview", "deploy", "list", "get", "stop", "redeploy"] = "list",
+        action: Literal["status", "preview", "deploy", "list", "get", "health", "stop", "redeploy"] = "list",
         site_id: Optional[str] = None,
         runtime: str = "static",
         source_dir: Optional[str] = None,
@@ -183,7 +169,7 @@ class DeployTool(Tool):
         """Deploy, inspect, and tear down sites.
 
         Args:
-            action: Operation to run: status, preview, deploy, list, get, stop, or redeploy.
+            action: Operation to run: status (task policy), preview, deploy, list, get, health (connectivity), stop, or redeploy.
             site_id: Stable site identifier. Required except for list and status.
             runtime: Deployment profile: static, node, python, godot (native browser playtest), or custom.
             source_dir: Absolute host directory containing the application.
@@ -316,6 +302,13 @@ class DeployTool(Tool):
                     data={"sites": [s.model_dump() for s in sites]},
                 )
 
+            if action == "health":
+                if not site_id:
+                    raise KeyError("site_id")
+                check = await deployment_manager.check_site_health(site_id)
+                return Response(type=ResponseType.TOOL, success=check["reachable"],
+                                message=check["message"], data=check)
+
             if action == "get":
                 if not site_id:
                     raise KeyError("site_id")
@@ -328,7 +321,7 @@ class DeployTool(Tool):
                     type=ResponseType.TOOL,
                     success=True,
                     message=self._site_line(rec),
-                    data=rec.model_dump(),
+                    data={**rec.model_dump(), **self._access_urls(rec)},
                 )
 
             if action == "stop":
@@ -394,7 +387,7 @@ class DeployTool(Tool):
                     type=ResponseType.TOOL,
                     success=ok,
                     message=msg,
-                    data={**rec.model_dump(), "subscription_event": release or None},
+                    data={**rec.model_dump(), **self._access_urls(rec), "subscription_event": release or None},
                 )
 
             return Response(

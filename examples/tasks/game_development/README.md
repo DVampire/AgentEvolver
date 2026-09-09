@@ -117,7 +117,7 @@ and `godot_environment` for engine operations.
 | Component | Responsibility |
 | --- | --- |
 | Base Docker + `bash_tool` | Read, search and write project files; run general development commands; maintain the session plan |
-| Godot Docker + `godot_environment` | Import, launch, stop, export, collect logs, capture frames and deliver player input through the MCP bridge |
+| Godot Docker + `godot_environment` | Import, launch, stop, export, smoke-test exported Linux executables, collect logs, capture frames and deliver source-project player input through the MCP bridge |
 | GameBuilder lifecycle + Godot runtime | Bind the workspace, prepare base Bash routing, maintain MCP and clean up owned containers |
 
 Both containers mount the **same source directory at its canonical runtime path**

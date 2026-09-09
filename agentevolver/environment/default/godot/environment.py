@@ -188,8 +188,9 @@ class GodotEnvironment(Environment):
             tail = "First engine errors (with context):\n" + diagnostics + "\nLog tail:\n" + tail[-7000:]
         return tail, error
 
-    async def _execute(self, sid, rec, arguments, timeout, ctx, operation, output_path=None):
-        argv = [self._binary(), *arguments]
+    async def _execute(self, sid, rec, arguments, timeout, ctx, operation, output_path=None,
+                       executable=None):
+        argv = [str(executable) if executable else self._binary(), *arguments]
         permission = permission_manager.check_declared(
             self.name, PermissionRequest(op=Operation.BASH, target=shlex.join(argv)),
             mode=self.permission_mode, workspace=isolated_workspace_root(ctx),
@@ -204,7 +205,8 @@ class GodotEnvironment(Environment):
         if self.backend == "docker":
             runtime = self._runtime(sid, rec)
             await runtime.start()
-            argv = [os.environ.get("AGENTEVOLVER_DOCKER", "docker"), "exec", runtime.name,
+            working_dir = ["--workdir", str(executable.parent)] if executable else []
+            argv = [os.environ.get("AGENTEVOLVER_DOCKER", "docker"), "exec", *working_dir, runtime.name,
                     "timeout", "--kill-after=3s", str(timeout), *argv]
         log_dir = self._inside(
             Path(".godot-agent") / hashlib.sha256(sid.encode()).hexdigest()[:16], rec["workspace"],
@@ -219,7 +221,7 @@ class GodotEnvironment(Environment):
                        "status": "running", "log_path": str(log_path)}
         with log_path.open("wb") as output:
             proc = await asyncio.create_subprocess_exec(
-                *argv, cwd=str(rec["project"] or rec["workspace"]),
+                *argv, cwd=str(executable.parent if executable else rec["project"] or rec["workspace"]),
                 stdout=output, stderr=asyncio.subprocess.STDOUT,
                 start_new_session=(os.name == "posix"),
             )
@@ -274,6 +276,7 @@ class GodotEnvironment(Environment):
                 async with self._project_locks.setdefault(str(project), asyncio.Lock()):
                     argv = ["--headless", "--path", str(project)]
                     output = None
+                    executable = None
                     if operation == "import":
                         argv += ["--import"]
                     elif operation in ("check_script", "run_headless"):
@@ -307,6 +310,21 @@ class GodotEnvironment(Environment):
                             if not 1 <= frames <= 36000:
                                 raise ValueError("frames must be 1..36000 (engine iterations, not wall time)")
                             argv += ["--quit-after", str(frames)]
+                    elif operation == "run_export":
+                        executable = self._inside(options["executable_path"], rec["workspace"])
+                        if executable.is_relative_to(project):
+                            raise ValueError("Run an export outside the source project, inside the workspace.")
+                        if not executable.is_file() or not os.access(executable, os.X_OK):
+                            raise ValueError(f"Expected an executable Linux export: {executable}")
+                        with executable.open("rb") as stream:
+                            if stream.read(4) != b"\x7fELF":
+                                raise ValueError("run_export requires a Linux ELF executable, not a PCK, archive or Web export.")
+                        frames = options["frames"]
+                        if not 1 <= frames <= 36000:
+                            raise ValueError("frames must be 1..36000 (engine iterations, not wall time)")
+                        # Official export templates may disable --path overrides.
+                        # Set cwd instead; the executable locates its own package.
+                        argv = ["--headless", "--quit-after", str(frames)]
                     elif operation == "export":
                         preset = options["preset"].strip()
                         if not preset or preset.startswith("-"):
@@ -321,7 +339,8 @@ class GodotEnvironment(Environment):
                         argv += ["--export-debug" if options["debug"] else "--export-release", preset, str(output)]
                     else:
                         raise ValueError(f"Unknown operation: {operation}")
-                    result = await self._execute(sid, rec, argv, timeout, ctx, operation, output_path=output)
+                    result = await self._execute(sid, rec, argv, timeout, ctx, operation,
+                                                 output_path=output, executable=executable)
                     if output is not None:
                         exists = output.is_file() and output.stat().st_size > 0
                         result["extra"].update(output_path=str(output), artifact_exists=exists)
@@ -330,6 +349,13 @@ class GodotEnvironment(Environment):
                         rec["last"].update(result["extra"], success=result["success"])
                     if operation == "run_headless":
                         result["message"] += "\nBounded headless execution only; no visual, audio or fun verdict."
+                    if operation == "run_export":
+                        result["extra"]["executable_path"] = str(executable)
+                        result["message"] += (
+                            "\nExport executable launch smoke check only; require application completion markers "
+                            "for tests. No rendering, audio or interactive gameplay verdict. "
+                            "start_game/input actions still operate on the source project."
+                        )
                     return result
             except (OSError, ValueError, RuntimeError) as error:
                 failure = {"success": False, "message": str(error)}
@@ -407,6 +433,15 @@ class GodotEnvironment(Environment):
     async def export_project(self, preset: str, output_path: str, debug: bool = True,
                              timeout: int = 300, ctx=None, **kwargs):
         return await self._perform("export", ctx, timeout, preset=preset, output_path=output_path, debug=debug)
+
+    @environment_manager.action(
+        name="run_export", read_only=False, destructive=False,
+        description="Launch an exported Linux executable with its packaged resources in the engine environment, headless and bounded. executable_path is workspace-relative or absolute, outside the source project. This is a startup smoke check, not interactive or audiovisual acceptance. Stop the source game first.",
+    )
+    async def run_export(self, executable_path: str, frames: int = 120,
+                         timeout: int = 60, ctx=None, **kwargs):
+        return await self._perform("run_export", ctx, timeout,
+                                   executable_path=executable_path, frames=frames)
 
     @environment_manager.action(
         name="logs", read_only=True, destructive=False,

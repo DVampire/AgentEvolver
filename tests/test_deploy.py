@@ -70,6 +70,7 @@ def test_deploy_tool_native_schema_exposes_every_action_argument():
         "deploy",
         "list",
         "get",
+        "health",
         "stop",
         "redeploy",
     ]
@@ -632,8 +633,9 @@ def test_website_release_must_match_the_latest_preview_revision():
     )
 
 
-def test_deploy_reports_a_remote_url_for_a_loopback_site(monkeypatch):
+def test_deploy_never_fabricates_a_remote_listener_for_a_loopback_site(monkeypatch):
     monkeypatch.setenv("DEPLOY_PUBLIC_HOST", "10.20.30.40")
+    monkeypatch.delenv("GATEWAY_PUBLIC_BASE", raising=False)
     record = SiteRecord(
         site_id="site",
         runtime="static",
@@ -641,10 +643,64 @@ def test_deploy_reports_a_remote_url_for_a_loopback_site(monkeypatch):
         url="http://localhost:8123/path",
     )
 
-    assert DeployTool._access_urls(record) == {
-        "internal_url": "http://localhost:8123/path",
-        "public_url": "http://10.20.30.40:8123/path",
-    }
+    urls = DeployTool._access_urls(record)
+    assert urls["internal_url"] == record.url
+    assert "public_url" not in urls
+    assert "not the Bash container" in urls["access_note"]
+
+
+@pytest.mark.parametrize("base,public", [("http://127.0.0.1:9876", False),
+                                        ("https://games.example.test", True)])
+def test_deploy_uses_configured_gateway_without_changing_internal_port(monkeypatch, base, public):
+    monkeypatch.setenv("GATEWAY_PUBLIC_BASE", base)
+    rec = SiteRecord(site_id="game", runtime="godot", url="http://127.0.0.1:32778", release_number=4)
+    urls = DeployTool._access_urls(rec)
+    assert urls["site_url"] == base + "/s/game/"
+    assert urls["release_url"] == base + "/s/game--r4/"
+    assert ("public_url" in urls) is public
+    assert urls["internal_url"] == rec.url
+
+
+@pytest.mark.asyncio
+async def test_deploy_health_checks_from_host_ignoring_proxy_without_reading_body(manager, monkeypatch):
+    import asyncio
+
+    requests = []
+    async def serve(reader, writer):
+        requests.append(await reader.readuntil(b"\r\n\r\n"))
+        # The body never arrives. Connectivity should only require headers.
+        writer.write(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 999999\r\n\r\n")
+        await writer.drain()
+        await reader.read()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(serve, "127.0.0.1", 0)
+    try:
+        port = server.sockets[0].getsockname()[1]
+        manager._sites["game"] = SiteRecord(site_id="game", runtime="godot", status=SiteStatus.RUNNING,
+                                          url=f"http://127.0.0.1:{port}/", release_number=4)
+        monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+        monkeypatch.setenv("NO_PROXY", "")
+        checked = await manager.check_site_health("game")
+        assert checked["reachable"] and checked["status_code"] == 503
+        assert "not application readiness" in checked["message"]
+        assert checked["release_number"] == 4 and len(requests) == 1
+        monkeypatch.setattr("agentevolver.tool.default.deployment.deploy.deployment_manager", manager)
+        result = await DeployTool()(action="health", site_id="game")
+        assert result.success and result.data["scope"] == "deployment_host"
+        assert not DeployTool().will_mutate({"action": "health"})
+        await asyncio.sleep(0)
+    finally:
+        server.close()
+        await server.wait_closed()
+    failed = await manager.check_site_health("game")
+    assert not failed["reachable"] and "probe failed" in failed["message"]
+    manager._sites["game"].status = SiteStatus.STOPPED
+    stopped = await manager.check_site_health("game")
+    assert not stopped["reachable"] and "no deployment was started" in stopped["message"]
+    missing = await manager.check_site_health("game--r3")
+    assert not missing["reachable"]
 
 
 # --------------------------------------------------------------------------- #

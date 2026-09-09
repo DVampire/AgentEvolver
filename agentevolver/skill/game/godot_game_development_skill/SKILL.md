@@ -1,7 +1,7 @@
 ---
 name: godot_game_development_skill
 description: "Develop original Godot 4 games with curated downloadable art, a coherent visual direction, playable slices, visual self-play and evidence-based capability improvement."
-version: "1.4.0"
+version: "1.4.1"
 type: worker
 category: game_development
 requirements: [cpu]
@@ -175,6 +175,21 @@ player journey. Explicit debug harnesses may supplement visual evidence, and mus
 identify how they differ. Missing runtime control, startup failure or blank rendering
 remains a blocker. Native checks cannot certify optional Web delivery. For exports,
 use a fresh revision directory and verify the installed engine's actual preset syntax.
+After exporting Linux, use `run_export(executable_path=...)` to launch the packaged
+build through the engine environment. This bounded headless smoke check catches startup
+and packaged-resource errors; it does not certify exported graphics, sound or input.
+Keep those acceptance items pending until exercised through a suitable delivery path.
+
+Measure performance on the actual target and record the renderer/adapter, resolution,
+revision, scene and measurement method with the result. The default Docker image uses
+software rendering; engine frame-time samples during screenshot/input calls are not a
+hardware GPU benchmark. If frame time is poor, profile a representative scene without
+capture traffic, change a specific cost (visible geometry/material count, shadows,
+instancing, update frequency or resolution), then compare the same scene. Carry an
+unmet performance target forward rather than repeating a report or claiming that a
+different artifact/revision fixed it without a new measurement. Native screenshots and
+the current noVNC preview cannot establish audible output; this preview has no audio
+transport. Record that limitation separately from defects in authored sound resources.
 
 ## Creative self-review
 

@@ -1243,6 +1243,37 @@ class DeploymentManagerServer(BaseModel):
         self.refresh()
         return self._sites.get(site_id)
 
+    async def check_site_health(self, site_id: str) -> Dict[str, Any]:
+        """One bounded HTTP probe of the registered backend; never resurrect a release.
+
+        This runs in the manager's network namespace. A Bash container's loopback
+        cannot reach host-published Docker ports. HTTP connectivity alone says
+        nothing about the remote user's tunnel, rendering, audio or gameplay.
+        """
+        rec = await self.get_site(site_id)
+        check = {
+            "site_id": site_id, "reachable": False, "checked_at": _now(),
+            "scope": "deployment_host", "status_code": None,
+            "limitation": "Backend HTTP only; gateway/client connectivity and gameplay are not verified.",
+        }
+        if rec is None or rec.status is not SiteStatus.RUNNING or not rec.url:
+            check["message"] = "No registered running service to probe; no deployment was started."
+            return check
+        check.update(internal_url=rec.url, release_number=rec.release_number)
+        try:
+            # Ignore ambient HTTP proxies for a local service and do not download
+            # response bodies (a service may return a stream or a large artifact).
+            async with httpx.AsyncClient(timeout=5.0, trust_env=False, follow_redirects=False) as client:
+                async with client.stream("GET", rec.url) as response:
+                    check.update(reachable=True, status_code=response.status_code)
+            check["message"] = (
+                f"Service responded from the deployment host: HTTP {check['status_code']} at {rec.url}. "
+                "This verifies connectivity only; an HTTP error is not application readiness."
+            )
+        except httpx.HTTPError as error:
+            check["message"] = f"Service probe failed from the deployment host: {error}"
+        return check
+
     # -- name-addressed sites -------------------------------------------------
 
     def resolve_port(self, name: str) -> Optional[int]:
