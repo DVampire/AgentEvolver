@@ -319,7 +319,7 @@ def test_a_health_override_is_accepted_as_a_plain_dict(manager):
         ("local", "host"),
         ("sandbox", "opensandbox"),
         ("opensandbox", "opensandbox"),
-        ("docker", "opensandbox"),
+        ("docker", "docker"),  # direct Docker now has its own lifecycle backend
         ("HOST", "host"),  # case-insensitive
         ("  host  ", "host"),  # and whitespace-tolerant
     ],

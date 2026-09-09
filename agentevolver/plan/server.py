@@ -18,6 +18,7 @@ to be safe.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, Callable, Dict, List, Optional
 
 from agentevolver.capability import MOUNTED_TYPES
@@ -131,7 +132,63 @@ EVOLUTION_PLAN_NOTICE = (
     "invented gaps or per-step rewrites."
 )
 
-PLAN_CONTEXT_MAX_CHARS = 16_000
+PLAN_BRIEF_MAX_CHARS = 2_000
+
+PLAN_BRIEF_NOTICE = (
+    "Keep a `## Brief` section at the top of plan.md, at most 2,000 characters. "
+    "Use it as a progress index: stable work IDs, short titles, actual status, and "
+    "links or heading names for the detailed sections below; include blockers and the "
+    "next action. Distinguish implemented from verified/completed. Update the Brief "
+    "together with the detailed plan after meaningful progress. Only this Brief and "
+    "the plan path enter the live prompt; read the file for designs, requirements, "
+    "implementation details and evidence before relying on or changing them. Keep "
+    "those details in the full plan, not in the Brief."
+)
+
+
+def plan_brief(text: str) -> str:
+    """Project the authored Brief, never an arbitrary excerpt of the full plan.
+
+    Older documents get a heading index and an explicit missing-status notice. This
+    fallback locates details without inventing progress or sending the document body.
+    Fenced examples cannot accidentally supply headings or terminate the Brief.
+    """
+    if not text.strip():
+        return "No plan.md exists yet. Create it with a ## Brief progress index."
+    lines = text.splitlines()
+    headings = []
+    fence = ""
+    for index, line in enumerate(lines):
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if marker:
+            value = marker.group(1)
+            if not fence:
+                fence = value
+            elif value[0] == fence[0] and len(value) >= len(fence):
+                fence = ""
+            continue
+        if fence:
+            continue
+        heading = re.match(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$", line)
+        if heading:
+            headings.append((index, len(heading.group(1)), heading.group(2)))
+    brief = next((h for h in headings if h[2].casefold() == "brief"), None)
+    if brief:
+        start, level, _ = brief
+        end = next((i for i, depth, _ in headings if i > start and depth <= level), len(lines))
+        body = "\n".join(lines[start + 1:end]).strip()
+        if not body:
+            body = "Brief is empty. Read plan.md and update its progress index."
+    else:
+        body = (
+            "No ## Brief section exists. Progress is not inferred. Read plan.md and add "
+            "a concise progress index. Document headings (line numbers):\n"
+            + "\n".join(f"- L{i + 1}: {title}" for i, _, title in headings[:20])
+        )
+    if len(body) > PLAN_BRIEF_MAX_CHARS:
+        notice = "\n[Brief truncated; read plan.md for omitted status and shorten ## Brief.]"
+        body = body[:PLAN_BRIEF_MAX_CHARS - len(notice)].rsplit("\n", 1)[0] + notice
+    return body
 
 
 def plan_path(session_id: str = "", *, owner: str = ""):
@@ -238,7 +295,7 @@ class PlanManagerServer(metaclass=Singleton):
         self, session_id: str, *, enabled: bool = False, evolution_enabled: bool = False,
         include_rules: bool = True,
     ) -> str:
-        """Read the current document; consumers choose its context lifetime.
+        """Read the current Brief for the live layer, outside foldable history.
 
         Coordinators opt in to automatic planning. A worker gets no automatic plan
         obligation; an explicitly active review gate still explains its way out.
@@ -251,12 +308,7 @@ class PlanManagerServer(metaclass=Singleton):
         if state.mode is PlanMode.OFF or (not enabled and not state.active):
             return ""
         path = plan_path(session_id)
-        text = read_plan(session_id)
-        if len(text) > PLAN_CONTEXT_MAX_CHARS:
-            text = text[:PLAN_CONTEXT_MAX_CHARS] + (
-                "\n[Plan excerpt truncated. Read the full plan.md before revising it; "
-                "keep the current plan concise and link detailed evidence separately.]"
-            )
+        text = plan_brief(read_plan(session_id))
         notice = PLAN_MODE_NOTICE if state.active else ""
         if include_rules:
             notice += "\n" + self.instructions(enabled=enabled, evolution_enabled=evolution_enabled)
@@ -266,12 +318,11 @@ class PlanManagerServer(metaclass=Singleton):
                 "Use read_file_tool/write_file_tool at this exact path for the plan; "
                 "use bash_tool for the peer repository."
             )
-        if not text.strip():
-            text = "No plan.md exists yet."
+        notice += "\nCurrent progress index only. Read the plan at this path for details."
         return (
             f'<plan-context mode="{state.mode.value}" '
             f'active="{str(state.active).lower()}" path="{escape(str(path), quote=True)}">\n'
-            f"{notice}\n\n<current-plan>\n{text}\n</current-plan>\n</plan-context>"
+            f"{notice}\n\n<plan-brief>\n{text}\n</plan-brief>\n</plan-context>"
         )
 
     @staticmethod
@@ -279,7 +330,7 @@ class PlanManagerServer(metaclass=Singleton):
         """Stable planning obligations, independent of the mutable plan document."""
         if not enabled:
             return ""
-        body = AUTO_MODE_NOTICE
+        body = AUTO_MODE_NOTICE + "\n\n" + PLAN_BRIEF_NOTICE
         if evolution_enabled:
             body += "\n\n" + EVOLUTION_PLAN_NOTICE
         return '<planning-rules>\nWhen plan-context is active, follow these rules.\n' + body + '\n</planning-rules>'

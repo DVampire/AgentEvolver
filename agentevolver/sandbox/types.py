@@ -85,6 +85,7 @@ class SandboxConfig(BaseModel):
     #: Container ports to publish on the host, `{container_port: host_port}`; a host port
     #: of 0 lets Docker choose. Needed because `expose_port` cannot publish after the
     #: fact — a published port is fixed when the container is created.
+    publish_host: str = Field(default="", description="Optional interface for published Docker ports, e.g. 127.0.0.1 for a gateway-only service.")
     publish_ports: Dict[int, int] = Field(
         default_factory=dict,
         description="Container ports to publish, {container: host} (0 = pick one).",

@@ -44,8 +44,8 @@ session pays for its own history every step.
 |---|---|---|
 | `fixed` | system prompt, task anchor | never |
 | `checkpoint` | the one canonical fold summary | only when history folds again |
-| `recent` | exact assistant/tool turns, delivered events, changed plan observations | appended to |
-| `live` | budgets, errors, environment state, reminders | every step |
+| `recent` | exact assistant/tool turns and delivered user/runtime events | appended to |
+| `live` | current plan Brief/path, budgets, errors, environment state, reminders | every step |
 
 Breakpoints go after `fixed`, after `checkpoint`, and after the last assistant message
 in `recent` — three, against Anthropic's limit of four. Nothing volatile is ever placed
@@ -68,14 +68,55 @@ which is also what keeps the prefix behind the fold point stable for the cache.
 Writing the summary needs a model, and this module does not own one: the assembler says
 *when* to fold and *what* to summarise, and the agent supplies the text.
 
+The full plan stays in `plan.md`. Only its bounded `## Brief` progress index and path
+are projected into `live`; neither current nor previous automatic plan projections
+enter history compaction. User feedback and explicit tool reads remain ordinary history.
+An explicit resume migrates legacy tagged plan snapshots out of the held history and
+standalone Responses checkpoint messages without rewriting the on-disk source archive.
+
+## Compaction checks and recovery
+
+The fold measures the complete request before and after replacement, including schemas,
+the checkpoint and live data. Recent-history savings remain a separate trace field;
+they cannot establish success when the new checkpoint grew. Trace events record the
+step, full input estimates, reclaimed input, headroom target and retry conditions.
+
+The target is 75% of the lower of the configured input trigger and input capacity.
+Before summarising, the retained tail may shrink from the configured maximum (normally
+four turns) to one complete turn to leave room. Every removed turn is included in the
+summary source, and call/result pairs stay together. A large last turn or fixed prefix
+can make this target unattainable; it is a target, not permission to truncate content.
+
+If native state still exceeds the target, compare its already-produced readable companion
+as a portable checkpoint. Use it only when smaller, without an additional summary call.
+If even that candidate does not shrink the complete request, retain the original exact
+history and report the candidate size separately; a completed summary is not proof of savings.
+Native programs unsupported by the Responses compact endpoint go directly to portable
+summarisation, preserving program code/results but excluding encrypted reasoning and image
+bytes. A readable summary is still required before replacing history; failures keep the
+original conversation. Budget exhaustion and cancellation propagate normally.
+
+When a fold fails, does not shrink the full request, or cannot leave headroom, scheduled
+folding waits at least two steps (normally the configured retained-turn count). An applied
+fold without headroom also requires new input growth of at least the greater of four
+summary budgets and 10% of the trigger before trying again. Capacity pressure and a real
+provider overflow bypass this cost backoff. The task's cumulative token/step limits remain
+independent of these thresholds.
+
+For llm_hub Responses, request accounting uses the route's message serializer so canonical
+text and native replay state are not charged twice. Images have a separate estimate rather
+than charging their base64 bytes as text. Schemas, opaque checkpoint bytes and tokenisation
+are still estimates; provider-reported usage is authoritative. The portable summariser
+does not receive another copy of a task already retained in the fixed layer.
+
 `Agent.compact_input_tokens` defaults to 100,000 full input tokens, including fixed prompts,
-tool schemas, images and cached tokens, excluding output. The website demo explicitly sets
-50,000; a launch override can change it. Before generation, the assembler checks the current
+tool schemas, images and cached tokens, excluding output. The website and game demos set
+100,000; a launch override can change it. Before generation, the assembler checks the current
 request estimate calibrated by that agent's latest provider-reported input / local estimate
 ratio (never below 1).
 This is an early compaction trigger, not an exact provider token cap: a new large tool
 result or an estimator error can overshoot it. Only closed turns can fold, recent turns
-stay intact (four by default), and system/task anchors are never summarized away. A successful
+stay intact (up to four by default), and system/task anchors are never summarized away. A successful
 summary replaces the folded history without a semantic audit, repair call or length rejection.
 If generation fails, the original history remains. The checkpoint length is a soft generation
 target, with separate completion headroom for reasoning.
@@ -85,9 +126,8 @@ remains active at 85% of the configured window. Setting `compact_input_tokens=0`
 the full-input trigger. Cumulative execution budgets are separate from these context controls.
 
 Delivered events are saved immediately in the conversation, deduplicated by envelope ID,
-and included in the source of later compaction. A plan observation is appended only when
-its content or mode changes. The latest observation is retained verbatim across folds
-and resume; its saved index points into history rather than duplicating the document.
+and included in the source of later compaction. The plan Brief is read fresh into the
+live layer after each boundary; it is never appended as a historical plan observation.
 Stable planning rules come from PlanManager once in the fixed layer.
 
 Capability discovery uses the existing catalog and `search_capabilities` route. Besides

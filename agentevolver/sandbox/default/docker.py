@@ -140,8 +140,12 @@ class DockerSandbox(Sandbox):
         args = [_DOCKER, "run", "-d", "--init", "--name", self._name]
 
         for container_port, host_port in (self.config.publish_ports or {}).items():
-            args += ["-p", (f"{host_port}:{container_port}" if host_port
-                            else f"{container_port}")]
+            binding = f"{host_port or ''}:{container_port}"
+            if self.config.publish_host:
+                binding = f"{self.config.publish_host}:{binding}"
+            elif not host_port:
+                binding = str(container_port)
+            args += ["-p", binding]
 
         # No interface at all when the network is off. An allowlist does not change that:
         # allowed hosts arrive through the mounted relay socket, so there is nothing for a
@@ -362,6 +366,30 @@ class DockerSandbox(Sandbox):
         # A non-zero exit is an *answer* — `grep` finding nothing, a build failing — not a
         # failure of the tool that ran it. Only being unable to run the command at all is.
         return ExecResult(success=True, stdout=out, stderr=err, exit_code=code)
+
+    async def write_file(self, path: str, data: Union[str, bytes], *, mode: int = 0o644) -> None:
+        """Stream assets through stdin; fonts/textures exceed shell argument limits."""
+        if not self._started:
+            raise RuntimeError(f"sandbox {self._name} is not started")
+        parent = os.path.dirname(path) or "."
+        command = (f"mkdir -p {shlex.quote(parent)} && cat > {shlex.quote(path)} "
+                   f"&& chmod {mode:o} {shlex.quote(path)}")
+        proc = await asyncio.create_subprocess_exec(
+            _DOCKER, "exec", "-i", self._name, "sh", "-c", command,
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            _, error = await asyncio.wait_for(
+                proc.communicate(data.encode() if isinstance(data, str) else data), timeout=300,
+            )
+        except BaseException:
+            if proc.returncode is None:
+                proc.kill()
+            await proc.wait()
+            raise
+        if proc.returncode:
+            raise RuntimeError(f"Docker upload failed for {path}: {error.decode('utf-8', 'replace')}")
 
     async def expose_port(self, port: int) -> str:
         """The host address a published container port answers on.

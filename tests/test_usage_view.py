@@ -83,6 +83,11 @@ def test_request_receipts_include_auxiliary_costs_without_double_counting_steps(
     assert result["coverage"]["requests"] == 4
     assert result["coverage"]["legacy_steps"] == 1
     assert result["granularity"] == "mixed"
+    compact_only = view(tmp_path).query("operation=compact")
+    assert compact_only["summary"]["calls"] == 1
+    assert float(compact_only["summary"]["cost"]) == .3
+    assert compact_only["series"][0]["operations"] == ["compact"]
+    assert "generation" in result["facets"]["operation"]
 
 
 def test_missing_usage_and_explicit_zero_are_distinct(tmp_path):

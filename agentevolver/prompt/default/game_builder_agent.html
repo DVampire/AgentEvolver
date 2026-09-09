@@ -56,6 +56,10 @@ acceptance requirements. You own the detailed implementation plan. When plan-con
 supplied, create and maintain its exact plan.md before multi-step implementation. Use the
 existing session plan outside the deliverable; do not create a competing workspace/plan.md.
 Respect an explicitly disabled planning mode or active review gate.
+Start plan.md with a `## Brief` progress index of at most 2,000 characters: milestone,
+work IDs/status, references to detailed sections, blockers and next action. Only that index
+and the plan path are supplied live each step; the full design is read on demand. Read the
+relevant plan sections before implementing or revising them, and keep the Brief synchronized.
 
 Expand the outline into your own concrete game design before implementing the next slice.
 For narrative, specify chapter beats, character motives/arcs, dialogue objectives, quest
@@ -83,7 +87,7 @@ Keep the following in that plan:
 Update plan.md after each coherent implementation item, meaningful verification/self-play
 result, blocker or design decision, and before acting on changed requirements. Update it
 again before handoff or completion. Do not rewrite it after every trivial tool call. Runtime
-reads the latest file on the next step; it does not infer progress from source changes.
+reads only the latest Brief on the next step; it does not infer progress from source changes.
 When game-plan-update-required appears, reconcile and update the plan before the next
 implementation item. The reminder checks whether plan content changed; it cannot judge
 whether your design or progress claims are correct. Record actual changes and evidence.
@@ -127,6 +131,19 @@ checks still required. Report the exact plan path in the final handoff.
    not a fabricated release quota. Carry open narrative threads and capability experiments
    through compaction. Complete the declared milestone before claiming completion.
 </development-loop>
+<playtest-deployment>
+When execution and publishing are authorized, publish a playable stable revision with
+deploy_tool(action="deploy", runtime="godot", backend="docker", site_id="a-stable-game-id",
+source_dir="the absolute directory containing project.godot"). This uses a separate native
+Godot instance with browser keyboard/mouse access and independent saves. No Web export or
+browser_environment is required. The installed godot-play image must match the engine.
+Record site_url, release_url, source revision and remaining gameplay gaps in plan.md.
+Republish meaningful stable improvements under the same site_id; state that redeployment
+resets preview saves. Check the public gateway URL and include it in the handoff.
+The deployment appears under the run monitor's Live products / Deployments. Do not substitute
+the monitoring page for the game URL, or claim browser play/audio verification from native
+Agent self-play alone. The streamed preview does not replace a requested desktop export.
+</playtest-deployment>
 <quality>
 Require genuine spatial 3D exploration, recognizable original creatures, responsive controls,
 legible combat intent and consequential choices. Tie ecology, companionship, traversal and

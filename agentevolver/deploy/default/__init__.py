@@ -5,5 +5,6 @@ from .node import NodeDeployer
 from .python import PythonDeployer
 from .custom import CustomDeployer
 from .llm import LLMDeployer
+from .godot import GodotDeployer
 
-__all__ = ["StaticDeployer", "NodeDeployer", "PythonDeployer", "CustomDeployer", "LLMDeployer"]
+__all__ = ["StaticDeployer", "NodeDeployer", "PythonDeployer", "CustomDeployer", "LLMDeployer", "GodotDeployer"]

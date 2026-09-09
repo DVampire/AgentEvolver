@@ -274,10 +274,17 @@ async def test_only_a_fold_that_reclaims_nothing_spends_the_budget():
     async def _emit(*_args, **_kwargs):
         return None
 
+    full_sizes = iter([1000, 400])
+
+    async def _measure():
+        return {"estimated_tokens_after": next(full_sizes, 400)}
+
     agent = SimpleNamespace(
         name="probe", ctx=None, step=0, _folds=0, _unproductive_folds=0,
         conversation=conversation(turns=2), assembler=assembler,
         _events=SimpleNamespace(emit=_emit), _fold=_fold,
+        _measure_compaction_context=_measure, _input_token_ratio=1.0,
+        compact_output_tokens=2048,
         _identity=lambda: {"agent": "probe"},
     )
 

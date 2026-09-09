@@ -283,6 +283,10 @@ class Agent(BaseModel):
         #: reported a rejected release, because a long run is exactly what folding is for.
         self._unproductive_folds = 0
         self._compact_retry_step = 0
+        self._compact_rearm_tokens = 0
+        self._compaction_live: Sequence[str] = ()
+        self._compaction_input_tokens = 0
+        self._compaction_target_tokens = 0
         self._input_token_ratio = 1.0
         #: Reported tokens waiting to be forwarded to optional constraint hooks.
         #: Held rather than counted inline because the guard runs once per step and must
@@ -413,6 +417,10 @@ class Agent(BaseModel):
         self._folds = 0
         self._unproductive_folds = 0
         self._compact_retry_step = 0
+        self._compact_rearm_tokens = 0
+        self._compaction_live = ()
+        self._compaction_input_tokens = 0
+        self._compaction_target_tokens = 0
         self._input_token_ratio = 1.0
         self._unspent_tokens = 0
         # Per-run, like everything above it: a resident process runs many turns, and a
@@ -522,6 +530,8 @@ class Agent(BaseModel):
         """One model call. The main seam: override to change what the model sees."""
         from agentevolver.model import model_manager
         from agentevolver.model.types import accumulate_stream
+
+        self._compaction_live = tuple(live)
 
         tools, routing = await self.router.schemas(self, self.ctx)
         self._routing = routing
@@ -1294,7 +1304,8 @@ class Agent(BaseModel):
             evolution_enabled=self._evolution_policy_enabled,
             include_rules=False,
         )
-        self.conversation.observe("plan", planning)
+        if planning:
+            blocks.append(planning)
         state = await self.environment_state(self.ctx)
         from agentevolver.task.self_review import observe_state
 
@@ -1306,22 +1317,36 @@ class Agent(BaseModel):
             blocks.append(note)
         return blocks
 
-    async def _fold_if_needed(self, live: Sequence[str]) -> None:
-        """Fold history before cost or capacity becomes a problem."""
+    async def _measure_compaction_context(self) -> Dict[str, Any]:
+        """Measure the same full request before and after a fold, including live data."""
         from agentevolver.model import model_manager
 
-        # A failed summary leaves the same history above the cost threshold. Let
-        # useful work continue before retrying; a real provider overflow still calls
-        # make_room directly and does not wait for this scheduled retry.
-        if self.step < self._compact_retry_step:
-            return
-        pressure = None
+        live = self._compaction_live
         if model_manager.get_model_config(self.model_name) is not None:
             tools, _ = await self.router.schemas(self, self.ctx)
             messages = self.assembler.build(
                 self.conversation, live=live, attachments=self.attachments(),
             )
-            pressure = model_manager.measure(self.model_name, self.request_input(messages, tools))
+            return model_manager.measure(self.model_name, self.request_input(messages, tools))
+        return {
+            "estimated_tokens_after": self.assembler.estimate(
+                self.conversation, live=live, attachments=self.attachments()),
+            "pressure_ratio_after": self.assembler.pressure(
+                self.conversation, live=live, attachments=self.attachments()),
+        }
+
+    async def _fold_if_needed(self, live: Sequence[str]) -> None:
+        """Cost-triggered folds need headroom; capacity recovery bypasses backoff."""
+        self._compaction_live = tuple(live)
+        pressure = await self._measure_compaction_context()
+        full_input = int(pressure["estimated_tokens_after"] * self._input_token_ratio)
+        capacity = bool(pressure.get("over_capacity")) or (
+            self.assembler.fold_at_pressure > 0 and
+            pressure["pressure_ratio_after"] * self._input_token_ratio >= self.assembler.fold_at_pressure
+        )
+        if not capacity and (self.step < self._compact_retry_step or
+                             full_input < self._compact_rearm_tokens):
+            return
         reason = self.assembler.fold_reason(
             self.conversation, live=live, folds=self._unproductive_folds,
             attachments=self.attachments(),
@@ -1339,7 +1364,8 @@ class Agent(BaseModel):
         The only recovery there is when a provider refuses a request for length, and the
         scheduled path when the assembler says history has grown enough. ``False`` means
         the run should stop trying: either there is nothing left to fold, or the fold
-        budget is spent, and the ordinary error path should report the overflow honestly.
+        budget is spent, or the candidate did not shrink the complete request. The
+        ordinary error path should report an unresolved overflow honestly.
 
         Announced with PRE_COMPACT / POST_COMPACT. Those events existed but only the
         memory tier raised them, so the fold that actually changes what the model sees
@@ -1349,6 +1375,15 @@ class Agent(BaseModel):
         from agentevolver.hook.types import HookEvent
 
         before = self.assembler.body_tokens(self.conversation)
+        before_pressure = await self._measure_compaction_context()
+        full_before = before_pressure["estimated_tokens_after"]
+        limits = [value for value in (
+            self.assembler.compact_input_tokens,
+            before_pressure.get("input_capacity_tokens", self.assembler.context_window),
+        ) if value > 0]
+        target = int(min(limits) * 0.75) if limits else 0
+        self._compaction_input_tokens = full_before
+        self._compaction_target_tokens = int(target / self._input_token_ratio)
         await self._events.emit(
             HookEvent.PRE_COMPACT,
             {
@@ -1358,21 +1393,52 @@ class Agent(BaseModel):
                 "tokens": before,
                 "token_scope": "recent_history",
                 "messages": len(self.conversation),
+                "step": self.step,
+                "full_input_before": full_before,
                 **self._identity(),
             },
             ctx=self.ctx,
         )
+        original = copy.copy(self.conversation)
         moved, detail = await self._fold(trigger)
         after = self.assembler.body_tokens(self.conversation)
-        # Only a fold that reclaimed nothing spends the budget. Room recovered is the
-        # whole point of the call, so charging it would make the guard against a history
-        # that cannot shrink fire on one that shrinks every time it is asked.
-        if moved and after < before:
+        full_after = (await self._measure_compaction_context())["estimated_tokens_after"]
+        checkpoint = self.conversation.checkpoint
+        # Opaque/native state can retain user inputs and grow despite shrinking the
+        # recent tail. We already produced its readable companion: compare that
+        # alternative without another model call, and keep the smaller checkpoint.
+        if (moved and checkpoint is not None and checkpoint.provider_state and
+                (full_after >= full_before or (target and full_after * self._input_token_ratio > target))):
+            portable_checkpoint = checkpoint.model_copy(update={"provider_state": {}})
+            self.conversation.checkpoint = portable_checkpoint
+            try:
+                portable = (await self._measure_compaction_context())["estimated_tokens_after"]
+            finally:
+                self.conversation.checkpoint = checkpoint
+            if portable < full_after:
+                self.conversation.checkpoint = portable_checkpoint
+                full_after, detail = portable, "text (native checkpoint exceeded headroom)"
+        candidate_moved = moved
+        candidate_full_after = full_after
+        productive = moved and full_after < full_before
+        if moved and not productive:
+            # A successful model response is not evidence of successful compaction.
+            # Preserve exact history when the replacement would make the request grow.
+            self.conversation = original
+            moved, detail = False, "checkpoint did not shrink full input; original history retained"
+            after, full_after = before, full_before
+        if productive:
             self._unproductive_folds = 0
         else:
             self._unproductive_folds += 1
+        headroom = not target or full_after * self._input_token_ratio <= target
         self._compact_retry_step = (
-            0 if moved else self.step + max(2, self.assembler.retain_turns)
+            0 if productive and headroom else self.step + max(2, self.assembler.retain_turns)
+        )
+        self._compact_rearm_tokens = (
+            int(full_after * self._input_token_ratio) + max(
+                4 * self.compact_output_tokens, int(self.assembler.compact_input_tokens * 0.1)
+            ) if candidate_moved and not (productive and headroom) else 0
         )
         if not moved:
             logger.warning(
@@ -1391,6 +1457,15 @@ class Agent(BaseModel):
                 "reclaimed": max(0, before - after),
                 "unproductive_folds": self._unproductive_folds,
                 "retry_step": self._compact_retry_step,
+                "step": self.step,
+                "full_input_before": full_before,
+                "full_input_after": full_after,
+                "full_input_reclaimed": full_before - full_after,
+                "candidate_full_input_after": candidate_full_after,
+                "productive": productive,
+                "headroom_target": target,
+                "headroom_reached": headroom,
+                "rearm_input_tokens": self._compact_rearm_tokens,
                 "messages": len(self.conversation),
                 **self._identity(),
             },
@@ -1407,7 +1482,10 @@ class Agent(BaseModel):
                 "not folding further"
             )
             return False, "fold budget spent"
-        source = self.assembler.summarize_source(self.conversation)
+        keep = self.assembler.fold_retention(
+            self.conversation, self._compaction_input_tokens, target=self._compaction_target_tokens,
+        )
+        source = self.conversation.foldable(keep)
         if not source:
             logger.warning(f"| 🗜️ [{self.name}] nothing left to fold")
             return False, "nothing left to fold"
@@ -1446,7 +1524,7 @@ class Agent(BaseModel):
         if archive is not None:
             summary += f"\n\nFull pre-compaction source snapshot: {archive}"
         folded = self.assembler.fold(
-            self.conversation, summary, provider_state=provider_state
+            self.conversation, summary, provider_state=provider_state, retain_turns=keep
         )
         if folded:
             return True, "native" if provider_state else "text"
@@ -1559,6 +1637,21 @@ class Agent(BaseModel):
         if calls:
             named = ", ".join(f"{call.function.name}({call.function.arguments})" for call in calls)
             text = f"{text}\n  calls: {named}".strip()
+        native = ((getattr(message, "provider_state", None) or {}).get("responses") or {}).get("output_items") or []
+        programs = [item for item in native if item.get("type") in {"program", "program_output"}]
+        if programs:
+            # Program execution can live only in provider_state. Keep its readable
+            # code/results when native compaction is unavailable, without encrypted
+            # reasoning or binary image payloads in the text summariser.
+            def readable(value):
+                if isinstance(value, dict):
+                    if value.get("type") in {"image", "image_url", "input_image"}:
+                        return {"type": value["type"], "content": "[image]"}
+                    return {k: readable(v) for k, v in value.items() if k != "encrypted_content"}
+                if isinstance(value, list):
+                    return [readable(v) for v in value]
+                return value
+            text += "\n  program execution: " + json.dumps(readable(programs), ensure_ascii=False)
         name = getattr(message, "name", None)
         head = f"{role}" + (f"[{name}]" if name else "")
         return f"{head}: {text}"

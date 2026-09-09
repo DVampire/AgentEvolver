@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agentevolver.agent.actor.code_agent import CodeAgent
+from agentevolver.agent.actor.game_builder_agent import GameBuilderAgent
 from agentevolver.agent.actor.meta_agent import MetaAgent
 from agentevolver.agent.actor.website_builder_agent import WebsiteBuilderAgent
 from agentevolver.agent.actor.website_user_agent import WebsiteUserAgent
@@ -34,7 +35,7 @@ def planning(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("actor", [MetaAgent, WebsiteBuilderAgent])
+@pytest.mark.parametrize("actor", [MetaAgent, WebsiteBuilderAgent, GameBuilderAgent])
 @pytest.mark.parametrize("evolving", [False, True])
 async def test_coordinator_reads_latest_plan_after_feedback_and_folding(planning, actor, evolving):
     manager, root = planning
@@ -54,27 +55,29 @@ async def test_coordinator_reads_latest_plan_after_feedback_and_folding(planning
     agent.conversation = conversation
     conversation.system = [SystemMessage(content="Stable instructions")]
     plan = root / "coordinator.md"
-    await agent._live_blocks(0)
-    missing = "\n".join(m.text for m in conversation.items)
+    missing = "\n".join(await agent._live_blocks(0))
     assert "No plan.md exists yet" in missing and str(plan) in missing
     rules = manager.instructions(enabled=agent.use_plan, evolution_enabled=evolving)
     assert ("Evolution opportunities" in rules) is evolving
     assert not plan.exists()  # The coordinator authors it; runtime never fabricates a plan.
     opportunity = (
-        "\n## Evolution opportunities\n"
+        "\n"
         "E1 deferred: bounded browser observation; evidence call-17 returned an entire scene. "
         "Consumer: next gallery preview. Revisit after the first working preview.\n"
     ) if evolving else ""
-    plan.write_text("Initial approach: ship a gallery." + opportunity)
+    plan.write_text("## Brief\nInitial approach: ship a gallery." + opportunity
+                    + "\n## Detailed design\nFull implementation details stay on disk.")
     before = agent.assembler.build_envelope(conversation, live=await agent._live_blocks(0))
-    assert "ship a gallery" in before.recent[-1].text
+    assert "ship a gallery" in "\n".join(m.text for m in before.live)
+    assert not before.recent
+    assert "Full implementation details" not in "\n".join(m.text for m in before.flatten())
     assert all("ship a gallery" not in m.text for m in before.fixed)
 
     await agent.on_event(SimpleNamespace(text="Participant 2 requests an undo action."), None)
     live = await agent._live_blocks(1)
     assert "Participant 2 requests an undo action" in "\n".join(m.text for m in conversation.items)
     assert "Before implementing a change" in rules
-    assert not live
+    assert any("plan-brief" in block for block in live)
     # The coordinator's next action updates the actual shared document.
     revised_opportunity = opportunity.replace(
         "E1 deferred", "E1 probing",
@@ -83,19 +86,21 @@ async def test_coordinator_reads_latest_plan_after_feedback_and_folding(planning
         "Compare output size and diagnostic coverage; check a second page before adoption.",
     )
     plan.write_text(
-        "Replanned: add undo for Participant 2; verify restore and reload." + revised_opportunity
+        "## Brief\nReplanned: add undo for Participant 2; verify restore and reload." + revised_opportunity
+        + "\n## Detailed design\nFull implementation details stay on disk."
     )
     conversation.checkpoint = CompactionMessage(content="Older conversation was folded.")
     after = agent.assembler.build_envelope(conversation, live=await agent._live_blocks(2))
     assert [m.text for m in before.fixed] == [m.text for m in after.fixed]
-    assert "add undo for Participant 2" in after.recent[-1].text
-    assert "ship a gallery" not in after.recent[-1].text
+    current = "\n".join(m.text for m in after.live)
+    assert "add undo for Participant 2" in current
+    assert "ship a gallery" not in current
     if evolving:
-        assert "E1 probing" in after.recent[-1].text
-        assert "call-17" in after.recent[-1].text
-        assert "E1 deferred" not in after.recent[-1].text
+        assert "E1 probing" in current
+        assert "call-17" in current
+        assert "E1 deferred" not in current
         assert all("Evolution opportunities" not in m.text for m in after.fixed)
-    assert not after.live
+    assert all("plan-context" not in m.text for m in conversation.items)
     assert not manager.active("coordinator")
     agent.router.schemas.assert_awaited_once()  # Live planning does not rediscover every step.
 
@@ -126,7 +131,7 @@ def test_explicit_modes_preserve_review_gate_and_off_semantics(planning):
     manager.approve("coordinator", "Approved approach: build undo.")
     assert (root / "coordinator.md").read_text() == "Approved approach: build undo."
     assert 'active="false"' in manager.context("coordinator", enabled=True)
-    assert "build undo" in manager.context("coordinator", enabled=True)
+    assert "No ## Brief section exists" in manager.context("coordinator", enabled=True)
 
 
 def test_evolution_planning_respects_off_and_explicit_worker_gate(planning):
@@ -145,11 +150,13 @@ def test_evolution_planning_respects_off_and_explicit_worker_gate(planning):
 
 def test_plan_projection_is_bounded_and_names_the_full_document(planning):
     manager, root = planning
-    (root / "coordinator.md").write_text("x" * 20_000)
-    context = manager.context("coordinator", enabled=True)
-    assert "Plan excerpt truncated" in context
+    (root / "coordinator.md").write_text("## Brief\n" + "x" * 20_000
+                                       + "\n## Design\nPrivate full design body")
+    context = manager.context("coordinator", enabled=True, include_rules=False)
+    assert "Brief truncated" in context
     assert str(root / "coordinator.md") in context
-    assert len(context) < 18_000
+    assert len(context) < 2_500
+    assert "Private full design body" not in context
 
 
 def test_website_launcher_defaults_to_automatic_planning():

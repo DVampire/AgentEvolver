@@ -42,6 +42,37 @@ def test_pressure_below_the_threshold_leaves_messages_byte_for_byte_unchanged():
     assert prepared.pressure["pruned_message_indices"] == []
 
 
+def test_responses_accounting_counts_native_replay_once_without_mutating_messages():
+    from agentevolver.message import CompactionMessage
+    from agentevolver.model.llm_hub.response import serialize_input
+
+    native = {"type": "message", "role": "assistant", "content": [
+        {"type": "output_text", "text": "visible response " * 1000},
+    ]}
+    message = AssistantMessage(content="visible response " * 1000, provider_state={
+        "responses": {"output_items": [native]},
+    })
+    checkpoint = CompactionMessage(content="Portable fallback " * 1000, provider_state={
+        "responses": {"compaction_items": [{"type": "compaction", "encrypted_content": "opaque"}]},
+    })
+    original = [checkpoint.model_dump(), message.model_dump()]
+    canonical = prepare_messages([checkpoint, message]).pressure
+    projected = prepare_messages([checkpoint, message], message_projector=serialize_input)
+    assert projected.pressure["estimated_tokens_after"] < canonical["estimated_tokens_after"] / 2
+    assert projected.pressure["message_projection"] == "route_serializer"
+    assert [m.model_dump() for m in projected.messages] == original
+
+
+def test_responses_route_measurement_uses_the_dispatch_serializer():
+    from agentevolver.model.context import _prepare_request_messages
+    config = ModelConfig(model_name="main", model_id="fixture", provider="llm_hub", model_type="responses")
+    result = _prepare_request_messages(
+        messages=[HumanMessage(content="Task")], tools=[], response_format=None,
+        model_config=config, request_input={}, default_output_tokens=100,
+    )
+    assert result.pressure["message_projection"] == "route_serializer"
+
+
 def test_pressure_preserves_even_oversized_tool_results():
     old_result = "HEAD-" + ("x" * 18_000) + "-TAIL"
     recent_result = "recent observation"

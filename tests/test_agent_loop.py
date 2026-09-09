@@ -669,7 +669,9 @@ async def test_folding_history_is_announced_before_and_after(monkeypatch):
         agent, "text_checkpoint", lambda source: _completed("a summary of five turns")
     )
     for index in range(6):
-        agent.conversation.append(AssistantMessage(content=f"turn {index}", tool_calls=[]))
+        agent.conversation.note(f"Continue investigation {index}")
+        agent.conversation.append(AssistantMessage(content=f"turn {index}: " + "observed evidence " * 100,
+                                                    tool_calls=[]))
     agent.assembler.compact_after_turns = 1
 
     assert await agent.make_room(trigger="turns") is True
@@ -682,6 +684,8 @@ async def test_folding_history_is_announced_before_and_after(monkeypatch):
     # The pair is what makes the drop explainable: a number, then the same number again.
     assert after["tokens_before"] == before["tokens"]
     assert after["tokens_after"] < after["tokens_before"]
+    assert after["full_input_after"] < after["full_input_before"]
+    assert after["productive"]
 
 
 @pytest.mark.asyncio

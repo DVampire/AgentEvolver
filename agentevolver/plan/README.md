@@ -21,13 +21,24 @@ The gate itself is `agentevolver/hook/default/plan_mode.py`, which runs on
 
 ## Coordinator planning
 
-`MetaAgent` and `WebsiteBuilderAgent` enable `use_plan` by default. Code, browser,
+`MetaAgent`, `WebsiteBuilderAgent` and `GameBuilderAgent` enable `use_plan` by default. Code, browser,
 website-user and other leaf workers leave it disabled. A worker receives a bounded
 assignment and returns evidence; its coordinator owns planning and replanning.
 
-`PlanManagerServer.context()` reads the session's `plan/plan.md` each step.
-The agent loop appends changed contents to its conversation once, preserving the latest
-version across history compaction and resume. Stable planning instructions are installed
+`PlanManagerServer.context()` reads the session's `plan/plan.md` each step and projects
+only its `## Brief` section (at most 2,000 characters), plus the exact file path, into the
+live layer. The Brief is a progress index with work IDs, short titles, actual status,
+detailed-section references, blockers and the next action. The coordinator updates it
+together with the detailed plan. Designs, acceptance requirements, implementation details
+and evidence remain in the file and are read on demand. A missing Brief produces a
+bounded heading index and a request to author one; runtime never guesses progress.
+
+Automatic plan projections do not become conversation turns and are not sent to either
+native or text history compaction. Real user feedback and tool interactions (including
+explicit file reads) remain history. Explicit thread resume removes legacy tagged plan
+snapshots from recent turns and the standalone user messages in Responses checkpoints;
+it preserves opaque compaction items, other dialogue, tool results and source archives.
+Stable planning instructions are installed
 once in the fixed layer through `PlanManagerServer.instructions()`. The plan is the
 coordinator's working document, not a separate model or an execution engine.
 
@@ -40,7 +51,7 @@ The plan belongs to the coordinator runtime, not the execution environment. When
 runs in a peer container, the plan context retains its agent-side path and the agent uses
 `read_file_tool`/`write_file_tool` there. Both SWE Pro configurations mount these tools.
 No plan directory is mounted in the peer, and no benchmark preparation or grading step
-needs to know about it. The plan manager reads updates into the next request and
+needs to know about it. The plan manager reads Brief updates into the next request and
 persists approved plans at the same path. Workspace translation through
 `path_manager.execution_path()` remains only for execution paths.
 
@@ -93,7 +104,7 @@ a bounded observation operation: cite the failed call, identify the next browser
 as consumer, compare useful diagnostic coverage and output size, and test an independent
 page before adoption. This is an illustration, not a required capability or a prefilled
 plan. The coordinator authors the assessment from its run's evidence. Runtime projects
-the instructions and latest document; it does not semantically validate these decisions,
+the instructions and latest Brief; it does not semantically validate these decisions,
 force an evolution quota, or treat a written opportunity as verified evolution.
 
 Website Builder also projects current-release feedback status every step. Deployment

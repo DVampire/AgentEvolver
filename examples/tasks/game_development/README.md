@@ -4,6 +4,29 @@ One `game_builder_agent` designs, implements, plays and improves a Godot game. I
 investigates reusable agent capabilities when development exposes an evidenced limitation.
 There are no user, persona or reviewer agents in this configuration.
 
+## Browser-accessible native playtests
+
+Build the preview image after the Godot environment image:
+
+```sh
+docker build -t agentevolver/godot-play:4.7-v1 docker/godot-play
+```
+
+GameBuilder mounts `deploy_tool`. Publish with `runtime="godot"`, `backend="docker"`
+and `source_dir` pointing at the directory containing `project.godot`. The deployment
+profile snapshots the game into an owned Docker sandbox and serves native Godot through
+[noVNC](https://github.com/novnc/noVNC) and websockify. The game and its saves are separate
+from the Agent's development instance. Generated MCP autoload entries are removed only
+from the uploaded copy. Other override settings are preserved.
+
+Use the returned `site_url` or pinned `release_url` under port 9876; the originating run
+lists it under **Live products / Deployments**. HTTP assets and keyboard/mouse WebSocket
+traffic use that same gateway prefix. `stop` removes the entire preview container;
+`redeploy` creates a fresh instance. Preview saves persist only until redeployment,
+and visitors to the same instance share its game. Audio is not streamed. This native
+preview does not require a Web export or browser environment and does not replace
+desktop export or gameplay acceptance. Publish stable revisions and keep URLs in plan.md.
+
 ## Task documents
 
 Each game has its own directory containing an HTML development brief. The

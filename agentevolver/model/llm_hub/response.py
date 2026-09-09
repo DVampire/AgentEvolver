@@ -524,11 +524,17 @@ class ResponseLLMHub(BaseModel):
             usage=TokenUsage.from_raw(usage),
         )
 
+    @staticmethod
+    def compaction_ready(messages: List[Message]) -> bool:
+        """Reject unsupported histories before request tracing/budget reservation."""
+        return not any(item.get("type") in {"program", "program_output"}
+                       for item in serialize_input(messages))
+
     async def compact_history(
         self,
         messages: List[Message],
         max_output_tokens: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """Compact canonical history with the native Responses endpoint.
 
         Its output replaces exactly the input supplied here. The caller records that
@@ -538,10 +544,16 @@ class ResponseLLMHub(BaseModel):
         # expose an output-token control. Accept the provider-neutral limit so callers
         # do not need to branch; it applies only to text-producing compactors.
         del max_output_tokens
+        serialized = serialize_input(messages)
+        # The compact endpoint cannot enable the programmatic tool required to replay
+        # these items (observed HTTP 400). Preserve them in the portable history path
+        # instead of paying for a predictable rejected native request on every fold.
+        if any(item.get("type") in {"program", "program_output"} for item in serialized):
+            return None
         client = self._client()
         raw = await client.responses.compact(
             model=self.model,
-            input=serialize_input(messages),
+            input=serialized,
         )
         payload = _dump(raw)
         output = [dict(item) for item in payload.get("output") or []]

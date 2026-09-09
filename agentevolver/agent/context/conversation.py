@@ -158,6 +158,7 @@ class Conversation:
                     or not isinstance(result.items[index], HumanMessage)):
                 raise ValueError("Invalid saved context observation")
             result._observations[key] = result.items[index]
+        result._remove_legacy_plan_snapshots()
         if not result.complete:
             raise ValueError("Saved conversation has unanswered tool calls")
         from agentevolver.agent.context.envelope import ContextEnvelope
@@ -166,6 +167,54 @@ class Conversation:
             checkpoint=(result.checkpoint,) if result.checkpoint is not None else (),
         ).validate()
         return result
+
+    def _remove_legacy_plan_snapshots(self) -> None:
+        """Migrate old automatic plan projections when explicitly resuming a thread.
+
+        These tagged runtime snapshots used to be user turns, so Responses retained
+        every revision inside its native checkpoint. The plan file now supplies live
+        state. Remove only standalone projections; real user feedback, tool reads,
+        readable historical summaries and opaque compaction items remain untouched.
+        Saved source files/archives are not modified by loading.
+        """
+        def is_projection(text: str) -> bool:
+            return text.strip().startswith('<plan-context ') and text.strip().endswith('</plan-context>')
+
+        removed = {id(m) for m in self.items if isinstance(m, HumanMessage) and is_projection(m.text)}
+        kept_messages = []
+        for message in self.items:
+            if id(message) in removed:
+                continue
+            if (removed and kept_messages and isinstance(message, AssistantMessage)
+                    and isinstance(kept_messages[-1], AssistantMessage)):
+                kept_messages.append(HumanMessage(
+                    content="[Automatic plan snapshot omitted; read the current live plan Brief.]"
+                ))
+            kept_messages.append(message)
+        self.items = kept_messages
+        self._observations = {key: m for key, m in self._observations.items() if id(m) not in removed}
+        if self.checkpoint is None:
+            return
+        state = self.checkpoint.provider_state or {}
+        responses = state.get("responses") or {}
+        native = responses.get("compaction_items") or []
+
+        def is_native_projection(item: Dict[str, Any]) -> bool:
+            if item.get("type") != "message" or item.get("role") != "user":
+                return False
+            content = item.get("content")
+            if not isinstance(content, list) or not content:
+                return False
+            if not all(isinstance(part, dict) and part.get("type") == "input_text"
+                       and isinstance(part.get("text"), str) for part in content):
+                return False
+            return is_projection("\n".join(part["text"] for part in content))
+
+        kept = [item for item in native if not is_native_projection(item)]
+        if len(kept) != len(native):
+            self.checkpoint.provider_state = {
+                **state, "responses": {**responses, "compaction_items": kept},
+            }
 
     # ------------------------------------------------------------------
     # Reading

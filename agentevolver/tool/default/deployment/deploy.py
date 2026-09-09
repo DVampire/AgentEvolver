@@ -19,7 +19,7 @@ from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
 from agentevolver.tool.types import Tool
 
-_DESCRIPTION = "Deploy and manage web apps — from a one-call inline HTML page to a full frontend/backend project — each bound to a URL."
+_DESCRIPTION = "Deploy and manage web apps and native Godot playtests, each bound to a gateway URL."
 
 _GUIDANCE = """
 Deploy a web app and bind it to a reachable URL, then manage deployed sites. Each site is keyed by `site_id`; deploy many and each gets its own URL. Spans lightweight (a single inline HTML page served locally, instantly) to heavy (a full frontend build or backend service in an isolated container).
@@ -35,7 +35,7 @@ When available, share `site_url` / `release_url` through the single gateway port
   iteration contract, test this exact URL before `deploy`; the source hash must still match.
 - `deploy`: publish a site and return its URLs. Args:
   - `site_id` (str, required): stable id / reuse key for the site.
-  - `runtime` (str): `static` (plain HTML/CSS/JS or a pre-built SPA — the frontend/artifact default), `node` (build a React/Vue/Vite app and serve it), `python` (FastAPI/Flask/ASGI backend via uvicorn), `custom` (you supply image/build/start in `overrides`), `llm` (NOT implemented yet). Default `static`.
+  - `runtime` (str): `static` (plain HTML/CSS/JS or a pre-built SPA), `node` (React/Vue/Vite), `python` (ASGI backend), `godot` (native browser playtest), `custom` (image/build/start overrides), `llm` (not implemented). Default `static`.
   - App source — give exactly one:
     - `content` (str): inline single-file content (e.g. an HTML page) — the lightweight path, no files on disk needed. Served as `filename` (default `index.html`).
     - `files` (dict): inline `{relative_path: text}` map for a small multi-file app (e.g. `{"index.html": "...", "app.js": "..."}`, or a tiny backend `{"app.py": "...", "requirements.txt": "..."}`).
@@ -55,9 +55,23 @@ When available, share `site_url` / `release_url` through the single gateway port
 - The service MUST listen on `0.0.0.0` (not `127.0.0.1`) or the URL won't be reachable.
 - `static` serves the files as-is; `node` needs a buildable project (has package.json); `python` defaults to the `app:app` entrypoint — override `start` for another (e.g. `uvicorn main:app --host 0.0.0.0 --port 8000`).
 - Backend: anything local (inline content/files, or a source_dir) runs on the host by default — instant, and a plain `http://localhost:<port>` URL. Only git_url uses the isolated container when Docker is available. A site keeps its backend across redeploys; pass `backend` to move it, or set the `DEPLOY_BACKEND` env var globally. On the host backend, distinct sites get distinct ports automatically.
+
+### Native Godot playtests
+Use runtime=`godot`, backend=`docker`, and source_dir pointing at the directory
+containing project.godot. The installed image `agentevolver/godot-play:4.7-v1`
+provides native rendering and noVNC browser keyboard/mouse input. Deploy snapshots
+the source into its own container; it never drives the Agent's development instance.
+Share site_url/release_url under the gateway and record the version in plan.md.
+The preview has separate saves, reset on redeployment, shared by visitors to that
+instance. It does not stream audio. A reachable preview is not completed gameplay
+acceptance or a native export. Republish stable revisions as development progresses.
+`stop` and `redeploy` manage the game, display and streaming server together.
+The direct Docker backend also works for other image-based deployment profiles;
+its published port is loopback-only and reached through the gateway.
 """
 
 _EXAMPLES = [
+    '{"name":"deploy_tool","args":{"action":"deploy","site_id":"game-playtest","runtime":"godot","backend":"docker","source_dir":"/abs/workspace/game"}}',
     '{"name": "deploy_tool", "args": {"action": "deploy", "site_id": "hello", "content": "<h1>Hello</h1>"}}',
     '{"name": "deploy_tool", "args": {"action": "deploy", "site_id": "coffee-shop", "runtime": "static", "source_dir": "/abs/path/to/site"}}',
     '{"name": "deploy_tool", "args": {"action": "deploy", "site_id": "api", "runtime": "python", "files": {"app.py": "from fastapi import FastAPI\\napp=FastAPI()\\n@app.get(\'/\')\\ndef r(): return {\'ok\': True}", "requirements.txt": "fastapi"}}}',
@@ -171,13 +185,13 @@ class DeployTool(Tool):
         Args:
             action: Operation to run: status, preview, deploy, list, get, stop, or redeploy.
             site_id: Stable site identifier. Required except for list and status.
-            runtime: Deployment profile, such as static, node, python, or custom.
+            runtime: Deployment profile: static, node, python, godot (native browser playtest), or custom.
             source_dir: Absolute host directory containing the application.
             git_url: Repository URL to clone as the application source.
             content: Inline single-file application content.
             files: Inline mapping of relative paths to text content.
             filename: Destination filename used with content.
-            backend: Execution backend: host, opensandbox, or auto.
+            backend: Execution backend: host, docker, opensandbox, or auto. Use docker for godot.
             port: Optional application port override.
             env: Environment variables passed to the application.
             overrides: Deployment specification overrides such as start and health.

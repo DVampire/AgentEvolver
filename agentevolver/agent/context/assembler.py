@@ -231,10 +231,9 @@ class ContextAssembler:
     def body_tokens(self, conversation: Conversation) -> int:
         """Tokens of everything after the checkpoint.
 
-        The active body, which is what folding actually removes. Measured apart from the
-        whole request because the fixed layer and the checkpoint are the parts folding
-        cannot shrink, so counting them would let a large stable prefix trigger folds
-        that free nothing.
+        This diagnostic excludes the fixed/checkpoint/live layers. A fold can replace
+        the checkpoint as well, so body savings alone cannot establish that the full
+        request shrank. The owning agent compares complete requests before accepting it.
         """
         from agentevolver.model.pressure import estimate_tokens
 
@@ -270,7 +269,7 @@ class ContextAssembler:
             return ""
         if folds >= self.max_folds:
             return ""
-        if conversation.turns <= self.retain_turns:
+        if conversation.turns <= 1:
             return ""
 
         reasons: List[str] = []
@@ -316,30 +315,53 @@ class ContextAssembler:
         """The messages a fold would remove — what to summarise, or to hand a provider."""
         return conversation.foldable(self.retain_turns)
 
+    def fold_retention(self, conversation: Conversation, full_input: int, *, target: int = 0) -> int:
+        """Keep up to the configured tail while leaving room for the next steps.
+
+        Choose the boundary BEFORE summarising, so no dropped turn falls outside the
+        summary source. Keep at least one complete turn, even if a huge tool result
+        makes the target impossible; the retry policy handles that case explicitly.
+        """
+        from agentevolver.model.pressure import estimate_tokens
+
+        limit = min(self.retain_turns, max(1, conversation.turns - 1))
+        if not target and not self.compact_input_tokens:
+            return limit
+        target = target or int(self.compact_input_tokens * 0.75)
+        checkpoint = estimate_tokens([conversation.checkpoint]) if conversation.checkpoint else 0
+        for keep in range(limit, 0, -1):
+            source = conversation.foldable(keep)
+            removable = estimate_tokens(source) if source else 0
+            projected = full_input - removable - checkpoint + self.compact_output_tokens
+            if projected <= target:
+                return keep
+        return 1
+
     def fold(
         self,
         conversation: Conversation,
         summary: str,
         *,
         provider_state: Optional[Dict[str, Any]] = None,
+        retain_turns: Optional[int] = None,
     ) -> int:
         """Fold everything but the retained tail into one checkpoint.
 
         The checkpoint's content is supplied by the caller — writing a summary needs a
         model, and this class does not own one. Successful nonempty summaries are used
-        as returned; length is a generation target, never a reason to retry. Native
+        as returned; length is a generation target, never a reason to retry. The caller
+        may retain the original history if the full request did not shrink. Native
         protocol state accompanies its readable summary when the route produced it.
         """
         if (not summary.strip() and not provider_state) or not conversation.complete:
             return 0
-        folded = conversation.fold(
-            summary, self.retain_turns, provider_state=provider_state
-        )
+        keep = self.retain_turns if retain_turns is None else max(1, retain_turns)
+        folded = conversation.fold(summary, keep, provider_state=provider_state)
         if folded:
             native = "native " if provider_state else ""
             logger.info(
                 f"| 🗜️ folded {folded} message(s) into a {native}checkpoint; keeping "
-                f"the last {self.retain_turns} turn(s)"
+                f"the last {keep} turn(s)"
             )
         return folded
 

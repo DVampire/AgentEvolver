@@ -64,6 +64,7 @@ _SKIP_DIRS = {
     "dist",
     "build",
     ".DS_Store",
+    ".godot",
 }
 _SANDBOX_KIND = "opensandbox"
 
@@ -635,7 +636,8 @@ class DeploymentManagerServer(BaseModel):
         Precedence: the request's own ``backend`` (a per-deploy choice), then the backend
         this ``site_id`` is already running on, then the ``DEPLOY_BACKEND`` env, then the
         source's default. ``host`` = local, no container (lightweight/instant);
-        ``opensandbox`` = isolated Docker container (heavy); ``auto`` = opensandbox when a
+        ``docker`` = direct Docker container; ``opensandbox`` = managed container;
+        ``auto`` = opensandbox when a
         container runtime is available, else host.
 
         A site keeps the substrate it was born on. ``site_id`` is a stable identity, and a
@@ -645,7 +647,8 @@ class DeploymentManagerServer(BaseModel):
         because a single optional argument stopped being passed. Moving is still possible,
         but it now takes saying so.
 
-        The source decides the rest. Anything local — inline ``content``/``files``, or a
+        A profile can declare a default backend (Godot needs its Docker image).
+        Otherwise the source decides the rest. Anything local — inline ``content``/``files``, or a
         ``source_dir`` this agent just wrote in its own workspace — deploys on the host: a
         container cannot isolate the machine from code the agent is already running
         unsandboxed beside it, so the isolation would be nominal while the costs are real
@@ -660,12 +663,16 @@ class DeploymentManagerServer(BaseModel):
             choice = previous.backend.lower().strip()
         if not choice:
             choice = (os.environ.get("DEPLOY_BACKEND") or "").lower().strip()
+        if not choice and request is not None:
+            choice = self._profile(request.runtime).default_backend or ""
         if not choice:
             foreign = request is not None and bool(request.git_url)
             choice = "auto" if foreign else "host"
         if choice in ("host", "local"):
             return "host"
-        if choice in ("sandbox", "opensandbox", "docker"):
+        if choice == "docker":
+            return "docker"
+        if choice in ("sandbox", "opensandbox"):
             return "opensandbox"
         return "opensandbox" if self._container_runtime_available() else "host"
 
@@ -1079,6 +1086,13 @@ class DeploymentManagerServer(BaseModel):
                 logger.info(
                     f"| 🖥️  '{request.site_id}': no container runtime → deploying on HOST (no isolation)"
                 )
+            elif backend == "docker":
+                sandbox = await sandbox_manager.acquire(
+                    "docker", reuse_key=request.site_id, image=spec.image,
+                    env=spec.env, network=True,
+                    publish_ports={spec.port: 0}, publish_host="127.0.0.1",
+                    timeout_minutes=spec.timeout_minutes,
+                )
             else:
                 sandbox = await sandbox_manager.acquire(
                     _SANDBOX_KIND,
@@ -1109,7 +1123,7 @@ class DeploymentManagerServer(BaseModel):
                 res = await sandbox.run_command(
                     cmd, workspace_root=spec.workspace_root, timeout=1800
                 )
-                if not res.success:
+                if not res.success or getattr(res, "exit_code", 0) not in (None, 0):
                     raise RuntimeError(f"build step failed ({cmd!r}): {res.as_message()}")
 
             # --- start server in the background ----------------------------------
@@ -1176,7 +1190,7 @@ class DeploymentManagerServer(BaseModel):
                     with open(host_path, "rb") as fh:
                         await sandbox.write_file(dest, fh.read())
                 except Exception as e:
-                    logger.warning(f"| ⚠️ Skipped uploading {rel}: {e}")
+                    raise RuntimeError(f"Failed uploading {rel}: {e}") from e
 
     async def _health(self, sandbox, spec: DeploymentSpec, url: str) -> bool:
         """Poll readiness. http → GET the exposed URL from the host (image-agnostic);

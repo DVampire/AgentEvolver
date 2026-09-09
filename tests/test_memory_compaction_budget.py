@@ -74,7 +74,7 @@ async def test_agent_checkpoint_keeps_fixed_contract_and_recent_call_pair(monkey
     assert "parse(offset=0)" in agent.conversation.checkpoint.text
     model.assert_awaited_once()
     prompt = model.await_args.kwargs["input"]["messages"][-1].text
-    assert "Preserve the public parser API." in prompt
+    assert "Preserve the public parser API." not in prompt  # Already retained in fixed context.
     assert "do not repeat their requirements" in prompt
     assert "argument/return" in prompt
 
@@ -109,13 +109,17 @@ async def test_failed_scheduled_fold_waits_before_retry_and_resets_after_success
     from agentevolver.message.types import AssistantMessage
 
     monkeypatch.setattr("agentevolver.model.model_manager", SimpleNamespace(get_model_config=lambda _: None))
-    agent = Agent(retain_recent_steps=4, compact_input_tokens=1,
+    agent = Agent(retain_recent_steps=4, compact_input_tokens=100_000,
                   compact_after_steps=0, compact_body_tokens=0, fold_at_pressure=0)
     for i in range(8):
         agent.conversation.note(f"Continue {i}")
         agent.conversation.append(AssistantMessage(content=f"Original evidence {i}"))
     agent.native_checkpoint = AsyncMock(return_value=None)
     agent.text_checkpoint = AsyncMock(side_effect=["", "Completed checkpoint"])
+    async def measure():
+        return {"estimated_tokens_after": 100_001 if agent.conversation.checkpoint is None else 50_000,
+                "pressure_ratio_after": 0.1}
+    agent._measure_compaction_context = measure
     monkeypatch.setattr(agent._events, "emit", AsyncMock())
     agent.step = 10
     await agent._fold_if_needed(())
@@ -130,17 +134,18 @@ async def test_failed_scheduled_fold_waits_before_retry_and_resets_after_success
     await agent._fold_if_needed(())
     assert agent.text_checkpoint.await_count == 2
     assert agent._compact_retry_step == 0
-    assert agent.conversation.turns == 4 and agent.conversation.complete
+    assert agent.conversation.turns == 1 and agent.conversation.complete
     assert "Completed checkpoint" in agent.conversation.checkpoint.text
 
 
 @pytest.mark.asyncio
 async def test_provider_overflow_can_recover_during_scheduled_retry_wait(monkeypatch):
     from agentevolver.agent.loop.agent import Agent
-    from agentevolver.message.types import AssistantMessage
+    from agentevolver.message.types import AssistantMessage, HumanMessage
 
     agent = Agent(retain_recent_steps=1)
-    agent.conversation.extend([AssistantMessage(content="old"), AssistantMessage(content="recent")])
+    agent.conversation.extend([AssistantMessage(content="old evidence " * 1000),
+                               HumanMessage(content="Continue"), AssistantMessage(content="recent")])
     agent.step = 2
     agent._compact_retry_step = 10
     agent.native_checkpoint = AsyncMock(return_value=None)

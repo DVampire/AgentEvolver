@@ -36,6 +36,7 @@ export function mountUsage(root, options = {}) {
       <label>Time range<select data-filter="range"><option value="all">Entire history</option><option value="last15">Last 15 min of recorded activity</option></select></label>
       <label>Agent<select data-filter="agent_name"><option value="">All agents</option></select></label>
       <label>Model<select data-filter="model"><option value="">All models</option></select></label>
+      <label>Operation<select data-filter="operation"><option value="">All operations</option></select></label>
       <label>Cost source<select data-filter="cost_source"><option value="">All sources</option><option>reported</option><option>estimated</option><option>legacy</option><option>unknown</option></select></label>
       <button class="u-clear" type="button">Reset filters</button><button class="u-export" type="button">Export CSV ↓</button>
     </div>
@@ -76,10 +77,10 @@ export function mountUsage(root, options = {}) {
     find('.u-cards').replaceChildren(...fields.map(([label,value,note]) => { const c=el('article',null,'u-card'); c.append(el('span',label),el('strong',value),el('small',note)); return c; }));
   }
   function facets(f) {
-    for (const field of ['agent_name','model']) {
+    for (const field of ['agent_name','model','operation']) {
       const select = find(`[data-filter="${field}"]`);
-      const first = el('option', field === 'model' ? 'All models' : 'All agents'); first.value='';
-      select.replaceChildren(first, ...f[field].map(v=>{const o=el('option',v);o.value=v;return o;}));
+      const first = el('option', {model:'All models',agent_name:'All agents',operation:'All operations'}[field]); first.value='';
+      select.replaceChildren(first, ...(f[field]||[]).map(v=>{const o=el('option',v);o.value=v;return o;}));
       select.value=filters[field]||'';
     }
   }
@@ -192,6 +193,7 @@ export function mountUsage(root, options = {}) {
       const tooltip=find('.u-tooltip');
       const title=filters.axis==='time'?when(point.label):'#'+point.label+' · '+when(point.from);
       tooltip.replaceChildren(el('strong',title),el('p',point.count+' record(s)'+(filters.cumulative==='true'?' · cumulative known values':'')));
+      if(point.operations?.length)tooltip.append(el('p','Operation: '+point.operations.join(', ')));
       definitions.forEach(definition=>{
         const n=value(point,definition);
         const row=el('div',null,'u-tip-row'),label=el('span',definition.label),amount=el('strong',!isKnown(n)?'Not reported':metric==='cost'?money(n):numeric(n));
@@ -273,7 +275,7 @@ export function mountUsage(root, options = {}) {
   root.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.kind;setPressed('[data-kind]','kind',kind);if(data)chart(data.series);});
   find('.u-cumulative').onchange=e=>{filters.cumulative=String(e.target.checked);refresh();};
   find('.u-prev').onclick=()=>{filters.page--;refresh();};find('.u-next').onclick=()=>{filters.page++;refresh();};
-  find('.u-clear').onclick=()=>{for(const k of ['from','to','agent_name','model','provider','benchmark_task_id','cost_source'])delete filters[k];filters.range='all';filters.page=0;find('[data-filter="range"]').value='all';find('[data-filter="cost_source"]').value='';refresh();};
+  find('.u-clear').onclick=()=>{for(const k of ['from','to','agent_name','model','provider','benchmark_task_id','cost_source','operation'])delete filters[k];filters.range='all';filters.page=0;find('[data-filter="range"]').value='all';find('[data-filter="cost_source"]').value='';refresh();};
   find('.u-export').onclick=()=>{const a=el('a');a.href=url({view:'export'});a.download='usage.csv';a.click();};
   const close=()=>{find('.u-drawer').hidden=true;focusBefore?.focus();};find('.u-close').onclick=close;
   const keyboard=e=>{if(e.key==='Escape'&&!find('.u-drawer').hidden)close();};root.addEventListener('keydown',keyboard);

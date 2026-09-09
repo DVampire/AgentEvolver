@@ -100,7 +100,7 @@ class DeployRequest(BaseModel):
     site_id: str = Field(description="Stable id for this site; also the sandbox reuse key.")
     owner_session_id: Optional[str] = Field(default=None, description="Originating run; supplied by the caller, not inferred from the site name.")
     stage: str = Field(default="published", description="Deployment stage: preview or published; independent of product iteration numbers.")
-    runtime: str = Field(default="static", description="Deployer profile: static | node | python | custom | llm.")
+    runtime: str = Field(default="static", description="Deployer profile: static | node | python | godot | custom | llm.")
     source_dir: Optional[str] = Field(default=None, description="Host directory uploaded into the container.")
     git_url: Optional[str] = Field(default=None, description="Git repo cloned inside the container (needs network).")
     content: Optional[str] = Field(
@@ -117,7 +117,7 @@ class DeployRequest(BaseModel):
     backend: Optional[str] = Field(
         default=None,
         description="Force the sandbox backend: 'host' (local, no container — lightweight/instant), "
-        "'opensandbox' (isolated Docker container — heavy/isolated), or 'auto'/None. "
+        "'docker' (direct Docker container), 'opensandbox' (managed container), or 'auto'/None. "
         "Inline content/files default to 'host' when unset; a source_dir/git_url defaults to 'auto'.",
     )
     port: Optional[int] = Field(default=None, description="Override the profile's default port.")
@@ -181,6 +181,7 @@ class Deployer:
     description: str = "Base deployer profile."
     default_image: str = "opensandbox/base:latest"
     default_port: int = 8000
+    default_backend: Optional[str] = None
 
     def make_spec(self, request: "DeployRequest") -> "DeploymentSpec":  # pragma: no cover - interface
         raise NotImplementedError

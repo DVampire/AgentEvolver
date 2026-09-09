@@ -190,7 +190,7 @@ class UsageView:
                 return row
             facets = {
                 k: sorted({str(r.get(k) or "Unknown") for r in rows})
-                for k in ("agent_name", "model", "provider", "benchmark_task_id")
+                for k in ("agent_name", "model", "provider", "benchmark_task_id", "operation")
             }
             for key in facets:
                 if q.get(key):
@@ -331,6 +331,7 @@ class UsageView:
                         "token_observations": token_observations,
                         "token_conflicts": token_conflicts,
                         "count": len(part),
+                        "operations": sorted({str(r.get("operation") or "Unknown") for r in part}),
                         "costed": len(known),
                         "id": part[0]["id"] if len(part) == 1 else None,
                         "from": part[0]["timestamp"],
@@ -338,7 +339,7 @@ class UsageView:
                     }
                 )
             group = q.get("group_by", "agent_name")
-            if group not in {"agent_name", "model", "provider", "benchmark_task_id"}:
+            if group not in {"agent_name", "model", "provider", "benchmark_task_id", "operation"}:
                 raise ValueError("Invalid group")
             buckets = {}
             for r in rows:

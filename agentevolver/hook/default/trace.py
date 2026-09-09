@@ -117,6 +117,9 @@ class TraceHook(Hook):
                         "trigger", "fold", "max_folds", "tokens", "token_scope", "messages",
                         "folded", "detail", "tokens_before", "tokens_after",
                         "reclaimed", "unproductive_folds", "retry_step", "memory",
+                        "full_input_before", "full_input_after", "full_input_reclaimed",
+                        "headroom_target", "headroom_reached", "rearm_input_tokens",
+                        "candidate_full_input_after", "productive",
                     ) if key in inp},
                 },
             )

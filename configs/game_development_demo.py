@@ -9,6 +9,7 @@ with read_base():
     from .tools.adoption import adoption_tool
     from .tools.apply_patch import apply_patch_tool
     from .tools.bash import bash_tool
+    from .tools.deploy import deploy_tool
 
 tag = "game_development_demo"
 log_path = "agent.log"
@@ -18,7 +19,7 @@ model_roles = dict(main=model_name, judge=model_name, summarize=model_name)
 agent_model_policy = "per_agent"
 agent_names = ["game_builder_agent"]
 memory_names = ["file_system_memory"]
-tool_names = ["bash_tool", "apply_patch_tool", "inspect_tool", "done_tool", "adoption_tool"]
+tool_names = ["bash_tool", "apply_patch_tool", "inspect_tool", "done_tool", "adoption_tool", "deploy_tool"]
 skill_names = ["godot_game_development_skill", "self_evolving_skill"]
 connector_names = []
 plugin_names = []

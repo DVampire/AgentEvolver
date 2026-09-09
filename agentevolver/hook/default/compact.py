@@ -81,9 +81,9 @@ class CompactHook(Hook):
         instruction = inp.get("instruction") or _DEFAULT_INSTRUCTION
         if inp.get("task_is_retained"):
             instruction += (
-                "\nThe full task below and system instructions remain in the next context; "
+                "\nThe full task and system instructions remain in the next context; "
                 "do not repeat their requirements. This checkpoint replaces only the closed "
-                "history supplied here. Newer retained turns and current plan observations "
+                "history supplied here. Newer retained turns and the live plan Brief "
                 "take precedence; describe unfinished work at this history boundary, not "
                 "as proof that a file is still absent. Preserve changed requirements and "
                 "unresolved commitments from the history."
@@ -99,7 +99,7 @@ class CompactHook(Hook):
 
         prior = f"Existing checkpoint:\n{existing}\n\n" if existing else ""
         body = "\n".join(f"- {it}" for it in items)
-        objective = f"Current task (source data):\n{task}\n\n" if task else ""
+        objective = f"Current task (source data):\n{task}\n\n" if task and not inp.get("task_is_retained") else ""
         prompt = f"{objective}{prior}New canonical closed turns:\n{body}\n\n{instruction}"
         usage = None
         try:

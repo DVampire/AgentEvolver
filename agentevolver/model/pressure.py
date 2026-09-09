@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from threading import RLock
 from typing import Any, Callable, Iterable, Optional
 
-#: Version 3 never omits text and accounts for visual inputs separately from base64.
-REQUEST_PRESSURE_VERSION = 3
+#: Version 4 counts route-serialized messages where available, never both replay forms.
+REQUEST_PRESSURE_VERSION = 4
 ESTIMATE_METHOD = "canonical_json_utf8_bytes_div_4+visual_budget"
 #: What a model is assumed to accept when its spec does not say. Every frontier model
 #: this repository calls is at or above 1M, and the cost of the two mistakes is not
@@ -259,6 +259,7 @@ def prepare_messages(
     prune_ratio: float = DEFAULT_PRUNE_RATIO,
     target_ratio: float = DEFAULT_TARGET_RATIO,
     token_estimator: Optional[RequestTokenEstimator] = None,
+    message_projector: Optional[Callable[[list[Any]], list[Any]]] = None,
 ) -> PreparedRequest:
     """Measure one request without omitting anything, even when over capacity.
 
@@ -272,7 +273,11 @@ def prepare_messages(
     input_capacity = max(1, context_window - reserved)
     trigger = max(1, int(input_capacity * float(prune_ratio)))
 
-    envelope = {"messages": prepared, "tools": tool_list,
+    # Native replay can use provider_state INSTEAD OF the readable companion, not
+    # both. Count the route's serialized messages while retaining canonical messages
+    # unchanged for dispatch/snapshots. Schemas and opaque content remain estimates.
+    projected = message_projector(prepared) if message_projector else prepared
+    envelope = {"messages": projected, "tools": tool_list,
                 "response_format": response_format}
     before = _count(envelope, token_estimator)
     after = before
@@ -287,11 +292,13 @@ def prepare_messages(
         ]
         context_layers[layer] = {
             "messages": len(layer_messages),
-            "tokens": _count(layer_messages, token_estimator) if layer_messages else 0,
+            "tokens": _count(message_projector(layer_messages) if message_projector else layer_messages,
+                             token_estimator) if layer_messages else 0,
         }
     pressure = {
         "schema_version": REQUEST_PRESSURE_VERSION,
         "estimate_method": token_estimator.method if token_estimator else ESTIMATE_METHOD,
+        "message_projection": "route_serializer" if message_projector else "canonical",
         "tokenizer_exact": bool(token_estimator and token_estimator.tokenizer_exact),
         "provider_wire_exact": bool(token_estimator and token_estimator.provider_wire_exact
                                     and (not image_count or token_estimator.count_image)),

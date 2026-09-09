@@ -139,6 +139,11 @@ def _prepare_request_messages(
         )
     if reserved_output is None:
         reserved_output = default_output_tokens
+    message_projector = None
+    if (model_config is not None and model_config.provider == "llm_hub"
+            and model_config.model_type == "responses"):
+        from agentevolver.model.llm_hub.response import serialize_input
+        message_projector = serialize_input
     prepared = prepare_messages(
         messages,
         tools=tools,
@@ -151,6 +156,7 @@ def _prepare_request_messages(
             provider=getattr(model_config, "provider", "") if model_config else "",
             model=getattr(model_config, "model_id", "") if model_config else "",
         ),
+        message_projector=message_projector,
     )
     pressure = prepared.pressure
     policy = request_input.get("compaction_policy")
