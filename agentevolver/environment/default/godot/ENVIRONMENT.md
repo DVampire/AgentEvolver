@@ -11,14 +11,16 @@ This environment shares the local task workspace with Bash and apply_patch. It o
 the selected project and command evidence per session. Initialization/get_state do
 not start Godot. Engine commands execute only on explicit actions; nothing is installed.
 It is not a sandbox, remote editor, game input API or visual gameplay observer.
-The external Bash container backend is rejected to avoid editing one filesystem while
-running the engine on another. ComputerEnvironment's separate desktop is not connected.
+The external Bash container backend is currently rejected because shared mounts and
+the Godot container adapter are not wired. The target architecture uses base-container
+Bash for file operations and a Godot container for engine operations on the same workspace.
+The demo mounts only this environment; background-job and browser environments are absent.
 
 ## Setup and operations
 
 1. `doctor`: resolve `binary_path`, then `GODOT_BIN`, otherwise `godot`/`godot4` on
    PATH. Record an exact Godot 4 editor version. This does not check templates.
-2. Author source using apply_patch and choose `open_project(project_path=...)`.
+2. Author source using workspace tools and choose `open_project(project_path=...)`.
    The directory must already contain project.godot inside the task workspace.
 3. `import_project`: headless editor import. Read errors even when exit is zero.
 4. `check_script(script=...)`: parse one GDScript file with --check-only. Import
@@ -28,7 +30,7 @@ running the engine on another. ComputerEnvironment's separate desktop is not con
    report completion and fail with a nonzero exit. Automatic frame exit is not a pass.
 6. `export_project`: use the exact preset name from export_presets.cfg and matching
    installed export templates. Use fresh output such as
-   `builds/r001/web/index.html` outside `game/`. No old output directory is reused.
+   `builds/r001/desktop/game.x86_64` outside `game/`. No old output directory is reused.
    A nonempty artifact and clean command are necessary, not sufficient, for a good build.
 7. `logs`: last operation, bounded output, exit, timeout, error flag and full log path.
 
@@ -39,16 +41,15 @@ project scripts/plugins. Honor the session's permission and execution constraint
 
 ## Actual play
 
-Export a GDScript Godot 4 project with the Compatibility renderer and a single-threaded
-Web preset for browser preview. Keep index.html and its generated companion files
-together; use deploy_tool on the export directory. Play its exact preview URL through
-browser_environment. Browser screenshots are delivered by GameBuilderAgent.
+Native desktop play is the primary target, with Web export optional. The native MCP
+runtime bridge, rendered screenshots, player input and model image delivery are not
+implemented yet. Do not invent actions or report a headless run as visual self-play.
+Keep play-dependent acceptance blocked until the native integration is available.
 
-Godot canvas controls are not DOM elements. Use visible canvas coordinates, focus and
-ordinary input; browser command can issue bounded held keys on the existing page.
-After input, observe the resulting frame. Scripts/telemetry that mutate hidden game
-state are useful diagnostics, not player-experience evidence. Native desktop play is
-a separate future adapter; do not claim this headless environment supplies it.
+The future native loop must observe frames before and after ordinary player inputs,
+bound held keys and guarantee release. Scripts/telemetry that mutate hidden game
+state remain diagnostics, not player-experience evidence. File edits require an
+appropriate import/reload or restart before observations certify the new revision.
 
 Official references:
 - https://docs.godotengine.org/en/stable/tutorials/editor/command_line_tutorial.html

@@ -20,26 +20,17 @@ class GameBuilderAgent(MetaAgent):
     include_agents: bool = Field(default=False)
     enable_evolving: bool = Field(default=True)
     max_step: int = Field(default=400)
-    env_names: List[str] = Field(default_factory=lambda: ["job", "godot_environment", "browser_environment"])
+    env_names: List[str] = Field(default_factory=lambda: ["godot_environment"])
     capability_allowlists: Dict[str, List[str]] = Field(default_factory=lambda: {
-        "environment": ["job", "godot_environment", "browser_environment"], "agent": [],
+        "environment": ["godot_environment"], "agent": [],
     })
-    max_screenshots: int = Field(default=1, ge=0)
-
-    def attachments(self):
-        from agentevolver.agent.actor.browser_agent import browser_images
-
-        return [*super().attachments(), *browser_images(
-            self._environment_observations.get("browser_environment"),
-            max_screenshots=self.max_screenshots,
-        )]
 
     async def on_exit(self, status):
         from agentevolver.environment.server import environment_manager
         from agentevolver.logger import logger
 
         try:
-            for name in ("godot_environment", "browser_environment"):
+            for name in ("godot_environment",):
                 if name in self.env_names:
                     try:
                         environment = await environment_manager.get(name)

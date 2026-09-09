@@ -103,13 +103,15 @@ MCP; observing a nonblank frame; moving/clicking through player input and observ
 result; stop/restart; rejected out-of-workspace paths; failed startup; and container/
 process cleanup. Reading or setting a node property alone does not prove player input.
 
-**Current implementation status:** the code below still describes the initial local
-CLI + browser assembly. The shared-workspace base/Godot Docker migration is proposed and
-not yet wired or tested. Do not remove the existing browser dependency in config until
-the replacement observation/input path is implemented. This research did not install
-packages, build/pull images, start services or run tests.
+**Current implementation status:** the demo and GameBuilder now mount only
+`godot_environment`; `job`, `browser_environment`, browser image routing and the
+Web-preview deploy tool have been removed from this demo. The Godot adapter still
+supports local CLI operations only. Shared base/Godot Docker execution and native
+screenshots/input are not wired or tested. Visual-play acceptance remains blocked;
+removing dependencies does not implement their replacement. No packages or images
+were installed, services started or tests run for this change.
 
-## Initial integration architecture (current code)
+## Current integration architecture
 
 Godot belongs in **Environment**, with **GameBuilderAgent** owning development decisions
 and **Skill** owning reusable methods. This is an architectural judgment based on the
@@ -120,9 +122,7 @@ and exports. [Official CLI documentation](https://docs.godotengine.org/en/stable
 | --- | --- |
 | `agent/actor/game_builder_agent.py` | Solo planning, development, visual self-play and capability experiments; MetaAgent with child agents disabled |
 | `environment/default/godot/` | Project selection, engine discovery, imports, parsing, bounded headless runs, exports and diagnostics |
-| `environment/default/browser/` | Actual input, screenshots and browser diagnostics for the exported game |
 | Existing Bash and apply_patch tools | General inspection and source authoring; no Godot-specific state added to bash.py |
-| Existing deploy tool and manager | Export preview, service lifecycle and revision URLs |
 | `skill/game/godot_game_development_skill/` | Content architecture, production methods, self-play and verification guidance |
 | Existing adoption, extension and task evolution modules | Candidate versions, comparison, keep/rollback and subsequent-use evidence |
 
@@ -135,10 +135,9 @@ flowchart LR
     W --> P[Godot project]
     A --> E[GodotEnvironment]
     E --> P
-    E --> X[Versioned Web export]
-    X --> D[Deploy preview]
-    D --> B[Browser input and observation]
-    B --> A
+    E --> X[Versioned export and CLI logs]
+    E -. pending .-> N[Native screenshots and input]
+    N -. pending .-> A
     A --> G[Observed capability gap and baseline]
     G --> C[Candidate evaluation and adoption]
     C --> U[Subsequent development use]
@@ -155,24 +154,16 @@ yet implement such a bridge.
 
 ## Visual play and platform choices
 
-The initial path uses **Godot 4, GDScript, Compatibility rendering and single-threaded
-Web export**. Official documentation specifies WebGL 2 and Compatibility constraints;
-Godot 4 C# projects currently cannot export to Web. Single-threaded export avoids the
-cross-origin isolation requirements of threaded exports. Check the pinned version's
-documentation before changing these choices.
-[Official Web export documentation](https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_web.html)
+The primary target is a native **Godot 4 + GDScript** game. The task HTML is its
+development brief. Web export is optional and does not require a browser environment
+in the default demo. Any later Web delivery needs its own platform verification.
 
-This is a real 3D Godot game; HTML is its exported entry point. Keep index.html and generated
-companion files together, preview the export directory through deploy, and play the returned
-URL. Godot nodes are not DOM controls. GameBuilder receives screenshots and uses visible
-coordinates and ordinary input. Held keys use the existing browser `command` on its current
-page with bounded duration and release in `finally`. Click-to-move is also a player control.
-
-Headless checks cannot establish visual quality or enjoyment. Teleports and debug quest
-setters are diagnostics, not evidence of successful play. Web play cannot certify native
-performance, controllers or desktop saves. Native presets can be exported, but native play
-needs a separate observation/input adapter. ComputerEnvironment's independent desktop
-container does not automatically share this project or provide an installed Godot editor.
+Native self-play must use rendered screenshots and ordinary player input through
+godot_environment once the runtime bridge and model image routing are implemented.
+Held inputs need bounded duration and guaranteed release. Headless checks cannot
+establish visual quality or enjoyment. Teleports and debug quest setters are
+diagnostics, not evidence of successful play. The current adapter cannot supply
+native visual-play evidence; keep those acceptance items pending.
 
 ## Engine environment contract
 
@@ -186,8 +177,8 @@ container does not automatically share this project or provide an installed Godo
 - `check_script` parses one script. A clean headless exit is not an assertion pass; assertion
   scripts need completion evidence. A nonempty export does not prove that a game works.
 - This is a local execution adapter, not an OS sandbox. Scripts/plugins have the engine process's
-  permissions. `AGENTEVOLVER_EXEC_CONTAINER` is rejected because its Bash filesystem would differ
-  from this local engine's filesystem. Nothing is downloaded or upgraded automatically.
+  permissions. `AGENTEVOLVER_EXEC_CONTAINER` is currently rejected because the shared-mount
+  and Godot container adapter are not wired. Nothing is downloaded or upgraded automatically.
 
 ## Living implementation plan
 
@@ -257,7 +248,8 @@ It does not claim to deliver the whole game. Request full campaign development w
 
 Configuration: `configs/game_development_demo.py`. Entry point:
 `examples/run_game_development_demo.py`. Prerequisites are a Godot 4 editor, matching export
-templates, working model credentials and the existing browser/deploy dependencies.
+templates and working model credentials for the current local CLI path. The native
+self-play milestone additionally requires the pending Docker/MCP integration.
 
 No engine, test, browser or development run was started while authoring this change, as
 requested. Import/export compatibility and the complete integration remain unverified.

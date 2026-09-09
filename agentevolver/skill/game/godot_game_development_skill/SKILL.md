@@ -12,7 +12,13 @@ metadata: {}
 
 Respect the user's execution constraints. When they ask for source/design only or
 defer testing, author the files and pending check plan without starting the engine,
-browser, tests or installers. The workflow below applies when execution is authorized.
+tests or installers. The workflow below applies when execution is authorized.
+
+This demo mounts only godot_environment. Use Bash for file operations and bounded
+foreground commands. The current adapter supports local CLI operations only; shared
+Docker execution and native screenshots/input are pending. Until those are available,
+record visual-play acceptance as blocked and continue independent source/design work.
+Do not invent actions or silently add a browser/background-job dependency.
 
 ## Choose a deliverable and keep it honest
 
@@ -40,7 +46,8 @@ requirements, and before handoff. A deferred check stays pending. On resume, rec
 the recorded state with actual artifacts. Runtime rereads the plan each step but does
 not write progress automatically or certify the accuracy of an Agent's status labels.
 
-Use Godot 4 + typed GDScript. For shared Web/native 3D content, start with Compatibility
+Use Godot 4 + typed GDScript. Native delivery is primary and Web export is optional.
+For shared Web/native 3D content, start with Compatibility
 rendering, restrained geometry/materials, baked/simple lighting, few shadowed lights
 and readable silhouettes. Record exact engine/template versions. Prefer glTF/GLB for
 interchange; runtime hosts should not need Blender merely to import a .blend file.
@@ -65,41 +72,32 @@ quest conditions from dialogue, and save data from live Node references. Seed ra
 choices, keep migrations explicit and write saves atomically with a recoverable backup.
 Store full creature/party/quest/choice/world state needed to resume, not just a level.
 Do not overwrite an unreadable or future-version save on failure. Provide manual slots,
-export/import saves for Web, and accessible recovery. Verify persistence in the actual
-target browser; a native user:// check cannot establish Web persistence behavior.
+accessible recovery and, if Web is delivered, save export/import. Verify persistence
+on the actual delivery target; one platform's results cannot certify another.
 
-## Genuine 3D play and browser controls
+## Genuine 3D play and native controls
 
 Implement a third-person camera with occlusion handling, ground/collision checks,
 readable interactable ranges and a stuck recovery. Include click-to-move, visible
 interaction hints and pause/turn-based decisions alongside WASD. This is a usable
-player control option and supports ordinary input through the existing browser.
+player control option for native gameplay input.
 
 Use godot_environment for imports, per-script checks, bounded headless scenarios and
 exports. Preserve logs. --check-only is one-file parsing; --quit-after counts engine
 iterations. An assertion runner needs its own completion marker/nonzero failure exit.
 Run only checks justified by the change and explicit user authorization.
 
-Export a single-threaded Web build to a new revision directory. Confirm the installed
-engine's preset syntax instead of inventing keys. Keep generated filenames together.
-Use deploy_tool preview; open its exact returned URL with browser_environment, and
-click the canvas/start control first. Observe actual pixels: Godot nodes do not appear
-as DOM controls. For continuous movement, use browser_environment command only on its
-existing `page`, with a short bounded input and guaranteed release, for example:
+Once native runtime control is implemented, launch the shared project through
+godot_environment and inspect its actual screenshot/input action schemas. Use a
+rendered frame and ordinary player input, with bounded held keys and guaranteed
+release. Observe the resulting position instead of inferring movement from elapsed
+input time. After edits, import/reload or restart so the played revision is known.
 
-```python
-await page.keyboard.down("w")
-try:
-    await page.wait_for_timeout(650)
-finally:
-    await page.keyboard.up("w")
-```
-
-Observe the resulting position; do not infer it from 650 ms of input. Never substitute
-teleport/set_quest_state/JavaScript game-state edits for a real player journey. Explicit
-debug harnesses may supplement visual evidence, and must identify how they differ.
-WebGL or browser startup failure remains a blocker, not a successful play session.
-Web preview does not certify native performance, controller support or desktop saves.
+Never substitute teleport/set_quest_state or other hidden-state edits for a real
+player journey. Explicit debug harnesses may supplement visual evidence, and must
+identify how they differ. Missing runtime control, startup failure or blank rendering
+remains a blocker. Native checks cannot certify optional Web delivery. For exports,
+use a fresh revision directory and verify the installed engine's actual preset syntax.
 
 ## Creative self-review
 

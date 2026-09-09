@@ -1,7 +1,7 @@
 """Session-scoped Godot projects with bounded, auditable editor CLI operations.
 
-The engine runs beside the local workspace tools. This is not a remote editor or
-a gameplay observer: browser_environment owns visual play of exported Web builds.
+The engine currently runs beside the local workspace tools. Shared Docker execution
+and native gameplay observation/input are pending; this adapter provides neither.
 No binary is started during construction, initialization, or state observation.
 """
 
@@ -30,7 +30,7 @@ class GodotEnvironment(Environment):
     name: str = Field(default="godot_environment")
     description: str = Field(default=(
         "Godot 4 project workspace: engine discovery, imports, GDScript parsing, "
-        "bounded headless runs, exports and diagnostic logs. Visual play uses the browser."
+        "bounded headless runs, exports and diagnostic logs. Native visual play is not yet available."
     ))
     metadata: Dict[str, Any] = Field(default={"has_vision": False, "engine": "godot"})
     enable_evolving: bool = Field(default=False)
@@ -69,8 +69,8 @@ class GodotEnvironment(Environment):
     def _binary(self):
         if os.environ.get("AGENTEVOLVER_EXEC_CONTAINER", "").strip():
             raise ValueError(
-                "GodotEnvironment requires the local execution backend. The configured Bash "
-                "container would use a different filesystem; a shared-container adapter is required."
+                "GodotEnvironment currently requires the local execution backend. Shared "
+                "workspace mounts and the Godot container adapter have not been wired yet."
             )
         configured = self.binary_path or os.environ.get("GODOT_BIN", "").strip()
         if configured:

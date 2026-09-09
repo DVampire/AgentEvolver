@@ -74,12 +74,15 @@ def build_task_text(brief: Path, milestone: str, require_evolution: bool) -> str
     )
     instructions = (
         "You are the sole GameBuilder. No user/persona/reviewer agents or subscriptions. "
-        "Design, implement, visually play the actual Godot Web export, critique, improve, "
+        "Design, implement, visually play the native Godot game when supported, critique, improve, "
         "and track campaign progress yourself.\n\n"
         + scope + "\n\n" + experiment + "\n\n"
-        "Godot CLI belongs to godot_environment; browser_environment owns actual visual input "
-        "and observation of the exported game. Use GDScript, Compatibility rendering and "
-        "single-threaded Web export for the preview path. A website mockup is not a game. "
+        "Use Bash for project files and bounded foreground commands; godot_environment is "
+        "the only mounted environment and owns engine operations. Native Docker/MCP launch, "
+        "screenshots and player input are not implemented in the current CLI adapter. "
+        "Keep visual-play acceptance blocked until that integration is available; do not "
+        "invent actions or treat headless checks as play. Use Godot 4 and GDScript, with "
+        "native delivery as the primary target and Web export optional. A website mockup is not a game. "
         "Keep product milestone evidence and agent evolution evidence separate. "
         "Honor explicit user execution/testing constraints; unrun checks remain pending."
     )

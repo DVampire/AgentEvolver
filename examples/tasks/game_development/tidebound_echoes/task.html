@@ -213,7 +213,7 @@
       <p>Let players explicitly choose journal detail, navigation assistance, preferred companion display, camera motion and encounter difficulty. A customizable traveling camp reflects recruited kin and remembered journeys. Preferences are editable; do not infer a psychological profile or secretly manipulate difficulty to optimize engagement.</p>
       <h3>Journal, economy and saving</h3>
       <p>The field recorder combines map clues, quest goals, witnesses, covenant hints and unresolved promises. Clearly distinguish observed facts from a character's interpretation. Use a small economy of trade tokens and regional crafting materials. Required story supplies remain obtainable without repetitive farming.</p>
-      <p>Provide manual save slots, an autosave with backup, and clear load/recovery messages. Persist roster, abilities, inventory, region state, quest steps, decisions, companion episodes, settings and postgame state. Web builds need usable save export/import. Never overwrite an unreadable save while handling an error; version save data and support migrations.</p>
+      <p>Provide manual save slots, an autosave with backup, and clear load/recovery messages. Persist roster, abilities, inventory, region state, quest steps, decisions, companion episodes, settings and postgame state. If an optional Web build is delivered, include usable save export/import. Never overwrite an unreadable save while handling an error; version save data and support migrations.</p>
     </div>
 
     <div class="optional-content">
@@ -224,7 +224,7 @@
         <article><h3>Covenant circuit</h3><p>A postgame tactical circuit with eight authored rule sets and team-building restrictions. Rewards offer cosmetic and strategic options rather than story-essential power.</p></article>
         <article><h3>Uncharted currents</h3><p>Six postgame expeditions with fixed authored discoveries and bounded variations. Each reuses the ending's world state. Finite meaningful content is preferable to an empty infinite generator.</p></article>
       </div>
-      <p>New Game Plus is optional future scope, not required for campaign completion. Online multiplayer, live-service events, trading servers, voice cloning and a procedural infinite story are out of scope. Preserve a self-contained offline campaign, apart from initial Web delivery.</p>
+      <p>New Game Plus is optional future scope, not required for campaign completion. Online multiplayer, live-service events, trading servers, voice cloning and a procedural infinite story are out of scope. Preserve a self-contained offline campaign.</p>
     </div>
 
     <div class="presentation">
@@ -242,13 +242,13 @@
 
     <div class="technical-requirements">
       <h2>09 · Engineering requirements</h2>
-      <p>Use Godot 4 and typed GDScript, with real 3D scenes, collision and camera behavior. The first reviewable target is a Compatibility-rendered, single-threaded Web build. Keep a desktop export preset for later native delivery, but do not claim native verification from a browser session. Record the exact engine version and matching template version.</p>
+      <p>Use Godot 4 and typed GDScript, with real 3D scenes, collision and camera behavior. The first reviewable target is a native desktop game with a reproducible launch path and desktop export preset. Web export is optional and requires separate platform verification if delivered. Record the exact engine version and matching template version.</p>
       <ul>
         <li>Separate world scenes, character logic, combat rules, narrative conditions, presentation and persistence. Store creatures, moves, encounters, dialogue and quests as structured resources with stable IDs.</li>
         <li>Keep a campaign dependency map and a content ledger. Each entry records planned/authored/implemented/played/blocked status, prerequisites, branch effects and verification evidence.</li>
         <li>Use a source project directory, fresh versioned export directories and separate reports. Preserve asset attribution and reproducible setup instructions.</li>
         <li>Quest events must be idempotent: revisiting a trigger cannot duplicate a reward or invalidate progress. Handle declined covenants, full-party situations, interrupted dialogue and load during transitions.</li>
-        <li>Define a reproducible performance profile before optimization. Target 60 FPS on the chosen desktop profile and at least 30 FPS on the chosen Web profile in ordinary gameplay. Record hardware, renderer, browser, resolution and frame-time samples; do not assert a universal result.</li>
+        <li>Define a reproducible performance profile before optimization. Target 60 FPS on the chosen desktop profile in ordinary gameplay; if Web is delivered, target at least 30 FPS on its chosen profile. Record hardware, renderer, platform, resolution and frame-time samples; do not assert a universal result.</li>
         <li>Use per-region loading and controlled asset budgets. Provide visible loading and recoverable errors. A blank canvas or indefinitely blocked loading screen fails acceptance.</li>
       </ul>
     </div>
@@ -281,9 +281,9 @@
         <li><strong>Choice consequence:</strong> exercise both chapter-one infrastructure outcomes from separate ordinary saves. Show different harbor state and NPC reactions; neither branch blocks the next story lead.</li>
         <li><strong>Exploration:</strong> complete the shore and dungeon routes, use at least two companion field abilities and unlock a return shortcut. Every required gate has a roster-independent fallback.</li>
         <li><strong>Optional value:</strong> finish two side stories with different objectives and demonstrate at least one later callback. Filler collection tasks with only different item names do not satisfy this item.</li>
-        <li><strong>Persistence:</strong> save, close/reopen and resume with party, choices, inventory and quest state intact. Exercise Web save export/import and recover from a deliberately invalid save without overwriting the valid slot.</li>
+        <li><strong>Persistence:</strong> save, close/reopen and resume with party, choices, inventory and quest state intact. Recover from a deliberately invalid save without overwriting the valid slot. Exercise save export/import separately if an optional Web build is delivered.</li>
         <li><strong>Usability:</strong> complete representative menus and a battle using keyboard input; use click-to-move; check text scaling, reduced motion, difficulty changes, readable symbols and dialogue history.</li>
-        <li><strong>Delivery:</strong> provide Godot source, a fresh Web build, playable preview URL when available, setup/control instructions, asset credits and the full campaign/content ledger. Record actual errors and performance evidence; label unverified desktop output clearly.</li>
+        <li><strong>Delivery:</strong> provide Godot source, a fresh native desktop build, reproducible launch and control instructions, asset credits and the full campaign/content ledger. Record actual errors and performance evidence; label any unverified output or unplayed journey clearly. Web delivery is optional.</li>
       </ol>
       <h3>M3 campaign acceptance</h3>
       <ol>
