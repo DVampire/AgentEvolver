@@ -1,6 +1,7 @@
 """Visual assets for AgentEvolver — CSS, JS, templates, and rendering helpers."""
 
 import os
+import re
 from html import escape
 
 from agentevolver.paths import path_manager
@@ -20,17 +21,22 @@ def render_task_page(html_body: str, out_path: str, title: str = "Task") -> str:
     tags in ``<head>``, ``task/style.css`` + ``task/app.js`` linked there, and the body
     inserted directly (the body already carries its ``<div class="task">``
     wrapper, or a ``<div class="task-doc">`` for Markdown tasks). ``task/app.js``
-    renders the Markdown inside the section tags client-side. Returns ``out_path``.
+    renders Markdown inside the section tags. Authored HTML briefs opt into
+    ``task/task.css`` + ``task/task.js`` with ``data-task-layout="brief"``;
+    their markup is preserved. Returns ``out_path``.
     """
     out_dir = os.path.dirname(os.path.abspath(out_path))
     os.makedirs(out_dir, exist_ok=True)
-    css_rel = os.path.relpath(asset_path("task", "style.css"), start=out_dir)
-    js_rel = os.path.relpath(asset_path("task", "app.js"), start=out_dir)
+    is_brief = re.search(r'''\bdata-task-layout\s*=\s*(["'])brief\1''', html_body) is not None
+    css_rel = os.path.relpath(asset_path("task", "task.css" if is_brief else "style.css"), start=out_dir)
+    js_rel = os.path.relpath(asset_path("task", "task.js" if is_brief else "app.js"), start=out_dir)
     page = "\n".join([
         "<!DOCTYPE html>",
         '<html lang="en">',
         "<head>",
         '  <meta charset="UTF-8">',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1">',
+        f'  <title>{escape(title)}</title>',
         f'  <meta name="description" content="{escape(title)}">',
         f'  <link rel="stylesheet" href="{escape(css_rel)}">',
         f'  <script src="{escape(js_rel)}"></script>',

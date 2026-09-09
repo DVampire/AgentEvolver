@@ -13,6 +13,7 @@ from .ssh.environment import SSHEnvironment
 from .terminal.environment import TerminalEnvironment
 from .job.environment import JobEnvironment
 from .factor_mining.environment import FactorMiningEnvironment
+from .godot.environment import GodotEnvironment
 
 __all__ = [
     "ArtifactRendererEnvironment",
@@ -20,6 +21,7 @@ __all__ = [
     "ComputerEnvironment",
     "JobEnvironment",
     "FactorMiningEnvironment",
+    "GodotEnvironment",
     "SSHEnvironment",
     "TerminalEnvironment",
 ]

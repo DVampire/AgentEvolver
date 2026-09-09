@@ -76,7 +76,7 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, task, defe
         # The decision must reach live planning. It used to say "dispatch in the
         # background"; the work is the agent's own now, so what has to arrive is that it
         # starts now and records the version it produced.
-        assert "start now" in rules
+        assert "Launch qualifying work now" in rules
         assert "registered version" in rules
         assert not plan_manager.active(ctx.id)
         cfg = parse_prompt_file(str(ROOT / "agentevolver/prompt/default" / f"{agent.name}.html"))
@@ -143,7 +143,7 @@ def test_orchestrators_use_one_shared_policy():
         assert "<self-evolution-rules>" not in source
         assert "<capability-evolution>" not in source
     builder = (ROOT / "agentevolver/prompt/default/website_builder_agent.html").read_text()
-    assert "does not require the task to request evolution" in builder
+    assert "even when the task does not request it" in builder
 
 
 def test_evolution_skill_has_no_second_failure_or_memory_gate():
@@ -182,18 +182,35 @@ def test_the_conventions_support_bounded_verified_improvements():
 
 
 @pytest.mark.parametrize("scenario_name", ["arkbound_game", "commonspace_forum", "lumen_museum", "orbital_simulator"])
-def test_product_task_leaves_evolution_to_shared_policy(scenario_name):
+def test_demo_requires_experiment_but_keeps_product_brief_independent(scenario_name):
     from examples.run_website_evolution_demo import build_task_text
 
     scenario = ROOT / "examples/tasks/website_evolution" / scenario_name
-    personas = [scenario / f"persona_{index:02d}.html" for index in range(1, 4)]
-    task = build_task_text(scenario / "scenario.html", personas)
-    for forbidden in ("self_evolving_skill", "generate_agent", "optimize_agent",
+    task = build_task_text(scenario / "scenario.html")
+    assert "After the first browser experience pass, invoke self_evolving_skill" in task
+    assert "independent reuse/regression case" in task
+    assert "A rejected experiment is a trigger exercised" in task
+    assert "self_evolving_skill" not in (scenario / "scenario.html").read_text()
+    for forbidden in ("generate_agent", "optimize_agent",
                       "target_type", "minimum_kept_evolutions", "must evolve"):
         assert forbidden not in task
-        assert all(forbidden not in path.read_text() for path in personas)
     # Product design remains open while the brief supplies an observable contract.
     source = (scenario / "scenario.html").read_text()
     for section in ("product-intent", "creative-freedom", "open-horizons", "quality-evidence"):
         assert f'id="{section}"' in source
     assert "source hashes and repeated deployments" in " ".join(task.lower().split())
+
+
+@pytest.mark.asyncio
+async def test_evolution_stays_enabled_without_child_agents(bound_session):
+    agent = WebsiteBuilderAgent(include_agents=False)
+    agent.router = SimpleNamespace(schemas=AsyncMock(return_value=([], ROUTES)))
+    values = await agent.prompt_modules(SimpleNamespace(id="solo", extra={}))
+    assert values["evolution_enabled"] is True
+
+
+def test_evolution_skill_does_not_require_removed_workers():
+    source = (ROOT / "agentevolver/skill/evolving/self_evolving_skill/SKILL.md").read_text()
+    assert "Start a qualifying opportunity now in your own action loop" in source
+    assert "use `run_in_background=true`" not in source
+    assert "Every dispatch names one as `target_type`" not in source

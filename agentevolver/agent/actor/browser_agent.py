@@ -30,6 +30,41 @@ from agentevolver.registry import AGENT
 from agentevolver.response.types import Response
 
 
+
+def browser_images(observation, max_screenshots=2, screenshot_history="on_error", action_failed=False):
+    """Render images from the same browser observation as the textual state."""
+    extra = (observation or {}).get("extra") or {}
+    shots = extra.get("screenshots") or []
+    unique, seen = [], set()
+    for shot in reversed(shots):
+        encoded = getattr(shot, "screenshot", None)
+        if not encoded:
+            continue
+        digest = sha256(encoded.encode("ascii")).digest()
+        if digest in seen:
+            continue
+        seen.add(digest)
+        unique.append(shot)
+    unique.reverse()
+    limit = max_screenshots
+    if screenshot_history == "on_error" and not action_failed:
+        limit = min(limit, 1)
+    if not unique or limit == 0:
+        return []
+
+    parts: List[Any] = []
+    for shot in unique[-limit:]:
+        encoded = getattr(shot, "screenshot", None)
+        if not encoded:
+            continue
+        label = getattr(shot, "screenshot_description", "") or "Screenshot"
+        parts.append(ContentPartText(text=f"\n[{label}]"))
+        parts.append(ContentPartImage(image_url=ImageURL(
+            url=f"data:image/png;base64,{encoded}", media_type="image/png",
+        )))
+    return [HumanMessage(content=parts)] if parts else []
+
+
 @AGENT.register_module(force=True)
 class BrowserAgent(Agent):
     """An agent that operates a web browser through its environment's actions."""
@@ -114,36 +149,8 @@ class BrowserAgent(Agent):
         Select whole images, never crop/downsample them. Originals remain in the browser
         artifacts. Content identity avoids losing different pathless/overwritten images.
         """
-        extra = (self._observed or {}).get("extra") or {}
-        shots = extra.get("screenshots") or []
-        unique, seen = [], set()
-        for shot in reversed(shots):
-            encoded = getattr(shot, "screenshot", None)
-            if not encoded:
-                continue
-            digest = sha256(encoded.encode("ascii")).digest()
-            if digest in seen:
-                continue
-            seen.add(digest)
-            unique.append(shot)
-        unique.reverse()
-        limit = self.max_screenshots
-        if self.screenshot_history == "on_error" and not self._action_failed:
-            limit = min(limit, 1)
-        if not unique or limit == 0:
-            return []
-
-        parts: List[Any] = []
-        for shot in unique[-limit:]:
-            encoded = getattr(shot, "screenshot", None)
-            if not encoded:
-                continue
-            label = getattr(shot, "screenshot_description", "") or "Screenshot"
-            parts.append(ContentPartText(text=f"\n[{label}]"))
-            parts.append(ContentPartImage(image_url=ImageURL(
-                url=f"data:image/png;base64,{encoded}", media_type="image/png",
-            )))
-        return [HumanMessage(content=parts)] if parts else []
+        return browser_images(self._observed, self.max_screenshots,
+                              self.screenshot_history, self._action_failed)
 
     # ------------------------------------------------------------------
     # Failures

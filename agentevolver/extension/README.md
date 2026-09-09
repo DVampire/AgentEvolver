@@ -32,6 +32,15 @@ for the exact active, archived version. This contract is independent of website 
 and task-specific runtime extras. Recording a rollback/unload decision does not execute
 it: use the corresponding operation explicitly.
 
+Tasks that explicitly declare `evolution.require_verified_improvement` also retain action
+receipts in task state across conversation compaction. Their evaluation includes a capability
+gap with pre-registration observation/baseline evidence and comparison/reuse cases. After
+adoption, `adoption_tool.record_use` binds a real-work outcome to a subsequent successful
+invocation of that version. Loading a skill alone is insufficient. The task's final response
+includes these receipts and cannot report success when required evolution evidence is missing.
+Ordinary tasks keep the existing adoption contract. These checks establish provenance, not
+independent proof of the model's quality judgment.
+
 All eight families pass loading/construction/schema admission in a separate Linux
 bubblewrap interpreter before live import. The probe has a read-only code snapshot,
 isolated network and temporary writable directories; inherited environment credentials

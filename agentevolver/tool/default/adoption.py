@@ -65,6 +65,24 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
   rejected: they cannot be checked against anything, which is the whole reason the field
   exists. If you have no call to cite, you have not run the evaluation yet.
 
+- `record_use`: close an explicitly required task evolution after keep. Args: `report`
+  with `module`, `name`, exact `version`, `consumer_call_id`, `evidence_ids`, and `outcome`.
+  Invoke the adopted capability synchronously on real subsequent product work first.
+  Copy that invocation's tool_call_id into consumer_call_id; cite successful result/check
+  calls in evidence_ids. Loading a skill alone is insufficient: also execute and cite a
+  subsequent product operation using its method. Register/list/inspect calls are not use.
+  This task-scoped receipt is checked against observed actions and the active version.
+  It supports directly callable components; an instance-only change needs an instrumented
+  consumer and cannot be certified from a registry entry alone.
+
+  For tasks declaring `evolution.require_verified_improvement`, the preceding evaluation
+  also needs `capability_gap`: `user_need`, `required_operation`, `limitation`,
+  `acceptance_criterion`, `observation_evidence_ids`, `baseline_evidence_ids`. Cite actual
+  browser experience or feedback collection and a baseline probe made before registration.
+  Tag evaluation cases
+  with `kind: comparison` and `kind: reuse` or `regression`, using independent executed
+  evidence. These task requirements do not apply to ordinary adoption decisions.
+
 `module` is one of: tool | agent | skill | environment | connector | workflow | plugin | memory.
 The associated prompt can also be inspected/restored as an agent's supporting artifact.
 
@@ -108,6 +126,13 @@ def _require_observed_evidence(report: Dict[str, Any], caller_id: str) -> None:
         for message in (getattr(conversation, "items", ()) or ())
         if isinstance(message, ToolMessage) and getattr(message, "tool_call_id", None)
     }
+    # Required-task receipts survive compaction; the exact transcript may no longer
+    # contain the baseline by the time the candidate has been evaluated.
+    from agentevolver.task.evolution import required, state
+
+    caller_ctx = getattr(getattr(caller, "agent", None), "ctx", None)
+    if required(caller_ctx):
+        observed.update(state(caller_ctx)["calls"])
     # No retained calls is not "nothing to check against" — it is a run that executed
     # nothing, which is exactly when a cited id cannot be real. Letting it through here
     # made the check depend on whether some other run happened to leave a conversation
@@ -186,6 +211,7 @@ class AdoptionTool(Tool):
             "unload",
             "record_workflow_evaluation",
             "record_decision",
+            "record_use",
         ] = "list_active",
         module: Optional[str] = None,
         name: Optional[str] = None,
@@ -211,7 +237,7 @@ class AdoptionTool(Tool):
         Args:
             action: Which operation to run — ``list_active``, ``list_versions``,
                 ``diff``, ``register``, ``rollback``, ``unload``,
-                ``record_workflow_evaluation``, or ``record_decision``. Defaults to
+                ``record_workflow_evaluation``, ``record_decision``, or ``record_use``. Defaults to
                 ``list_active``.
             module: Component family for register, version, diff, rollback, unload, or
                 decision actions.
@@ -244,6 +270,15 @@ class AdoptionTool(Tool):
 
         action = (action or "list_active").lower().strip()
         try:
+            if action == "record_use":
+                from agentevolver.task.evolution import record_use
+
+                if not isinstance(report, dict):
+                    raise ValueError("record_use requires a structured usage report")
+                usage = record_use(kwargs.get("ctx"), report)
+                return Response(type=ResponseType.TOOL, success=True,
+                                message="Recorded post-adoption consumer use.", data={"use": usage})
+
             if action == "list_active":
                 comps = extension_manager.read_manifest().components
                 if not comps:

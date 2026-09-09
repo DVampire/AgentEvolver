@@ -263,6 +263,7 @@ class Agent(BaseModel):
         self.task: str = ""
         self.step: int = 0
         self._routing: Dict[str, Any] = {}
+        self._environment_observations: Dict[str, Any] = {}
         # Reuse the system prompt's scoped policy decision in live planning. Target
         # mutability is independent of whether this agent can run an evolution loop.
         self._evolution_policy_enabled = False
@@ -353,7 +354,9 @@ class Agent(BaseModel):
         anything: an agent that has to act on *what it produced* — registering a component
         it just generated, for instance — needs the Response itself.
         """
-        return response
+        from agentevolver.task.evolution import finalize
+
+        return finalize(self.ctx, response)
 
     async def _run(
         self,
@@ -816,6 +819,7 @@ class Agent(BaseModel):
         action — so it rides in the live layer rather than the prefix. An idle
         environment renders nothing and costs nothing.
         """
+        self._environment_observations = {}
         names = list(getattr(self, "env_names", ()) or ())
         allowed = (getattr(ctx, "extra", None) or {}).get("environment_allowlist")
         if allowed is not None:
@@ -836,6 +840,7 @@ class Agent(BaseModel):
                 logger.warning(f"| ⚠️ [{self.name}] could not read {name} state: {error}")
                 blocks.append(f"<environment name=\"{name}\">unavailable — {error}</environment>")
                 continue
+            self._environment_observations[name] = state
             body = state.get("state") if isinstance(state, dict) else state
             if body:
                 blocks.append(f"<environment name=\"{name}\">\n{body}\n</environment>")
@@ -923,7 +928,7 @@ class Agent(BaseModel):
         # Target mutability (enable_evolving) is not permission to run evolution.
         # Use the scoped roster, including deferred capabilities, once per assignment.
         evolution_enabled = False
-        if self.include_agents and self.permission_mode != "read_only":
+        if self.permission_mode != "read_only":
             from agentevolver.agent.context.capabilities import catalog
 
             _, routing = await self.router.schemas(self, ctx)
@@ -1186,7 +1191,12 @@ class Agent(BaseModel):
         a valid turn rather than half of one.
         """
         from agentevolver.hook.types import HookEvent
+        from agentevolver.task.evolution import observe
+        from agentevolver.task.self_review import observe_actions
 
+        observe(self.ctx, results, self._routing)
+        observe_actions(self.ctx, results, self._routing,
+                        self._environment_observations.get("browser_environment"))
         self.save_thread()
         await self._events.emit(
             HookEvent.POST_STEP,
@@ -1272,9 +1282,13 @@ class Agent(BaseModel):
     async def _live_blocks(self, step: int) -> List[str]:
         """This step's volatile layer: notes carried in, plus middleware output."""
         from agentevolver.plan.server import plan_manager
+        from agentevolver.task.evolution import live_notice
 
         blocks = list(self._notes)
         self._notes = []
+        evolution = live_notice(self.ctx)
+        if evolution:
+            blocks.append(evolution)
         planning = plan_manager.context(
             str(getattr(self.ctx, "id", "") or ""), enabled=self.use_plan,
             evolution_enabled=self._evolution_policy_enabled,
@@ -1282,6 +1296,9 @@ class Agent(BaseModel):
         )
         self.conversation.observe("plan", planning)
         state = await self.environment_state(self.ctx)
+        from agentevolver.task.self_review import observe_state
+
+        observe_state(self.ctx, self._environment_observations.get("browser_environment"))
         if state:
             blocks.append(state)
         note = await self.on_step(step)
@@ -1589,8 +1606,12 @@ class Agent(BaseModel):
         return f"{task}\n\n<files>\n{listed}\n</files>"
 
     def _finish(self, result: str) -> Response:
-        logger.info(f"| ✅ [{self.name}] finished in {self.step + 1} step(s)")
-        return self._respond(True, result or "")
+        response = self._respond(True, result or "")
+        if response.success:
+            logger.info(f"| ✅ [{self.name}] finished in {self.step + 1} step(s)")
+        else:
+            logger.warning(f"| ⚠️ [{self.name}] ended with unmet task evidence")
+        return response
 
     def _failed(self, reason: str) -> Response:
         logger.error(f"| ❌ [{self.name}] {reason}")
@@ -1610,6 +1631,11 @@ class Agent(BaseModel):
             type=ResponseType.AGENT, success=success, message=message,
             data={"steps": self.step + 1, "elapsed": time.time() - self._started_at},
         )
+        # Audit before notifying observers as well as at the final return boundary:
+        # a failed task requirement must not emit a successful ON_STOP event.
+        from agentevolver.task.evolution import finalize
+
+        response = finalize(self.ctx, response)
         try:
             asyncio.get_running_loop().create_task(self._emit_stop(response))
         except RuntimeError:  # pragma: no cover - no loop, nothing to observe with

@@ -72,9 +72,7 @@ def test_no_browser_driving_role_is_routed_to_a_blind_model():
         if entry.get("supports_vision") is False
     }
     routes = [
-        *[str(m) for m in config.website_user_models],
-        str(config.browser_agent["model_name"]),
-        str(config.website_user_agent["model_name"]),
+        str(config.website_builder_agent["model_name"]),
     ]
     offenders = sorted({route for route in routes if route in blind})
     assert not offenders, (
@@ -119,7 +117,7 @@ def test_every_panel_route_can_take_tools_and_reasoning_together():
         if entry["model_name"].startswith("llm_hub/gpt-5.6")
         and entry["model_type"] == "chat/completions"
     }
-    offenders = sorted(set(map(str, config.website_user_models)) & chat_only_gpt)
+    offenders = sorted({str(config.website_builder_agent["model_name"])} & chat_only_gpt)
     assert not offenders, (
         f"these panel routes refuse function tools with a reasoning effort: {offenders}"
     )

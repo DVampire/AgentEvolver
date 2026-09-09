@@ -67,3 +67,13 @@ could name its own authority would have it.
 Every change names the revision it read (`revision` is a compare-and-set token). A caller
 working from a stale view is told so rather than silently overwriting a change it never
 saw — which for a goal usually *is* the news: someone else moved it.
+
+## Optional execution evidence
+
+`evolution.require_verified_improvement` enables task-scoped action receipts and an evolution
+completion audit in `evolution.py`. The agent loop records actual actions before compaction;
+registration, evaluated adoption and post-adoption consumer use must refer to the same version.
+`run_policy.self_review` enables `self_review.py`: pinned preview and release browser visits
+must include interaction and a later observation. Both explicit done and text-only completion
+report unmet requirements as unsuccessful. Ordinary tasks retain their existing completion
+behavior. These provenance checks do not provide an independent semantic quality judgment.

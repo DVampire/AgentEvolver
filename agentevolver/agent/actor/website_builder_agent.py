@@ -1,6 +1,6 @@
 """Website product engineer declared on the shared MetaAgent lifecycle.
 
-The experiment declares subscribers and release obligations in its task manifest.
+The experiment declares its browser mode and release obligations in its task manifest.
 Task input, execution, feedback, adoption and completion use their owning managers.
 """
 
@@ -27,10 +27,40 @@ class WebsiteBuilderAgent(MetaAgent):
     prompt_name: str = Field(default="website_builder_agent")
     max_step: int = Field(default=180)
     enable_evolving: bool = Field(default=True)
-    # Browser sessions belong to dispatched users and reviewers, not the coordinator.
+    # Traditional orchestration keeps a job-only scope. The single-builder demo
+    # explicitly mounts browser_environment and receives its observations/images.
     capability_allowlists: Dict[str, List[str]] = Field(
         default_factory=lambda: {"environment": ["job"]},
     )
+    max_screenshots: int = Field(default=1, ge=0)
+
+    async def prompt_modules(self, ctx):
+        values = await super().prompt_modules(ctx)
+        allowed = (getattr(ctx, "extra", None) or {}).get("environment_allowlist")
+        values["direct_browser"] = (
+            "browser_environment" in self.env_names
+            and (allowed is None or "browser_environment" in allowed)
+        )
+        return values
+
+    def attachments(self):
+        from agentevolver.agent.actor.browser_agent import browser_images
+
+        return [*super().attachments(), *browser_images(
+            self._environment_observations.get("browser_environment"),
+            max_screenshots=self.max_screenshots,
+        )]
+
+    async def on_exit(self, status):
+        try:
+            if "browser_environment" in self.env_names:
+                from agentevolver.environment.server import environment_manager
+
+                environment = await environment_manager.get("browser_environment")
+                if environment is not None:
+                    await environment.close_session(str(getattr(self.ctx, "id", "") or "default"))
+        finally:
+            await super().on_exit(status)
 
 
 __all__ = ["WebsiteBuilderAgent"]

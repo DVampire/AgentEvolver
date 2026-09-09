@@ -17,7 +17,8 @@ preview only.
 |---|---|
 | `prompt/style.css`, `prompt/app.js` | Prompt HTML preview |
 | `workflow/style.css`, `workflow/app.js` | Dynamic Workflow metadata and nested execution-program preview |
-| `task/style.css`, `task/app.js` | Task visualization |
+| `task/style.css`, `task/app.js` | Task visualization with Markdown inside semantic section tags |
+| `task/task.css`, `task/task.js` | Authored HTML task briefs; preserve headings, tables and other semantic markup |
 | `memory/style.css` | Memory visualization |
 | `plan/style.css` | Plan visualization |
 | `request/style.css`, `request/app.js` | Canonical LLM request viewer with context-layer, token-growth, cache, and compaction diagnostics |
@@ -30,6 +31,12 @@ Assets are grouped by the view they serve, not by file extension. Each view keep
 its stylesheet (`style.css`) and optional script (`app.js`) together. Python
 renderers use `asset_path(view, filename)`, backed by PathManager. Do not recreate
 the former top-level `css/` and `js/` buckets.
+
+HTML task briefs use `data-task-layout="brief"` on a `.task-brief` wrapper and link
+`task/task.css` and `task/task.js` from their document head. The runtime task-page
+renderer selects these same assets for generated previews. Their layout reuses the
+common task palette and type via `task/style.css`; keep CSS and JavaScript in this
+directory instead of embedding them in individual task specifications.
 
 The views share the dashboard's deep-green/mint palette: `ground`, three surface
 levels, text tiers, semantic green/amber/red/blue/purple accents, borders, and the

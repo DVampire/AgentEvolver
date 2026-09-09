@@ -1,33 +1,4 @@
-"""Launch the participatory website self-evolution demonstration.
-
-This is intentionally a thin adapter over the generic orchestrator launcher: it validates one
-scenario brief and exactly three persona briefs, appends the demo's attachment routing and
-iteration policy to the task, then launches the general ``website_builder_agent`` through the
-standard Agent runtime lifecycle. Scenario-specific counts and acceptance/co-design cadence stay here rather
-than in the reusable Builder prompt.
-
-Examples
---------
-Validate config, prompts, and inputs without calling a model or starting a browser::
-
-    /home/wtzhang/miniconda3/envs/agentos/bin/python \
-        examples/run_website_evolution_demo.py --validate-only
-
-Run the bundled ECHO Ark demonstration with its configured heterogeneous panel::
-
-    /home/wtzhang/miniconda3/envs/agentos/bin/python \
-        examples/run_website_evolution_demo.py
-
-Use another self-contained scenario directory::
-
-    /home/wtzhang/miniconda3/envs/agentos/bin/python \
-        examples/run_website_evolution_demo.py \
-        --scenario-dir /abs/my_scenario
-
-The directory contains ``scenario.html`` and ``persona_01.html`` through
-``persona_03.html``. Individual files can still be overridden explicitly.
-"""
-
+"""Launch a single Website Builder that builds, browses, critiques and evolves."""
 from __future__ import annotations
 
 import argparse
@@ -41,532 +12,180 @@ SCENARIO_ROOT = ROOT / "examples" / "tasks" / "website_evolution"
 DEFAULT_SCENARIO_DIR = SCENARIO_ROOT / "arkbound_game"
 DEFAULT_CONFIG = ROOT / "configs" / "website_evolution_demo.py"
 OPTIMIZATION_CYCLES = 5
-DEFAULT_USER_MODELS = [
-    "llm_hub/gpt-6-astra",
-    "llm_hub/claude-fable-5-1",
-    "llm_hub/gemini-3.8-flash",
-]
-# Acceptance is the longest single dispatch here, and its history has to survive to the
-# end of the checklist: the previous route capped input near 95k and ran out mid-run,
-# which reads downstream as a rejected release rather than as an unreachable verifier.
-DEFAULT_ACCEPTANCE_MODEL = "llm_hub/gpt-6-astra"
 DEFAULT_BUILDER_MODEL = "llm_hub/claude-fable-5-1"
 
 
-def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run a three-persona, participatory website self-evolution demo."
-    )
-    parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Demo config path.")
-    parser.add_argument("--no-monitor", action="store_true", help="Disable the generic run dashboard.")
-    parser.add_argument("--monitor-port", type=int, default=8766, help="Internal monitor port; public pages share gateway port 9876.")
-    parser.add_argument(
-        "--scenario-dir",
-        default=str(DEFAULT_SCENARIO_DIR),
-        help=("Self-contained scenario directory with scenario.html and three persona files."),
-    )
-    parser.add_argument(
-        "--site-brief",
-        default=None,
-        help="Override <scenario-dir>/scenario.html.",
-    )
-    parser.add_argument(
-        "--persona-brief",
-        nargs=3,
-        metavar=("PERSONA_1", "PERSONA_2", "PERSONA_3"),
-        default=None,
-        help=(
-            "Override the three persona files from scenario-dir; routed one-to-one "
-            "to the browser co-designers."
-        ),
-    )
-    parser.add_argument(
-        "--plan-mode",
-        choices=["off", "auto", "plan"],
-        default="auto",
-        help="Planning stance: auto maintains plan.md without approval; plan requires human review.",
-    )
-    parser.add_argument(
-        "--model",
-        default=None,
-        help=(
-            "Override every demo agent with one model (compatibility/debug option). "
-            "By default the role-specific models in the config are preserved."
-        ),
-    )
-    parser.add_argument(
-        "--builder-model",
-        default=None,
-        help="Override only the Website Builder model route.",
-    )
-    parser.add_argument(
-        "--user-model",
-        nargs=3,
-        metavar=("USER_1", "USER_2", "USER_3"),
-        default=None,
-        help="Override the three Website User Agent model routes in persona order.",
-    )
-    parser.add_argument(
-        "--acceptance-model",
-        default=None,
-        help="Override the independent Browser Agent used for deployed release acceptance.",
-    )
-    parser.add_argument(
-        "--cfg-options",
-        nargs="+",
-        default=[],
-        metavar="KEY=VALUE",
-        help="Config overrides forwarded verbatim; place this option last.",
-    )
-    parser.add_argument(
-        "--validate-only",
-        action="store_true",
-        help="Parse and cross-check local artifacts without initializing models/environments.",
-    )
+def parse_args(argv: Sequence[str] | None = None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG))
+    parser.add_argument("--scenario-dir", default=str(DEFAULT_SCENARIO_DIR))
+    parser.add_argument("--site-brief", help="Override <scenario-dir>/scenario.html.")
+    parser.add_argument("--model", "--builder-model", dest="model", help="Builder model; must accept images.")
+    parser.add_argument("--plan-mode", choices=["off", "auto", "plan"], default="auto")
+    parser.add_argument("--no-monitor", action="store_true")
+    parser.add_argument("--monitor-port", type=int, default=8766)
+    parser.add_argument("--cfg-options", nargs="+", default=[], metavar="KEY=VALUE")
+    parser.add_argument("--validate-only", action="store_true")
     return parser.parse_args(argv)
 
 
-def _existing_file(raw: str, role: str) -> Path:
+def _existing_file(raw, role):
     path = Path(raw).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(f"{role} file not found: {path}")
     return path
 
 
-def _existing_directory(raw: str, role: str) -> Path:
-    path = Path(raw).expanduser().resolve()
-    if not path.is_dir():
-        raise FileNotFoundError(f"{role} directory not found: {path}")
-    return path
+def resolve_inputs(args):
+    config = _existing_file(args.config, "config")
+    brief = _existing_file(args.site_brief or str(Path(args.scenario_dir) / "scenario.html"), "site brief")
+    return config, brief
 
 
-def resolve_inputs(args: argparse.Namespace) -> tuple[Path, Path, list[Path]]:
-    config_path = _existing_file(args.config, "config")
-    scenario_dir = _existing_directory(args.scenario_dir, "scenario")
-    site_brief = _existing_file(
-        args.site_brief or str(scenario_dir / "scenario.html"),
-        "site brief",
-    )
-    persona_briefs = args.persona_brief or [
-        str(scenario_dir / f"persona_{index:02d}.html") for index in range(1, 4)
-    ]
-    personas = [
-        _existing_file(path, f"persona {index}")
-        for index, path in enumerate(persona_briefs, start=1)
-    ]
-    names = [site_brief.name, *(path.name for path in personas)]
-    if len(names) != len(set(names)):
-        raise ValueError(
-            "site/persona attachment basenames must be unique so the blind role manifest "
-            "can route them without exposing their contents"
-        )
-    return config_path, site_brief, personas
+DEMO_EVOLUTION_BRIEF = """
+This demo has two required outcomes: a useful next-generation website shaped
+by the Builder through actual browser use, and a verified agent-system capability improvement.
+You are the only agent. Build an initial polished experience, then alternate browser use,
+creative product critique and implementation. Do not create users, personas, subscribers,
+reviewer agents or imaginary conversations. In the browser, pursue a concrete visitor goal
+through visible UI without consulting source to infer success. Record actions, outcomes,
+delight, confusion and an unmet opportunity as self-observations, never real user feedback.
+Propose a vivid next-generation interaction grounded in that experience: its input,
+transformation, visible result, value and a small faithful trial. Explore unexpected media,
+personal material, real-world information or new participation when useful. Do not restrict
+ideas to current controls or cosmetic polish. Personalization must be explicit and reversible;
+without an actual user's preferences, treat design choices as hypotheses to test.
+
+After the first browser experience pass, invoke self_evolving_skill and inspect relevant existing
+capabilities. Translate the chosen experience into its essential input, transformation,
+observable result and explicit quality requirement. Probe that operation with existing
+capabilities before registering a candidate. Diagnose what is missing or cannot meet the
+required quality, reliability or cost, using the actual browser observation and baseline call IDs.
+A missing website feature does not establish a missing agent capability. Available Bash
+does not establish a reliable reusable method either. If the baseline already meets the
+need, implement normally and investigate another unresolved need found during browser use.
+Do not disguise a product edit as a new capability. Do not wait for a bug, manufacture
+failure, add a cosmetic substitute or lower the stated requirement to avoid the gap.
+Turn a demonstrated opportunity into a separate reusable capability candidate, register it
+with adoption_tool, and evaluate the exact returned version against the preserved baseline
+and an independent reuse/regression case using real tool-call evidence and measured cost.
+Record keep only after passing evaluation; otherwise record and perform rollback/unload.
+Use a kept candidate on a subsequent real product operation and verify the consumer result;
+registration alone does not update a running Agent. Budget this before the final release.
+The evaluated report must include capability_gap with user_need, required_operation,
+limitation, acceptance_criterion, observation_evidence_ids and baseline_evidence_ids; the
+observation and baseline calls must precede registration. Tag comparison and independent
+cases with kind=comparison and kind=reuse or regression. After keep, invoke the adopted
+capability synchronously on real product work and call adoption_tool action record_use.
+Its report names module, name, exact version, consumer_call_id, evidence_ids and outcome.
+For a skill, invoke it and execute its method: cite the skill call and subsequent product
+operation/check calls. Use an auditable callable consumer; an instance-only change without
+instrumented execution remains unverified. Task completion checks these runtime receipts,
+including text-only endings; missing evidence yields an unsuccessful result. Record the
+decision and use promptly; preserve detailed artifacts in the work record.
+Never count website source, a product feature, a task report or an untested prompt as evolution.
+If a prerequisite prevents the experiment, report the concrete blocker and the unfulfilled
+system-evolution outcome; six releases alone do not complete this demo. Do not fabricate a gap
+or keep a failing candidate to claim success. A rejected experiment is a trigger exercised,
+not a verified capability improvement; report those outcomes separately.
+
+Before done_tool, provide separate product and system evidence: the original browser experience,
+proposed idea, implemented trial and repeated-journey comparison; then baseline/candidate version,
+executed comparison and reuse evidence, adoption decision and actual consumer use (or blocker).
+""".strip()
 
 
-USER_VISIT_BRIEF = (
-    'You are {participant_id}, a continuable website co-design participant. For every '
-    'deployment.ready event, open only its exact URL, pursue your own personal goals through '
-    'the visible UI, and return concise grounded needs, preferences, successful outcomes, and '
-    'blockers. In co-design, express a personally meaningful desired experience, not only '
-    'defect reports. On later visits, try prior requested changes and state what is still '
-    'unmet; distinguish observations from new aspirations. '
-).strip()
-
-RELEASE_ACCEPTANCE_BRIEF = (
-    'Act as the independent release acceptance browser. For every deployment.ready event, test '
-    'only the exact deployed URL against the release requirements below. Use a bounded, '
-    'risk-based scope: public entry, one representative complete primary journey, and '
-    'regressions suggested by the release changes or native browser diagnostics. Use prior '
-    'verified evidence for unchanged behavior only when its source identity and scope are '
-    'known; otherwise verify it. The brief defines product obligations, not an instruction to '
-    'exhaust every optional route, setting or performance experiment on every visit. State your '
-    'scope, executed checks and untested limitations. Stop when that scope has a verdict or a '
-    'reproducible blocker; do not use the whole budget on extra polish. The first non-empty '
-    'line of your final result must be exactly `VERDICT: PASS` only when every required journey '
-    'in that scope passes, otherwise `VERDICT: FAIL`; follow it with grounded evidence. A known '
-    'failure of a product requirement cannot be excluded to obtain PASS, and this technical '
-    'verdict is not user satisfaction or exhaustive certification. '
-).strip()
-
-def build_task_text(
-    site_brief: Path,
-    personas: list[Path],
-    user_models: Sequence[str] | None = None,
-    acceptance_model: str = DEFAULT_ACCEPTANCE_MODEL,
-) -> str:
-    """Declare this experiment; the shared task/runtime lifecycle executes the declaration."""
+def build_task_text(site_brief: Path) -> str:
     from agentevolver.task.context import load_task_document, render_manifest
 
-    document = load_task_document(str(site_brief))
-    models = list(user_models or DEFAULT_USER_MODELS)
-    if len(models) != len(personas):
-        raise ValueError("Each persona requires exactly one user model")
-    participants = [
+    return render_manifest(load_task_document(str(site_brief)).content,
+        "This manifest configures the Agent experiment, not website features.\n\n" + DEMO_EVOLUTION_BRIEF,
         {
-            "id": f"participant_{index:02d}", "agent": "website_user_agent",
-            "brief": {"model": model, "subscription_topics": ["deployment.ready"],
-                      "task": USER_VISIT_BRIEF.format(participant_id=f"participant_{index:02d}")},
-            "attachments": [f"persona_{index:02d}"],
-        }
-        for index, model in enumerate(models, start=1)
-    ]
-    manifest = {
-        "attachments": [
-            {"id": "site_brief", "role": "requirements"},
-            *[{"id": f"persona_{index:02d}", "role": "user_context"}
-              for index, _ in enumerate(personas, start=1)],
-        ],
-        "private_attachment_roles": ["user_context"],
-        "subscribers": [
-            *participants,
-            {"id": "release-acceptance", "agent": "browser_agent",
-             "brief": {"model": acceptance_model, "subscription_topics": ["deployment.ready"],
-                       "task": RELEASE_ACCEPTANCE_BRIEF},
-             "attachments": ["site_brief"]},
-        ],
-        "deployment": {"required_releases": OPTIMIZATION_CYCLES + 1,
-                       "topic": "deployment.ready", "acceptance_subscriber": "release-acceptance"},
-        "codesign_policy": {"participants_are_evaluators": False,
-                            "continue_participant_identity": True,
-                            "fresh_browser_each_conversation_turn": True},
-        "run_policy": {"blind_initial_build": True},
-    }
-    return render_manifest(
-        document.content,
-        "This manifest configures the Agent experiment, not website features. Participant feedback "
-        "and clarification travel through Agent results/messages; no in-product developer chat, "
-        "request inbox, or approval UI is implied. Private attachments are routed only to their "
-        "declared subscribers.",
-        manifest,
-    )
+            "attachments": [{"id": "site_brief", "role": "requirements"}],
+            "subscribers": [],
+            "deployment": {"required_releases": OPTIMIZATION_CYCLES + 1, "topic": "deployment.ready"},
+            "run_policy": {"self_review": True},
+            "evolution": {"require_verified_improvement": True},
+        })
 
 
-def validate_local_artifacts(
-    config_path: Path,
-    site_brief: Path,
-    personas: list[Path],
-) -> None:
-    """Perform side-effect-free parsing and assembly checks (no model/browser startup)."""
-    from argparse import Namespace
+def config_options(args):
+    options = list(args.cfg_options)
+    if args.model:
+        options[:0] = [f"model_name={args.model}", f"website_builder_agent.model_name={args.model}"]
+    return options
 
-    import inflection
 
-    # Importing the actor package registers the reusable co-designer template.
+def validate_local_artifacts(config_path, site_brief, options=()):
+    """Check the actual single-agent assembly, including command-line overrides."""
+    from mmengine import DictAction
     import agentevolver.agent  # noqa: F401
+    from agentevolver.agent.actor.website_builder_agent import WebsiteBuilderAgent
     from agentevolver.config import config, validate_assembly
+    from agentevolver.model.config import llm_hub_models
     from agentevolver.prompt.types import parse_prompt_file
-    from agentevolver.registry import AGENT
-    from agentevolver.task.context import load_task_document
+    from agentevolver.task.context import bind_manifest
 
-    config.initialize(
-        config_path=str(config_path),
-        args=Namespace(config=str(config_path), cfg_options={}),
-        verbose=False,
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cfg-options", nargs="+", action=DictAction, default={})
+    overrides = parser.parse_args(["--cfg-options", *options] if options else []).cfg_options
+    config.initialize(config_path=str(config_path),
+        args=argparse.Namespace(config=str(config_path), cfg_options=overrides), verbose=False)
     problems = list(validate_assembly(config))
     if problems:
-        raise ValueError("config assembly errors:\n- " + "\n- ".join(problems))
-
-    expected_agents = {
-        "website_builder_agent",
-        "browser_agent",
-        "website_user_agent",
-    }
-    actual_agents = set(config.agent_names)
-    registry_agents = {
-        agent_class.model_fields["name"].default: agent_class
-        for agent_class in AGENT._module_dict.values()
-    }
-    registry_agent_names = set(registry_agents)
-    missing_registry = expected_agents.difference(registry_agent_names)
-    if actual_agents != expected_agents or missing_registry:
-        raise ValueError(
-            f"agent wiring must be minimal: expected={sorted(expected_agents)}, "
-            f"actual={sorted(actual_agents)}, "
-            f"missing_registry={sorted(missing_registry)}"
-        )
-
-    builder_class = registry_agents["website_builder_agent"]
-    builder_key = inflection.underscore(builder_class.__name__)
-    builder = builder_class(**dict(getattr(config, builder_key)))
-    if (
-        builder.name != "website_builder_agent"
-        or builder.prompt_name != "website_builder_agent"
-        or not builder.enable_evolving
-    ):
-        raise ValueError(
-            "website_builder_agent must resolve to the dedicated evolvable builder "
-            f"class and prompt, got name={builder.name!r}, prompt={builder.prompt_name!r}, "
-            f"enable_evolving={builder.enable_evolving!r}"
-        )
-
-    prompt_dir = ROOT / "agentevolver" / "prompt" / "default"
-    prompts = {
-        path.stem: parse_prompt_file(str(path))
-        for path in (
-            prompt_dir / "website_builder_agent.html",
-            prompt_dir / "browser_agent.html",
-            prompt_dir / "website_user_agent.html",
-        )
-    }
-    for name, prompt in prompts.items():
-        if prompt.name != name or not prompt.system_template or not prompt.user_template:
-            raise ValueError(f"invalid prompt artifact: {name}")
-
-    scenario = load_task_document(str(site_brief))
-    if not scenario.content:
-        raise ValueError("scenario HTML did not produce semantic task text")
-    if int(config.get("optimization_cycles", 0)) != OPTIMIZATION_CYCLES:
-        raise ValueError(
-            "website evolution config must require exactly five optimization cycles "
-            f"after the initial build, got {config.get('optimization_cycles')!r}"
-        )
-    # All long-running roles use the same bounded-history protocol proven by the
-    # SWE-bench MetaAgent.  A role-specific model may choose native or portable
-    # compaction, but no role may silently disable compaction altogether.
-    # What matters is that every long-running role shares ONE policy and that none of
-    # them silently disables compaction — not which numbers the shared policy holds.
-    # Pinning the literals here meant tuning the fold threshold for cost broke the
-    # launcher instead of the config, which is the wrong file to have to edit.
-    policy_keys = (
-        "retain_recent_steps",
-        "compact_after_steps",
-        "compact_body_tokens",
-        "compact_input_tokens",
-        "fold_at_pressure",
-    )
-    context_roles = (
-        "website_builder_agent",
-        "website_user_agent",
-    )
-    policies = {}
-    for role in context_roles:
-        role_config = dict(getattr(config, role))
-        policy = {key: role_config.get(key) for key in policy_keys}
-        if any(value is None for value in policy.values()):
-            raise ValueError(f"{role} does not declare a bounded-history policy: {policy}")
-        if not role_config.get("use_memory"):
-            raise ValueError(f"{role} must keep use_memory=True; compaction depends on it")
-        if not (policy["compact_body_tokens"] or policy["compact_input_tokens"]) or not policy["fold_at_pressure"]:
-            raise ValueError(
-                f"{role} disables compaction ({policy}); a long-running role that never "
-                "folds grows its prefix until the provider refuses the request"
-            )
-        policies[role] = policy
-
-    distinct = {tuple(sorted(policy.items())) for policy in policies.values()}
-    if len(distinct) > 1:
-        raise ValueError(
-            "every long-running role must share one bounded-history policy, got "
-            + "; ".join(f"{role}={policy}" for role, policy in sorted(policies.items()))
-        )
-
-    browser_config = dict(getattr(config, "browser_agent"))
-    if browser_config.get("use_memory") or browser_config.get("env_name") != "browser_environment":
-        raise ValueError(
-            "browser_agent acceptance must be stateless and browser-only: "
-            f"use_memory={browser_config.get('use_memory')!r}, "
-            f"environment={browser_config.get('env_name')!r}"
-        )
-
-    task_text = build_task_text(site_brief, personas)
-    if "runtime-input-manifest" not in task_text:
-        raise ValueError("runtime input manifest was not appended")
-
-    required_skills = {
-        "frontend_ui_engineering_skill",
-        "webapp_testing_skill",
-        "self_evolving_skill",
-    }
-    actual_skills = set(config.skill_names)
-    if actual_skills != required_skills:
-        raise ValueError(
-            "website evolution must mount only non-overlapping methods: "
-            f"expected={sorted(required_skills)}, actual={sorted(actual_skills)}"
-        )
-    expected_tools = {
-        "bash_tool",
-        "apply_patch_tool",
-        "inspect_tool",
-        "deploy_tool",
-        "done_tool",
-        "send_message_tool",
-        "adoption_tool",
-    }
-    actual_tools = set(config.tool_names)
-    if actual_tools != expected_tools:
-        raise ValueError(
-            "website evolution uses the minimal workspace/deploy/continuation tool set: "
-            f"expected={sorted(expected_tools)}, actual={sorted(actual_tools)}"
-        )
-    agent_class = registry_agents["website_user_agent"]
-    key = inflection.underscore(agent_class.__name__)
-    instance_config = dict(getattr(config, key))
-    instance = agent_class(**instance_config)
-    if (
-        instance.name != "website_user_agent"
-        or instance.prompt_name != "website_user_agent"
-        or instance.env_name != "browser_environment"
-    ):
-        raise ValueError(
-            f"{key} resolved to an invalid Website User Agent template: "
-            f"name={instance.name!r}, prompt={instance.prompt_name!r}, "
-            f"environment={instance.env_name!r}"
-        )
-    # Browser-only isolation, as the agent actually declares it. Two fields carry it:
-    # `capability_allowlists` bounds what the router will project, and `env_names` is the
-    # only environment it may mount. Checked here rather than trusted, because a visitor
-    # that could reach the workspace would be co-designing with the builder's own files
-    # instead of with the deployed site.
-    expected_user_allowlists = {
-        "tool": ["done_tool"],
-        "skill": [],
-        "connector": [],
-        "plugin": [],
-        "workflow": [],
-    }
-    expected_user_envs = ["browser_environment"]
-
-    def check_browser_only(agent, label: str) -> None:
-        if dict(agent.capability_allowlists) != expected_user_allowlists:
-            raise ValueError(
-                f"{label} must remain browser-only: expected={expected_user_allowlists}, "
-                f"actual={dict(agent.capability_allowlists)}"
-            )
-        if list(agent.env_names) != expected_user_envs:
-            raise ValueError(
-                f"{label} must mount only {expected_user_envs}, not {list(agent.env_names)}"
-            )
-
-    check_browser_only(instance, "website_user_agent")
-
-    acceptance_class = registry_agents["browser_agent"]
-    acceptance_key = inflection.underscore(acceptance_class.__name__)
-    acceptance = acceptance_class(**dict(getattr(config, acceptance_key)))
-    check_browser_only(acceptance, "browser_agent acceptance")
-
-    expected_models = {
-        "website_builder_agent": DEFAULT_BUILDER_MODEL,
-        "browser_agent": DEFAULT_ACCEPTANCE_MODEL,
-        "website_user_agent": DEFAULT_USER_MODELS[0],
-    }
-    actual_models = {key: str(getattr(config, key).get("model_name")) for key in expected_models}
-    if actual_models != expected_models:
-        raise ValueError(
-            "default role model routing is invalid: "
-            f"expected={expected_models}, actual={actual_models}"
-        )
-    if list(config.website_user_models) != DEFAULT_USER_MODELS:
-        raise ValueError(
-            "default per-dispatch user model routes are invalid: "
-            f"{list(config.website_user_models)!r}"
-        )
-
-    # Every browser-driving role needs a route that accepts images. The browser
-    # environment attaches a screenshot to each observation, so a text-only route does
-    # not degrade — it returns 400 "Model do not support image input" on EVERY call and
-    # the participant contributes nothing to the round. `deepseek-v4-flash` sat in the
-    # panel exactly that way: three retries per step, no feedback, and the loop reading
-    # as a model that would not cooperate rather than as a route that cannot see.
-    from agentevolver.model.config import llm_hub_models
-
-    # Only `model_name` and `supports_vision` are read, so the sizing arguments are
-    # placeholders: this stays a local check that initializes no client.
-    catalog = llm_hub_models(
-        max_tokens=1, default_temperature=0.0, default_timeout=1.0,
-    )
-    blind = {
-        entry["model_name"]
-        for group in catalog.values()
-        for entry in group
-        if isinstance(entry, dict) and entry.get("supports_vision") is False
-    }
-    browser_routes = {
-        "browser_agent (acceptance)": [str(getattr(config, "browser_agent").get("model_name"))],
-        "website_user_models (the panel)": [str(m) for m in config.website_user_models],
-    }
-    sightless = {
-        role: [route for route in routes if route in blind]
-        for role, routes in browser_routes.items()
-    }
-    offenders = {role: routes for role, routes in sightless.items() if routes}
-    if offenders:
-        raise ValueError(
-            "a browser-driving role is routed to a model that cannot accept images; "
-            "the browser environment sends a screenshot every observation, so every "
-            f"call would be refused: {offenders}"
-        )
-
+        raise ValueError("config assembly errors: " + "; ".join(problems))
+    if list(config.agent_names) != ["website_builder_agent"]:
+        raise ValueError("The demo must run only website_builder_agent")
+    builder = WebsiteBuilderAgent(**dict(config.website_builder_agent))
+    if builder.include_agents or not builder.enable_evolving:
+        raise ValueError("Builder must evolve locally with child agents disabled")
+    if set(builder.env_names) != {"job", "browser_environment"}:
+        raise ValueError("Builder must mount job and browser_environment")
+    if set(builder.capability_allowlists.get("environment", [])) != set(builder.env_names):
+        raise ValueError("Builder's browser environment must be callable")
+    if not builder.use_memory or not builder.compact_input_tokens or not builder.fold_at_pressure:
+        raise ValueError("Builder needs bounded conversation history")
+    if config.optimization_cycles != OPTIMIZATION_CYCLES:
+        raise ValueError("Expected five optimization cycles after the first release")
+    if set(config.tool_names) != {"bash_tool", "apply_patch_tool", "inspect_tool", "deploy_tool", "done_tool", "adoption_tool"}:
+        raise ValueError("Invalid single-builder tool roster")
+    if set(config.skill_names) != {"frontend_ui_engineering_skill", "webapp_testing_skill", "self_evolving_skill"}:
+        raise ValueError("Builder needs the UI, browser testing and evolution methods")
+    prompt = parse_prompt_file(str(ROOT / "agentevolver/prompt/default/website_builder_agent.html"))
+    if not prompt.system_template or not prompt.user_template:
+        raise ValueError("Invalid builder prompt")
+    catalog = llm_hub_models(max_tokens=1, default_temperature=0.0, default_timeout=1.0)
+    models = {entry["model_name"]: entry for group in catalog.values() for entry in group}
+    if models.get(builder.model_name, {}).get("supports_vision") is False:
+        raise ValueError("Builder model cannot see browser screenshots")
+    bind_manifest(build_task_text(site_brief), [str(site_brief)])
     print("Website evolution demo validation: OK")
-    print(f"  config: {config_path}")
-    print(f"  scenario task: {site_brief}")
-    print(f"  personas: {', '.join(str(path) for path in personas)}")
-    print("  role models:")
-    for role, model in actual_models.items():
-        print(f"    {role}: {model}")
+    print(f"  scenario: {site_brief}")
+    print(f"  single builder: {builder.model_name}; native browser; no participants")
 
 
-def launch(args: argparse.Namespace) -> None:
-    config_path, site_brief, personas = resolve_inputs(args)
+def launch(args):
+    config_path, site_brief = resolve_inputs(args)
+    options = config_options(args)
     if args.validate_only:
-        validate_local_artifacts(config_path, site_brief, personas)
+        validate_local_artifacts(config_path, site_brief, options)
         return
-
-    user_models = list(args.user_model or DEFAULT_USER_MODELS)
-    if args.model:
-        user_models = [args.model] * 3
-    acceptance_model = args.acceptance_model or DEFAULT_ACCEPTANCE_MODEL
-    if args.model:
-        acceptance_model = args.model
-    task_text = build_task_text(
-        site_brief,
-        personas,
-        user_models,
-        acceptance_model=acceptance_model,
-    )
-    forwarded = [
-        "run_meta_agent.py",
-        "--config",
-        str(config_path),
-        "--agent-name",
-        "website_builder_agent",
-        "--task",
-        task_text,
-        "--plan-mode",
-        args.plan_mode,
-        "--attach",
-        str(site_brief),
-        *(str(path) for path in personas),
-    ]
-    # File notes follow the bound session; restarting a scenario does not share them.
-    cfg_options = list(args.cfg_options)
-    forwarded.extend(["--monitor-port", str(args.monitor_port)])
+    forwarded = ["run_meta_agent.py", "--config", str(config_path),
+        "--agent-name", "website_builder_agent", "--task", build_task_text(site_brief),
+        "--attach", str(site_brief), "--plan-mode", args.plan_mode,
+        "--monitor-port", str(args.monitor_port)]
     if args.no_monitor:
         forwarded.append("--no-monitor")
-    if args.model:
-        cfg_options[:0] = [
-            f"model_name={args.model}",
-            f"website_builder_agent.model_name={args.model}",
-            f"browser_agent.model_name={args.model}",
-            f"website_user_agent.model_name={args.model}",
-        ]
-    else:
-        if args.builder_model:
-            cfg_options.insert(0, f"website_builder_agent.model_name={args.builder_model}")
-        if args.acceptance_model:
-            cfg_options.insert(0, f"browser_agent.model_name={args.acceptance_model}")
-    if cfg_options:
-        forwarded.extend(["--cfg-options", *cfg_options])
-
-    # Reuse the canonical runtime instead of maintaining a second manager lifecycle.
+    if options:
+        forwarded.extend(["--cfg-options", *options])
     from examples import run_meta_agent
 
-    previous_argv = sys.argv
+    previous = sys.argv
     try:
         sys.argv = forwarded
         asyncio.run(run_meta_agent.run_with_lifecycle())
     finally:
-        sys.argv = previous_argv
+        sys.argv = previous
 
 
 if __name__ == "__main__":

@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Development brief for Tidebound Echoes, an original 3D creature-companion role-playing game.">
+  <title>Tidebound Echoes — Game Development Brief</title>
+  <link rel="stylesheet" href="../../../../agentevolver/visual/task/task.css">
+  <script src="../../../../agentevolver/visual/task/task.js" defer></script>
+</head>
+<body>
+<main class="task-brief" data-task-layout="brief">
+  <header class="hero">
+    <p class="eyebrow">Original game · Development task · Version 1.0</p>
+    <h1>Tidebound Echoes</h1>
+    <p class="subtitle">The Island Covenant · 潮汐与回声：群岛契约</p>
+    <p class="lead">Befriend creatures that remember the world differently. Explore an archipelago whose tides carry lost memories, and decide what its people must preserve—and what they must finally let change.</p>
+    <div class="tags"><span>3D exploration</span><span>Creature companionship</span><span>Tactical battles</span><span>Long narrative campaign</span><span>Consequential ecology</span></div>
+    <p class="note">This document specifies a game to build. All content counts and playtime ranges below are design targets, not claims about an existing game. The execution milestone is supplied by the task launcher; without one, deliver M1 and the complete campaign design.</p>
+  </header>
+  <nav aria-label="Brief sections">
+    <a href="#objective">Vision</a><a href="#world">World</a><a href="#story">Campaign</a><a href="#creatures">Creatures</a><a href="#systems">Systems</a><a href="#milestones">Milestones</a><a href="#acceptance">Acceptance</a>
+  </nav>
+
+  <div class="task">
+    <div class="objective" id="objective">
+      <h2>01 · Product objective</h2>
+      <p>Build an original single-player 3D role-playing game in Godot. It should offer the pleasure of discovering, befriending, training and combining extraordinary creatures, with its own identities, visual language, world rules and narrative. Create actual spatial exploration, animated companions and playable battles. A creature catalog, dialogue website or collection of disconnected minigames does not meet this objective.</p>
+      <div class="grid">
+        <article><h3>A companion changes the journey</h3><p>Every species has an ecological behavior, a field ability and a combat role. A companion should change where the player can go, what they notice and which solutions become possible.</p></article>
+        <article><h3>Places remember decisions</h3><p>Habitat restoration, town policy and personal promises alter later encounters, routes and conversations. Show consequences in revisited places, not only an ending slideshow.</p></article>
+        <article><h3>Discovery before accumulation</h3><p>Learning a creature's needs is more important than exhausting its health. Collection should reward observation, curiosity and thoughtful choices rather than repeated random attempts.</p></article>
+      </div>
+      <p><strong>Audience:</strong> players who enjoy creature RPGs, exploration and character-driven stories. Target a warm, mysterious, occasionally bittersweet tone suitable for teens and adults; avoid graphic violence. The default game interface and dialogue should be Simplified Chinese, with text stored separately for English localization. This development brief is written in English.</p>
+      <p><strong>Campaign target:</strong> 28–36 hours for a first main-story playthrough; 45–60 hours including meaningful optional exploration. These are pacing hypotheses. Report measured playtime separately and revise content plans if the targets require repetitive filler.</p>
+    </div>
+
+    <div class="world" id="world">
+      <h2>02 · Setting, rules and geography</h2>
+      <p>The Auralis archipelago stands above an ancient network of resonance engines. Its creatures, called <em>Echo kin</em>, carry impressions of weather, migration routes and human encounters. Natural tides circulate these impressions through the islands. An old civilization built the Stillwater Array to stop destructive storms; its descendants now depend on the machine without understanding its cost.</p>
+      <p>Seventeen years ago, the White Tide erased a night from collective memory. Today, the Array is suppressing more than storms: migration stops, songs disappear and people disagree about streets they have walked all their lives. The player is an apprentice echo cartographer whose older sister, Lanyin, vanished while surveying a forbidden current. A damaged recording suggests she entered the Array willingly.</p>
+      <ul>
+        <li><strong>Memory is incomplete evidence:</strong> an echo preserves one witness's impressions. It is not an objective recording and cannot simply reveal the answer to every mystery.</li>
+        <li><strong>No unlimited time travel:</strong> an echo overlay reveals or briefly resonates with traces in the present. It does not undo a death, reset the story or duplicate items.</li>
+        <li><strong>Ecology is authored and legible:</strong> habitat states change through explicit quests or world events. Avoid an opaque simulation that can accidentally destroy required story paths.</li>
+        <li><strong>Companionship is voluntary:</strong> a covenant is a relationship, not ownership. Releasing a companion to a sanctuary remains reversible unless the player explicitly confirms a story-specific farewell.</li>
+        <li><strong>The world is connected:</strong> use compact 3D regions linked by ferries, trails and unlocked shortcuts. Do not build a large empty seamless world merely to claim scale.</li>
+      </ul>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Region</th><th>Spatial identity</th><th>Signature interaction</th><th>Returning consequence</th></tr></thead>
+        <tbody>
+          <tr><td>Lantern Shoals</td><td>Harbor terraces, intertidal caves, flooded bell tower</td><td>Guide a migrating nursery through changing tide channels</td><td>The harbor becomes a nursery boardwalk or a working floodgate district</td></tr>
+          <tr><td>Verdant Weave</td><td>Root bridges, canopy settlement, an abandoned orchard</td><td>Redirect growth without starving neighboring habitats</td><td>Pollinator routes and the town's food supply reflect the chosen restoration</td></tr>
+          <tr><td>Cinderrail Basin</td><td>Warm mineral flats, industrial lifts, a buried railway</td><td>Share heat between a settlement and dormant kin</td><td>Different workshops, winter shelters and encounter grounds become available</td></tr>
+          <tr><td>Cloudglass Reach</td><td>Wind ridges, gliding terraces, suspended observatory</td><td>Map safe currents by observing creature formations</td><td>Rescued crews help reopen routes during the late-game storm</td></tr>
+          <tr><td>Mirrorfen Archive</td><td>Reflective marshes, submerged library, shifting walkways</td><td>Compare conflicting witness echoes to reconstruct a promise</td><td>Publicly shared or privately returned memories alter alliances and conversations</td></tr>
+          <tr><td>Stillwater Crown</td><td>Artificial reef, ring-city, the Array's exposed inner sea</td><td>Coordinate regions and companions to change the resonance network</td><td>The final policy creates a playable new normal across the archipelago</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="characters">
+      <h2>03 · Characters and competing beliefs</h2>
+      <div class="grid">
+        <article><h3>The player · An apprentice cartographer</h3><p>Choose a name, appearance and an initial motive: find Lanyin, understand the kin, or protect the harbor. These motives change optional responses and journal emphasis, never lock the player into a class or ending. The player earns influence through local relationships.</p></article>
+        <article><h3>Lanyin · The missing sister</h3><p>A skilled surveyor who helped stabilize the Array after discovering its hidden cost. She is alive inside its distributed memory network, but restoring her requires rebuilding a person from accounts that disagree. Her wishes must be heard, not reduced to a rescue reward.</p></article>
+        <article><h3>Lu Heng · Rival and childhood friend</h3><p>A new Tide Authority officer who believes predictable rules protect ordinary families. He initially admires the Array, then faces the harm caused by unquestioning enforcement. Friendship can survive disagreement; winning a battle does not automatically change his beliefs.</p></article>
+        <article><h3>Cen Qing · Field ecologist</h3><p>Argues that uncontrolled change is essential to living habitats. Her early intervention harms a village she overlooked. She learns to negotiate restoration with residents rather than treating people as an obstacle to nature.</p></article>
+        <article><h3>Bai Qi · Archive keeper</h3><p>Preserved evidence of the White Tide but concealed the names of participants. Their caution protected survivors and obstructed accountability. The player can help them disclose the truth with consent instead of forcing a public confession.</p></article>
+        <article><h3>Director Qi Zhao · Principal antagonist</h3><p>An engineer whose shelters saved thousands. He suppresses destabilizing memories because he fears repeating the disaster, not because he wants to own every creature. His forecasts are partly correct: switching off the Array without preparations would endanger real communities.</p></article>
+      </div>
+      <p><strong>Recurring supporting cast:</strong> Mian, a ferry mechanic who records the player's practical promises; Aunt Su, a harbor cook and informal historian; and Rook, a traveling covenant duelist whose changing party demonstrates alternative strategies. Each appears in at least three contexts with evolving goals, not recycled greetings.</p>
+      <p><strong>Factions:</strong> the Tide Authority prioritizes predictability, the Living Current coalition prioritizes ecological freedom, and the Lantern Guild prioritizes local mutual aid. No faction is wholly correct. Progress requires solving the costs each worldview tends to overlook.</p>
+    </div>
+
+    <div class="story" id="story">
+      <h2>04 · Long-form campaign</h2>
+      <p>Use a prologue, twelve chapters and a playable epilogue. Each chapter combines exploration, a new decision or mechanic, a character beat and a visible world consequence. Major dialogue scenes should alternate with player action. Author dialogue, quest dependencies, branch conditions and payoff scenes; outlines alone do not constitute implemented chapters.</p>
+
+      <article class="chapter">
+        <p class="beat">PROLOGUE · The morning without birds</p>
+        <h3>A harbor loses its song</h3>
+        <p>During the Lantern Festival, every kin in the harbor falls silent. A frightened nursery creature leads the player into a stranded ferry, where they find Lanyin's damaged field recorder. Choose one of three starter companions by helping it resolve a small problem, then use its ability to rescue passengers. A recording ends with Lanyin saying, “If the sea repeats my voice, ask what it left out.”</p>
+        <p><strong>Play:</strong> movement, camera, interaction, first covenant and a short coordinated encounter. <strong>Payoff:</strong> the rescued passenger recognizes the player later; the recorder becomes the diegetic journal.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 01 · Lantern Shoals</p>
+        <h3>The bell beneath the tide</h3>
+        <p>Lu Heng closes a migration channel to protect a weakened seawall. Cen Qing asks the player to reopen it before a nursery becomes stranded. Investigate the flooded bell tower and discover that the channel also powers the harbor's pumps. Neither initial demand solves both needs. The player can restore a natural detour or repair controlled gates; both require a different exploration route and battle strategy.</p>
+        <p><strong>Climax:</strong> calm a malfunctioning tide warden by breaking its repeating resonance pattern. <strong>Consequence:</strong> establish a sanctuary boardwalk or a staffed gate district. Both preserve the village and migration, with different future maintenance obligations. Find Lanyin's route toward the forest.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 02 · Lantern Shoals → Verdant Weave</p>
+        <h3>A promise written on water</h3>
+        <p>A ferry route disappears from official maps although its passengers remember it. Mian refuses to abandon a stranded community. Follow witness accounts, recruit a second field specialist and learn to compare an echo with present terrain. The “lost” route was diverted to conceal shipments of resonance cells.</p>
+        <p><strong>Choice:</strong> expose the shipments immediately or escort the cargo to identify its destination. Both paths reveal the next lead; the difference is who trusts the player and which rescue becomes necessary. <strong>Return hook:</strong> the harbor's chapter-one infrastructure determines how the ferry is repaired.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 03 · Verdant Weave</p>
+        <h3>The orchard that remembers winter</h3>
+        <p>An orchard blooms continuously while nearby food forests fail. Its kin are replaying a season stored in the Array. Cen Qing proposes severing the connection, but the settlement depends on the unnatural harvest. Explore root-level irrigation and canopy pollinator routes to stage a gradual transition.</p>
+        <p><strong>Play:</strong> redirect water and growth, discover a nonviolent covenant route, and fight a territorial duo that punishes repeated actions. <strong>Choice:</strong> restore diverse forest plots or establish a smaller managed orchard with a protected corridor. <strong>Payoff:</strong> changed food supplies support a later evacuation.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 04 · Verdant Weave → Cinderrail Basin</p>
+        <h3>Names carved into roots</h3>
+        <p>Root echoes reveal Lanyin cooperating with Authority engineers. Lu Heng reads this as proof that she supported the Array; Cen Qing calls it betrayal. The player investigates three accounts whose details conflict. Lanyin was building an emergency bypass, and its unfinished route runs beneath the industrial basin.</p>
+        <p><strong>Climax:</strong> defend a moving seed caravan using terrain-changing companion combinations. <strong>Choice:</strong> share incomplete evidence now or first ask the named survivors. Both keep the investigation moving; later dialogue recognizes the player's treatment of uncertainty.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 05 · Cinderrail Basin</p>
+        <h3>The city that borrowed a heartbeat</h3>
+        <p>A thermal town runs on cells that draw warmth from hibernating kin. Its residents were told the cells were inert minerals. Closing the plant immediately would leave homes without heat. Reopen the old railway, explore geothermal tunnels and negotiate a staged energy transfer.</p>
+        <p><strong>Play:</strong> switch heat between traversal devices and encounter terrain; build a party that can protect objectives rather than only deal damage. <strong>Choice:</strong> decentralized workshops or a monitored cooperative plant. <strong>Payoff:</strong> the chosen infrastructure manufactures different rescue tools during the storm.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 06 · Cinderrail Basin</p>
+        <h3>The White Tide was a decision</h3>
+        <p>Inside the buried rail terminus, the player finds the first complete White Tide witness chain. The catastrophe was real, but the memory erasure was an emergency intervention authorized by several future faction leaders. Director Qi Zhao confronts the player with forecasts showing that a reckless shutdown would repeat it.</p>
+        <p><strong>Midpoint reversal:</strong> Lanyin is not a prisoner waiting behind a door; parts of her memory maintain the emergency bypass. <strong>Climax:</strong> escape an unstable station while choosing which evidence and people to prioritize. Critical plot evidence remains recoverable through a second source; no branch silently makes the campaign unwinnable.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 07 · Cloudglass Reach</p>
+        <h3>Learning to trust the wind</h3>
+        <p>The bypass needs the observatory's original weather model. Reach it by following wild kin through currents the official maps consider impossible. The first meaningful glide route is followed by a grounded exploration alternative for players using reduced-motion settings.</p>
+        <p><strong>Character beat:</strong> Lu Heng defies an order to rescue an unauthorized settlement, but remains skeptical of dismantling the Array. <strong>Choice:</strong> prioritize a crew or a weather instrument; a companion-assisted optional route can save both at a resource cost. <strong>Payoff:</strong> rescue survivors contribute late-game route information.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 08 · Cloudglass Reach</p>
+        <h3>The rival on the empty bridge</h3>
+        <p>Lu Heng must decide whether to surrender evidence to his superior. A covenant duel tests the strategies each character has learned. Winning earns time to negotiate, not automatic obedience. Prior promises and how the player handled uncertain evidence determine which argument he accepts.</p>
+        <p><strong>Play:</strong> a forecast-driven encounter with readable changing terrain and multiple viable parties. <strong>Consequence:</strong> Lu Heng becomes a public dissenter or remains an internal reformer; both can aid the finale differently. The observatory locates Lanyin's remaining echo in Mirrorfen.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 09 · Mirrorfen Archive</p>
+        <h3>The person inside the recordings</h3>
+        <p>Bai Qi guides the player through fragments of Lanyin's work and ordinary life. Some witnesses remember her as selfless; others remember anger and exhaustion. Reconstruct her intentions by comparing places, objects and testimony. Do not present a quiz with one morally perfect description of her.</p>
+        <p><strong>Mechanic:</strong> kin reveal different layers of the same memory scene. <strong>Choice:</strong> return intimate memories privately or publish a consented account. <strong>Revelation:</strong> Lanyin anticipated rescue but explicitly rejected making someone else permanently take her place.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 10 · Mirrorfen → Returning regions</p>
+        <h3>What the islands owe each other</h3>
+        <p>The player has enough knowledge to oppose Qi Zhao, but no solution is safe without regional preparations. Return to three earlier places for short, changed missions: reroute a migration, power a shelter and reopen an evacuation corridor. Earlier choices alter the work and allies available.</p>
+        <p><strong>Character resolution:</strong> Cen Qing negotiates with residents; Bai Qi speaks with the people whose names were hidden. <strong>Consequence:</strong> assemble a regional covenant with clearly displayed commitments. Missing optional support makes later encounters harder or changes costs, never creates an unexplained softlock.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 11 · Stillwater Crown</p>
+        <h3>A perfect day, forever</h3>
+        <p>Inside the ring-city, the Array rehearses a peaceful festival on a repeating schedule. Citizens retain different fragments between cycles. The player must interrupt machinery while protecting people who depend on it. Qi Zhao shows the storm outside: his prediction was not a lie.</p>
+        <p><strong>Play:</strong> three linked objectives using exploration, companion field abilities and tactical encounters. <strong>Final preparation:</strong> review the actual regional commitments and consequences before choosing an ending policy. A final checkpoint allows replaying the decision; do not hide essential conditions behind invisible approval numbers.</p>
+      </article>
+      <article class="chapter">
+        <p class="beat">CHAPTER 12 · Stillwater Crown</p>
+        <h3>A sea allowed to answer</h3>
+        <p>The last encounter is a struggle to redirect the Array during a live storm. Its phases reuse ecology, prediction and cooperation learned across the campaign. Supporting regions open concrete options: a safer channel, a protected relay or additional time to extract Lanyin's surviving self. The climax ends in a decision about how people and kin will share responsibility.</p>
+        <p><strong>Resolution:</strong> enact one of the three policies below, speak with Lanyin as a changed person rather than a restored recording, and revisit the harbor. The player cannot recover every erased memory or erase every sacrifice.</p>
+      </article>
+
+      <h3>Three endings with playable consequences</h3>
+      <div class="grid">
+        <article><h3>The Open Current</h3><p>Retire central control after completing habitat and evacuation preparations. Some routes become seasonal and towns adapt to uncertainty. Lanyin returns with gaps she chooses not to fill. If preparations are insufficient, explain the missing commitments before selection and offer repair missions.</p></article>
+        <article><h3>The Shared Covenant</h3><p>Distribute control among regional councils and voluntary kin partnerships. Requires negotiated commitments from all three factions. The epilogue includes a disagreement the new council must resolve; cooperation is continuing work, not a magical permanent harmony.</p></article>
+        <article><h3>The Living Lighthouse</h3><p>Retain a limited, transparent storm-warning network while ending involuntary memory extraction. This is always a reachable fallback after the main story. It protects vulnerable settlements but leaves fewer wild routes restored. Qi Zhao must surrender unilateral control.</p></article>
+      </div>
+      <p><strong>Epilogue:</strong> play a new Lantern Festival, see the chosen harbor infrastructure, meet companions and hear reactions to fulfilled or broken promises. Unlock postgame expeditions from this changed save. Do not silently reset the world to its pre-finale state.</p>
+    </div>
+
+    <div class="creatures" id="creatures">
+      <h2>05 · Creature roster and covenants</h2>
+      <p><strong>Full campaign:</strong> 48 original species distributed across six regions, plus 18 optional resonance forms that are not counted as additional species. Each species requires a distinct silhouette, idle/move/action/hurt animations, ecological behavior, covenant condition, field contribution and combat role. Use stylized low-poly production to make this feasible. Palette swaps and identical capsules with different labels do not count as species.</p>
+      <p><strong>M1 roster:</strong> implement the following six species. The three starters are included in this count. The unchosen starters remain obtainable through different optional encounters; no replay or trading requirement.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Species</th><th>Identity / behavior</th><th>Field and combat role</th><th>First covenant</th></tr></thead>
+        <tbody>
+          <tr><td>Mosslantern Fawn · 苔灯鹿<br>Starter</td><td>A small antlered grazer carrying soft seed lights; shelters other kin</td><td>Grow temporary footholds; roots and shields protect allies</td><td>Restore a shaded resting patch and approach without disturbing its nursery</td></tr>
+          <tr><td>Tidebubble Otter · 潮泡獭<br>Starter</td><td>A buoyant otter with translucent tide sacs; collects drifting objects</td><td>Reveal shallow channels; reposition allies and apply water terrain</td><td>Recover its scattered keepsakes using the ferry's visible current</td></tr>
+          <tr><td>Emberplume Finch · 烬翎雀<br>Starter</td><td>A compact bird with ember-tipped feather fans; warms stranded hatchlings</td><td>Activate thermal vents; creates pressure and controls cold terrain</td><td>Build a safe warm perch and protect it from a sudden squall</td></tr>
+          <tr><td>Bellback Crab · 铃壳蟹</td><td>A crab with a resonant shell; communicates across tidal pools</td><td>Locate hollow structures; counterattacks after accurately forecast hits</td><td>Echo a visible rhythm pattern with generous timing and a non-timing alternative</td></tr>
+          <tr><td>Cloudwool Marten · 绵云鼬</td><td>A long-bodied climber whose wool gathers mist</td><td>Expose wind direction; speed support and fog disruption</td><td>Guide it back to its group using tracks and safe ledges</td></tr>
+          <tr><td>Shaleback Tortoise · 砾背龟</td><td>A broad tortoise with layered mineral plates</td><td>Stabilize loose ground; anchors the party against displacement</td><td>Clear a blocked basking site; later accept a readable defensive duel</td></tr>
+        </tbody>
+      </table></div>
+      <h3>Recruitment and growth</h3>
+      <ul>
+        <li>Observe signs, discover a need, resolve a small encounter and offer a covenant. The journal gives progressively clearer hints. Common covenants have deterministic completion conditions rather than an endless low-probability capture roll.</li>
+        <li>Wild duels can demonstrate trust, but reducing health is not a universal recruitment recipe. At least one M1 covenant must be completed without combat and one through a duel with a special objective.</li>
+        <li>Carry four companions, field two in battle and keep others in an accessible sanctuary. Shared progression keeps recently recruited kin usable without mandatory grinding.</li>
+        <li>Each companion equips four moves from its learned pool. Respecialization is affordable and reversible. Distinct roles must matter more than simply having higher numbers.</li>
+        <li>Resonance forms unlock through relationship episodes and habitat experiences. They offer sidegrades or new combinations, not a requirement to abandon a favorite creature's appearance.</li>
+        <li>A visible relationship journal records shared events. No hidden affection decay, daily login requirement, breeding grind, trading exclusives or monetized randomized acquisition.</li>
+      </ul>
+    </div>
+
+    <div class="systems" id="systems">
+      <h2>06 · Core gameplay systems</h2>
+      <h3>Exploration → observation → covenant → combination → consequence</h3>
+      <p>Within an ordinary 10–15 minute segment, the player should discover a place or clue, make a meaningful choice, use a companion and receive a visible result. Alternate quiet discovery, social scenes, traversal and battles. Do not use forced walking time or repeated enemy waves to hit the campaign-length target.</p>
+      <h3>3D exploration and controls</h3>
+      <p>Use a third-person camera with collision avoidance, readable terrain and controllable rotation/zoom. Support WASD, click-to-move, interact, pause and a clear route back from menus. Required traversal must have a recovery when the player gets stuck. Field abilities have visible valid targets, previews and cancellation; do not require guessing an invisible interaction radius.</p>
+      <p>Unlock swimming, growth paths, thermal lifts, wind riding and echo overlays gradually. Every critical gate has at least two feasible solutions or an accessible rental/assist companion, so a roster choice cannot block the story. Unlock shortcuts after the first traversal. Mark unfinished regions honestly at intermediate milestones.</p>
+      <h3>Two-versus-two tactical battles</h3>
+      <p>Use discrete turns with visible action order and enemy intent. Each active companion selects one action per round. The party shares a Pulse pool starting at three, recovering one per round and capped at five. Basic moves and defend cost zero; stronger combinations consume Pulse. Switching uses that companion's action. Telegraph costs, targets, order and terrain effects before confirmation.</p>
+      <p>Six affinities—Tide, Bloom, Ember, Stone, Gale and Echo—have readable strengths and interactions, but affinity must not decide every battle. Defensive play, positioning and terrain offer alternatives. Show effectiveness in the interface; keep the affinity matrix in data and the journal rather than requiring memorization.</p>
+      <p><strong>Example combination:</strong> Tidebubble creates a wet channel; Mosslantern grows a root barrier across it, redirecting the tide warden's announced charge. Emberplume can instead turn water into concealing steam, but that obscures both teams' precise attacks. These are actual state changes with visible feedback, not renamed damage bonuses.</p>
+      <ul>
+        <li>Encounters include protection, interruption and calming objectives as well as ordinary knockouts. The chapter-one boss has at least two phases with different readable patterns.</li>
+        <li>After defeat, restart from a nearby checkpoint with party and story intact. Explain the failed objective. No permanent creature loss or erased progress.</li>
+        <li>Provide Story, Standard and Tactical difficulty presets that change pressure and assistance. A player may change difficulty outside an encounter without losing narrative content.</li>
+        <li>Keep enemy AI deterministic under a recorded seed for diagnosis while allowing varied tactics in normal play. No enemy reads a player's unconfirmed choice to cheat.</li>
+      </ul>
+      <h3>Habitat, choices and personalization</h3>
+      <p>Each region has authored habitat states with displayed causes and consequences. A restored wetland may open a covenant and change a battle arena while reducing a town's industrial output. Introduce the tradeoff before the decision. A choice must affect at least one later scene or playable state to count as a meaningful branch.</p>
+      <p>Let players explicitly choose journal detail, navigation assistance, preferred companion display, camera motion and encounter difficulty. A customizable traveling camp reflects recruited kin and remembered journeys. Preferences are editable; do not infer a psychological profile or secretly manipulate difficulty to optimize engagement.</p>
+      <h3>Journal, economy and saving</h3>
+      <p>The field recorder combines map clues, quest goals, witnesses, covenant hints and unresolved promises. Clearly distinguish observed facts from a character's interpretation. Use a small economy of trade tokens and regional crafting materials. Required story supplies remain obtainable without repetitive farming.</p>
+      <p>Provide manual save slots, an autosave with backup, and clear load/recovery messages. Persist roster, abilities, inventory, region state, quest steps, decisions, companion episodes, settings and postgame state. Web builds need usable save export/import. Never overwrite an unreadable save while handling an error; version save data and support migrations.</p>
+    </div>
+
+    <div class="optional-content">
+      <h2>07 · Optional play that extends the world</h2>
+      <div class="grid">
+        <article><h3>Companion episodes</h3><p>At least twelve multi-step stories in the full campaign. Each develops a particular relationship and changes a move, field interaction or sanctuary behavior. M1 includes one complete episode with a later callback.</p></article>
+        <article><h3>Regional side stories</h3><p>At least eighteen authored side stories across six regions, including two in M1. Use disputes, rescues, investigations and ecological puzzles; no majority of interchangeable collection errands.</p></article>
+        <article><h3>Covenant circuit</h3><p>A postgame tactical circuit with eight authored rule sets and team-building restrictions. Rewards offer cosmetic and strategic options rather than story-essential power.</p></article>
+        <article><h3>Uncharted currents</h3><p>Six postgame expeditions with fixed authored discoveries and bounded variations. Each reuses the ending's world state. Finite meaningful content is preferable to an empty infinite generator.</p></article>
+      </div>
+      <p>New Game Plus is optional future scope, not required for campaign completion. Online multiplayer, live-service events, trading servers, voice cloning and a procedural infinite story are out of scope. Preserve a self-contained offline campaign, apart from initial Web delivery.</p>
+    </div>
+
+    <div class="presentation">
+      <h2>08 · Art, sound and accessibility</h2>
+      <p>Use a coherent stylized 3D art direction: strong creature silhouettes, layered island terrain, sea-glass materials, warm lanterns and clear color/value separation. Give each region a distinct shape language and palette. A working prototype may use original procedural meshes, but M1 creatures and major landmarks must be visually distinguishable without reading their labels.</p>
+      <p>Use purposeful ambient sound, movement feedback, battle cues and recurring musical motifs that change with habitat state. Audio may be original or properly licensed; record provenance. Missing audio must be reported rather than replaced with claims about an imagined soundtrack. Dialogue does not require voice acting.</p>
+      <ul>
+        <li>Readable Chinese text, adjustable text size, dialogue history and an explicit continue indicator. Major plot information cannot depend on a brief unrepeatable subtitle.</li>
+        <li>Remappable core controls, reduced camera motion, adjustable camera sensitivity, visible focus and full menu access without precise pointing.</li>
+        <li>Affinity, objectives and interaction states use symbols/text as well as color. Audio cues have visible equivalents.</li>
+        <li>No compulsory rapid timing challenge; provide an alternate input mode for rhythm interactions and a grounded route for motion-sensitive traversal.</li>
+        <li>Settings can be previewed and reverted. Starting a new game or replacing a save requires clear confirmation.</li>
+      </ul>
+    </div>
+
+    <div class="technical-requirements">
+      <h2>09 · Engineering requirements</h2>
+      <p>Use Godot 4 and typed GDScript, with real 3D scenes, collision and camera behavior. The first reviewable target is a Compatibility-rendered, single-threaded Web build. Keep a desktop export preset for later native delivery, but do not claim native verification from a browser session. Record the exact engine version and matching template version.</p>
+      <ul>
+        <li>Separate world scenes, character logic, combat rules, narrative conditions, presentation and persistence. Store creatures, moves, encounters, dialogue and quests as structured resources with stable IDs.</li>
+        <li>Keep a campaign dependency map and a content ledger. Each entry records planned/authored/implemented/played/blocked status, prerequisites, branch effects and verification evidence.</li>
+        <li>Use a source project directory, fresh versioned export directories and separate reports. Preserve asset attribution and reproducible setup instructions.</li>
+        <li>Quest events must be idempotent: revisiting a trigger cannot duplicate a reward or invalidate progress. Handle declined covenants, full-party situations, interrupted dialogue and load during transitions.</li>
+        <li>Define a reproducible performance profile before optimization. Target 60 FPS on the chosen desktop profile and at least 30 FPS on the chosen Web profile in ordinary gameplay. Record hardware, renderer, browser, resolution and frame-time samples; do not assert a universal result.</li>
+        <li>Use per-region loading and controlled asset budgets. Provide visible loading and recoverable errors. A blank canvas or indefinitely blocked loading screen fails acceptance.</li>
+      </ul>
+    </div>
+
+    <div class="milestones" id="milestones">
+      <h2>10 · Development plan and milestone boundaries</h2>
+      <p>This task document defines the project specification and milestone outcomes. The GameBuilder must turn it into a detailed, living <code>plan.md</code> at the session's supplied plan-context path before multi-step implementation. Record scene and module design, data and quest structures, implementation decisions, dependencies, work-item progress, changed files, acceptance evidence and remaining work. Keep substantial design detail in linked documents with a current summary in the plan.</p>
+      <p>Update the plan after each coherent implementation item, meaningful verification or self-play result, blocker or design change; reconcile it before continuing on new requirements and before final handoff. Distinguish planned, in-progress, implemented and verified work, and identify which journeys were actually played. Deferred execution leaves verification pending. Keep the task HTML as the project brief rather than rewriting it as a progress log.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Milestone</th><th>Required result</th><th>Exit condition</th></tr></thead>
+        <tbody>
+          <tr><td>M0 · Foundation</td><td>Campaign bible and dependency map; running 3D harbor; camera, movement, interaction, save skeleton and first creature</td><td>A short movement → interaction → save → reload journey is observed. This is an intermediate foundation, not the requested game.</td></tr>
+          <tr><td>M1 · Opening slice<br>Default execution scope</td><td>Complete prologue and chapter one; harbor, shore route and bell-tower dungeon; six species; two side stories; one companion episode; two viable branch outcomes; playable boss and saved aftermath</td><td>All M1 acceptance items below have evidence. Aim for 60–90 minutes of meaningful first-time play, reported as a target until measured. Chapters 2–12 remain planned.</td></tr>
+          <tr><td>M2 · Campaign production</td><td>Chapters 2–10, all six regions introduced, roster/content production, persistent regional callbacks and character arcs</td><td>Chapter transitions and supported choices remain reachable from normal saves. A content ledger identifies every unfinished encounter, scene and asset.</td></tr>
+          <tr><td>M3 · Complete campaign<br>When campaign is requested</td><td>Prologue, all twelve chapters, three endings, playable epilogue, full roster, side content and specified postgame</td><td>Campaign acceptance is satisfied. A polished first region, an outline, or a montage of disconnected chapters is insufficient.</td></tr>
+        </tbody>
+      </table></div>
+      <p>Finish one coherent journey before adding parallel systems. Preserve the long campaign design while implementing M1; do not spend the entire run generating unconnected content. When M3 is requested, M1 is an intermediate checkpoint, not permission to stop early and label the campaign complete. If the budget prevents completion, hand off actual progress, blockers and a resume point.</p>
+    </div>
+
+    <div class="acceptance" id="acceptance">
+      <h2>11 · Acceptance requirements</h2>
+      <p>Acceptance evidence must identify source/build revision, starting save or seed, actions, observed results and unresolved issues. A written assertion, source inspection, a title-screen screenshot or a successful export alone does not establish a playable journey. When the user defers execution, produce the requested files and mark these checks pending; do not run them.</p>
+      <h3>M1 product acceptance</h3>
+      <ol>
+        <li><strong>Actual 3D entry:</strong> start a new game from the exported build; reach the harbor, move through terrain, rotate the camera and interact with a character. Verify collision and a recovery path after becoming stuck.</li>
+        <li><strong>Opening narrative:</strong> play the prologue and chapter one without debug progression. The missing song, Lanyin's recording, competing harbor needs and the final lead are understandable through in-game content.</li>
+        <li><strong>Companions:</strong> all six M1 species exist with distinct silhouettes, observable behavior and functional abilities. Complete one noncombat covenant, one special-objective duel covenant, a party swap and the companion episode.</li>
+        <li><strong>Tactical depth:</strong> defeat the two-phase tide warden with two materially different party strategies. Show at least one terrain combination, readable enemy intent, valid targeting, failure recovery and a successful retry.</li>
+        <li><strong>Choice consequence:</strong> exercise both chapter-one infrastructure outcomes from separate ordinary saves. Show different harbor state and NPC reactions; neither branch blocks the next story lead.</li>
+        <li><strong>Exploration:</strong> complete the shore and dungeon routes, use at least two companion field abilities and unlock a return shortcut. Every required gate has a roster-independent fallback.</li>
+        <li><strong>Optional value:</strong> finish two side stories with different objectives and demonstrate at least one later callback. Filler collection tasks with only different item names do not satisfy this item.</li>
+        <li><strong>Persistence:</strong> save, close/reopen and resume with party, choices, inventory and quest state intact. Exercise Web save export/import and recover from a deliberately invalid save without overwriting the valid slot.</li>
+        <li><strong>Usability:</strong> complete representative menus and a battle using keyboard input; use click-to-move; check text scaling, reduced motion, difficulty changes, readable symbols and dialogue history.</li>
+        <li><strong>Delivery:</strong> provide Godot source, a fresh Web build, playable preview URL when available, setup/control instructions, asset credits and the full campaign/content ledger. Record actual errors and performance evidence; label unverified desktop output clearly.</li>
+      </ol>
+      <h3>M3 campaign acceptance</h3>
+      <ol>
+        <li>Every chapter is connected and playable in order, with authored goals, dialogue, encounters, transitions and payoffs. All six regions contain meaningful exploration.</li>
+        <li>The full 48-species roster and 18 resonance forms are implemented; each species has its promised identity and use. All 18 side stories, 12 companion episodes, eight circuit rule sets and six expeditions are tracked and delivered.</li>
+        <li>Each ending has a reachable documented preparation path, a completed finale and a playable changed epilogue. The Living Lighthouse remains available as the main-story fallback.</li>
+        <li>Demonstrate cross-chapter consequences for harbor infrastructure, orchard restoration, thermal policy, Lu Heng's decision and memory disclosure. None may be reduced solely to a final text summary.</li>
+        <li>Cover supported branch dependencies and save migrations with appropriate checks. Demonstrate representative normal-play routes and completion of each ending; debug state injection is separately labeled and cannot replace these journeys.</li>
+        <li>Assess pacing using measured sessions and a content breakdown. Explain any difference from the planned playtime; do not add forced repetition to hide missing authored content.</li>
+      </ol>
+    </div>
+
+    <div class="iteration-and-delivery">
+      <h2>12 · Creative iteration and final handoff</h2>
+      <p>The GameBuilder is the sole developer and self-player. After a coherent build, enter as a player with a concrete goal, record what is visible and actionable, then switch back to developer analysis. Propose a meaningful imaginative improvement grounded in that session: what the player does, how the world responds, why it matters and the smallest faithful playable experiment. Replay the affected journey after implementing it.</p>
+      <p>Useful directions include a companion recalling an earlier rescue to reveal a route, a personal camp vignette reflecting a difficult choice, or a habitat intervention changing both travel and combat. These are possibilities, not mandatory features. Favor an observable addition to player agency over a decorative effect or another settings toggle.</p>
+      <p>When the run requires agent-system evolution, investigate an evidenced limitation in the reusable development method. A missing quest or creature is ordinary game work. A justified capability candidate needs an existing-method baseline, version-specific evaluation, an independent case, adoption or rollback, and later real use. Report the game milestone and the system-evolution outcome separately; never invent player feedback or a capability failure.</p>
+      <p><strong>Final handoff:</strong> list the actual playable milestone, source and build locations, revision, controls, saves, authored versus planned content, executed evidence, known defects, asset provenance, retained capability changes and next work. A complete task document is not a complete campaign. Self-play is not independent evidence that real players find the game enjoyable.</p>
+    </div>
+  </div>
+  <footer>End of development brief · Tidebound Echoes: The Island Covenant · All characters, creatures and settings above are original design requirements.</footer>
+</main>
+</body>
+</html>

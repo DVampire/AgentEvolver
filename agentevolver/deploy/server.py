@@ -232,6 +232,11 @@ class DeploymentManagerServer(BaseModel):
         if not isinstance(contract, dict) or not isinstance(history, list) or not history:
             return ""
 
+        from agentevolver.task.self_review import blocker
+
+        pending_review = blocker(ctx, history[-1])
+        if pending_review:
+            return pending_review
         release_number = len(history)
         acceptance = DeploymentManagerServer._release_acceptance(contract, release_number)
         subscribers = [str(job_id) for job_id in contract.get("subscriber_job_ids") or []]
@@ -347,7 +352,9 @@ class DeploymentManagerServer(BaseModel):
             return f"latest preview belongs to site {preview.get('site_id')!r}, not {site_id!r}"
         if not revision or preview.get("source_revision") != revision:
             return "workspace source changed after preview; preview and verify the current revision again"
-        return ""
+        from agentevolver.task.self_review import blocker
+
+        return blocker(ctx, preview)
 
     @staticmethod
     async def publish_release(rec, *, action: str, ctx: Any, urls=None) -> Dict[str, Any]:

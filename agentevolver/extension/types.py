@@ -8,6 +8,17 @@ class EvaluationCase(BaseModel):
     observed: str = Field(min_length=1)
     passed: bool
     evidence_ids: List[str] = Field(min_length=1)
+    kind: Optional[Literal["comparison", "reuse", "regression"]] = None
+
+
+class CapabilityGap(BaseModel):
+    """Diagnosis submitted by the builder; evidence provenance is checked at runtime."""
+    user_need: str = Field(min_length=1)
+    required_operation: str = Field(min_length=1)
+    limitation: str = Field(min_length=1)
+    acceptance_criterion: str = Field(min_length=1)
+    observation_evidence_ids: List[str] = Field(min_length=1)
+    baseline_evidence_ids: List[str] = Field(min_length=1)
 
 
 class ComponentEvaluation(BaseModel):
@@ -18,6 +29,7 @@ class ComponentEvaluation(BaseModel):
     verdict: Literal["pass", "fail", "inconclusive"]
     baseline: str = Field(min_length=1)
     cases: List[EvaluationCase] = Field(default_factory=list)
+    capability_gap: Optional[CapabilityGap] = None
 
     @model_validator(mode="after")
     def validate_evidence(self):

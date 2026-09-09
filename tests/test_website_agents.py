@@ -122,15 +122,25 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
     requirement = tmp_path / "scenario.html"
     requirement.write_text("<main>Public product requirement.</main>", encoding="utf-8")
     personas = []
-    for index in range(1, 4):
+    for index in range(1, 2):
         path = tmp_path / f"persona_{index}.html"
         path.write_text(f"<main>Private user {index} goal.</main>", encoding="utf-8")
         personas.append(path)
-    from examples.run_website_evolution_demo import build_task_text
-
-    task = build_task_text(requirement, personas,
-                           user_models=[f"provider/model-{i}" for i in range(1, 4)],
-                           acceptance_model="provider/judge")
+    # Generic subscribers remain supported outside the single-builder demo.
+    task = render_manifest("Build the public product", "Private routing", {
+        "attachments": [{"id": "site", "role": "requirements"},
+                        {"id": "person", "role": "user_context"}],
+        "private_attachment_roles": ["user_context"],
+        "subscribers": [
+            {"id": "person", "agent": "website_user_agent", "attachments": ["person"],
+             "brief": {"model": "provider/model", "subscription_topics": ["deployment.ready"],
+                       "task": "Revisit prior requested changes."}},
+            {"id": "judge", "agent": "browser_agent", "attachments": ["site"],
+             "brief": {"model": "provider/judge", "subscription_topics": ["deployment.ready"],
+                       "task": "Use a bounded, risk-based scope; a known failure cannot be excluded to obtain PASS."}},
+        ],
+        "deployment": {"required_releases": 6, "acceptance_subscriber": "judge"},
+    })
     files = [str(requirement), *(str(path) for path in personas)]
 
     calls = []
@@ -155,11 +165,9 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
 
     assert [name for name, _kwargs in calls] == [
         "website_user_agent",
-        "website_user_agent",
-        "website_user_agent",
         "browser_agent",
     ]
-    for index, (_name, kwargs) in enumerate(calls[:3], start=1):
+    for index, (_name, kwargs) in enumerate(calls[:1], start=1):
         assert f"Private user {index} goal." in kwargs["task"]
         assert all(
             f"Private user {other} goal." not in kwargs["task"]
@@ -168,12 +176,12 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
         )
         assert kwargs.get("files") is None
         assert kwargs["subscription_topics"] == ["deployment.ready"]
-    assert "Public product requirement." in calls[3][1]["task"]
-    assert "bounded, risk-based scope" in calls[3][1]["task"]
-    assert "cannot be excluded to obtain PASS" in calls[3][1]["task"]
-    assert all("prior requested changes" in kwargs["task"] for _, kwargs in calls[:3])
-    assert "Private user" not in calls[3][1]["task"]
-    assert contract["subscriber_job_ids"] == ["job-1", "job-2", "job-3", "job-4"]
+    assert "Public product requirement." in calls[1][1]["task"]
+    assert "bounded, risk-based scope" in calls[1][1]["task"]
+    assert "cannot be excluded to obtain PASS" in calls[1][1]["task"]
+    assert all("prior requested changes" in kwargs["task"] for _, kwargs in calls[:1])
+    assert "Private user" not in calls[1][1]["task"]
+    assert contract["subscriber_job_ids"] == ["job-1", "job-2"]
     assert contract["collected_turns"] == {}
 
     assert public_files == [str(requirement)]
@@ -183,14 +191,14 @@ async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_
     assert "provider/judge" not in public
     assert "Private user" not in public
     projected = json.loads(public[public.index("{"):])
-    assert status.data["subscription"]["acceptance_job_id"] == "job-4"
+    assert status.data["subscription"]["acceptance_job_id"] == "job-2"
     assert [row["job_id"] for row in projected["subscribers"]] == contract["subscriber_job_ids"]
 
     # Re-entering task preparation must preserve subscribers and release history.
     ctx.extra["task_state"]["deployment_release_history"].append({"source_revision": "revision-1"})
     again = await builder.prepare_task(task, files, ctx)
     assert again == (public, public_files)
-    assert len(calls) == 4
+    assert len(calls) == 2
     assert ctx.extra["task_state"]["deployment_release_history"] == [{"source_revision": "revision-1"}]
 
 
@@ -652,18 +660,15 @@ def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
         str(Path(__file__).resolve().parents[1] / "configs" / "website_evolution_demo.py")
     )
 
-    assert cfg.agent_names == [
-        "website_builder_agent",
-        "browser_agent",
-        "website_user_agent",
-    ]
+    assert cfg.agent_names == ["website_builder_agent"]
+    assert not cfg.website_builder_agent.include_agents
+    assert cfg.website_builder_agent.env_names == ["job", "browser_environment"]
     assert cfg.tool_names == [
         "bash_tool",
         "apply_patch_tool",
         "inspect_tool",
         "deploy_tool",
         "done_tool",
-        "send_message_tool",
         "adoption_tool",
     ]
     assert cfg.skill_names == [
@@ -675,34 +680,15 @@ def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
 
 def test_website_demo_model_roster_matches_launcher_and_vision_catalog():
     from mmengine import Config
-
     from agentevolver.model.config import llm_hub_models
-    from examples.run_website_evolution_demo import (
-        DEFAULT_ACCEPTANCE_MODEL,
-        DEFAULT_BUILDER_MODEL,
-        DEFAULT_USER_MODELS,
-    )
+    from examples.run_website_evolution_demo import DEFAULT_BUILDER_MODEL
 
     cfg = Config.fromfile(str(Path(__file__).resolve().parents[1] / "configs/website_evolution_demo.py"))
-    assert cfg.website_user_models == DEFAULT_USER_MODELS == [
-        "llm_hub/gpt-6-astra",
-        "llm_hub/claude-fable-5-1",
-        "llm_hub/gemini-3.8-flash",
-    ]
-    # The Builder no longer shares the first participant's route: it is pinned to its
-    # own constant so the two can move independently.
-    assert cfg.website_builder_agent.model_name == DEFAULT_BUILDER_MODEL == "llm_hub/claude-fable-5-1"
-    assert cfg.website_user_agent.model_name == DEFAULT_USER_MODELS[0]
-    assert cfg.browser_agent.model_name == DEFAULT_ACCEPTANCE_MODEL == "llm_hub/gpt-6-astra"
-    assert cfg.model_name == "llm_hub/claude-opus-5"
-    catalog = llm_hub_models(max_tokens=2048, default_temperature=0.0, default_timeout=30.0)
+    assert cfg.website_builder_agent.model_name == DEFAULT_BUILDER_MODEL
+    catalog = llm_hub_models(max_tokens=1, default_temperature=0.0, default_timeout=1.0)
     specs = {entry["model_name"]: entry for group in catalog.values() for entry in group}
-    assert all(specs[name].get("supports_vision", True) for name in DEFAULT_USER_MODELS)
-    vision = specs[DEFAULT_USER_MODELS[2]]
-    assert vision["model_id"] == "gemini-3.8-flash"
-    assert not vision.get("reasoning")
-    assert not vision.get("native_compaction", False)
-    assert not specs["llm_hub/deepseek-v4-flash"]["supports_vision"]
+    assert specs[DEFAULT_BUILDER_MODEL].get("supports_vision", True)
+    assert "browser_agent" not in cfg.agent_names and "website_user_agent" not in cfg.agent_names
 
 
 def test_website_builder_owns_product_engineering_directly():
@@ -733,63 +719,36 @@ def test_website_demo_separates_release_acceptance_from_user_codesign():
     assert "collaboration goal" in user
 
 
-def test_website_task_manifest_routes_independent_acceptance(tmp_path):
+def test_website_task_manifest_has_no_participants(tmp_path):
     from examples.run_website_evolution_demo import build_task_text
+    from agentevolver.task.context import parse_manifest
 
     scenario = tmp_path / "scenario.html"
-    scenario.write_text("<html><body><main>Build a site.</main></body></html>", encoding="utf-8")
-    personas = []
-    for index in range(1, 4):
-        path = tmp_path / f"persona_{index:02d}.html"
-        path.write_text(f"<html><body>User {index}</body></html>", encoding="utf-8")
-        personas.append(path)
-
-    task = build_task_text(scenario, personas)
-    manifest = json.loads(task[task.index("{", task.index("runtime-input-manifest")) :])
-
-    assert manifest["deployment"] == {
-        "required_releases": 6, "topic": "deployment.ready",
-        "acceptance_subscriber": "release-acceptance",
-    }
-    acceptance = manifest["subscribers"][-1]
-    assert acceptance["agent"] == "browser_agent"
-    assert acceptance["brief"]["model"] == "llm_hub/gpt-6-astra"
-    assert acceptance["attachments"] == ["site_brief"]
-    assert "exact deployed URL" in acceptance["brief"]["task"]
-    assert manifest["codesign_policy"]["participants_are_evaluators"] is False
-    assert manifest["run_policy"] == {"blind_initial_build": True}
-    assert "minimum_kept_evolutions" not in manifest
-    assert all("source_path" not in item for item in manifest["attachments"])
-    assert all(str(path) not in task for path in personas)
-    assert "configures the Agent experiment, not website features" in task
+    scenario.write_text("<main>Build a site.</main>")
+    task = build_task_text(scenario)
+    manifest = parse_manifest(task)[2]
+    assert manifest["subscribers"] == []
+    assert manifest["attachments"] == [{"id": "site_brief", "role": "requirements"}]
+    assert manifest["deployment"]["required_releases"] == 6
+    assert "acceptance_subscriber" not in manifest["deployment"]
+    assert manifest["run_policy"] == {"self_review": True}
+    assert manifest["evolution"] == {"require_verified_improvement": True}
 
 
 @pytest.mark.parametrize("scenario_name", ["arkbound_game", "commonspace_forum", "lumen_museum", "orbital_simulator"])
 def test_scenario_brief_reaches_builder_without_private_personas(scenario_name):
     from agentevolver.task.context import load_task_document
-    from examples.run_website_evolution_demo import build_task_text
+    from examples.run_website_evolution_demo import SCENARIO_ROOT, build_task_text, parse_args, resolve_inputs
 
-    root = Path(__file__).resolve().parents[1]
-    scenario = root / "examples/tasks/website_evolution" / scenario_name
-    document = load_task_document(str(scenario / "scenario.html"))
-    personas = [scenario / f"persona_{index:02d}.html" for index in range(1, 4)]
-    task = build_task_text(scenario / "scenario.html", personas)
-    # Test the input contract, not a particular room name, palette or game mechanic.
-    assert document.content.strip()
-    assert task.startswith(document.content + "\n\n## runtime-input-manifest\n")
-    manifest = json.loads(task[task.index("{", task.index("runtime-input-manifest")):])
-    assert manifest["attachments"][0] == {"id": "site_brief", "role": "requirements"}
-    assert [a["role"] for a in manifest["attachments"][1:]] == ["user_context"] * 3
-    for path in personas:
-        private = load_task_document(str(path))
-        assert private.content.strip() and private.content not in task
-        assert str(path) not in task
-        persona = path.read_text()
-        assert "Agent conversation and final feedback" in persona
-        assert "fresh browser context" in persona
-        assert "Express needs through the available\n    request flow" not in persona
-    builder = (root / "agentevolver/prompt/default/website_builder_agent.html").read_text()
-    assert "Agent collaboration is not a website feature" in builder
+    scenario = SCENARIO_ROOT / scenario_name
+    _, brief = resolve_inputs(parse_args(["--scenario-dir", str(scenario)]))
+    assert brief == scenario / "scenario.html"
+    assert not list(scenario.glob("persona_*.html"))
+    task = build_task_text(brief)
+    assert task.startswith(load_task_document(str(brief)).content)
+    assert "You are the only agent" in task
+    assert "observation_evidence_ids" in task
+    assert "actual consumer use (or blocker)" in task
 
 
 def test_website_prompts_do_not_encode_one_demo_protocol():
@@ -821,3 +780,11 @@ def test_codesign_closes_commitments_without_forcing_innovation():
     assert "Do not implement every suggestion" in builder
     assert "new version number or a cosmetic substitute" in user
     assert "Missing required evidence remains unverified" in builder
+
+
+@pytest.mark.parametrize("option", ["--persona-brief", "--user-model", "--acceptance-model"])
+def test_single_builder_rejects_obsolete_participant_options(option):
+    from examples.run_website_evolution_demo import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args([option, "custom"])
