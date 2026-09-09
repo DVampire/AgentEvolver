@@ -28,6 +28,10 @@ class GameBuilderAgent(MetaAgent):
     async def on_start(self, task, proc):
         from agentevolver.environment.server import environment_manager
 
+        # Kernel starts lifecycle hooks before Agent._run assigns self.ctx.
+        # Bind the process context now so preparation, actions and early cleanup
+        # all own the same session instead of creating a second default runtime.
+        self.ctx = proc.ctx
         await super().on_start(task, proc)
         environment = await environment_manager.get("godot_environment")
         if environment is None:

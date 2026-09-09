@@ -17,6 +17,10 @@ Build `docker/godot` as `agentevolver/godot:4.7-b5fa8cb-input2` before use; runt
 or builds images. The default host-run base is `python:3.12-slim` (Bash/Python authoring);
 override base_image for additional development dependencies. A Model X launch reuses
 its existing base and translates Docker mount sources via the host/container root mapping.
+The owned base uses `base_network=bridge` for dependency/font/asset downloads;
+set it to `none` for offline authoring. The default base has Bash and Python, not
+curl or git: use Python urllib for HTTPS downloads or select a richer base image.
+Godot itself always uses `--network none`. Model X retains its existing network policy.
 New containers run as the current UID/GID, with no network ports or Docker socket exposed.
 Initialization/get_state starts no process. prepare_workspace starts only the base;
 doctor or engine actions start the MCP container. Engine CLI remains available through

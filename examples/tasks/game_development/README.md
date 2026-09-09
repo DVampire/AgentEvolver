@@ -78,6 +78,9 @@ Framework and shared-extension references are mounted read-only when available.
 The host-run default base is `python:3.12-slim`; override base_image when development
 needs additional packages. When AgentEvolver already runs inside Model X, its base
 is reused and peer mount sources use the existing host/container path translation.
+The owned base defaults to `base_network=bridge` so it can fetch fonts and assets;
+use `none` for offline authoring. Python urllib is available for HTTPS downloads;
+curl and git are not bundled in the minimal base. The Godot container stays offline.
 
 The Godot container owns the engine, MCP runtime and an actual rendering context
 such as Xvfb/Mesa. Preserve MCP image content in model observations. Shared files

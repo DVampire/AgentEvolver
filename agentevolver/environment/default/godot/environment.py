@@ -37,6 +37,7 @@ class GodotEnvironment(Environment):
     backend: str = Field(default="docker", pattern="^(docker|local)$")
     image: str = Field(default="agentevolver/godot:4.7-b5fa8cb-input2")
     base_image: str = Field(default="python:3.12-slim")
+    base_network: str = Field(default="bridge", pattern="^(bridge|none)$")
     enable_evolving: bool = Field(default=False)
     binary_path: str = Field(default="")
     max_command_seconds: int = Field(default=300, ge=10, le=600)
@@ -105,7 +106,8 @@ class GodotEnvironment(Environment):
             references = [roots[key] for key in ("package", "shared_extension")
                           if key in roots and roots[key].is_dir()]
             self._runtimes[sid] = DockerRuntime(
-                rec["workspace"], self.image, self.base_image, mounts, read_only_mounts=references)
+                rec["workspace"], self.image, self.base_image, mounts,
+                read_only_mounts=references, base_network=self.base_network)
         return self._runtimes[sid]
 
     @environment_manager.action(

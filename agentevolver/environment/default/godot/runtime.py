@@ -32,9 +32,10 @@ async def docker_command(*args: str, timeout: float = 30) -> str:
 
 class DockerRuntime:
     def __init__(self, workspace: Path, image: str, base_image: str, mounts: list[Path],
-                 read_only_mounts: list[Path] | None = None):
+                 read_only_mounts: list[Path] | None = None, base_network: str = "bridge"):
         self.workspace = workspace
         self.image, self.base_image = image, base_image
+        self.base_network = base_network
         suffix = uuid.uuid4().hex[:16]
         self.name, self.base_name = f"ae-godot-{suffix}", f"ae-game-base-{suffix}"
         self.mounts = list(dict.fromkeys([workspace, *mounts]))
@@ -75,7 +76,7 @@ class DockerRuntime:
         try:
             await docker_command(
                 "run", "-d", "--pull=never", "--name", self.base_name, "--init",
-                "--label", "agentevolver.role=game-base", "--network", "none",
+                "--label", "agentevolver.role=game-base", "--network", self.base_network,
                 "--user", f"{os.getuid()}:{os.getgid()}",
                 *self.mount_args(self.mounts), *self.mount_args(self.read_only_mounts, read_only=True),
                 "--workdir", str(self.workspace),

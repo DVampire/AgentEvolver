@@ -21,9 +21,34 @@ def require(result):
     return result
 
 
+@pytest.mark.asyncio
+async def test_builder_start_uses_process_session_before_first_turn(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from agentevolver.agent.actor.game_builder_agent import GameBuilderAgent
+    from agentevolver.environment.server import environment_manager
+
+    environment = SimpleNamespace(prepare_workspace=AsyncMock(return_value={"success": True}),
+                                  close_session=AsyncMock())
+    monkeypatch.setattr(environment_manager, "get", AsyncMock(return_value=environment))
+    agent = GameBuilderAgent()
+    ctx = SimpleNamespace(id="builder-lifecycle")
+    assert agent.ctx is None  # Kernel invokes on_start before Agent._run binds ctx.
+    await agent.on_start("Build the game", SimpleNamespace(ctx=ctx))
+    environment.prepare_workspace.assert_awaited_once_with(ctx=ctx)
+    # Even a failure before the first model turn must close the same session.
+    await agent.on_exit("failed")
+    environment.close_session.assert_awaited_once_with(ctx.id)
+
+
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_native_game_through_shared_base_and_godot(bound_session):
+async def test_native_game_through_shared_base_and_godot(bound_session, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from agentevolver.agent.actor.game_builder_agent import GameBuilderAgent
+    from agentevolver.environment.server import environment_manager
+
     root = bound_session["workspace"]
     ctx = SimpleNamespace(id="native-integration")
     env = GodotEnvironment()
@@ -31,8 +56,14 @@ async def test_native_game_through_shared_base_and_godot(bound_session):
     runtime = None
     evidence = {}
     try:
+        monkeypatch.setattr(environment_manager, "get", AsyncMock(return_value=env))
+        builder = GameBuilderAgent()
+        await builder.on_start("Build a native game", SimpleNamespace(ctx=ctx))
+        # Repeating setup through the action surface must reuse the hook's runtime.
         require(await env.prepare_workspace(ctx=ctx))
+        assert set(env._runtimes) == {ctx.id}
         runtime = env._runtimes[ctx.id]
+        assert (await docker_command("inspect", "--format", "{{.HostConfig.NetworkMode}}", runtime.base_name)).strip() == "bridge"
         assert container_for(str(root))[0] == runtime.base_name
         fixture = Path(__file__).parent / "fixtures" / "godot_native"
         sources = {path.name: path.read_text() for path in fixture.iterdir() if path.is_file()}
@@ -49,6 +80,7 @@ async def test_native_game_through_shared_base_and_godot(bound_session):
         assert written.success and written.data["exit_code"] == 0, written
         assert "Native environment" in plan.read_text()
         require(await env.doctor(ctx=ctx))
+        assert (await docker_command("inspect", "--format", "{{.HostConfig.NetworkMode}}", runtime.name)).strip() == "none"
         evidence["version"] = env._sessions[ctx.id]["last"]["output"]
         # Read the exact file through the OTHER container, not just from the host.
         shared = await docker_command("exec", runtime.name, "cat", str(root / "game/project.godot"))
@@ -90,7 +122,6 @@ async def test_native_game_through_shared_base_and_godot(bound_session):
         evidence["after_click"] = state
         state_view = await env.get_state(ctx=ctx)
         assert state_view["extra"]["screenshots"]
-        from agentevolver.agent.actor.game_builder_agent import GameBuilderAgent
         from agentevolver.message.types import ContentPartImage
 
         agent = GameBuilderAgent()
