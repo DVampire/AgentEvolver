@@ -45,6 +45,23 @@ class ComponentEvaluation(BaseModel):
         return self
 
 
+def component_evaluation_schema():
+    """Inline this acyclic report model for embedding in a tool parameter schema."""
+    schema = ComponentEvaluation.model_json_schema()
+    definitions = schema.pop("$defs", {})
+
+    def expand(value):
+        if isinstance(value, list):
+            return [expand(item) for item in value]
+        if isinstance(value, dict):
+            if "$ref" in value:
+                return expand(definitions[value["$ref"].removeprefix("#/$defs/")])
+            return {key: expand(item) for key, item in value.items()}
+        return value
+
+    return expand(schema)
+
+
 class ManifestComponent(BaseModel):
     """One active extension component."""
     module: str = Field(description="Owning module: tool / agent / prompt / skill / environment")

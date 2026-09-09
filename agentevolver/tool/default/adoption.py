@@ -25,10 +25,11 @@ use that component — and lived here only because this tool happened to be moun
 the grant was needed. It is `grant_tool`.
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, WithJsonSchema
 
+from agentevolver.extension.types import component_evaluation_schema
 from agentevolver.logger import logger
 from agentevolver.registry import TOOL
 from agentevolver.response.types import Response, ResponseType
@@ -58,6 +59,9 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
   rollback/unload separately. You are recording a judgment on your own work, so ground the
   verdict in cases you actually executed. This is generic across all eight families and does
   not depend on a website release or task contract.
+  Every case requires `case_id`, `expected`, `observed`, `passed` (boolean), and
+  non-empty `evidence_ids`; a `result` field is not a substitute. This applies to
+  failed evaluations and unload decisions too.
 
   **An `evidence_id` is a `tool_call_id`.** Copy it verbatim from a call you made in this
   conversation — they look like `toolu_...` or `call_...` — one per case, naming the call
@@ -94,6 +98,24 @@ The associated prompt can also be inspected/restored as an agent's supporting ar
 _EXAMPLES = [
     '{"name": "adoption_tool", "args": {"action": "rollback", "module": "tool", "name": "calculator_tool", "version": "1.0.0"}}',
 ]
+
+AdoptionReport = Annotated[Optional[Dict[str, Any]], WithJsonSchema({
+    "anyOf": [
+        component_evaluation_schema(),
+        {
+            "type": "object",
+            "description": "record_use only: receipt for actual subsequent work with the adopted version.",
+            "properties": {
+                **{key: {"type": "string", "minLength": 1} for key in (
+                    "module", "name", "version", "consumer_call_id", "outcome")},
+                "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+            },
+            "required": ["module", "name", "version", "consumer_call_id", "evidence_ids", "outcome"],
+        },
+        {"type": "null"},
+    ],
+    "description": "For record_decision, supply the evaluation including complete cases; for record_use, supply the consumer receipt. Omit for other actions. Evidence IDs must be copied from real calls, never invented.",
+})]
 
 
 def _require_observed_evidence(report: Dict[str, Any], caller_id: str) -> None:
@@ -229,7 +251,7 @@ class AdoptionTool(Tool):
         notes: str = "",
         decision: Optional[Literal["keep", "rollback", "unload"]] = None,
         evidence: str = "",
-        report: Optional[Dict[str, Any]] = None,
+        report: AdoptionReport = None,
         **kwargs: Any,
     ) -> Response:
         """Install, inspect and roll back evolved components.

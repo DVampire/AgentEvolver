@@ -17,10 +17,10 @@ fallback rather than an exception, because an exception here stops the evolution
 that produced it.
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, WithJsonSchema
 
 from agentevolver.dynamic.server import (
     PYTHON_TYPE_FIELD,
@@ -98,6 +98,23 @@ def test_an_array_always_declares_its_element_type(dynamic, annotation, expected
     cleanly and then breaks every request the model tries to make with it.
     """
     assert dynamic.annotation_to_item_schema(annotation) == expected
+
+
+def test_declared_nested_schema_survives_projection_without_changing_python_values(dynamic):
+    nested = {"type": "array", "items": {"type": "object", "required": ["key"],
+              "properties": {"key": {"type": "string"}}, "additionalProperties": False}}
+
+    def action(steps: Annotated[list[dict], WithJsonSchema(nested)]):
+        pass
+
+    inferred = dynamic.get_parameters(action)
+    provider = dynamic.build_function_calling("action", "Input", inferred)
+    assert provider["function"]["parameters"]["properties"]["steps"]["items"] == nested["items"]
+    args = dynamic.build_args_schema("action", inferred)
+    value = [{"key": "Enter"}]
+    assert args.model_validate({"steps": value}).steps == value
+    inferred["properties"]["steps"]["items"]["required"].append("unrelated")
+    assert nested["items"]["required"] == ["key"]
 
 
 @pytest.mark.parametrize(

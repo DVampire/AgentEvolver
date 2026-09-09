@@ -1,8 +1,10 @@
 """Compile bounded player-input sequences; never expose arbitrary runtime mutation."""
 import math
 from copy import deepcopy
+from typing import Annotated, Any
 
 import jsonschema
+from pydantic import WithJsonSchema
 
 TOOLS = {
     "key_down": "game_key_hold", "key_up": "game_key_release", "key_tap": "game_key_press",
@@ -13,6 +15,40 @@ TOOLS = {
     "mouse_mode": "game_input_state", "wait_frames": "game_wait",
 }
 
+# Keep the common argument vocabulary compact; operation-specific requirements
+# are validated against the connected MCP server by compile_steps below.
+INPUT_STEPS_SCHEMA = {
+    "type": "array", "minItems": 1, "maxItems": 32,
+    "items": {
+        "type": "object", "additionalProperties": False, "required": ["type"],
+        "properties": {
+            "type": {"type": "string", "enum": [*TOOLS, "wait", "release_all"]},
+            "arguments": {
+                "type": "object", "additionalProperties": False,
+                "description": "Nest all input parameters here, never beside type. Omit only for release_all. Required fields depend on type; see the action description.",
+                "properties": {
+                    **{k: {"type": "string"} for k in (
+                        "key", "action", "text", "direction", "actionName", "mode", "frameType")},
+                    **{k: {"type": "boolean"} for k in ("ctrl", "shift", "alt", "meta", "physical")},
+                    **{k: {"type": "number"} for k in (
+                        "x", "y", "relative_x", "relative_y", "fromX", "fromY", "toX", "toY", "value")},
+                    "type": {"type": "string", "enum": ["button", "axis"]},
+                    "button": {"type": "integer", "enum": [1, 2, 3, 8, 9]},
+                    "index": {"type": "integer"}, "device": {"type": "integer"},
+                    "duration_ms": {"type": "integer", "minimum": 0, "maximum": 10000},
+                    "steps": {"type": "integer", "minimum": 1, "maximum": 300},
+                    "frames": {"type": "integer", "minimum": 1, "maximum": 600},
+                    "amount": {"type": "integer", "minimum": 1, "maximum": 100},
+                    "strength": {"type": "number", "minimum": 0, "maximum": 1},
+                },
+            },
+        },
+    },
+    "examples": [[{"type": "key_tap", "arguments": {"key": "Enter"}},
+                  {"type": "wait", "arguments": {"duration_ms": 200}}]],
+}
+InputSteps = Annotated[list[dict[str, Any]], WithJsonSchema(INPUT_STEPS_SCHEMA)]
+
 
 def compile_steps(steps, schemas):
     if not isinstance(steps, list) or not 1 <= len(steps) <= 32:
@@ -20,7 +56,10 @@ def compile_steps(steps, schemas):
     compiled, wait_ms = [], 0
     for index, step in enumerate(deepcopy(steps)):
         if not isinstance(step, dict) or set(step) - {"type", "arguments"}:
-            raise ValueError(f"Step {index}: use only type and arguments")
+            raise ValueError(
+                f'Step {index}: use only type and arguments; nest parameters as '
+                '{"type":"key_tap","arguments":{"key":"Enter"}}'
+            )
         kind, args = step.get("type"), step.get("arguments", {})
         if not isinstance(args, dict):
             raise ValueError(f"Step {index}: arguments must be an object")

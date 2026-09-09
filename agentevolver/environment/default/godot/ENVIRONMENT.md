@@ -55,6 +55,11 @@ file authoring. Session close removes both owned containers and the Bash route.
 
 ## Actual play
 
+`check_script` and `run_headless` resolve script/scene paths inside the project
+selected by `open_project`, not the shared workspace root. Put probes under
+`<project>/tests/` and use `tests/probe.gd` or `res://tests/probe.gd`. Absolute
+paths must also stay inside that project; workspace `reports/` is for output.
+
 Use `start_game` to launch the selected project (optionally a project-relative scene)
 and wait for an authenticated bridge. `observe` captures a rendered PNG. Successful
 input actions capture the resulting frame, which GameBuilder attaches to its model
@@ -80,6 +85,11 @@ for argument names; GUI shortcuts use `key_tap` modifier flags (`ctrl`, `shift`,
 `alt`, `meta`). Held modifier keys also apply to mouse events. Gamepad axes/buttons
 and multiple touch indices are supported. `action_strength` targets an existing
 InputMap action; it cannot create bindings or mutate game state.
+All parameters belong inside `arguments`: use
+`{"type":"key_tap","arguments":{"key":"Enter"}}`, never
+`{"type":"key_tap","key":"Enter"}`. The provider schema declares this nested
+shape and the argument vocabulary; the connected MCP schema checks requirements
+for the selected operation before input is sent.
 
 Example arguments for moving forward while sprinting and turning the camera:
 

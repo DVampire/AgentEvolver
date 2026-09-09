@@ -10,6 +10,7 @@ import json
 import re
 from copy import deepcopy
 from typing import (
+    Annotated,
     Any,
     Callable,
     Dict,
@@ -22,12 +23,14 @@ from typing import (
     TypeVar,
     Union,
     get_type_hints,
+    get_args,
+    get_origin,
 )
 
 import inflection
 
 from agentevolver.logger import logger
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema, create_model
 
 T = TypeVar('T')
 
@@ -983,11 +986,11 @@ class DynamicModuleManager:
         try:
             if isinstance(object, Type):
                 signature = inspect.signature(object.__call__)
-                hints = get_type_hints(object.__call__)
+                hints = get_type_hints(object.__call__, include_extras=True)
                 docstring = inspect.getdoc(object.__call__) or ""
             elif isinstance(object, Callable):
                 signature = inspect.signature(object)
-                hints = get_type_hints(object)
+                hints = get_type_hints(object, include_extras=True)
                 docstring = inspect.getdoc(object) or ""
         except Exception as e:
             raise ValueError(f"Failed to get parameters for {object}: {e}")
@@ -1012,6 +1015,12 @@ class DynamicModuleManager:
             
             # Get type annotation
             annotation = hints.get(name, param.annotation)
+            declared_schema = None
+            if get_origin(annotation) is Annotated:
+                annotation, *metadata = get_args(annotation)
+                for item in metadata:
+                    if isinstance(item, WithJsonSchema) and item.mode in (None, "validation"):
+                        declared_schema = item.json_schema
             json_type, python_type = self.annotation_to_types(annotation)
             
             # Determine if required
@@ -1037,6 +1046,11 @@ class DynamicModuleManager:
             # like the Gemini API reject an array schema without it.
             if json_type == "array":
                 schema["items"] = self.annotation_to_item_schema(annotation)
+            # Preserve explicitly declared nested contracts in the provider and
+            # Markdown projections; Python invocation still receives dicts/lists.
+            if declared_schema is not None:
+                schema = deepcopy(declared_schema)
+                schema.setdefault("description", doc_descriptions.get(name, ""))
             schema[PYTHON_TYPE_FIELD] = python_type
             
             if not is_required:

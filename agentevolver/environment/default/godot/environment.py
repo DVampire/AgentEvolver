@@ -24,6 +24,7 @@ from agentevolver.environment.types import Environment, ScreenshotInfo
 from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import ENVIRONMENT
 from agentevolver.session import isolated_workspace_root, resolve_workspace_root
+from .inputs import InputSteps
 
 
 @ENVIRONMENT.register_module(force=True)
@@ -267,6 +268,17 @@ class GodotEnvironment(Environment):
                         if operation == "check_script" and not script:
                             raise ValueError("check_script requires a .gd script path")
                         if script or scene:
+                            # These are project resources, unlike workspace reports
+                            # or exports. Explain the distinction before engine launch.
+                            candidate = Path((script or scene).removeprefix("res://"))
+                            candidate = (candidate if candidate.is_absolute() else project / candidate).resolve()
+                            if not candidate.is_relative_to(project):
+                                raise ValueError(
+                                    f"Script/scene must be inside the selected Godot project {project}. "
+                                    "Put test scripts under that project's tests/ directory and pass "
+                                    "tests/example.gd or res://tests/example.gd. "
+                                    f"Workspace reports are not project resources: {candidate}"
+                                )
                             resource = self._inside((script or scene).removeprefix("res://"), project)
                             suffixes = (".gd",) if script else (".tscn", ".scn")
                             if not resource.is_file() or resource.suffix not in suffixes:
@@ -345,17 +357,31 @@ class GodotEnvironment(Environment):
 
     @environment_manager.action(
         name="check_script", read_only=False, destructive=False,
-        description="Parse ONE .gd file with --script --check-only. Use project-relative, res:// or absolute paths. This does not validate all project scripts or gameplay.",
+        description="Parse ONE .gd file with --script --check-only. The file must be inside the selected Godot project, including when using an absolute path. Use project-relative or res:// paths. This does not validate all project scripts or gameplay.",
     )
     async def check_script(self, script: str, timeout: int = 60, ctx=None, **kwargs):
+        """Parse a project resource.
+
+        Args:
+            script: Existing .gd file inside the selected project, e.g. tests/check.gd or res://tests/check.gd; workspace reports outside the project are not accepted.
+            timeout: Wall-clock limit in seconds.
+        """
         return await self._perform("check_script", ctx, timeout, script=script)
 
     @environment_manager.action(
         name="run_headless", read_only=False, destructive=False,
-        description="Run the main scene, a scene, or a SceneTree/MainLoop script without a window. Bounded by engine iterations AND wall time. A clean exit is not an assertion pass or visual play evidence.",
+        description="Run the main scene, a scene, or a SceneTree/MainLoop script without a window. Scripts/scenes must be inside the selected Godot project; place probes in its tests/ directory, not workspace reports/. Bounded by engine iterations AND wall time. A clean exit is not an assertion pass or visual play evidence.",
     )
     async def run_headless(self, scene: str = "", script: str = "", frames: int = 120,
                            timeout: int = 60, ctx=None, **kwargs):
+        """Run a bounded project scene or script.
+
+        Args:
+            scene: Project-relative, res:// or absolute .tscn/.scn path inside the selected project; omit for its main scene. Cannot combine with script.
+            script: SceneTree/MainLoop .gd file inside the selected project, e.g. tests/baseline.gd. Absolute paths outside the project are rejected. Cannot combine with scene.
+            frames: Engine iteration limit; does not assert test success.
+            timeout: Wall-clock limit in seconds.
+        """
         return await self._perform("run_headless", ctx, timeout, scene=scene, script=script, frames=frames)
 
     @environment_manager.action(
@@ -639,7 +665,13 @@ class GodotEnvironment(Environment):
 
     @environment_manager.action(name="input_sequence", read_only=False, destructive=False,
         description="Run 1..32 ordered player-input steps (type, arguments), then capture a frame. Types: key_down/up (key or action), key_tap (key plus ctrl/shift/alt/meta/physical), text (text), click/double_click/mouse_down/up (x,y,button), mouse_move (x,y,relative_x,relative_y), drag (fromX,fromY,toX,toY,button,steps), scroll (x,y,direction,amount), gamepad (type=button|axis,index,value,device), touch (action=press|release|drag,x,y,index,toX,toY,steps), action_strength (actionName,strength), mouse_mode (mode), wait (duration_ms), wait_frames (frames,frameType), release_all. Default releases all controls at end. Set release_at_end=false to hold across calls; idle inputs auto-release after the configured lease. Whole sequence has a 15-second deadline; waits total <=10000 ms. No game-state mutation.")
-    async def input_sequence(self, steps: list[dict[str, Any]], release_at_end: bool = True, ctx=None, **kwargs):
+    async def input_sequence(self, steps: InputSteps, release_at_end: bool = True, ctx=None, **kwargs):
+        """Execute ordered player inputs.
+
+        Args:
+            steps: Input objects shaped as {"type":"key_tap","arguments":{"key":"Enter"}}. Put key, duration_ms and other parameters inside arguments; never beside type.
+            release_at_end: Release held controls after the sequence; false keeps them until explicit release or the idle lease expires.
+        """
         return await self._native("sequence", ctx, steps=steps, release_at_end=release_at_end)
 
     @environment_manager.action(name="press_keys", read_only=False, destructive=False,
