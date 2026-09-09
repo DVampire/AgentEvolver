@@ -41,7 +41,12 @@ Only godot_environment is mounted. Use Bash for file operations and bounded fore
 commands; there is no background-job or browser environment in this demo. The base
 and Godot Docker containers share the canonical workspace path; the base also mounts
 session plan/log/extension paths. Use doctor, open_project, import_project and start_game,
-then observe, press_key, move_mouse, click and inspect_runtime for native play. stop_game
+then observe, press_key/press_keys, move_mouse, click, type_text, input_sequence and
+inspect_runtime for native play. Use input_sequence for simultaneous keyboard/mouse,
+drag/scroll/double-click, GUI shortcuts, gamepad, touch and existing InputMap actions.
+Inspect actual action schemas. Sequences release held controls by default; when retaining
+holds across calls, explicitly release_inputs within the idle lease. input_state diagnoses
+actual held state. Validate each input against visible game outcomes. stop_game
 must precede CLI imports/checks/exports or project switching. Missing images, rendering
 or input failures remain blockers; do not invent evidence or claim unobserved play.
 </scope>

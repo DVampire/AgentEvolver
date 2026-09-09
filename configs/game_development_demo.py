@@ -28,7 +28,7 @@ env_names = ["godot_environment"]
 # Build docker/godot first. Base and engine containers share canonical workspace
 # paths; the base also mounts session plan/log/extension directories.
 godot_environment = dict(
-    backend="docker", image="agentevolver/godot:4.7-b5fa8cb",
+    backend="docker", image="agentevolver/godot:4.7-b5fa8cb-input2",
     base_image="python:3.12-slim", max_command_seconds=300, enable_evolving=False,
 )
 

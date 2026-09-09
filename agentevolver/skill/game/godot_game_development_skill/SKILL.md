@@ -89,11 +89,23 @@ iterations. An assertion runner needs its own completion marker/nonzero failure 
 Run only checks justified by the change and explicit user authorization.
 
 Launch the shared project with godot_environment start_game and inspect its actual
-observe/press_key/move_mouse/click action schemas. Use a
+observe/press_key/press_keys/move_mouse/click/type_text/input_sequence action schemas. Use a
 rendered frame and ordinary player input, with bounded held keys and guaranteed
 release. Observe the resulting position instead of inferring movement from elapsed
 input time. Stop the game before imports, CLI checks or exports; import/restart after
 edits so the played revision is known. inspect_runtime supplies tree/ui/logs/errors.
+
+Use input_sequence for simultaneous keys and mouse, GUI shortcuts (key_tap modifier
+flags), dragging, scrolling, double-clicks, captured-camera motion, gamepad buttons/axes
+and touch gestures. Focus text controls by clicking before type_text. Test only device
+types and bindings the game supports; verify visible results rather than input receipts.
+Sequences release held inputs by default. For a hold across observations, set
+release_at_end=false and explicitly release_inputs before the idle lease expires
+(10 seconds by default); observation does not renew it. Use input_state to diagnose
+stuck controls. Sequence limits are 32 steps, 10 seconds of explicit waits and a
+15-second total deadline. Do not treat automatic idle release as an intentional move.
+Keep real-player inputs separate from scene/UI/log inspection. Engine screenshots
+do not verify sound, host-native dialogs or physical controller feedback.
 
 Never substitute teleport/set_quest_state or other hidden-state edits for a real
 player journey. Explicit debug harnesses may supplement visual evidence, and must

@@ -52,3 +52,8 @@ RUN set -eu; arch="$(uname -m)"; \
 COPY entrypoint.sh /usr/local/bin/godot-container
 RUN chmod +x /usr/local/bin/godot-container
 ENTRYPOINT ["/usr/local/bin/godot-container"]
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+COPY extend-input.mjs /opt/extend-input.mjs
+RUN node /opt/extend-input.mjs
+LABEL agentevolver.godot.input_extension="2"

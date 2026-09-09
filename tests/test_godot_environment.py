@@ -189,3 +189,145 @@ async def test_project_symlink_cannot_escape_workspace(bound_session, tmp_path):
     result = await env.open_project(project_path="escape", ctx=SimpleNamespace(id="path-check"))
     assert not result["success"] and "inside" in result["message"]
     assert not env._runtimes
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_complete_native_player_inputs(bound_session):
+    root = bound_session["workspace"]
+    project = root / "game"
+    project.mkdir()
+    fixture = Path(__file__).parent / "fixtures" / "godot_native"
+    for path in fixture.iterdir():
+        (project / path.name).write_bytes(path.read_bytes())
+    ctx = SimpleNamespace(id="complete-inputs")
+    env = GodotEnvironment()
+    results = {}
+
+    def step(kind, **arguments):
+        return {"type": kind, "arguments": arguments}
+
+    async def sequence(*steps, release=True):
+        return require(await env.input_sequence(list(steps), release_at_end=release, ctx=ctx))
+
+    async def state():
+        await sequence(step("wait_frames", frames=3, frameType="physics"), release=False)
+        return json.loads((project / "controls.json").read_text())
+
+    try:
+        require(await env.doctor(ctx=ctx))
+        require(await env.open_project(project_path="game", ctx=ctx))
+        require(await env.import_project(ctx=ctx))
+        require(await env.start_game(scene="interaction.tscn", ctx=ctx))
+        require(await env.press_keys(keys=["Right", "Shift", "Up"], duration_ms=400, ctx=ctx))
+        current = await state()
+        assert current["x"] > 1.5 and current["z"] < -0.5, current
+        assert not current["right"] and not current["shift"]
+        results["diagonal_sprint"] = {key: current[key] for key in ("x", "z", "right", "shift")}
+
+        require(await env.click(x=140, y=185, ctx=ctx))
+        require(await env.type_text(text="潮汐伙伴 Echo", ctx=ctx))
+        assert (await state())["text"] == "潮汐伙伴 Echo"
+        await sequence(step("key_tap", key="K", ctrl=True))
+        assert (await state())["shortcuts"] == 1
+        await sequence(step("key_tap", key="A", ctrl=True), step("text", text="New Name"))
+        assert (await state())["text"] == "New Name"
+        results["unicode_and_shortcuts"] = True
+
+        await sequence(step("key_down", key="Right"), step("mouse_down", x=500, y=300, button=2), release=False)
+        await sequence(step("mouse_move", x=540, y=320, relative_x=40, relative_y=20), release=False)
+        current = await state()
+        assert current["right"] and current["right_mouse"] and current["drag_motion"] > 0, current
+        queried = require(await env.input_state(keys=["Right"], mouse_buttons=[2], ctx=ctx))
+        assert "physical_pressed" in queried["message"]
+        require(await env.click(x=540, y=320, button=1, ctx=ctx))
+        assert (await state())["right_mouse"], "Left click must preserve a held right button"
+        require(await env.click(x=540, y=320, button=2, ctx=ctx))
+        current = await state()
+        assert not current["right_mouse"]
+        drag_count = current["drag_motion"]
+        require(await env.move_mouse(x=550, y=320, ctx=ctx))
+        assert (await state())["drag_motion"] == drag_count, "Released buttons must not leak into motion masks"
+        require(await env.release_inputs(ctx=ctx))
+        current = await state()
+        assert not current["right"] and not current["right_mouse"], current
+        results["held_keyboard_and_mouse"] = True
+
+        await sequence(step("drag", fromX=40, fromY=247, toX=310, toY=247, steps=12))
+        assert (await state())["slider"] > 70
+        await sequence(step("scroll", x=500, y=300, direction="down", amount=3),
+                       step("double_click", x=500, y=300))
+        current = await state()
+        assert current["wheel_events"] >= 3 and current["double_clicks"] == 1, current
+        results["drag_scroll_double_click"] = True
+        await sequence(step("key_down", key="Shift"), step("click", x=500, y=300))
+        assert (await state())["shift_clicks"] == 1
+        results["modifier_mouse_click"] = True
+
+        await sequence(step("mouse_mode", mode="captured"),
+                       step("mouse_move", x=480, y=320, relative_x=35, relative_y=0))
+        assert abs((await state())["camera_y"]) > 0.03
+        await sequence(step("mouse_mode", mode="visible"))
+        results["captured_camera_input"] = True
+
+        await sequence(step("gamepad", type="button", index=0, value=1),
+                       step("gamepad", type="axis", index=0, value=0.75), release=False)
+        current = await state()
+        assert current["joy_button_events"] > 0 and current["joy_held"], current
+        assert current["joy_axis"] > 0.7, current
+        require(await env.release_inputs(ctx=ctx))
+        current = await state()
+        assert not current["joy_held"] and current["joy_axis"] == 0, current
+        results["gamepad_button_and_axis"] = True
+
+        await sequence(step("touch", action="press", x=500, y=300, index=0),
+                       step("touch", action="press", x=600, y=300, index=1), release=False)
+        assert (await state())["touch_count"] == 2
+        require(await env.release_inputs(ctx=ctx))
+        await sequence(step("touch", action="drag", x=500, y=300, toX=580, toY=350, steps=5))
+        current = await state()
+        assert current["touch_count"] == 0 and current["touch_drags"] >= 5
+        await sequence(step("action_strength", actionName="test_boost", strength=0.6), release=False)
+        assert (await state())["boost"] > 0.59
+        require(await env.release_inputs(ctx=ctx))
+        assert (await state())["boost"] == 0
+        results["touch_and_inputmap_strength"] = True
+
+        # Validate every step before dispatch, including forbidden hidden mutations.
+        rejected = await env.input_sequence([step("key_down", key="Right"), step("game_eval", code="pass")], ctx=ctx)
+        assert not rejected["success"] and rejected["extra"]["executed_steps"] == 0
+        assert env._sessions[ctx.id]["running"]
+        assert not (await state())["right"]
+        # A runtime argument rejection after a successful hold must release it too.
+        rejected = await env.input_sequence([step("key_down", key="Right"), step("key_down", key="not_a_real_key")], ctx=ctx)
+        assert not rejected["success"]
+        assert not (await state())["right"]
+        results["invalid_sequences_release_inputs"] = True
+
+        env.input_idle_seconds = 0.4
+        await sequence(step("key_down", key="Right"), step("mouse_down", x=500, y=300, button=2),
+                       step("gamepad", type="axis", index=0, value=0.5),
+                       step("touch", action="press", x=600, y=300, index=1), release=False)
+        await asyncio.sleep(0.9)
+        current = json.loads((project / "controls.json").read_text())
+        assert not current["right"] and not current["right_mouse"], current
+        assert current["joy_axis"] == 0 and current["touch_count"] == 0, current
+        assert env._sessions[ctx.id]["running"], "Idle release should preserve the game"
+        results["idle_release_all_device_types"] = True
+        frame = require(await env.observe(ctx=ctx))
+        target = Path(os.environ.get("GODOT_TEST_ARTIFACTS", str(root / "reports")))
+        target.mkdir(parents=True, exist_ok=True)
+        Image.open(frame["extra"]["screenshots"][0].screenshot_path).save(target / "complete-interaction.png")
+        # A normal in-game Quit button must not leave the adapter stuck running.
+        await env.click(x=100, y=300, ctx=ctx)
+        await asyncio.sleep(0.8)
+        assert not (await env.observe(ctx=ctx))["success"]
+        assert not env._sessions[ctx.id]["running"]
+        require(await env.stop_game(ctx=ctx))
+        require(await env.start_game(scene="interaction.tscn", ctx=ctx))
+        require(await env.observe(ctx=ctx))
+        results["player_quit_and_restart"] = True
+        (target / "interaction-result.json").write_text(json.dumps(results, indent=2))
+    finally:
+        await env.close_session(ctx.id)
+    assert not env._input_watchdogs

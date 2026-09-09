@@ -51,10 +51,9 @@ There is inspectable evidence beyond a feature list:
 - [Docker E2E launcher](https://github.com/beremaran/godot-agent-loop/blob/main/scripts/run-e2e-docker.sh): starts Xvfb inside the container and invokes the real-engine suite.
 - [Representative E2E source](https://github.com/beremaran/godot-agent-loop/blob/main/tests/e2e/representative-path.test.ts): authors a fixture on disk, calls MCP through a real client, launches Godot and exercises sustained input with independent observations.
 
-These are upstream test implementations, not a passing result for AgentEvolver or for
-our 3D campaign. The representative authored movement fixture is 2D; we must add a
-3D scene, camera and visual-input case for this integration. Pin the selected source,
-engine, templates and image before adopting them.
+These upstream tests are separate from our verification. Their representative authored
+movement fixture is 2D. Our integration adds a 3D scene, camera and visual-input cases;
+the local results below cover those fixtures, not the full campaign.
 
 ### Shared workspace architecture
 
@@ -97,8 +96,9 @@ the execution dependencies, and Environment is the Agent-facing lifecycle/API.
 
 **Current implementation status:** the demo and GameBuilder now mount only
 `godot_environment`; `job`, `browser_environment`, browser image routing and the
-Web-preview deploy tool are absent. Docker/MCP native startup, screenshots, held keys,
-mouse movement, clicks, runtime inspection, stop and cleanup are implemented. The
+Web-preview deploy tool are absent. Docker/MCP native startup, screenshots, combined
+keyboard/mouse input, Unicode text, dragging, scrolling, double-clicks, gamepad,
+touch, runtime inspection, stop and cleanup are implemented. The
 real-engine integration test authors a 3D fixture through base Bash, reads it from
 Godot Docker, checks movement through telemetry and rendered pixels, clicks a button,
 checks model image routing, rejects invalid source and tests restart/cleanup.
@@ -143,6 +143,11 @@ The Dockerfile verifies official binary checksums and installs MCP dependencies 
 the upstream lockfile. MCP stdio contexts belong to one persistent async owner task.
 Xvfb starts directly: Ubuntu's xvfb-run merges child stderr into stdout, which corrupts
 the MCP stream. Writable XDG cache/data paths support an unprivileged container user.
+The `-input2` image also applies `docker/godot/extend-input.mjs`, a checked local
+extension for persistent mouse buttons, double-click flags and modifier-aware mouse
+events. The patch verifies its source locations against the pinned revision and fails
+the build on drift. CJK fonts support rendered Chinese text. This is our derived image,
+not an unmodified upstream release.
 
 ## Visual play and platform choices
 
@@ -156,6 +161,29 @@ Held inputs need bounded duration and guaranteed release. Headless checks cannot
 establish visual quality or enjoyment. Teleports and debug quest setters are
 diagnostics, not evidence of successful play. Software rendering validates this input
 and observation path, not physical-GPU performance or player enjoyment.
+
+### Player interaction API
+
+`press_keys` holds up to eight keys together, for example movement plus sprint.
+`type_text` sends Unicode keyboard events to a focused text control. `input_sequence`
+combines key down/up, shortcuts, mouse down/up/motion, drag, scroll, double-click,
+gamepad buttons/axes, multi-touch, existing InputMap action strengths and bounded waits.
+Captured-camera motion uses relative mouse deltas. Inputs are native Godot events;
+the adapter does not expose generic evaluation or hidden scene/quest mutation.
+
+A sequence validates all steps before execution and returns an input trace plus a
+rendered frame. It accepts at most 32 steps, 10 seconds of explicit waits and a
+15-second total deadline. By default it releases all held controls. Retaining inputs
+across calls requires `release_at_end=false`; explicitly use `release_inputs` afterward.
+The default 10-second idle lease also releases retained controls while preserving the
+game. `input_state` reads actual input state. Transport failure/cancellation closes the
+engine; game exit through its own UI is recognized on subsequent observation.
+
+Full argument examples and limits are in
+[ENVIRONMENT.md](../../../agentevolver/environment/default/godot/ENVIRONMENT.md).
+This API operates the game window through screenshots and inputs. Audio listening,
+host-native dialogs, human desktop streaming and physical controller feedback are
+outside the implemented interaction contract.
 
 ## Engine environment contract
 
@@ -223,7 +251,7 @@ coverage or enjoyment grader. Website release-count/self-review policies do not 
 Use the existing AgentEvolver Python environment from the repository root:
 
 ```bash
-docker build -t agentevolver/godot:4.7-b5fa8cb docker/godot
+docker build -t agentevolver/godot:4.7-b5fa8cb-input2 docker/godot
 docker pull python:3.12-slim
 GODOT_TEST_ARTIFACTS=output/godot-verification python -m pytest tests/test_godot_environment.py -m integration -q
 python -m examples.run_game_development_demo
@@ -255,17 +283,24 @@ graphical play of the exported executable and other platforms remain separate ch
 ### Verified environment result
 
 On 2026-09-09, Linux x86_64 with Docker 28.3.3 and Godot
-`4.7.stable.official.5b4e0cb0f`: **25 tests passed** across
+`4.7.stable.official.5b4e0cb0f`: **26 tests passed** across
 `test_godot_environment.py`, `test_bash_archive.py`, `test_browser_attachments.py`
 and `test_vision_routing.py`. The integration used real containers and the real engine.
 
 The fixture moved approximately 2 world units through held-key input, stopped after
-release, and changed color after a button click. The Linux export was 73,667,288 bytes
-and its independent headless execution reached `FIXTURE_READY`. Cancellation, MCP and
+release, and changed color after a button click. The Linux export's independent
+headless execution reached `FIXTURE_READY`. Cancellation, MCP and
 CLI deadlines removed the engine; final session cleanup left neither owned container.
-Local evidence is in `output/godot-verification/{result.json,before.png,after-movement.png,after-click.png}`.
+The interaction fixture additionally verified diagonal sprinting, Unicode text entry,
+Ctrl shortcuts, held keyboard plus mouse, slider dragging, scrolling, double-clicks,
+Shift-click, relative camera rotation, gamepad buttons/axes, multiple touches and
+InputMap strength. Mouse button combinations preserve other held buttons and clear
+released drag state. Invalid sequences and idle expiration released held controls.
+The in-game Quit button was followed by successful observation of exit and restart.
+Local evidence is in `output/godot-verification/`: `result.json`, `interaction-result.json`,
+`before.png`, `after-movement.png`, `after-click.png` and `complete-interaction.png`.
 The built engine image ID was
-`sha256:f8663d5801aa1bf3ab95993be6c02f231cc64e6cd037da161c872b33b8d7023e`.
+`sha256:aaef58edaf189459af8fc38a177992079f310598d16221957fdaf553d1d003cb`.
 These results cover the fixture and software-rendered environment, not the campaign,
 an LLM-driven development run, GPU performance or other export platforms.
 

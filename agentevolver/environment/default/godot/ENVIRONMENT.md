@@ -1,7 +1,7 @@
 ---
 name: godot_environment
 description: Shared Docker workspace, Godot CLI checks and native MCP gameplay observation/input.
-version: 2.0.0
+version: 2.1.0
 type: worker
 ---
 
@@ -13,7 +13,7 @@ directories, so plan.md and artifact links retain their runtime paths. File auth
 uses existing workspace tools; there is no duplicate Godot file API. GameBuilder mounts
 only this environment. It prepares the base container before its first turn.
 
-Build `docker/godot` as `agentevolver/godot:4.7-b5fa8cb` before use; runtime never pulls
+Build `docker/godot` as `agentevolver/godot:4.7-b5fa8cb-input2` before use; runtime never pulls
 or builds images. The default host-run base is `python:3.12-slim` (Bash/Python authoring);
 override base_image for additional development dependencies. A Model X launch reuses
 its existing base and translates Docker mount sources via the host/container root mapping.
@@ -51,13 +51,63 @@ file authoring. Session close removes both owned containers and the Bash route.
 
 ## Actual play
 
-Use start_game to launch the selected project and wait for an authenticated bridge.
-observe captures a rendered PNG; press_key holds/releases a key for at most two seconds;
-move_mouse and click send ordinary player input. Actions capture the resulting frame,
-which GameBuilder attaches to its model input. get_state returns the most recent captured
-frame without recapturing; call observe for a fresh view of ongoing animation or motion.
-inspect_runtime reads tree/ui/logs/errors; stop_game stops the game and removes its
-transient bridge. No privileged hidden-state mutation tools are exposed.
+Use `start_game` to launch the selected project (optionally a project-relative scene)
+and wait for an authenticated bridge. `observe` captures a rendered PNG. Successful
+input actions capture the resulting frame, which GameBuilder attaches to its model
+input. `get_state` returns the most recent captured frame without recapturing;
+call `observe` for a fresh view of ongoing animation or motion.
+
+| Action | Player operation |
+| --- | --- |
+| `press_key` | Hold/release one key for 1..2000 ms |
+| `press_keys` | Hold up to eight keys together for 1..10000 ms, such as movement plus sprint |
+| `click`, `move_mouse` | Native viewport clicks and absolute/relative pointer or camera motion |
+| `type_text` | Send 1..256 Unicode codepoints to a focused control; click to focus first |
+| `input_sequence` | Ordered keyboard, mouse, gamepad, touch and named InputMap inputs; see below |
+| `release_inputs` | Neutralize all controls held by this environment |
+| `input_state` | Read actual keyboard/action/mouse state and pointer mode |
+| `inspect_runtime` | Read scene tree, UI, logs or errors for diagnostics |
+
+`input_sequence` accepts 1..32 objects with `type` and `arguments`. Supported types:
+`key_down`, `key_up`, `key_tap`, `text`, `click`, `double_click`, `mouse_down`,
+`mouse_up`, `mouse_move`, `drag`, `scroll`, `gamepad`, `touch`, `action_strength`,
+`mouse_mode`, `wait`, `wait_frames`, `release_all`. Inspect the mounted action schema
+for argument names; GUI shortcuts use `key_tap` modifier flags (`ctrl`, `shift`,
+`alt`, `meta`). Held modifier keys also apply to mouse events. Gamepad axes/buttons
+and multiple touch indices are supported. `action_strength` targets an existing
+InputMap action; it cannot create bindings or mutate game state.
+
+Example arguments for moving forward while sprinting and turning the camera:
+
+```json
+{
+  "steps": [
+    {"type": "key_down", "arguments": {"key": "W"}},
+    {"type": "key_down", "arguments": {"key": "Shift"}},
+    {"type": "mouse_move", "arguments": {"x": 480, "y": 320, "relative_x": 40, "relative_y": 0}},
+    {"type": "wait", "arguments": {"duration_ms": 800}}
+  ],
+  "release_at_end": true
+}
+```
+
+Use the game's actual bindings. By default a sequence releases all held controls.
+Set `release_at_end=false` to preserve holds across calls, then explicitly call
+`release_inputs`. An idle lease releases them after `input_idle_seconds` (default
+10 seconds, configurable from 0.25 to 60). Valid input sequences renew the lease;
+observations do not. Each sequence has a 15-second deadline and at most 10000 ms
+of explicit waits. All steps are schema-validated before the first input. Runtime
+rejection releases held controls; transport failure/cancellation closes the engine.
+
+`stop_game` stops the game and removes its transient bridge. If the game quits
+through its own UI, subsequent observation recognizes the exit and permits restart.
+No privileged hidden-state mutation tools are exposed. The pinned upstream image
+has a checked local extension for mouse holds, double-clicks and mouse modifiers,
+plus CJK fonts; the older image does not implement the full mouse contract.
+
+This covers interaction inside the Godot game window through screenshots and input
+events. It does not provide audio listening, host OS dialogs, a streamed human desktop
+or physical device/force-feedback testing.
 
 Native desktop play is primary; Web export is optional. The image uses Xvfb/Mesa software
 rendering, not a physical GPU benchmark. Input receipts, observed game changes and rendered

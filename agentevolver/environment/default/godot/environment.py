@@ -35,7 +35,7 @@ class GodotEnvironment(Environment):
     ))
     metadata: Dict[str, Any] = Field(default={"has_vision": True, "engine": "godot"})
     backend: str = Field(default="docker", pattern="^(docker|local)$")
-    image: str = Field(default="agentevolver/godot:4.7-b5fa8cb")
+    image: str = Field(default="agentevolver/godot:4.7-b5fa8cb-input2")
     base_image: str = Field(default="python:3.12-slim")
     enable_evolving: bool = Field(default=False)
     binary_path: str = Field(default="")
@@ -45,6 +45,8 @@ class GodotEnvironment(Environment):
     _project_locks: dict = PrivateAttr(default_factory=dict)
     _processes: dict = PrivateAttr(default_factory=dict)
     _runtimes: dict = PrivateAttr(default_factory=dict)
+    input_idle_seconds: float = Field(default=10.0, ge=0.25, le=60)
+    _input_watchdogs: dict = PrivateAttr(default_factory=dict)
 
     @staticmethod
     def _sid(ctx):
@@ -392,6 +394,16 @@ class GodotEnvironment(Environment):
                     ok = False
             except ValueError:
                 pass
+        # Exact lifecycle errors from the pinned MCP backend: a player can quit
+        # from inside the game, independently of stop_game.
+        if not ok and any(message in (
+            "No active Godot process. Use run_project first.",
+            "No active Godot process to stop.",
+        ) for message in messages):
+            self._cancel_input_watchdog(sid)
+            rec.update(running=False, screenshots=[], held_inputs={})
+            if tool == "stop_project":
+                ok = True
         shots = []
         for part in result.content:
             if part.type != "image":
@@ -415,6 +427,84 @@ class GodotEnvironment(Environment):
         rec["last"] = last
         return {"success": ok, "message": last["output"],
                 "extra": {"structured": structured, "screenshots": shots}}
+
+    def _cancel_input_watchdog(self, sid):
+        task = self._input_watchdogs.pop(sid, None)
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+
+    async def _release_inputs(self, sid, rec):
+        self._cancel_input_watchdog(sid)
+        held = rec.setdefault("held_inputs", {})
+        for token, (tool, args) in list(held.items()):
+            result = await self._mcp(sid, rec, tool, args)
+            if not result["success"]:
+                raise RuntimeError(f"Could not release {token}: {result['message']}")
+            held.pop(token, None)
+
+    def _arm_input_watchdog(self, sid, rec):
+        self._cancel_input_watchdog(sid)
+        if not rec.get("held_inputs"):
+            return
+
+        async def expire():
+            try:
+                await asyncio.sleep(self.input_idle_seconds)
+                async with self._locks[sid]:
+                    if self._sessions.get(sid) is rec and rec.get("running"):
+                        await self._release_inputs(sid, rec)
+                        rec["screenshots"] = []
+                        rec["last"] = {"operation": "input_idle_release", "success": True,
+                                       "message": "Idle input lease expired; held controls were released. Call observe for a fresh frame."}
+            except asyncio.CancelledError:
+                pass
+            except Exception as error:
+                rec.update(running=False, screenshots=[], held_inputs={},
+                           last={"operation": "input_idle_release", "success": False, "message": str(error)})
+                runtime = self._runtimes.get(sid)
+                if runtime:
+                    await runtime.close(remove_base=False)
+
+        self._input_watchdogs[sid] = asyncio.create_task(expire(), name=f"godot-input-lease-{sid}")
+
+    async def _input_sequence(self, sid, rec, steps, release_at_end):
+        from .inputs import compile_steps, remember_input
+
+        # Validate the whole sequence before the first input; an invalid later
+        # step must not leave an earlier key down or destroy a healthy game.
+        try:
+            compiled = compile_steps(steps, self._runtime(sid, rec).schemas)
+        except (ValueError, TypeError) as error:
+            return {"success": False, "message": str(error), "extra": {"executed_steps": 0}}
+        rec["screenshots"] = []
+        held = rec.setdefault("held_inputs", {})
+        trace = []
+        async with asyncio.timeout(15):
+            for kind, tool, args in compiled:
+                if kind == "wait":
+                    await asyncio.sleep(args["duration_ms"] / 1000)
+                    result = {"success": True, "message": "Wait completed"}
+                elif kind == "release_all":
+                    await self._release_inputs(sid, rec)
+                    result = {"success": True, "message": "Held controls released"}
+                else:
+                    if kind == "double_click":
+                        first = await self._mcp(sid, rec, "game_click", {k: v for k, v in args.items() if k != "doubleClick"})
+                        if not first["success"]:
+                            await self._release_inputs(sid, rec)
+                            return first
+                    result = await self._mcp(sid, rec, tool, args)
+                    if result["success"]:
+                        remember_input(held, kind, args)
+                trace.append({"type": kind, "success": result["success"], "message": result["message"]})
+                if not result["success"]:
+                    await self._release_inputs(sid, rec)
+                    return {"success": False, "message": result["message"], "extra": {"steps": trace}}
+            if release_at_end:
+                await self._release_inputs(sid, rec)
+        self._arm_input_watchdog(sid, rec)
+        return {"success": True, "message": f"Completed {len(trace)} input steps; held={list(held)}",
+                "extra": {"steps": trace, "held_inputs": list(held)}}
 
     async def _native(self, operation, ctx, **options):
         sid = self._sid(ctx)
@@ -442,15 +532,16 @@ class GodotEnvironment(Environment):
                         path = self._inside(scene.removeprefix("res://"), project)
                         if not path.is_file() or path.suffix not in (".tscn", ".scn"):
                             raise ValueError("Scene must be an existing Godot scene inside the project")
-                        args["scene"] = str(path)
+                        args["scene"] = path.relative_to(project).as_posix()
                     result = await self._mcp(sid, rec, "run_project", args)
                     rec["running"] = result["success"]
                 elif operation == "stop":
+                    self._cancel_input_watchdog(sid)
                     if not rec.get("running"):
                         return {"success": True, "message": "No game running"}
                     result = await self._mcp(sid, rec, "stop_project", {})
                     if result["success"]:
-                        rec.update(running=False, screenshots=[])
+                        rec.update(running=False, screenshots=[], held_inputs={})
                     return result
                 else:
                     if not rec.get("running"):
@@ -463,23 +554,26 @@ class GodotEnvironment(Environment):
                         if options["kind"] not in mapping:
                             raise ValueError("kind must be tree, ui, logs or errors")
                         return await self._mcp(sid, rec, mapping[options["kind"]], {})
-                    if operation == "key":
+                    if operation == "input_state":
+                        return await self._mcp(sid, rec, "game_input_state", {"action": "query", **options})
+                    if operation == "sequence":
+                        result = await self._input_sequence(sid, rec, **options)
+                    elif operation == "key":
                         key, duration = options["key"], options["duration_ms"]
                         if not key or not 1 <= duration <= 2000:
                             raise ValueError("A key and duration_ms in 1..2000 are required")
-                        rec["screenshots"] = []
-                        result = await self._mcp(sid, rec, "game_key_hold", {"key": key})
-                        if result["success"]:
-                            try:
-                                await asyncio.sleep(duration / 1000)
-                            finally:
-                                result = await asyncio.shield(self._mcp(sid, rec, "game_key_release", {"key": key}))
+                        result = await self._input_sequence(sid, rec, [
+                            {"type": "key_down", "arguments": {"key": key}},
+                            {"type": "wait", "arguments": {"duration_ms": duration}},
+                            {"type": "key_up", "arguments": {"key": key}},
+                        ], release_at_end=False)
                     elif operation == "click":
-                        rec["screenshots"] = []
-                        result = await self._mcp(sid, rec, "game_click", options)
+                        result = await self._input_sequence(sid, rec, [
+                            {"type": "click", "arguments": options}], release_at_end=False)
                     elif operation == "mouse":
                         rec["screenshots"] = []
-                        result = await self._mcp(sid, rec, "game_mouse_move", options)
+                        result = await self._input_sequence(sid, rec, [
+                            {"type": "mouse_move", "arguments": options}], release_at_end=False)
                     else:
                         raise ValueError(f"Unknown native operation: {operation}")
                 if result["success"]:
@@ -490,19 +584,21 @@ class GodotEnvironment(Environment):
                         result.update(success=False, message=f"Operation completed but screenshot failed: {frame['message']}")
                 return result
             except asyncio.CancelledError:
+                self._cancel_input_watchdog(sid)
                 runtime = self._runtimes.get(sid)
                 if runtime:
                     await asyncio.shield(runtime.close(remove_base=False))
                 if sid in self._sessions:
-                    self._sessions[sid].update(running=False, screenshots=[])
+                    self._sessions[sid].update(running=False, screenshots=[], held_inputs={})
                 raise
             except Exception as error:
+                self._cancel_input_watchdog(sid)
                 # An uncertain transport/input failure invalidates the live session.
                 runtime = self._runtimes.get(sid)
                 if runtime:
                     await runtime.close(remove_base=False)
                 if sid in self._sessions:
-                    self._sessions[sid].update(running=False, screenshots=[],
+                    self._sessions[sid].update(running=False, screenshots=[], held_inputs={},
                         last={"operation": operation, "success": False, "message": str(error)})
                 return {"success": False, "message": str(error)}
 
@@ -539,6 +635,37 @@ class GodotEnvironment(Environment):
             args = {"x": 0, "y": 0, "relative_x": x, "relative_y": y}
         return await self._native("mouse", ctx, **args)
 
+    @environment_manager.action(name="input_sequence", read_only=False, destructive=False,
+        description="Run 1..32 ordered player-input steps (type, arguments), then capture a frame. Types: key_down/up (key or action), key_tap (key plus ctrl/shift/alt/meta/physical), text (text), click/double_click/mouse_down/up (x,y,button), mouse_move (x,y,relative_x,relative_y), drag (fromX,fromY,toX,toY,button,steps), scroll (x,y,direction,amount), gamepad (type=button|axis,index,value,device), touch (action=press|release|drag,x,y,index,toX,toY,steps), action_strength (actionName,strength), mouse_mode (mode), wait (duration_ms), wait_frames (frames,frameType), release_all. Default releases all controls at end. Set release_at_end=false to hold across calls; idle inputs auto-release after the configured lease. Whole sequence has a 15-second deadline; waits total <=10000 ms. No game-state mutation.")
+    async def input_sequence(self, steps: list[dict[str, Any]], release_at_end: bool = True, ctx=None, **kwargs):
+        return await self._native("sequence", ctx, steps=steps, release_at_end=release_at_end)
+
+    @environment_manager.action(name="press_keys", read_only=False, destructive=False,
+        description="Hold up to eight gameplay keys together for 1..10000 ms, then release them and observe. For GUI shortcuts use input_sequence key_tap with modifier flags.")
+    async def press_keys(self, keys: list[str], duration_ms: int = 300, ctx=None, **kwargs):
+        if not 1 <= len(keys) <= 8 or not 1 <= duration_ms <= 10000:
+            return {"success": False, "message": "Provide 1..8 keys and duration_ms in 1..10000"}
+        steps = [{"type": "key_down", "arguments": {"key": key}} for key in dict.fromkeys(keys)]
+        steps.append({"type": "wait", "arguments": {"duration_ms": duration_ms}})
+        steps += [{"type": "key_up", "arguments": {"key": key}} for key in reversed(list(dict.fromkeys(keys)))]
+        return await self.input_sequence(steps, release_at_end=False, ctx=ctx)
+
+    @environment_manager.action(name="type_text", read_only=False, destructive=False,
+        description="Send 1..256 Unicode codepoints to the focused native text control through keyboard events. Focus it by clicking first; this does not set a hidden UI property.")
+    async def type_text(self, text: str, ctx=None, **kwargs):
+        return await self.input_sequence([{"type": "text", "arguments": {"text": text}}], ctx=ctx)
+
+    @environment_manager.action(name="release_inputs", read_only=False, destructive=False,
+        description="Release all held keyboard, mouse, action, gamepad and touch inputs, then capture a fresh frame.")
+    async def release_inputs(self, ctx=None, **kwargs):
+        return await self.input_sequence([{"type": "release_all"}], ctx=ctx)
+
+    @environment_manager.action(name="input_state", read_only=True, destructive=False,
+        description="Inspect actual keyboard/action/mouse-button state and pointer mode without modifying gameplay state.")
+    async def input_state(self, keys: list[str] | None = None, actions: list[str] | None = None,
+                          mouse_buttons: list[int] | None = None, ctx=None, **kwargs):
+        return await self._native("input_state", ctx, keys=keys or [], actions=actions or [], mouseButtons=mouse_buttons or [])
+
     @environment_manager.action(name="inspect_runtime", read_only=True, destructive=False,
         description="Read tree, ui, logs or errors from the running game. Introspection is diagnostic evidence, not player input.")
     async def inspect_runtime(self, kind: str = "tree", ctx=None, **kwargs):
@@ -554,12 +681,14 @@ class GodotEnvironment(Environment):
         state += f"status={last.get('status', '')}; exit={last.get('exit_code')}; log={last.get('log_path', '')}\n"
         state += str(last.get("output") or last.get("message") or "")[-2000:]
         state += f"\nBackend: {self.backend}; native game running={rec.get('running', False)}"
+        state += f"\nHeld inputs: {list(rec.get('held_inputs', {}))}; idle release after {self.input_idle_seconds}s"
         return {"success": True, "state": state,
                 "extra": {"screenshots": rec.get("screenshots", [])}}
 
     async def close_session(self, session_id):
         sid = session_id or "default"
         async with self._locks.setdefault(sid, asyncio.Lock()):
+            self._cancel_input_watchdog(sid)
             proc = self._processes.pop(sid, None)
             if proc is not None:
                 await self._stop(proc)
