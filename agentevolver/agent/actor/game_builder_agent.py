@@ -25,6 +25,37 @@ class GameBuilderAgent(MetaAgent):
         "environment": ["godot_environment"], "agent": [],
     })
 
+    async def on_start(self, task, proc):
+        from agentevolver.environment.server import environment_manager
+
+        await super().on_start(task, proc)
+        environment = await environment_manager.get("godot_environment")
+        if environment is None:
+            raise RuntimeError("GameBuilder requires godot_environment")
+        result = await environment.prepare_workspace(ctx=self.ctx)
+        if not result["success"]:
+            raise RuntimeError(result["message"])
+
+    def attachments(self):
+        from agentevolver.message.types import (
+            ContentPartImage,
+            ContentPartText,
+            HumanMessage,
+            ImageURL,
+        )
+
+        observation = self._environment_observations.get("godot_environment") or {}
+        shots = (observation.get("extra") or {}).get("screenshots") or []
+        result = super().attachments()
+        if shots:
+            shot = shots[-1]
+            result.append(HumanMessage(content=[
+                ContentPartText(text=shot.screenshot_description),
+                ContentPartImage(image_url=ImageURL(
+                    url=f"data:image/png;base64,{shot.screenshot}", media_type="image/png")),
+            ]))
+        return result
+
     async def on_exit(self, status):
         from agentevolver.environment.server import environment_manager
         from agentevolver.logger import logger

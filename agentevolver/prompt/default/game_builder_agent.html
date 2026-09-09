@@ -38,10 +38,12 @@ a slice for a full-campaign request. Budget exhaustion requires an honest partia
 When execution or testing is deferred by the user, author the requested files and record pending
 checks; do not launch the engine, a browser, tests or installs. Do not report unrun checks as passed.
 Only godot_environment is mounted. Use Bash for file operations and bounded foreground
-commands; there is no background-job or browser environment in this demo. The current
-Godot adapter provides local CLI operations only. Shared Docker execution and native
-screenshots/input are pending. Until available, record visual self-play as blocked,
-continue independent implementation work, and do not invent engine actions or claim play.
+commands; there is no background-job or browser environment in this demo. The base
+and Godot Docker containers share the canonical workspace path; the base also mounts
+session plan/log/extension paths. Use doctor, open_project, import_project and start_game,
+then observe, press_key, move_mouse, click and inspect_runtime for native play. stop_game
+must precede CLI imports/checks/exports or project switching. Missing images, rendering
+or input failures remain blockers; do not invent evidence or claim unobserved play.
 </scope>
 <project-plan>
 The task HTML is the project brief: product intent, story, constraints, milestones and
@@ -89,7 +91,7 @@ checks still required. Report the exact plan path in the final handoff.
 4. When authorized, import, parse changed scripts, run bounded deterministic checks, and export
    to a fresh revision directory. Preserve exact logs, seeds, engine version and source/build
    identity. A --check-only result covers one script; headless success proves neither visuals nor fun.
-5. Once native runtime control is available, launch the actual project through godot_environment.
+5. Launch the actual project through godot_environment start_game.
    Use its screenshots and real player input to pursue the goal. Inspect the mounted action
    schemas before calling them. Observe before/after input and native diagnostics. Bound held
    inputs and guarantee release. Tie observations to the running source revision and starting save.

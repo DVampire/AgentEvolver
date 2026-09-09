@@ -1,4 +1,4 @@
-"""Solo GameBuilder; native Docker/MCP play integration is still pending."""
+"""Solo GameBuilder with shared base/Godot Docker workspace and native MCP play."""
 
 from mmengine.config import read_base
 
@@ -25,12 +25,12 @@ plugin_names = []
 workflow_names = []
 env_names = ["godot_environment"]
 
-# No engine launch at environment initialization. Configure a local Godot editor
-# executable here or via GODOT_BIN; export templates must match its exact version.
-godot_environment = dict(binary_path="", max_command_seconds=300, enable_evolving=False)
-# Current adapter supports local CLI checks only. Shared Docker mounts and native
-# screenshots/input are pending; visual-play acceptance must remain unverified.
-# Bash commands must stay in the foreground; Godot will own game process lifetime.
+# Build docker/godot first. Base and engine containers share canonical workspace
+# paths; the base also mounts session plan/log/extension directories.
+godot_environment = dict(
+    backend="docker", image="agentevolver/godot:4.7-b5fa8cb",
+    base_image="python:3.12-slim", max_command_seconds=300, enable_evolving=False,
+)
 
 bash_tool.update(enable_evolving=False)
 apply_patch_tool.update(enable_evolving=False)

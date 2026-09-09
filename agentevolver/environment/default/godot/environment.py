@@ -1,25 +1,26 @@
-"""Session-scoped Godot projects with bounded, auditable editor CLI operations.
+"""Session-scoped Godot CLI and native MCP gameplay on a shared Docker workspace.
 
-The engine currently runs beside the local workspace tools. Shared Docker execution
-and native gameplay observation/input are pending; this adapter provides neither.
-No binary is started during construction, initialization, or state observation.
+Construction/state observation starts no processes. Workspace preparation starts only
+the base authoring container; doctor or engine actions start the Godot MCP container.
 """
 
 import asyncio
+import base64
 import hashlib
+import json
 import os
-from pathlib import Path
 import re
 import shlex
 import shutil
 import signal
-from typing import Any, Dict
 import uuid
+from pathlib import Path
+from typing import Any, Dict
 
 from pydantic import Field, PrivateAttr
 
 from agentevolver.environment.server import environment_manager
-from agentevolver.environment.types import Environment
+from agentevolver.environment.types import Environment, ScreenshotInfo
 from agentevolver.permission import Operation, PermissionRequest, permission_manager
 from agentevolver.registry import ENVIRONMENT
 from agentevolver.session import isolated_workspace_root, resolve_workspace_root
@@ -30,9 +31,12 @@ class GodotEnvironment(Environment):
     name: str = Field(default="godot_environment")
     description: str = Field(default=(
         "Godot 4 project workspace: engine discovery, imports, GDScript parsing, "
-        "bounded headless runs, exports and diagnostic logs. Native visual play is not yet available."
+        "bounded CLI checks, exports, native Docker/MCP launch, screenshots and player input."
     ))
-    metadata: Dict[str, Any] = Field(default={"has_vision": False, "engine": "godot"})
+    metadata: Dict[str, Any] = Field(default={"has_vision": True, "engine": "godot"})
+    backend: str = Field(default="docker", pattern="^(docker|local)$")
+    image: str = Field(default="agentevolver/godot:4.7-b5fa8cb")
+    base_image: str = Field(default="python:3.12-slim")
     enable_evolving: bool = Field(default=False)
     binary_path: str = Field(default="")
     max_command_seconds: int = Field(default=300, ge=10, le=600)
@@ -40,6 +44,7 @@ class GodotEnvironment(Environment):
     _locks: dict = PrivateAttr(default_factory=dict)
     _project_locks: dict = PrivateAttr(default_factory=dict)
     _processes: dict = PrivateAttr(default_factory=dict)
+    _runtimes: dict = PrivateAttr(default_factory=dict)
 
     @staticmethod
     def _sid(ctx):
@@ -67,10 +72,12 @@ class GodotEnvironment(Environment):
         return path
 
     def _binary(self):
+        if self.backend == "docker":
+            return "/usr/local/bin/godot"
         if os.environ.get("AGENTEVOLVER_EXEC_CONTAINER", "").strip():
             raise ValueError(
-                "GodotEnvironment currently requires the local execution backend. Shared "
-                "workspace mounts and the Godot container adapter have not been wired yet."
+                "The local Godot backend cannot share an externally selected Bash container. "
+                "Use backend=docker with its owned base container, or run locally without that override."
             )
         configured = self.binary_path or os.environ.get("GODOT_BIN", "").strip()
         if configured:
@@ -84,6 +91,42 @@ class GodotEnvironment(Environment):
                 "Install matching export templates separately before exporting."
             )
         return str(Path(found).resolve())
+
+    def _runtime(self, sid, rec):
+        from agentevolver.paths import path_manager
+
+        from .runtime import DockerRuntime
+
+        if sid not in self._runtimes:
+            roots = path_manager.session_roots()
+            mounts = [roots[key] for key in ("plan", "log", "extension") if key in roots]
+            references = [roots[key] for key in ("package", "shared_extension")
+                          if key in roots and roots[key].is_dir()]
+            self._runtimes[sid] = DockerRuntime(
+                rec["workspace"], self.image, self.base_image, mounts, read_only_mounts=references)
+        return self._runtimes[sid]
+
+    @environment_manager.action(
+        name="prepare_workspace", read_only=False, destructive=False,
+        description="Prepare the shared base Docker workspace for Bash file operations. No game is launched; images must already be installed.",
+    )
+    async def prepare_workspace(self, ctx=None, **kwargs):
+        sid = self._sid(ctx)
+        async with self._locks.setdefault(sid, asyncio.Lock()):
+            try:
+                sid, rec = self._session(ctx)
+                if self.backend == "docker":
+                    permission = permission_manager.check_declared(
+                        self.name, PermissionRequest(op=Operation.BASH, target="docker run game workspace"),
+                        mode=self.permission_mode, workspace=isolated_workspace_root(ctx),
+                    )
+                    if not permission.allowed:
+                        return {"success": False, "message": permission.reason}
+                    await self._runtime(sid, rec).prepare_base()
+                return {"success": True, "message": f"Workspace ready: {rec['workspace']}",
+                        "extra": {"workspace": str(rec["workspace"]), "backend": self.backend}}
+            except (OSError, ValueError, RuntimeError) as error:
+                return {"success": False, "message": str(error)}
 
     @staticmethod
     async def _stop(proc):
@@ -135,6 +178,13 @@ class GodotEnvironment(Environment):
             extra = {"operation": operation, "command": argv, "executed": False}
             rec["last"] = {**extra, "success": False, "message": message}
             return {"success": False, "message": message, "extra": extra}
+        if rec.get("running"):
+            raise ValueError("Stop the running game before CLI imports, checks or exports")
+        if self.backend == "docker":
+            runtime = self._runtime(sid, rec)
+            await runtime.start()
+            argv = [os.environ.get("AGENTEVOLVER_DOCKER", "docker"), "exec", runtime.name,
+                    "timeout", "--kill-after=3s", str(timeout), *argv]
         log_dir = self._inside(
             Path(".godot-agent") / hashlib.sha256(sid.encode()).hexdigest()[:16], rec["workspace"],
         )
@@ -155,7 +205,9 @@ class GodotEnvironment(Environment):
             self._processes[sid] = proc
             try:
                 try:
-                    await asyncio.wait_for(proc.wait(), timeout=timeout)
+                    await asyncio.wait_for(proc.wait(), timeout=timeout + (5 if self.backend == "docker" else 0))
+                    if self.backend == "docker" and proc.returncode in (124, 137):
+                        timed_out = True
                 except asyncio.TimeoutError:
                     timed_out = True
                 except asyncio.CancelledError:
@@ -163,6 +215,8 @@ class GodotEnvironment(Environment):
                     raise
             finally:
                 await asyncio.shield(self._stop(proc))
+                if self.backend == "docker" and (timed_out or cancelled):
+                    await asyncio.shield(self._runtime(sid, rec).close(remove_base=False))
                 self._processes.pop(sid, None)
                 if cancelled:
                     rec["last"].update(status="cancelled", cancelled=True, exit_code=proc.returncode)
@@ -245,7 +299,7 @@ class GodotEnvironment(Environment):
                     if operation == "run_headless":
                         result["message"] += "\nBounded headless execution only; no visual, audio or fun verdict."
                     return result
-            except (OSError, ValueError) as error:
+            except (OSError, ValueError, RuntimeError) as error:
                 failure = {"success": False, "message": str(error)}
                 if sid in self._sessions:
                     self._sessions[sid]["last"] = {"operation": operation, **failure}
@@ -253,7 +307,7 @@ class GodotEnvironment(Environment):
 
     @environment_manager.action(
         name="doctor", read_only=False, destructive=False,
-        description="Discover the configured local Godot 4 editor and record its exact version. Does not install anything or validate export templates.",
+        description="Prepare the configured backend and report its exact Godot version. Does not install images or validate export templates.",
     )
     async def doctor(self, ctx=None, **kwargs):
         return await self._perform("doctor", ctx, 10)
@@ -267,6 +321,8 @@ class GodotEnvironment(Environment):
         async with self._locks.setdefault(sid, asyncio.Lock()):
             try:
                 sid, rec = self._session(ctx)
+                if rec.get("running"):
+                    raise ValueError("Stop the current game before selecting another project")
                 project = self._inside(project_path, rec["workspace"])
                 if not (project / "project.godot").is_file():
                     raise ValueError(f"Missing project.godot in {project}. Author the project first.")
@@ -322,16 +378,184 @@ class GodotEnvironment(Environment):
                 return {"success": False, "message": f"Cannot read Godot log: {error}", "extra": last}
         return {"success": True, "message": str(last), "extra": last}
 
+    async def _mcp(self, sid, rec, tool, arguments):
+        result = await self._runtime(sid, rec).call(tool, arguments)
+        messages = [part.text for part in result.content if part.type == "text"]
+        ok = not result.isError
+        structured = getattr(result, "structuredContent", None)
+        if isinstance(structured, dict) and structured.get("success") is False:
+            ok = False
+        for message in messages:
+            try:
+                payload = json.loads(message)
+                if isinstance(payload, dict) and payload.get("success") is False:
+                    ok = False
+            except ValueError:
+                pass
+        shots = []
+        for part in result.content:
+            if part.type != "image":
+                continue
+            if part.mimeType != "image/png":
+                raise ValueError(f"Unexpected screenshot MIME type: {part.mimeType}")
+            raw = base64.b64decode(part.data, validate=True)
+            if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise ValueError("Invalid PNG returned by MCP")
+            path = rec["workspace"] / ".godot-agent" / f"frame-{uuid.uuid4().hex}.png"
+            path.parent.mkdir(exist_ok=True)
+            path.write_bytes(raw)
+            shots.append(ScreenshotInfo(screenshot=part.data, screenshot_path=str(path),
+                                        screenshot_description=f"Godot {tool}: {path.name}"))
+        if tool == "game_screenshot" and not shots:
+            ok = False
+            messages.append("MCP returned no rendered PNG")
+        if shots:
+            rec["screenshots"] = shots
+        last = {"operation": tool, "success": ok, "output": "\n".join(messages)[-12000:]}
+        rec["last"] = last
+        return {"success": ok, "message": last["output"],
+                "extra": {"structured": structured, "screenshots": shots}}
+
+    async def _native(self, operation, ctx, **options):
+        sid = self._sid(ctx)
+        async with self._locks.setdefault(sid, asyncio.Lock()):
+            try:
+                sid, rec = self._session(ctx)
+                if self.backend != "docker":
+                    raise ValueError("Native play requires the Docker backend")
+                permission = permission_manager.check_declared(
+                    self.name, PermissionRequest(op=Operation.BASH, target=f"Godot MCP {operation}"),
+                    mode=self.permission_mode, workspace=isolated_workspace_root(ctx),
+                )
+                if not permission.allowed:
+                    return {"success": False, "message": permission.reason}
+                if operation == "start":
+                    project = rec["project"]
+                    if project is None or not (project / "project.godot").is_file():
+                        raise ValueError("Select an existing project with open_project first")
+                    self._inside(project, rec["workspace"])
+                    if rec.get("running"):
+                        raise ValueError("Game already running; stop before restarting")
+                    args = {"projectPath": str(project), "timingMode": "realtime"}
+                    scene = options.get("scene", "")
+                    if scene:
+                        path = self._inside(scene.removeprefix("res://"), project)
+                        if not path.is_file() or path.suffix not in (".tscn", ".scn"):
+                            raise ValueError("Scene must be an existing Godot scene inside the project")
+                        args["scene"] = str(path)
+                    result = await self._mcp(sid, rec, "run_project", args)
+                    rec["running"] = result["success"]
+                elif operation == "stop":
+                    if not rec.get("running"):
+                        return {"success": True, "message": "No game running"}
+                    result = await self._mcp(sid, rec, "stop_project", {})
+                    if result["success"]:
+                        rec.update(running=False, screenshots=[])
+                    return result
+                else:
+                    if not rec.get("running"):
+                        raise ValueError("No running game; call start_game first")
+                    if operation == "observe":
+                        return await self._mcp(sid, rec, "game_screenshot", {})
+                    if operation == "inspect":
+                        mapping = {"tree": "game_get_scene_tree", "ui": "game_get_ui",
+                                   "logs": "game_get_logs", "errors": "game_get_errors"}
+                        if options["kind"] not in mapping:
+                            raise ValueError("kind must be tree, ui, logs or errors")
+                        return await self._mcp(sid, rec, mapping[options["kind"]], {})
+                    if operation == "key":
+                        key, duration = options["key"], options["duration_ms"]
+                        if not key or not 1 <= duration <= 2000:
+                            raise ValueError("A key and duration_ms in 1..2000 are required")
+                        rec["screenshots"] = []
+                        result = await self._mcp(sid, rec, "game_key_hold", {"key": key})
+                        if result["success"]:
+                            try:
+                                await asyncio.sleep(duration / 1000)
+                            finally:
+                                result = await asyncio.shield(self._mcp(sid, rec, "game_key_release", {"key": key}))
+                    elif operation == "click":
+                        rec["screenshots"] = []
+                        result = await self._mcp(sid, rec, "game_click", options)
+                    elif operation == "mouse":
+                        rec["screenshots"] = []
+                        result = await self._mcp(sid, rec, "game_mouse_move", options)
+                    else:
+                        raise ValueError(f"Unknown native operation: {operation}")
+                if result["success"]:
+                    frame = await self._mcp(sid, rec, "game_screenshot", {})
+                    result["extra"]["screenshots"] = frame["extra"]["screenshots"]
+                    result["extra"]["screenshot_success"] = frame["success"]
+                    if not frame["success"]:
+                        result.update(success=False, message=f"Operation completed but screenshot failed: {frame['message']}")
+                return result
+            except asyncio.CancelledError:
+                runtime = self._runtimes.get(sid)
+                if runtime:
+                    await asyncio.shield(runtime.close(remove_base=False))
+                if sid in self._sessions:
+                    self._sessions[sid].update(running=False, screenshots=[])
+                raise
+            except Exception as error:
+                # An uncertain transport/input failure invalidates the live session.
+                runtime = self._runtimes.get(sid)
+                if runtime:
+                    await runtime.close(remove_base=False)
+                if sid in self._sessions:
+                    self._sessions[sid].update(running=False, screenshots=[],
+                        last={"operation": operation, "success": False, "message": str(error)})
+                return {"success": False, "message": str(error)}
+
+    @environment_manager.action(name="start_game", read_only=False, destructive=False,
+        description="Launch the selected native game in Docker, wait for its MCP bridge and capture a rendered frame.")
+    async def start_game(self, scene: str = "", ctx=None, **kwargs):
+        return await self._native("start", ctx, scene=scene)
+
+    @environment_manager.action(name="stop_game", read_only=False, destructive=False,
+        description="Stop the owned game and remove its transient runtime bridge; preserve authored files.")
+    async def stop_game(self, ctx=None, **kwargs):
+        return await self._native("stop", ctx)
+
+    @environment_manager.action(name="observe", read_only=True, destructive=False,
+        description="Capture the running game's actual PNG frame and retain a workspace artifact.")
+    async def observe(self, ctx=None, **kwargs):
+        return await self._native("observe", ctx)
+
+    @environment_manager.action(name="press_key", read_only=False, destructive=False,
+        description="Hold a player key (W, Right, Space etc.) for 1..2000 ms, release it and observe the resulting frame.")
+    async def press_key(self, key: str, duration_ms: int = 300, ctx=None, **kwargs):
+        return await self._native("key", ctx, key=key, duration_ms=duration_ms)
+
+    @environment_manager.action(name="click", read_only=False, destructive=False,
+        description="Click native viewport coordinates through Godot input and capture the resulting frame.")
+    async def click(self, x: float, y: float, button: int = 1, ctx=None, **kwargs):
+        return await self._native("click", ctx, x=x, y=y, button=button)
+
+    @environment_manager.action(name="move_mouse", read_only=False, destructive=False,
+        description="Move the native pointer/camera through player mouse input; relative=true sends a motion delta.")
+    async def move_mouse(self, x: float, y: float, relative: bool = False, ctx=None, **kwargs):
+        args = {"x": x, "y": y}
+        if relative:
+            args = {"x": 0, "y": 0, "relative_x": x, "relative_y": y}
+        return await self._native("mouse", ctx, **args)
+
+    @environment_manager.action(name="inspect_runtime", read_only=True, destructive=False,
+        description="Read tree, ui, logs or errors from the running game. Introspection is diagnostic evidence, not player input.")
+    async def inspect_runtime(self, kind: str = "tree", ctx=None, **kwargs):
+        return await self._native("inspect", ctx, kind=kind)
+
     async def get_state(self, ctx=None, **kwargs):
         rec = self._sessions.get(self._sid(ctx))
         if rec is None:
-            return {"success": True, "state": "Godot idle. No engine started. Use doctor, then open_project."}
+            return {"success": True, "state": "Godot idle. Use prepare_workspace before Bash authoring, then doctor and open_project."}
         last = rec["last"]
         state = f"Godot project: {rec['project'] or '(none)'}\n"
         state += f"Last operation: {last.get('operation', '(none)')}; success={last.get('success')}; "
         state += f"status={last.get('status', '')}; exit={last.get('exit_code')}; log={last.get('log_path', '')}\n"
         state += str(last.get("output") or last.get("message") or "")[-2000:]
-        return {"success": True, "state": state}
+        state += f"\nBackend: {self.backend}; native game running={rec.get('running', False)}"
+        return {"success": True, "state": state,
+                "extra": {"screenshots": rec.get("screenshots", [])}}
 
     async def close_session(self, session_id):
         sid = session_id or "default"
@@ -339,6 +563,14 @@ class GodotEnvironment(Environment):
             proc = self._processes.pop(sid, None)
             if proc is not None:
                 await self._stop(proc)
+            runtime = self._runtimes.pop(sid, None)
+            if runtime is not None:
+                if runtime.task and not runtime.task.done():
+                    try:
+                        await runtime.call("stop_project", {}, timeout=10)
+                    except Exception:
+                        pass
+                await runtime.close()
             self._sessions.pop(sid, None)
 
     async def cleanup(self):

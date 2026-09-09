@@ -15,9 +15,10 @@ defer testing, author the files and pending check plan without starting the engi
 tests or installers. The workflow below applies when execution is authorized.
 
 This demo mounts only godot_environment. Use Bash for file operations and bounded
-foreground commands. The current adapter supports local CLI operations only; shared
-Docker execution and native screenshots/input are pending. Until those are available,
-record visual-play acceptance as blocked and continue independent source/design work.
+foreground commands. GameBuilder prepares the base authoring container before its
+first turn. Both containers share canonical workspace paths; session plan/log/extension
+paths are also available in the base. Use doctor to verify the Godot container, then
+open_project and import_project. Missing images or rendering/input failures block play.
 Do not invent actions or silently add a browser/background-job dependency.
 
 ## Choose a deliverable and keep it honest
@@ -87,11 +88,12 @@ exports. Preserve logs. --check-only is one-file parsing; --quit-after counts en
 iterations. An assertion runner needs its own completion marker/nonzero failure exit.
 Run only checks justified by the change and explicit user authorization.
 
-Once native runtime control is implemented, launch the shared project through
-godot_environment and inspect its actual screenshot/input action schemas. Use a
+Launch the shared project with godot_environment start_game and inspect its actual
+observe/press_key/move_mouse/click action schemas. Use a
 rendered frame and ordinary player input, with bounded held keys and guaranteed
 release. Observe the resulting position instead of inferring movement from elapsed
-input time. After edits, import/reload or restart so the played revision is known.
+input time. Stop the game before imports, CLI checks or exports; import/restart after
+edits so the played revision is known. inspect_runtime supplies tree/ui/logs/errors.
 
 Never substitute teleport/set_quest_state or other hidden-state edits for a real
 player journey. Explicit debug harnesses may supplement visual evidence, and must

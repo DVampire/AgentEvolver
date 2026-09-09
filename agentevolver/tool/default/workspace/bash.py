@@ -450,7 +450,10 @@ class BashTool(Tool):
         warning_prefix = f"Warning: {result.warning}\n\n" if result.warning else ""
 
         try:
-            exec_container = os.environ.get(_EXEC_CONTAINER_ENV, "").strip()
+            from agentevolver.tool.default.workspace.container import container_for
+
+            route = container_for(resolve_workspace_root(ctx))
+            exec_container = route[0] if route else os.environ.get(_EXEC_CONTAINER_ENV, "").strip()
             if exec_container:
                 if run_in_background or tty:
                     mode = "background" if run_in_background else "TTY"
@@ -464,7 +467,7 @@ class BashTool(Tool):
                     )
                 stdout_str, stderr_str, exit_code, timed_out = await _run_in_container(
                     exec_container,
-                    os.environ.get(_EXEC_WORKDIR_ENV, "/workspace"),
+                    route[1] if route else os.environ.get(_EXEC_WORKDIR_ENV, "/workspace"),
                     command,
                     stdin,
                     float(limit),

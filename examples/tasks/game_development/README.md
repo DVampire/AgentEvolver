@@ -29,13 +29,13 @@ installation or executed compatibility test.
 
 | Candidate | Relevant capability | Docker and adoption boundary |
 | --- | --- | --- |
-| [beremaran/godot-agent-loop](https://github.com/beremaran/godot-agent-loop) | Run/stop, viewport images, scene/UI observation, held input and bounded scenario/verification operations | First candidate for our runtime backend; its repository includes an Xvfb + Godot + Node E2E container. That is a testing recipe, not a production image already integrated here. |
+| [beremaran/godot-agent-loop](https://github.com/beremaran/godot-agent-loop) | Run/stop, viewport images, scene/UI observation, held input and bounded scenario/verification operations | Selected runtime backend; its E2E container informed our docker/godot image. We pin and build its source rather than assume an upstream production image. |
 | [Erodenn/godot-mcp-runtime](https://github.com/Erodenn/godot-mcp-runtime) | Runtime bridge for screenshots, input sequences and live engine queries; also headless scene operations | Its [Dockerfile](https://github.com/Erodenn/godot-mcp-runtime/blob/main/Dockerfile) packages Node/MCP but does not install Godot or a rendering display. A complete game container still needs those. |
 | [Vollkorn-Games/godot-mcp](https://github.com/Vollkorn-Games/godot-mcp) | Scene/script authoring, interactive runtime, mouse/keyboard/gamepad input, screenshots and GUT invocation | Broad alternative. Its package metadata still references Coding-Solo, so verify the exact repository revision and package provenance rather than treating identically named packages as interchangeable. |
 | [hybridindie/godot-mcp](https://github.com/hybridindie/godot-mcp) | Python MCP plus editor addon and runtime probe; editor mutations, input and profiling | The [server Dockerfile](https://github.com/hybridindie/godot-mcp/blob/main/infra/Dockerfile) contains the MCP service, not the engine. A separate [CI runner image](https://github.com/hybridindie/godot-mcp/blob/main/infra/runner.Dockerfile) adds Godot. Runtime input requires the probe and an editor debug session. |
 | [torte/godot-agents-devcontainer](https://github.com/torte/godot-agents-devcontainer) | Agent development container using satelliteoflove/godot-mcp and an LSP companion | Its documented interactive editor runs on the host. The container has a headless CLI but no display server. Useful workspace/addon integration reference, not a self-contained rendered game environment. |
 
-### Why evaluate Godot Agent Loop first
+### Why Godot Agent Loop was selected
 
 Its current source declares Godot 4.7+ and Node 22+. The
 [tool catalog](https://github.com/beremaran/godot-agent-loop/blob/main/docs/tools.md)
@@ -56,7 +56,7 @@ our 3D campaign. The representative authored movement fixture is 2D; we must add
 3D scene, camera and visual-input case for this integration. Pin the selected source,
 engine, templates and image before adopting them.
 
-### Revised target architecture
+### Shared workspace architecture
 
 Use **the base Docker container plus a Godot Docker container**, sharing one
 session workspace. GameBuilder uses the existing `bash_tool` for file operations
@@ -66,20 +66,19 @@ and `godot_environment` for engine operations.
 | --- | --- |
 | Base Docker + `bash_tool` | Read, search and write project files; run general development commands; maintain the session plan |
 | Godot Docker + `godot_environment` | Import, launch, stop, export, collect logs, capture frames and deliver player input through the MCP bridge |
-| Session launcher | Bind the same host workspace into both containers, publish consistent paths and manage container lifetime |
+| GameBuilder lifecycle + Godot runtime | Bind the workspace, prepare base Bash routing, maintain MCP and clean up owned containers |
 
-Both containers should mount the **same source directory** at `/workspace` with
-compatible write permissions. Two unrelated directories named `/workspace` do not
-share files. This is a bind mount, not a copy or a synchronization job.
+Both containers mount the **same source directory at its canonical runtime path**
+with compatible UID/GID permissions. Canonical paths preserve absolute links in
+prompts, plan.md and logs. This is a bind mount, not a synchronization job.
 [Docker bind mount documentation](https://docs.docker.com/engine/storage/bind-mounts/)
 
-The launcher must map the host session workspace to `/workspace` consistently in
-tool instructions and engine requests. `AGENTEVOLVER_EXEC_WORKDIR` sets Bash's
-working directory; it does not translate absolute host paths inside commands.
-Because the framework's `plan/plan.md` and Bash log archives live beside the
-workspace, the base container also needs access to those session paths. Preserve
-the exact plan path supplied by the runtime, or implement an explicit mapping for
-both the agent and plan manager; mounting only project sources is insufficient.
+The base also mounts session plan/log/extension directories. Bash selects its base
+container through a workspace-scoped route, without changing global execution env vars.
+Framework and shared-extension references are mounted read-only when available.
+The host-run default base is `python:3.12-slim`; override base_image when development
+needs additional packages. When AgentEvolver already runs inside Model X, its base
+is reused and peer mount sources use the existing host/container path translation.
 
 The Godot container owns the engine, MCP runtime and an actual rendering context
 such as Xvfb/Mesa. Preserve MCP image content in model observations. Shared files
@@ -96,20 +95,14 @@ and input path is wired. Web export may remain an optional distribution target, 
 route for every development iteration. MCP is the backend protocol, Docker packages
 the execution dependencies, and Environment is the Agent-facing lifecycle/API.
 
-Before calling the migration complete, add integration coverage for: creating and
-reading project files through base-container Bash and observing the same content
-from the Godot container; maintaining the runtime plan; launching a 3D fixture through
-MCP; observing a nonblank frame; moving/clicking through player input and observing the
-result; stop/restart; rejected out-of-workspace paths; failed startup; and container/
-process cleanup. Reading or setting a node property alone does not prove player input.
-
 **Current implementation status:** the demo and GameBuilder now mount only
 `godot_environment`; `job`, `browser_environment`, browser image routing and the
-Web-preview deploy tool have been removed from this demo. The Godot adapter still
-supports local CLI operations only. Shared base/Godot Docker execution and native
-screenshots/input are not wired or tested. Visual-play acceptance remains blocked;
-removing dependencies does not implement their replacement. No packages or images
-were installed, services started or tests run for this change.
+Web-preview deploy tool are absent. Docker/MCP native startup, screenshots, held keys,
+mouse movement, clicks, runtime inspection, stop and cleanup are implemented. The
+real-engine integration test authors a 3D fixture through base Bash, reads it from
+Godot Docker, checks movement through telemetry and rendered pixels, clicks a button,
+checks model image routing, rejects invalid source and tests restart/cleanup.
+This is environment verification; it does not deliver or certify the campaign.
 
 ## Current integration architecture
 
@@ -121,7 +114,7 @@ and exports. [Official CLI documentation](https://docs.godotengine.org/en/stable
 | Component | Responsibility |
 | --- | --- |
 | `agent/actor/game_builder_agent.py` | Solo planning, development, visual self-play and capability experiments; MetaAgent with child agents disabled |
-| `environment/default/godot/` | Project selection, engine discovery, imports, parsing, bounded headless runs, exports and diagnostics |
+| `environment/default/godot/` | Shared Docker pair, MCP lifecycle, native images/input, CLI checks and diagnostics |
 | Existing Bash and apply_patch tools | General inspection and source authoring; no Godot-specific state added to bash.py |
 | `skill/game/godot_game_development_skill/` | Content architecture, production methods, self-play and verification guidance |
 | Existing adoption, extension and task evolution modules | Candidate versions, comparison, keep/rollback and subsequent-use evidence |
@@ -136,21 +129,20 @@ flowchart LR
     A --> E[GodotEnvironment]
     E --> P
     E --> X[Versioned export and CLI logs]
-    E -. pending .-> N[Native screenshots and input]
-    N -. pending .-> A
+    E --> N[Native screenshots and input]
+    N --> A
     A --> G[Observed capability gap and baseline]
     G --> C[Candidate evaluation and adoption]
     C --> U[Subsequent development use]
     U --> A
 ```
 
-A local CLI adapter covers imports, parsing and exports, but it does not provide the
-unified native play loop requested for this demo. The MCP assessment above supersedes
-the earlier preference to implement that runtime control ourselves. Godot's
-`EditorDebuggerPlugin` is an editor extension point; existing community bridges build
-additional runtime control on top of engine facilities. The current adapter does not
-yet implement such a bridge.
-[Official debugger plugin API](https://docs.godotengine.org/en/stable/classes/class_editordebuggerplugin.html)
+The native backend uses Godot Agent Loop pinned to
+`b5fa8cb17bdb14f16ec6ae8d7d62a56a3beaf128`, Godot 4.7-stable and Node 22.14.0.
+The Dockerfile verifies official binary checksums and installs MCP dependencies from
+the upstream lockfile. MCP stdio contexts belong to one persistent async owner task.
+Xvfb starts directly: Ubuntu's xvfb-run merges child stderr into stdout, which corrupts
+the MCP stream. Writable XDG cache/data paths support an unprivileged container user.
 
 ## Visual play and platform choices
 
@@ -158,27 +150,30 @@ The primary target is a native **Godot 4 + GDScript** game. The task HTML is its
 development brief. Web export is optional and does not require a browser environment
 in the default demo. Any later Web delivery needs its own platform verification.
 
-Native self-play must use rendered screenshots and ordinary player input through
-godot_environment once the runtime bridge and model image routing are implemented.
+Native self-play uses rendered screenshots and ordinary player input through
+godot_environment. get_state carries the most recent captured frame; observe refreshes it.
 Held inputs need bounded duration and guaranteed release. Headless checks cannot
 establish visual quality or enjoyment. Teleports and debug quest setters are
-diagnostics, not evidence of successful play. The current adapter cannot supply
-native visual-play evidence; keep those acceptance items pending.
+diagnostics, not evidence of successful play. Software rendering validates this input
+and observation path, not physical-GPU performance or player enjoyment.
 
 ## Engine environment contract
 
 - Construction, initialization and state observation do not start Godot; explicit actions do.
-- Configure an editor executable through `godot_environment.binary_path`, `GODOT_BIN`, or
-  `godot`/`godot4` on PATH. Record its actual version and install matching templates separately.
+- Docker is the default backend. Build its pinned image first; it never pulls images
+  automatically. backend=local uses binary_path/GODOT_BIN/PATH for CLI-only operation.
 - Projects and exports stay inside the task workspace. Exports use a fresh empty revision
   directory outside the source project so old outputs cannot hide failures.
 - Commands use argv, session/project locks, deadlines, process cleanup and archived diagnostics.
   Nonzero exits, timeouts and engine ERROR logs fail the action.
 - `check_script` parses one script. A clean headless exit is not an assertion pass; assertion
   scripts need completion evidence. A nonempty export does not prove that a game works.
-- This is a local execution adapter, not an OS sandbox. Scripts/plugins have the engine process's
-  permissions. `AGENTEVOLVER_EXEC_CONTAINER` is currently rejected because the shared-mount
-  and Godot container adapter are not wired. Nothing is downloaded or upgraded automatically.
+- Docker containers expose no host display, network ports or Docker socket. The base
+  owns file authoring and Godot owns the engine; cancellation removes uncertain engine
+  state. Session close removes both owned containers, preserving sources and artifacts.
+- The image includes matching Linux debug/release templates for its architecture;
+  the build verifies the official template archive before extracting those binaries.
+  Other platform templates and physical-GPU validation are outside this test scope.
 
 ## Living implementation plan
 
@@ -223,12 +218,15 @@ The audit establishes provenance and lifecycle, not the semantic correctness of 
 Game milestone/self-play fields are task instructions; this change adds no automatic campaign
 coverage or enjoyment grader. Website release-count/self-review policies do not apply here.
 
-## Running later
+## Build, verify and run
 
 Use the existing AgentEvolver Python environment from the repository root:
 
 ```bash
-python -m examples.run_game_development_demo --godot-bin /absolute/path/to/godot
+docker build -t agentevolver/godot:4.7-b5fa8cb docker/godot
+docker pull python:3.12-slim
+GODOT_TEST_ARTIFACTS=output/godot-verification python -m pytest tests/test_godot_environment.py -m integration -q
+python -m examples.run_game_development_demo
 ```
 
 The default is **M1: a complete playable opening slice plus the full campaign plan**.
@@ -247,12 +245,29 @@ It does not claim to deliver the whole game. Request full campaign development w
 | `--print-task` | Render task text without starting the agent or engine |
 
 Configuration: `configs/game_development_demo.py`. Entry point:
-`examples/run_game_development_demo.py`. Prerequisites are a Godot 4 editor, matching export
-templates and working model credentials for the current local CLI path. The native
-self-play milestone additionally requires the pending Docker/MCP integration.
+`examples/run_game_development_demo.py`. Docker/MCP tests require no model credentials.
+The actual GameBuilder run needs working model credentials and uses GPT-6 Astra by default.
+`--godot-bin PATH` explicitly selects the local CLI-only backend, without native play.
+Test artifacts contain before/after frames and result.json. The test also exports a
+Linux executable and runs it headlessly with a completion marker. A full campaign,
+graphical play of the exported executable and other platforms remain separate checks.
 
-No engine, test, browser or development run was started while authoring this change, as
-requested. Import/export compatibility and the complete integration remain unverified.
+### Verified environment result
+
+On 2026-09-09, Linux x86_64 with Docker 28.3.3 and Godot
+`4.7.stable.official.5b4e0cb0f`: **25 tests passed** across
+`test_godot_environment.py`, `test_bash_archive.py`, `test_browser_attachments.py`
+and `test_vision_routing.py`. The integration used real containers and the real engine.
+
+The fixture moved approximately 2 world units through held-key input, stopped after
+release, and changed color after a button click. The Linux export was 73,667,288 bytes
+and its independent headless execution reached `FIXTURE_READY`. Cancellation, MCP and
+CLI deadlines removed the engine; final session cleanup left neither owned container.
+Local evidence is in `output/godot-verification/{result.json,before.png,after-movement.png,after-click.png}`.
+The built engine image ID was
+`sha256:f8663d5801aa1bf3ab95993be6c02f231cc64e6cd037da161c872b33b8d7023e`.
+These results cover the fixture and software-rendered environment, not the campaign,
+an LLM-driven development run, GPU performance or other export platforms.
 
 ## Additional official references
 

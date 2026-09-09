@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +22,7 @@ def parse_args(argv: Sequence[str] | None = None):
                         help="Default: a complete first playable slice plus the full campaign plan.")
     parser.add_argument("--evolution", choices=["required", "opportunistic"], default="required",
                         help="Required mode audits a verified capability improvement at completion.")
-    parser.add_argument("--godot-bin", help="Path to the local Godot 4 editor executable.")
+    parser.add_argument("--godot-bin", help="Select the local CLI-only backend with this Godot executable (no native play).")
     parser.add_argument("--model", help="GameBuilder model; must support screenshot input.")
     parser.add_argument("--plan-mode", choices=["off", "auto", "plan"], default="auto")
     parser.add_argument("--no-monitor", action="store_true")
@@ -74,14 +74,15 @@ def build_task_text(brief: Path, milestone: str, require_evolution: bool) -> str
     )
     instructions = (
         "You are the sole GameBuilder. No user/persona/reviewer agents or subscriptions. "
-        "Design, implement, visually play the native Godot game when supported, critique, improve, "
+        "Design, implement, visually play the native Godot game, critique, improve, "
         "and track campaign progress yourself.\n\n"
         + scope + "\n\n" + experiment + "\n\n"
         "Use Bash for project files and bounded foreground commands; godot_environment is "
-        "the only mounted environment and owns engine operations. Native Docker/MCP launch, "
-        "screenshots and player input are not implemented in the current CLI adapter. "
-        "Keep visual-play acceptance blocked until that integration is available; do not "
-        "invent actions or treat headless checks as play. Use Godot 4 and GDScript, with "
+        "the only mounted environment and owns engine operations. The base and Godot Docker "
+        "containers share canonical workspace paths. Use doctor/open_project/import_project, "
+        "then start_game/observe/press_key/move_mouse/click/inspect_runtime for native play. "
+        "Stop the game before CLI checks, imports or exports. Keep failed rendering/input "
+        "acceptance blocked; never treat headless checks as play. Use Godot 4 and GDScript, with "
         "native delivery as the primary target and Web export optional. A website mockup is not a game. "
         "Keep product milestone evidence and agent evolution evidence separate. "
         "Honor explicit user execution/testing constraints; unrun checks remain pending."
@@ -105,6 +106,7 @@ def launch(args):
     if args.model:
         options[:0] = [f"model_name={args.model}", f"game_builder_agent.model_name={args.model}"]
     if args.godot_bin:
+        options.insert(0, "godot_environment.backend=local")
         options.insert(0, f"godot_environment.binary_path={Path(args.godot_bin).expanduser().resolve()}")
     forwarded = ["run_meta_agent.py", "--config", str(config_path),
                  "--agent-name", "game_builder_agent", "--task", task, "--attach", str(brief),
