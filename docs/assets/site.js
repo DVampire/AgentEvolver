@@ -8,11 +8,22 @@
 
 (function () {
   const DICTS = window.I18N || { en: {}, zh: {} };
+  document.querySelectorAll('main table').forEach((table) => {
+    const scroll = document.createElement('div');
+    scroll.className = 'table-scroll';
+    scroll.tabIndex = 0;
+    scroll.setAttribute('role', 'region');
+    table.before(scroll);
+    scroll.append(table);
+  });
   const authoredEnglish = new WeakMap();
   document.querySelectorAll('[data-i18n]').forEach((el) => authoredEnglish.set(el, el.innerHTML));
 
   function applyLang(lang) {
     const dict = DICTS[lang] || DICTS.en || {};
+    document.querySelectorAll('.table-scroll').forEach((table) => {
+      table.setAttribute('aria-label', lang === 'zh' ? '可横向滚动的表格' : 'Scrollable table');
+    });
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
     document.querySelectorAll('[data-i18n]').forEach((el) => {
       const value = dict[el.dataset.i18n];
@@ -29,7 +40,20 @@
     });
     document.querySelectorAll('.lang button').forEach((b) => {
       b.classList.toggle('active', b.dataset.lang === lang);
+      b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
     });
+    if (dict.page_title) document.title = dict.page_title;
+    const description = document.querySelector('meta[name="description"]');
+    if (description && dict.page_description) description.content = dict.page_description;
+    const diagram = lang === 'zh' ? 'assets/arch_zh' : 'assets/arch';
+    document.querySelectorAll('[data-diagram-image]').forEach((img) => {
+      img.src = diagram + '.svg';
+      img.alt = lang === 'zh'
+        ? 'AgentEvolver 系统架构：共享运行时、上下文、能力、环境、部署与基于证据的采纳'
+        : 'AgentEvolver architecture: shared runtime, context, capabilities, environments, deployment and evidence-based adoption';
+    });
+    document.querySelectorAll('[data-diagram-link]').forEach((a) => { a.href = diagram + '.svg'; });
+    document.querySelectorAll('[data-diagram-ppt]').forEach((a) => { a.href = diagram + '.pptx'; });
     try { localStorage.setItem('ae_lang', lang); } catch (e) { /* private mode */ }
   }
 
@@ -43,7 +67,9 @@
   // which turns a stored "en" — truthy — into 中文. The stored choice wins outright; the
   // browser is consulted only when there is none.
   const preferred = (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
-  applyLang(saved === 'zh' || saved === 'en' ? saved : preferred);
+  const requested = new URLSearchParams(location.search).get('lang');
+  applyLang(requested === 'zh' || requested === 'en' ? requested :
+    (saved === 'zh' || saved === 'en' ? saved : preferred));
 
   // A two-pixel reading line makes long reference pages feel finite without adding
   // another widget to the chrome. CSS reads this custom property on nav::after.

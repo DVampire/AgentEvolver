@@ -1,137 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="assets/theme.css">
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>AgentEvolver · The Web UI, feature by feature</title>
 <meta name="description" content="A guided tour of the AgentEvolver browser workbench — four workspaces, a live capability catalogue, session panels, machines over noVNC, and the model registry. One short clip per feature." />
-<style>
-  :root{
-    --bg:#05060f; --bg-2:#0a0c1c;
-    --panel:rgba(255,255,255,.035); --panel-strong:rgba(255,255,255,.06);
-    --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.16);
-    --text:#eef1ff; --muted:#9aa3c7; --muted-2:#6f7aa6;
-    --brand:#7c5cff; --brand-2:#22d3ee; --brand-3:#ff5c9d;
-    --radius:18px; --maxw:1180px;
-    --font:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
-    --mono:"SF Mono",ui-monospace,SFMono-Regular,"JetBrains Mono","Fira Code",Menlo,Consolas,monospace;
-  }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);
-    line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
-  a{color:inherit;text-decoration:none}
-  h1,h2,h3{line-height:1.15;margin:0;letter-spacing:-.02em}
-  p{margin:0}
-  code{font-family:var(--mono);font-size:.92em;background:rgba(255,255,255,.07);
-    border:1px solid var(--border);border-radius:6px;padding:1px 6px}
-  ::selection{background:rgba(124,92,255,.35)}
-
-  .bg-fx{position:fixed;inset:0;z-index:-2;overflow:hidden;background:
-    radial-gradient(1200px 700px at 15% -10%, rgba(124,92,255,.20), transparent 60%),
-    radial-gradient(1000px 700px at 100% 0%, rgba(34,211,238,.14), transparent 55%),
-    radial-gradient(900px 900px at 50% 120%, rgba(255,92,157,.10), transparent 60%),
-    var(--bg);}
-  .grid-fx{position:fixed;inset:0;z-index:-1;
-    background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
-      linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
-    background-size:56px 56px;
-    -webkit-mask-image:radial-gradient(ellipse 90% 60% at 50% 0%,#000 30%,transparent 75%);
-            mask-image:radial-gradient(ellipse 90% 60% at 50% 0%,#000 30%,transparent 75%);}
-
-  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
-
-  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
-    background:rgba(5,6,15,.6);border-bottom:1px solid var(--border)}
-  .nav-inner{display:flex;align-items:center;gap:20px;height:66px}
-  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;letter-spacing:-.02em}
-  .brand .mark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:16px;
-    background:linear-gradient(135deg,var(--brand),var(--brand-2));box-shadow:0 6px 20px rgba(124,92,255,.5)}
-  .nav-links{display:flex;gap:26px;margin-left:auto;font-size:14.5px;color:var(--muted)}
-  .nav-links a{transition:color .2s}.nav-links a:hover{color:var(--text)}
-  .nav-links a.here{color:var(--text)}
-  .nav-actions{display:flex;align-items:center;gap:12px}
-  .lang{display:flex;border:1px solid var(--border-strong);border-radius:999px;overflow:hidden;font-size:13px;font-weight:600}
-  .lang button{background:none;border:0;color:var(--muted);padding:6px 13px;cursor:pointer;font-family:inherit;font-weight:inherit;transition:.2s}
-  .lang button.active{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff}
-  .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:11px;font-weight:600;font-size:14px;
-    border:1px solid var(--border-strong);transition:.2s;cursor:pointer}
-  .btn:hover{border-color:rgba(255,255,255,.35);transform:translateY(-1px)}
-  .btn.primary{background:linear-gradient(135deg,var(--brand),#5a3bff);border-color:transparent;
-    box-shadow:0 8px 24px rgba(124,92,255,.4)}
-  @media(max-width:960px){.nav-links{display:none}}
-
-  header.hero{padding:88px 0 54px;text-align:center}
-  .pill{display:inline-flex;align-items:center;gap:9px;padding:7px 16px;border-radius:999px;font-size:13px;
-    color:var(--muted);border:1px solid var(--border-strong);background:var(--panel);margin-bottom:26px}
-  .pill .dot{width:7px;height:7px;border-radius:50%;background:#3ee6a0;box-shadow:0 0 10px #3ee6a0}
-  h1.title{font-size:clamp(38px,6vw,68px);font-weight:800;letter-spacing:-.04em}
-  h1.title .grad{background:linear-gradient(120deg,#a78bff 5%,#22d3ee 50%,#ff7eb6 95%);
-    -webkit-background-clip:text;background-clip:text;color:transparent}
-  .subtitle{max-width:760px;margin:22px auto 0;font-size:clamp(16px,2vw,20px);color:var(--muted)}
-
-  .toc{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:34px}
-  .toc a{font-size:13.5px;color:var(--muted);padding:7px 14px;border-radius:999px;
-    background:var(--panel);border:1px solid var(--border);transition:.2s}
-  .toc a:hover{color:var(--text);border-color:var(--border-strong);transform:translateY(-1px)}
-
-  section.feat{padding:56px 0;border-top:1px solid var(--border)}
-  .feat-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:44px;align-items:center}
-  section.feat.flip .feat-grid{grid-template-columns:minmax(0,1fr) minmax(0,1.55fr)}
-  section.feat.flip .feat-copy{order:-1}
-  .num{font-family:var(--mono);font-size:12.5px;color:var(--brand-2);letter-spacing:.16em;margin-bottom:12px}
-  .feat-copy h2{font-size:clamp(24px,3.2vw,33px);font-weight:800}
-  .feat-copy p{margin-top:14px;color:var(--muted);font-size:15.5px}
-  .kv{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:9px}
-  .kv li{position:relative;padding-left:20px;color:var(--muted);font-size:14.5px}
-  .kv li::before{content:"";position:absolute;left:0;top:9px;width:7px;height:7px;border-radius:2px;
-    background:linear-gradient(135deg,var(--brand),var(--brand-2))}
-  .kv b{color:var(--text);font-weight:600}
-
-  .shot{margin:0;border-radius:14px;overflow:hidden;border:1px solid var(--border-strong);
-    background:#0a0c1c;box-shadow:0 24px 60px rgba(0,0,0,.55);position:relative}
-  .shot video{display:block;width:100%;height:auto;background:#0a0c1c;cursor:pointer}
-  .shot figcaption{position:absolute;left:12px;bottom:11px;font-size:11.5px;color:var(--muted);
-    background:rgba(5,6,15,.72);border:1px solid var(--border);border-radius:7px;padding:3px 9px;
-    backdrop-filter:blur(6px);pointer-events:none;font-family:var(--mono)}
-  @media(max-width:900px){
-    .feat-grid,section.feat.flip .feat-grid{grid-template-columns:1fr;gap:26px}
-    section.feat.flip .feat-copy{order:0}
-  }
-
-  .note{margin-top:22px;padding:16px 18px;border-radius:12px;background:var(--panel);
-    border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:13.5px;max-width:760px}
-
-  .cta-banner{background:linear-gradient(135deg,rgba(124,92,255,.16),rgba(34,211,238,.10));
-    border:1px solid var(--border-strong);border-radius:22px;padding:52px 40px;text-align:center;margin:70px 0}
-  .cta-banner h2{font-size:clamp(26px,3.6vw,38px);font-weight:800}
-  .cta-banner p{margin-top:14px;color:var(--muted)}
-  .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:30px}
-
-  footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted-2);font-size:13.5px}
-  .foot-inner{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:flex-start}
-  .foot-links{display:flex;gap:20px;flex-wrap:wrap}
-  .foot-links a:hover{color:var(--text)}
-
-  /* The brand, the language switch and the GitHub button do not fit side by
-     side on a phone; shrink the two on the right rather than let the page
-     scroll sideways. */
-  html{overflow-x:hidden}
-  @media(max-width:560px){
-    .nav-inner{gap:10px}
-    .nav-actions{gap:8px}
-    .nav-actions .btn{padding:8px 11px;font-size:13px}
-    .lang button{padding:5px 9px}
-    .brand{font-size:16px}
-  }
-
-  .reveal{opacity:0;transform:translateY(20px);transition:opacity .6s ease,transform .6s ease}
-  .reveal.in{opacity:1;transform:none}
-  @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
-</style>
+<link rel="stylesheet" href="assets/ui.css">
 <link rel="stylesheet" href="assets/chrome.css">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#05060f">
+<meta name="theme-color" content="#07100e">
 </head>
 <body>
 <div class="bg-fx"></div>
@@ -146,7 +24,7 @@
   <div class="wrap">
     <span class="pill"><span class="dot"></span><span data-i18n="hero_pill">Recorded from a live gateway session</span></span>
     <h1 class="title" data-i18n="hero_title_html">The workbench, <span class="grad">one feature at a time</span></h1>
-    <p class="subtitle" data-i18n="hero_sub">AgentEvolver ships a browser workbench that talks to the Python Gateway over a WebSocket. Eleven short clips below, one per feature — the layout, each of the four workspaces in turn, the capability catalogue, the session panels, the machines, and the model registry.</p>
+    <p class="subtitle" data-i18n="hero_sub">The browser workbench connects to the Python Gateway. These eleven recorded feature demonstrations cover the workspace, capabilities and task controls; their captured theme may differ from the current interface.</p>
     <div class="toc">
       <a href="#layout" data-i18n="toc1">Layout</a>
       <a href="#workspaces" data-i18n="toc2">Workspaces</a>
@@ -432,7 +310,7 @@ const I18N = {
     nav_home:"Home", nav_tut:"Tutorial", nav_arch:"Architecture", nav_mod:"Modules", nav_dev:"Development", nav_ui:"Web UI", nav_features:"Features", nav_bench:"Benchmarks", nav_start:"Quick Start",
     hero_pill:"Recorded from a live gateway session",
     hero_title_html:'The workbench, <span class="grad">one feature at a time</span>',
-    hero_sub:"AgentEvolver ships a browser workbench that talks to the Python Gateway over a WebSocket. Eleven short clips below, one per feature — the layout, each of the four workspaces in turn, the capability catalogue, the session panels, the machines, and the model registry.",
+    hero_sub:"The browser workbench connects to the Python Gateway. These eleven recorded feature demonstrations cover the workspace, capabilities and task controls; their captured theme may differ from the current interface.",
     toc1:"Layout", toc2:"Workspaces", toc3:"Capabilities", toc4:"Task composer",
     toc5:"Session panels", toc6:"Machines", toc7:"Models", toc8:"Theme & connection",
     toc9:"Canvas", toc10:"Code", toc11:"Science",
@@ -522,7 +400,7 @@ const I18N = {
     nav_home:"首页", nav_tut:"教程", nav_arch:"架构", nav_mod:"模块", nav_dev:"开发文档", nav_ui:"Web 界面", nav_features:"特性", nav_bench:"基准", nav_start:"快速开始",
     hero_pill:"录自一次真实的 Gateway 会话",
     hero_title_html:'界面功能，<span class="grad">逐个看过来</span>',
-    hero_sub:"AgentEvolver 自带一个浏览器工作台，通过 WebSocket 与 Python Gateway 通信。下面十一段短视频，一个功能一段——整体布局、四种工作视图各自展开、能力目录、会话面板、机器环境，以及模型注册表。",
+    hero_sub:"浏览器工作台与 Python Gateway 连接。以下十一段录制演示介绍工作空间、能力与任务控制；视频中录制的主题可能与当前界面不同。",
     toc1:"布局", toc2:"工作视图", toc3:"能力目录", toc4:"任务输入",
     toc5:"会话面板", toc6:"机器环境", toc7:"模型", toc8:"主题与连接",
     toc9:"Canvas 画布", toc10:"代码", toc11:"Science",

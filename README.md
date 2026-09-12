@@ -25,7 +25,7 @@ training and feedback into the runtime.
 
 中文：**[README_zh.md](README_zh.md)**
 
-<img src="docs/assets/arch.png" alt="AgentEvolver architecture: the MetaAgent orchestrates task agents while a generate, evaluate, and optimize loop extends the capability ecosystem" width="100%">
+<img src="docs/assets/arch.svg" alt="AgentEvolver architecture: a shared agent runtime, layered context, scoped capabilities, environments, deployment and evidence-based adoption" width="100%">
 
 </div>
 

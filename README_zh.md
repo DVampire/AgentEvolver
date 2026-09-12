@@ -23,7 +23,7 @@ MetaAgent 负责规划、分派和验收；当实际执行暴露出明确的能�
 
 English: **[README.md](README.md)**
 
-<img src="docs/assets/arch_zh.png" alt="AgentEvolver 架构：MetaAgent 编排执行智能体，并通过生成、评估、优化闭环扩展能力生态" width="100%">
+<img src="docs/assets/arch_zh.svg" alt="AgentEvolver 架构：共享 Agent 运行时、分层上下文、按权限开放的能力、环境、部署与基于证据的采纳" width="100%">
 
 </div>
 

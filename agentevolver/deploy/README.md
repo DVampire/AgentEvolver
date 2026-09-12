@@ -16,7 +16,7 @@ is distinct from `opensandbox`: it owns the image container, streams large asset
 publishes its port on loopback and routes HTTP/WebSocket traffic through the same
 site gateway. The preview has independent saves and does not modify the running
 Agent's workspace. Stop/redeploy removes the container and its preview saves.
-See [game deployment setup](../../../examples/tasks/game_development/README.md).
+See [game deployment setup](../../examples/tasks/game_development/README.md).
 
 Deploys web apps and binds each to a reachable URL, keeping a persisted registry so sites
 can be listed / stopped / redeployed. It spans a wide range in one interface:

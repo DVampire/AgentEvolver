@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="assets/theme.css">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tutorial — AgentEvolver</title>
@@ -8,7 +9,7 @@
 <link rel="stylesheet" href="assets/site.css">
 <link rel="stylesheet" href="assets/chrome.css">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#05060f">
+<meta name="theme-color" content="#07100e">
 </head>
 <body>
 
@@ -158,7 +159,7 @@ cd frontend &amp;&amp; npm install &amp;&amp; npm run dev</code></pre>
 
         <defs>
           <marker id="t1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-            <path d="M0 0 L10 5 L0 10 z" fill="rgba(124,92,255,.85)"/></marker>
+            <path d="M0 0 L10 5 L0 10 z" fill="rgba(99,230,181,.85)"/></marker>
           <marker id="t2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
             <path d="M0 0 L10 5 L0 10 z" fill="rgba(255,255,255,.4)"/></marker>
         </defs>
@@ -290,13 +291,13 @@ print(json.dumps(sft_records[0], ensure_ascii=False, indent=2))</code></pre>
   <!-- 10 -->
   <section id="evolve">
     <h2><span class="num">10</span><span data-i18n="s10_h">Understand a component evolution round</span></h2>
-    <p data-i18n="s10_p">Evolution is evidence-driven component engineering, not arbitrary self-modification. A recurring or measured gap justifies a candidate; the candidate stays outside the core and must cross explicit gates.</p>
+    <p data-i18n="s10_p">An observed opportunity for a better reusable method, a structural failure or a measured limitation can justify an experiment. Preserve the baseline, register a candidate outside the core, and evaluate its exact version.</p>
     <div class="steps">
-      <div class="step"><div><b data-i18n="s10_f1h">Establish the gap</b><p data-i18n="s10_f1p">Use a failing task, benchmark delta or repeated structural defect. A first ordinary bug should normally be fixed directly.</p></div></div>
-      <div class="step"><div><b data-i18n="s10_f2h">Generate into staging</b><p data-i18n="s10_f2p">Dynamic loading derives metadata, while Version records lineage and Extension owns the manifest.</p></div></div>
-      <div class="step"><div><b data-i18n="s10_f3h">Register under a Scope</b><p data-i18n="s10_f3p">Every registration gains a reverse operation, so a partial failure can still uninstall what succeeded.</p></div></div>
-      <div class="step"><div><b data-i18n="s10_f4h">Evaluate and replay</b><p data-i18n="s10_f4p">Tests, task evaluation and replay smoke checks produce evidence before promotion.</p></div></div>
-      <div class="step"><div><b data-i18n="s10_f5h">Promote or roll back</b><p data-i18n="s10_f5p">Promotion is journaled; rejection or later regression restores the prior registered version.</p></div></div>
+      <div class="step"><div><b data-i18n="s10_f1h">Observe and probe</b><p data-i18n="s10_f1p">Use actual interaction or local-check evidence. Inspect existing capabilities and identify the next consumer. A product bug and a reusable method improvement are separate findings.</p></div></div>
+      <div class="step"><div><b data-i18n="s10_f2h">Author a separate candidate</b><p data-i18n="s10_f2p">Use self_evolving_skill to choose a skill, tool, agent/prompt, workflow or integration. Keep the baseline intact and write the candidate outside agentevolver/.</p></div></div>
+      <div class="step"><div><b data-i18n="s10_f3h">Register and inspect the version</b><p data-i18n="s10_f3p">adoption_tool registers through ExtensionManager. Structural admission checks loading and schemas; the returned candidate version is the evaluation target.</p></div></div>
+      <div class="step"><div><b data-i18n="s10_f4h">Evaluate with real calls</b><p data-i18n="s10_f4p">Compare the candidate against the baseline and an independent reuse or regression case, including cost. The agent records its own judgment with version-scoped call evidence.</p></div></div>
+      <div class="step"><div><b data-i18n="s10_f5h">Keep, use or roll back</b><p data-i18n="s10_f5p">Keep requires a passing report; otherwise execute rollback or unload. Verify subsequent consumer use. Tasks requiring verified improvement also need a record_use receipt after keep.</p></div></div>
     </div>
   </section>
 
@@ -429,12 +430,12 @@ window.I18N = {
   s9_cons:"执行 Step、Token、时间预算，并告诉模型剩余资源何时进入紧张或危险状态。",
   remote_tag:"远程服务", s9_remote:"Gateway 绑定到非回环地址时，必须提供 <code>--token</code> 或 <code>AGENTEVOLVER_GATEWAY_TOKEN</code>。同时应显式配置允许的 Origin；不要把开发 Gateway 当作无认证公共服务暴露。",
 
-  s10_h:"理解一次组件进化 Round", s10_p:"进化是由证据驱动的组件工程，而不是任意自我修改。重复出现或经过度量的缺口才证明候选组件有必要；候选始终位于 Core 之外，并必须通过显式 Gate。",
-  s10_f1h:"证明缺口", s10_f1p:"使用失败任务、Benchmark 差值或重复结构缺陷作为证据。首次出现的普通 Bug 通常应直接修复。",
-  s10_f2h:"生成到 Staging", s10_f2p:"Dynamic 负责推导元数据，Version 记录谱系，Extension 管理 Manifest。",
-  s10_f3h:"在 Scope 下注册", s10_f3p:"每项注册都获得逆操作，使部分失败后仍能卸载已经成功的部分。",
-  s10_f4h:"评测与回放", s10_f4p:"测试、任务评测与 Replay Smoke Check 在晋升前产生证据。",
-  s10_f5h:"晋升或回滚", s10_f5p:"晋升过程写入 Journal；拒绝或后续回归会恢复此前注册版本。",
+  s10_h:"理解一次组件进化 Round", s10_p:"更好的可复用方法机会、结构性失败或测得的限制都可支持一次实验。保留基线，在核心代码之外注册候选能力，再评估其确切版本。",
+  s10_f1h:"观察与探测", s10_f1p:"基于真实交互或本地检查证据，检查现有能力并确定下一次使用。产品缺陷与可复用方法改进是不同发现。",
+  s10_f2h:"编写独立候选能力", s10_f2p:"通过 self_evolving_skill 选择 Skill、Tool、Agent/Prompt、Workflow 或集成。保留完整基线，在 agentevolver/ 之外编写候选。",
+  s10_f3h:"注册并确认版本", s10_f3p:"adoption_tool 通过 ExtensionManager 注册。结构准入检查加载和 schema，返回的候选版本就是评估对象。",
+  s10_f4h:"用真实调用评估", s10_f4p:"对比候选与基线，并执行独立复用或回归用例，记录成本。Agent 用版本绑定的调用证据留存自己的判断。",
+  s10_f5h:"保留、使用或回滚", s10_f5p:"保留需有通过报告，否则执行回滚或卸载。随后验证实际使用；要求已验证进化的任务还需在保留后提交 record_use 凭证。",
 
   s11_h:"从边界向内排障", s11_c1:"现象", s11_c2:"先检查", s11_c3:"原因",
   s11_r1a:"能力从未出现", s11_r1b:"代码已 Import 与能力已 Register 不是同一事实。",

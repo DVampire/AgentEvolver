@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="assets/theme.css">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Development — AgentEvolver</title>
@@ -8,7 +9,7 @@
 <link rel="stylesheet" href="assets/site.css">
 <link rel="stylesheet" href="assets/chrome.css">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#05060f">
+<meta name="theme-color" content="#07100e">
 </head>
 <body>
 
@@ -144,7 +145,7 @@ cd frontend &amp;&amp; npm install &amp;&amp; npm run dev</code></pre>
     <p data-i18n="s6_p1">Components can be created, versioned, promoted, and rolled back while the system runs. Two mechanisms make that safe rather than merely possible.</p>
     <div class="grid2">
       <div class="kv"><b data-i18n="s6_k1">Scopes</b><span data-i18n="s6_v1">Everything a contributor registers goes through one handle that removes all of it — newest first, surviving a failure partway, and reporting what is still installed.</span></div>
-      <div class="kv"><b data-i18n="s6_k2">The smoke gate</b><span data-i18n="s6_v2">A newly evolved component runs a synthetic task through the real loop before it reaches the manifest. It never raises: a failure in the gate must not break the path it guards.</span></div>
+      <div class="kv"><b data-i18n="s6_k2">Structural admission</b><span data-i18n="s6_v2">Extension admission checks loading, construction and schemas in an isolated interpreter. Functional evaluation follows with version-scoped real-call evidence; a passing structural probe does not establish quality.</span></div>
     </div>
     <p data-i18n="s6_p2">Promotion — turning a file an agent wrote into a file the next session loads as code — checks containment after resolving both paths, so a traversal cannot be spelled with <code>..</code> or hidden behind a symlink.</p>
   </section>
@@ -255,7 +256,7 @@ window.I18N = {
     s6_h:"Extensions at runtime",
     s6_p1:"Components can be created, versioned, promoted, and rolled back while the system runs. Two mechanisms make that safe rather than merely possible.",
     s6_k1:"Scopes", s6_v1:"Everything a contributor registers goes through one handle that removes all of it — newest first, surviving a failure partway, and reporting what is still installed.",
-    s6_k2:"The smoke gate", s6_v2:"A newly evolved component runs a synthetic task through the real loop before it reaches the manifest. It never raises: a failure in the gate must not break the path it guards.",
+    s6_k2:"Structural admission", s6_v2:"Extension admission checks loading, construction and schemas in an isolated interpreter. Functional evaluation follows with version-scoped real-call evidence; a passing structural probe does not establish quality.",
     s6_p2:"Promotion — turning a file an agent wrote into a file the next session loads as code — checks containment after resolving both paths, so a traversal cannot be spelled with <code>..</code> or hidden behind a symlink.",
 
     s7_h:"Verification",
@@ -326,7 +327,7 @@ window.I18N = {
     s6_h:"运行时扩展",
     s6_p1:"组件可以在系统运行时被创建、版本化、晋升和回滚。有两个机制让这件事从「能做」变成「安全」。",
     s6_k1:"作用域", s6_v1:"一个贡献者注册的全部东西都经由同一个句柄，由它统一撤销——从新到旧，中途失败也继续，并报告还有什么留在系统里。",
-    s6_k2:"冒烟门禁", s6_v2:"新演化出的组件要先把一个合成任务跑过真实循环，才能进入清单。它永不抛异常：门禁自身的失败不能把它守护的路径搞崩。",
+    s6_k2:"结构准入", s6_v2:"扩展准入在隔离解释器中检查加载、构造和 schema。功能评估使用版本绑定的真实调用证据；结构检查通过并不证明质量。",
     s6_p2:"晋升——把 agent 写的一个文件变成下一次会话当作代码加载的文件——是在两条路径都解析之后才做包容性检查的，所以路径穿越既不能用 <code>..</code> 拼出来，也不能藏在符号链接后面。",
 
     s7_h:"验证体系",
