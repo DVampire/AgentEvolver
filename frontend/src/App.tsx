@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { CodeBlock, MARKDOWN_REHYPE_PLUGINS, MessageMarkdown, reactNodeText } from './components/common/Markdown';
-import { Blocks, Boxes, Cable, Code2, FlaskConical, Globe, GraduationCap, Hand, MessageSquare, Monitor, MonitorPlay, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Plus, RefreshCw, Settings, Sparkles, SquareTerminal, Sun, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, Blocks, Boxes, Cable, Code2, FlaskConical, Globe, GraduationCap, Hand, MessageSquare, Monitor, MonitorPlay, Moon, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Plug, Plus, RefreshCw, Settings, Sparkles, SquareTerminal, Sun, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
 
 import AlertDisplayArea from './alerts';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -209,7 +209,7 @@ export function App() {
   const [draft, setDraft] = useState('');
   const setNotice = useAlertStore((state) => state.notify);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>(() => localStorage.getItem('agentevolver.theme') === 'dark' ? 'dark' : 'light');
+  const [theme, setTheme] = useState<Theme>(() => localStorage.getItem('agentevolver.theme') === 'light' ? 'light' : 'dark');
   const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   const [activeCapability, setActiveCapability] = useState<CapabilityKind>('skills');
   const [capabilitySearch, setCapabilitySearch] = useState('');
@@ -262,12 +262,15 @@ export function App() {
   const messageEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (activities.length || messages.some((message) => message.id !== 'welcome')) {
+      messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, activities]);
 
   useEffect(() => {
     localStorage.setItem('agentevolver.theme', theme);
     document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#07100e' : '#f3f7f4');
   }, [theme]);
 
   useEffect(() => {
@@ -1475,7 +1478,7 @@ export function App() {
             <input ref={fileInputRef} className="file-input" type="file" multiple onChange={(event) => { void uploadFiles(event.target.files); event.target.value = ''; }} />
             {attachments.length ? <div className="attachment-list">{attachments.map((attachment) => <div className={`attachment-chip ${attachment.status}`} key={attachment.id}><span className="attachment-icon">{attachment.status === 'uploading' ? '◌' : attachment.status === 'error' ? '!' : '⌕'}</span><span className="attachment-copy"><strong>{attachment.name}</strong><small>{attachment.status === 'uploading' ? `Uploading ${formatFileSize(attachment.progress)} of ${formatFileSize(attachment.size)}` : attachment.status === 'error' ? attachment.error ?? 'Upload failed' : formatFileSize(attachment.size)}</small></span><button type="button" onClick={() => void removeAttachment(attachment)} disabled={attachment.status === 'uploading'} aria-label={`Remove ${attachment.name}`}>×</button></div>)}</div> : null}
             <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder="Ask AgentEvolver to investigate, implement, or review…" disabled={status !== 'connected' || Boolean(activeTaskId)} rows={3} />
-            <div className="composer-actions"><button className="attach-file" type="button" onClick={() => fileInputRef.current?.click()} disabled={status !== 'connected' || Boolean(activeTaskId)}>⌕ Attach files</button><span>Enter to send · Shift+Enter for a new line</span>{activeTaskId ? <button type="button" className="stop" onClick={cancelTask}>■ Stop task</button> : <button type="submit" disabled={(!draft.trim() && !attachments.some((attachment) => attachment.status === 'ready')) || attachments.some((attachment) => attachment.status === 'uploading') || status !== 'connected'}>Send <span>↵</span></button>}</div>
+            <div className="composer-actions"><button className="attach-file" type="button" onClick={() => fileInputRef.current?.click()} disabled={status !== 'connected' || Boolean(activeTaskId)}><Paperclip size={14} aria-hidden="true" /> Attach files</button><span>Enter to send · Shift+Enter for a new line</span>{activeTaskId ? <button type="button" className="stop" onClick={cancelTask}>■ Stop task</button> : <button type="submit" disabled={(!draft.trim() && !attachments.some((attachment) => attachment.status === 'ready')) || attachments.some((attachment) => attachment.status === 'uploading') || status !== 'connected'}>Send <ArrowUp size={15} aria-hidden="true" /></button>}</div>
           </form>
         </div>
       </section>}
@@ -1623,13 +1626,24 @@ function traceIcon(type: string): string { return type === 'reasoning' ? '✦' :
 function formatDuration(value: number): string { return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(2)} s`; }
 
 function QuickStart({ onSelect }: { onSelect: (prompt: string) => void }) {
-  const prompts = [
-    ['Review this project', 'Find the highest-impact issues and suggest fixes.'],
-    ['Plan a feature', 'Turn a requirement into an implementation plan.'],
-    ['Explain the architecture', 'Trace the main modules and their responsibilities.'],
-    ['Investigate a problem', 'Gather evidence, form hypotheses, and recommend next steps.'],
+  const prompts: { title: string; prompt: string; icon: LucideIcon }[] = [
+    { title: 'Review this project', prompt: 'Find the highest-impact issues and suggest fixes.', icon: Code2 },
+    { title: 'Plan a feature', prompt: 'Turn a requirement into an implementation plan.', icon: Workflow },
+    { title: 'Explain the architecture', prompt: 'Trace the main modules and their responsibilities.', icon: Blocks },
+    { title: 'Investigate a problem', prompt: 'Gather evidence, form hypotheses, and recommend next steps.', icon: FlaskConical },
   ];
-  return <section className="quick-start"><p className="eyebrow">Get started</p><h2>What would you like to work on?</h2><p>Choose a starting point or describe a task in your own words.</p><div className="quick-prompts">{prompts.map(([title, prompt]) => <button key={title} onClick={() => onSelect(prompt)}><strong>{title}</strong><span>{prompt}</span></button>)}</div></section>;
+  return <section className="quick-start">
+    <div className="quick-start-mark" aria-hidden="true"><Sparkles size={26} strokeWidth={1.5} /></div>
+    <p className="eyebrow">Your workspace, ready to evolve</p>
+    <h2>What would you like<br />to work on?</h2>
+    <p>Bring an idea, a question, or a challenge. Let's make progress.</p>
+    <div className="quick-prompts">{prompts.map(({ title, prompt, icon: Icon }) =>
+      <button key={title} onClick={() => onSelect(prompt)}>
+        <div className="quick-prompt-heading"><Icon size={18} strokeWidth={1.6} aria-hidden="true" /><strong>{title}</strong><ArrowUpRight className="quick-prompt-arrow" size={15} aria-hidden="true" /></div>
+        <span>{prompt}</span>
+      </button>
+    )}</div>
+  </section>;
 }
 
 function MobileNavigation({ projects, sessionId, selection, agents, status, theme, onClose, onCreateSession, onSelectSession, onOpenCapabilities, onToggleTheme, onOpenConnection }: { projects: [string, SessionSummary[]][]; sessionId?: string; selection: CapabilitySelection; agents: AgentState[]; status: ConnectionStatus; theme: Theme; onClose: () => void; onCreateSession: () => Promise<void>; onSelectSession: (session: SessionSummary) => Promise<void>; onOpenCapabilities: (kind: CapabilityKind) => void; onToggleTheme: () => void; onOpenConnection: () => void }) {

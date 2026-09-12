@@ -50,7 +50,7 @@ function OutputRow({ nodeId, name, label, type, hint, inspect, frozen, last }: {
     <div className={cn('relative flex h-11 w-full flex-wrap items-center justify-between bg-muted px-5 py-2', last && 'rounded-b-[0.69rem]')} title={hint}>
       <div className="flex w-full items-center justify-end truncate text-sm">
         <div className="flex flex-1" />
-        {frozen ? <Snowflake className="mr-1 h-3 w-3 text-[#3ba0ff]" /> : null}
+        {frozen ? <Snowflake className="mr-1 h-3 w-3 text-[hsl(var(--info))]" /> : null}
         <div className="flex items-center gap-2">
           <span className="px-2 py-1 text-sm font-medium">{label}</span>
           {inspect ? (
@@ -158,7 +158,7 @@ function CardToolbar({ id, visible, minimized, frozen }: { id: string; visible: 
   return (
     <NodeToolbar isVisible={visible} position={Position.Top} offset={8}>
       <div className="lf-node-toolbar">
-        <ShadTooltip content={frozen ? 'Unfreeze (recompute)' : 'Freeze (reuse last output)'}><Button variant="ghost" size="node-toolbar" className={frozen ? 'text-[#3ba0ff]' : ''} onClick={() => emitNodeAction(id, 'freeze')}><Snowflake /></Button></ShadTooltip>
+        <ShadTooltip content={frozen ? 'Unfreeze (recompute)' : 'Freeze (reuse last output)'}><Button variant="ghost" size="node-toolbar" className={frozen ? 'text-[hsl(var(--info))]' : ''} onClick={() => emitNodeAction(id, 'freeze')}><Snowflake /></Button></ShadTooltip>
         <ShadTooltip content="Duplicate (Ctrl+D)"><Button variant="ghost" size="node-toolbar" onClick={() => emitNodeAction(id, 'duplicate')}><Copy /></Button></ShadTooltip>
         <ShadTooltip content={minimized ? 'Expand' : 'Minimize'}><Button variant="ghost" size="node-toolbar" onClick={() => emitNodeAction(id, 'minimize')}>{minimized ? <Maximize2 /> : <Minimize2 />}</Button></ShadTooltip>
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>

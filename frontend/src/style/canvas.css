@@ -1,5 +1,5 @@
 /* ============================== Canvas ==============================
-   Styled entirely on Langflow's design tokens (hsl(var(--...))) so the canvas
+   Uses AgentEvolver's shared design tokens (hsl(var(--...))) so the canvas
    inherits the same light/dark theme as every shadcn component — no hardcoded
    colors, no per-theme overrides. Layout/structure only below; color = token. */
 
@@ -18,7 +18,7 @@
 .canvas-view.playground-active { grid-template-columns: minmax(0, 1fr); }
 
 /* --- palette --- */
-.canvas-catalog { width: 280px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid hsl(var(--border)); background: hsl(var(--background)); transition: width .15s ease; }
+.canvas-catalog { width: 280px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid hsl(var(--border)); background: var(--surface); transition: width .15s ease; }
 .canvas-catalog.collapsed { width: 48px; }
 .canvas-catalog-head { display: flex; align-items: center; margin: 4px 8px 6px 16px; }
 .canvas-catalog-title { margin: 0; color: hsl(var(--foreground)); font-size: 13px; font-weight: 650; }
@@ -33,9 +33,9 @@
 .canvas-cat-head strong { flex: 1; font-size: 13px; font-weight: 600; }
 .canvas-cat-head[aria-expanded='true'] strong { font-weight: 680; }
 .canvas-cat-head em { color: hsl(var(--muted-foreground)); font-style: normal; font-size: 13px; }
-/* Langflow section-header glyph: muted, accent-pink when the section is open. */
+/* Open categories share the navigation accent. */
 .lf-cat-icon { color: hsl(var(--muted-foreground)); flex: 0 0 auto; }
-.canvas-cat-head[aria-expanded='true'] .lf-cat-icon { color: hsl(333 71% 51%); }
+.canvas-cat-head[aria-expanded='true'] .lf-cat-icon { color: hsl(var(--primary)); }
 .lf-cat-chevron svg { transition: transform .15s ease; }
 .canvas-cat-head[aria-expanded='true'] .lf-cat-chevron svg { transform: rotate(90deg); }
 /* Bundles: a super-section whose sub-groups (one per migrated Langflow bundle)
@@ -60,9 +60,9 @@
 .canvas-stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .canvas-toolbar { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; padding: 5px 12px; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--background)); }
 .canvas-toolbar-spacer { flex: 1; }
-.canvas-dirty { color: hsl(26 90% 45%); font-size: 11.5px; font-style: normal; }
-.canvas-badge { color: hsl(142 60% 40%); font-size: 11px; font-style: normal; white-space: nowrap; }
-.canvas-badge.drift { color: hsl(26 90% 45%); }
+.canvas-dirty { color: hsl(var(--warning)); font-size: 11.5px; font-style: normal; }
+.canvas-badge { color: hsl(var(--primary)); font-size: 11px; font-style: normal; white-space: nowrap; }
+.canvas-badge.drift { color: hsl(var(--warning)); }
 .canvas-flow-wrap { position: relative; min-height: 0; flex: 1; }
 /* Empty-canvas welcome (Langflow flow-builder-welcome, simplified). */
 .canvas-empty { pointer-events: none; position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; color: hsl(var(--muted-foreground)); text-align: center; }
@@ -78,7 +78,7 @@
 
 /* --- node cards (Langflow genericNode: white card, subtle border+shadow) --- */
 /* Langflow genericNode: rounded-xl border shadow-sm hover:shadow-md, white card. */
-.lf-node { width: 300px; border: 1px solid hsl(var(--border)); border-radius: 12px; color: hsl(var(--foreground)); background: hsl(var(--card)); box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); font-size: 13px; transition: box-shadow .15s ease; }
+.lf-node { width: 300px; border: 1px solid hsl(var(--border)); border-radius: 12px; color: hsl(var(--foreground)); background: hsl(var(--card)); box-shadow: var(--shadow-panel); font-size: 13px; transition: box-shadow .15s ease; }
 .lf-node:hover { box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
 .lf-node.selected { border-color: hsl(var(--node-selected)); box-shadow: 0 0 0 2px hsl(var(--node-selected) / 0.35); }
 /* Collapsed node: header only, but tall enough to stack its input handles down
@@ -86,11 +86,11 @@
 .lf-node.lf-minimized { min-height: 48px; }
 .lf-min-handle { position: absolute; }
 /* Frozen node: its last output is pinned and reused (compiler inlines it). */
-.lf-node.lf-frozen { border-color: hsl(213 94% 68%); box-shadow: 0 0 0 2px hsl(213 94% 68% / 0.3); }
-.lf-frozen-badge { color: hsl(213 94% 68%); flex: 0 0 auto; }
-.lf-node.run-running { border-color: hsl(217 91% 60%); box-shadow: 0 0 0 2px hsl(217 91% 60% / 0.25); }
-.lf-node.run-succeeded { border-color: hsl(142 71% 45%); }
-.lf-node.run-failed { border-color: hsl(0 72% 51%); }
+.lf-node.lf-frozen { border-color: hsl(var(--info)); box-shadow: 0 0 0 2px hsl(var(--info) / 0.3); }
+.lf-frozen-badge { color: hsl(var(--info)); flex: 0 0 auto; }
+.lf-node.run-running { border-color: hsl(var(--info)); box-shadow: 0 0 0 2px hsl(var(--info) / 0.25); }
+.lf-node.run-succeeded { border-color: hsl(var(--primary)); }
+.lf-node.run-failed { border-color: hsl(var(--destructive)); }
 .lf-node.run-skipped { opacity: .55; }
 /* Langflow header: icon + ml-3 + title(text-base font-medium text-primary), px-4 py-3. */
 .lf-node-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
@@ -99,7 +99,7 @@
    reveal it only on hover / select, like Langflow's on-demand affordances. */
 .lf-node-ref { margin-left: auto; color: hsl(var(--muted-foreground)); font-size: 9.5px; background: hsl(var(--muted)); border-radius: 5px; padding: 2px 6px; white-space: nowrap; opacity: 0; transition: opacity .12s ease; }
 .lf-node:hover .lf-node-ref, .lf-node.selected .lf-node-ref { opacity: 1; }
-.lf-pulse { width: 8px; height: 8px; border-radius: 50%; background: hsl(217 91% 60%); animation: pulse 1.2s ease infinite; }
+.lf-pulse { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--info)); animation: pulse 1.2s ease infinite; }
 .lf-run-count { color: hsl(var(--muted-foreground)); font-size: 10px; font-style: normal; }
 .lf-node-desc { margin: 0; padding: 2px 16px 12px; color: hsl(var(--muted-foreground)); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 /* Body rows are flush to the node border (no horizontal padding on the body);
@@ -108,9 +108,9 @@
 /* Langflow NodeInputField: min-h-10 px-5 py-2, label text-sm font-medium, input below. */
 .lf-field { position: relative; display: grid; gap: 8px; min-height: 40px; padding: 8px 20px; align-content: center; }
 .lf-field-label { color: hsl(var(--foreground)); font-size: 14px; font-weight: 500; }
-.lf-field-label em { color: hsl(0 72% 51%); font-style: normal; }
+.lf-field-label em { color: hsl(var(--destructive)); font-style: normal; }
 .lf-bound { display: inline-block; border: 1px dashed hsl(var(--border)); border-radius: 8px; padding: 6px 10px; color: hsl(var(--muted-foreground)); font-size: 11.5px; }
-.lf-node-error { margin: 0; padding: 7px 14px 9px; color: hsl(0 72% 51%); font-size: 11px; }
+.lf-node-error { margin: 0; padding: 7px 14px 9px; color: hsl(var(--destructive)); font-size: 11px; }
 /* Sticky note (Langflow NoteNode): fills the resizable node wrapper. */
 .lf-note { width: 100%; height: 100%; border-radius: 12px; box-shadow: 0 1px 3px rgb(0 0 0 / 0.14); overflow: hidden; }
 .lf-note-text { width: 100%; height: 100%; resize: none; border: 0; background: transparent; padding: 12px 14px; color: #1a1a1a; font-size: 13px; line-height: 1.5; outline: none; }
@@ -163,9 +163,9 @@
 .panel-frame > summary em { color: hsl(var(--muted-foreground)); font-size: 11px; font-style: normal; }
 .panel-frame > summary small { margin-left: auto; color: hsl(var(--muted-foreground)); }
 .frame-dot { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--muted-foreground)); flex: 0 0 auto; }
-.frame-dot.running { background: hsl(217 91% 60%); animation: pulse 1.2s ease infinite; }
-.frame-dot.succeeded, .frame-dot.cached { background: hsl(142 71% 45%); }
-.frame-dot.failed { background: hsl(0 72% 51%); }
+.frame-dot.running { background: hsl(var(--info)); animation: pulse 1.2s ease infinite; }
+.frame-dot.succeeded, .frame-dot.cached { background: hsl(var(--primary)); }
+.frame-dot.failed { background: hsl(var(--destructive)); }
 .frame-dot.skipped, .frame-dot.cancelled { background: hsl(var(--muted-foreground)); }
 .panel-invocation { padding: 2px 10px 10px; }
 .panel-invocation-meta { margin: 4px 0 8px; color: hsl(var(--muted-foreground)); font-size: 11px; }
@@ -175,10 +175,10 @@
 .panel-io pre { max-height: 220px; overflow: auto; margin: 0; padding: 9px 10px; color: hsl(var(--foreground)); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* --- results footer + run dialog --- */
-.canvas-results { flex: 0 0 auto; max-height: 200px; overflow: auto; padding: 10px 16px; border-top: 1px solid hsl(var(--border)); color: hsl(142 60% 35%); background: hsl(var(--background)); font-size: 12px; }
+.canvas-results { flex: 0 0 auto; max-height: 200px; overflow: auto; padding: 10px 16px; border-top: 1px solid hsl(var(--border)); color: hsl(var(--primary)); background: hsl(var(--background)); font-size: 12px; }
 .canvas-results pre { margin: 0; white-space: pre-wrap; }
-.canvas-results.failed { color: hsl(0 72% 51%); }
-.canvas-results .pulse { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: hsl(217 91% 60%); animation: pulse 1.2s ease infinite; }
+.canvas-results.failed { color: hsl(var(--destructive)); }
+.canvas-results .pulse { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: hsl(var(--info)); animation: pulse 1.2s ease infinite; }
 .canvas-run-dialog-backdrop { position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; background: rgba(0,0,0,.5); backdrop-filter: blur(2px); }
 .canvas-run-dialog { display: grid; gap: 10px; width: min(440px, 92vw); border: 1px solid hsl(var(--border)); border-radius: 14px; padding: 20px; color: hsl(var(--foreground)); background: hsl(var(--background)); box-shadow: 0 24px 80px rgba(0,0,0,.3); }
 .canvas-run-dialog h3 { margin: 0; font-size: 16px; }
@@ -253,3 +253,16 @@
 .lf-mount-placeholder { color: hsl(var(--muted-foreground)); font-size: 11.5px; }
 .lf-mount-caret { flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
 
+
+/* React Flow paints a separate SVG background and selection layer. Map those
+   library tokens too, so it cannot reintroduce a charcoal/blue theme. */
+.canvas-flow-wrap .react-flow {
+  --xy-background-color: var(--ground);
+  --xy-background-pattern-dots-color: hsl(var(--canvas-dot));
+  --xy-selection-background-color: var(--green-bg);
+  --xy-selection-border: 1px solid var(--green);
+  --xy-node-color: var(--text);
+  --xy-edge-stroke: var(--text-mid);
+  --xy-edge-stroke-selected: var(--green);
+  --xy-resize-background-color: var(--green);
+}

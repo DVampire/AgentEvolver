@@ -43,7 +43,7 @@
 .compute-meter-head { display: flex; align-items: baseline; justify-content: space-between; color: hsl(var(--muted-foreground)); font-size: 11px; }
 .compute-meter-head em { font-style: normal; }
 .compute-meter-track { height: 4px; overflow: hidden; border-radius: 2px; background: hsl(var(--muted)); }
-.compute-meter-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #8ce4cc, #b0c7ff); transition: width .4s ease; }
+.compute-meter-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--green), hsl(var(--primary-hover))); transition: width .4s ease; }
 .compute-row { display: flex; align-items: center; gap: 7px; color: hsl(var(--muted-foreground)); font-size: 12px; }
 .compute-row em { margin-left: auto; color: hsl(var(--foreground)); font-size: 11px; font-style: normal; }
 .compute-uptime { color: hsl(var(--muted-foreground)); font-size: 11px; }
@@ -76,17 +76,17 @@
 
 .science-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; padding: 12px 0; }
 .science-message-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); font-size: 10px; font-weight: 650; }
-.science-message.agent .science-message-avatar { color: #101114; background: linear-gradient(135deg, #b0c7ff, #8ce4cc); }
+.science-message.agent .science-message-avatar { color: hsl(var(--primary-foreground)); background: var(--green); }
 .science-message-body { min-width: 0; }
 .science-message-heading strong { color: hsl(var(--foreground)); font-size: 12.5px; font-weight: 650; }
 .science-message-body p { margin: 5px 0 0; color: hsl(var(--foreground)); font-size: 13.5px; line-height: 1.65; white-space: pre-wrap; }
-.science-message.system .science-message-heading strong { color: #d78b95; }
+.science-message.system .science-message-heading strong { color: var(--red); }
 .science-working { display: flex; align-items: center; gap: 8px; padding: 8px 0 16px 42px; color: hsl(var(--muted-foreground)); font-size: 12px; }
 
 .science-composer { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 8px; margin: 0 24px 20px; border: 1px solid hsl(var(--border)); border-radius: 14px; padding: 10px 10px 10px 14px; background: hsl(var(--background)); }
 .science-composer textarea { flex: 1; max-height: 200px; min-height: 22px; border: 0; color: hsl(var(--foreground)); background: transparent; font: inherit; font-size: 13.5px; line-height: 1.5; resize: none; }
 .science-composer textarea:focus { outline: none; }
-.science-composer button { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border: 0; border-radius: 9px; color: #101114; background: #c7d8ff; cursor: pointer; }
+.science-composer button { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border: 0; border-radius: 9px; color: hsl(var(--primary-foreground)); background: var(--green); cursor: pointer; }
 .science-composer button:disabled { opacity: .35; cursor: default; }
 
 /* --- Rail tabs --------------------------------------------------------- */
@@ -112,30 +112,30 @@
 .kernel-bar-spacer { flex: 1; }
 .kernel-bar em { color: hsl(var(--muted-foreground)); font-size: 10.5px; font-style: normal; }
 .kernel-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kernel-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #6b7280; }
-.kernel-dot.idle { background: #6fbf8f; }
-.kernel-dot.busy { background: #d8b26a; animation: pulse 1.1s ease-in-out infinite; }
-.kernel-notice { margin: 0; padding: 9px 12px; border-bottom: 1px solid hsl(var(--border)); color: #d8b26a; font-size: 11.5px; line-height: 1.5; cursor: pointer; }
+.kernel-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--surface-3); }
+.kernel-dot.idle { background: var(--green); }
+.kernel-dot.busy { background: var(--amber); animation: pulse 1.1s ease-in-out infinite; }
+.kernel-notice { margin: 0; padding: 9px 12px; border-bottom: 1px solid hsl(var(--border)); color: var(--amber); font-size: 11.5px; line-height: 1.5; cursor: pointer; }
 
 .kernel-history { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 12px 8px; }
 .kernel-history > .empty { margin: 0; padding: 16px 4px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.55; }
 .kernel-cell { margin-bottom: 12px; border-left: 2px solid hsl(var(--border)); padding-left: 10px; }
 /* The agent's cells are the ones you did not type; marking them is most of the
    point of showing the history at all. */
-.kernel-cell.agent { border-left-color: #8ea9ff; }
-.kernel-cell.failed { border-left-color: #c46f7a; }
+.kernel-cell.agent { border-left-color: color-mix(in srgb, var(--green) 35%, transparent); }
+.kernel-cell.failed { border-left-color: color-mix(in srgb, var(--red) 35%, transparent); }
 .kernel-cell-head { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; color: hsl(var(--muted-foreground)); font-size: 10.5px; }
 .kernel-count { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .kernel-origin { border-radius: 5px; padding: 1px 6px; background: hsl(var(--muted)); text-transform: capitalize; }
-.kernel-cell.agent .kernel-origin { color: #101114; background: #b0c7ff; }
+.kernel-cell.agent .kernel-origin { color: hsl(var(--primary-foreground)); background: var(--green); }
 .kernel-cell-head em { margin-left: auto; font-style: normal; }
 .kernel-code { margin: 0; overflow-x: auto; border-radius: 7px; padding: 8px 10px; color: hsl(var(--foreground)); background: hsl(var(--muted)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
 .kernel-outputs { display: flex; flex-direction: column; gap: 5px; margin-top: 5px; }
 .kernel-output { max-width: 100%; margin: 0; overflow-x: auto; color: hsl(var(--muted-foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-.kernel-output.stderr { color: #d8a06a; }
-.kernel-output.error { border-left: 2px solid #c46f7a; padding-left: 8px; color: #d78b95; }
-.kernel-output.image { max-height: 520px; border-radius: 7px; background: #fff; object-fit: contain; }
-.kernel-output.html { width: 100%; height: 240px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: #fff; }
+.kernel-output.stderr { color: var(--red); }
+.kernel-output.error { border-left: 2px solid color-mix(in srgb, var(--red) 35%, transparent); padding-left: 8px; color: var(--red); }
+.kernel-output.image { max-height: 520px; border-radius: 7px; background: var(--surface-3); object-fit: contain; }
+.kernel-output.html { width: 100%; height: 240px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: var(--surface-3); }
 
 .kernel-prompt { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-top: 1px solid hsl(var(--border)); }
 .kernel-caret { color: hsl(var(--muted-foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.6; }
@@ -182,9 +182,8 @@
    header, body, notice, pill and block. A second dialog idiom would make the
    trajectory and the job registry read as unrelated features rather than two
    views of the same run. */
-.trajectory-dialog, .jobs-dialog { --tj-ok: #3f9c72; --tj-fail: #c2606c; --tj-warn: #a8791c; --tj-accent: #5b74c9;
+.trajectory-dialog, .jobs-dialog { --tj-ok: var(--green); --tj-fail: var(--red); --tj-warn: var(--amber); --tj-accent: var(--blue);
   display: flex; color: hsl(var(--foreground)); }
-.dark .trajectory-dialog, .dark .jobs-dialog { --tj-ok: #6fbf8f; --tj-fail: #d78b95; --tj-warn: #d8b26a; --tj-accent: #8ea9ff; }
 
 /* Header, summary and toolbar are flex-none; only .trajectory-body scrolls, so
    at forty steps the stats and the expand-all control stay put. */
@@ -203,7 +202,7 @@
 .trajectory-stat.outcome.running > strong { color: var(--tj-warn); }
 /* Same meter as the Compute panel's — one bar shape in this view, not two. */
 .trajectory-meter { height: 4px; margin-top: 5px; overflow: hidden; border-radius: 2px; background: hsl(var(--muted)); }
-.trajectory-meter i { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, #8ce4cc, #b0c7ff); transition: width .4s ease; }
+.trajectory-meter i { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--green), hsl(var(--primary-hover))); transition: width .4s ease; }
 
 .trajectory-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 7px 20px; border-bottom: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); font-size: 11.5px; }
 .trajectory-toolbar-spacer { flex: 1; }
@@ -313,8 +312,7 @@
    are portalled onto <body> and these are not, so the values are the same but
    the scope they hang on cannot be.
    ========================================================================== */
-.science-conversation { --sc-ok: #3f9c72; --sc-fail: #c2606c; --sc-warn: #a8791c; --sc-accent: #5b74c9; }
-.dark .science-conversation { --sc-ok: #6fbf8f; --sc-fail: #d78b95; --sc-warn: #d8b26a; --sc-accent: #8ea9ff; }
+.science-conversation { --sc-ok: var(--green); --sc-fail: var(--red); --sc-warn: var(--amber); --sc-accent: var(--blue); }
 
 /* --- Goal ----------------------------------------------------------------
    Above the thread and outside its scroll: the objective holds for the whole

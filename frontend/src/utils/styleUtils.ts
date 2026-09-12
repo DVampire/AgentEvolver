@@ -1,22 +1,21 @@
-// Node/category colors ported from langflow's utils/styleUtils.ts nodeColors.
-// Keys we don't use are kept for parity so future node kinds pick them up.
+// Category accents share the dashboard palette in style/theme.css.
 
 export const nodeColors: Record<string, string> = {
-  inputs: '#10B981',
-  outputs: '#AA2411',
-  data: '#198BF6',
-  prompts: '#4367BF',
-  models: '#ab11ab',
-  agents: '#903BBE',
-  tools: '#06b6d4',
-  chains: '#FE7500',
-  memories: '#F5B85A',
-  str: '#4F46E5',
-  Message: '#4f46e5',
-  unknown: '#9CA3AF',
+  inputs: 'var(--green)',
+  outputs: 'var(--red)',
+  data: 'var(--blue)',
+  prompts: 'var(--blue)',
+  models: 'var(--violet)',
+  agents: 'var(--violet)',
+  tools: 'var(--green)',
+  chains: 'var(--amber)',
+  memories: 'var(--amber)',
+  str: 'var(--violet)',
+  Message: 'var(--violet)',
+  unknown: 'var(--text-mid)',
 };
 
-/** Our palette categories mapped onto langflow's color system. */
+/** Palette categories mapped onto the shared semantic accents. */
 export const categoryColors: Record<string, string> = {
   io: nodeColors.inputs,
   structural: nodeColors.data,

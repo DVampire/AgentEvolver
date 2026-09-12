@@ -1,6 +1,4 @@
-// Core token mapping ported from langflow's tailwind.config.mjs (trimmed to
-// the shadcn tokens our components/ui batch uses). Values live as CSS
-// variables in src/style/tailwind.css, copied from langflow style/index.css.
+// Token channels are shared with the app styles in src/style/theme.css.
 import tailwindcssAnimate from 'tailwindcss-animate';
 
 /** @type {import('tailwindcss').Config} */
@@ -9,6 +7,7 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      fontFamily: { sans: ['var(--font-sans)'], mono: ['var(--font-mono)'] },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',

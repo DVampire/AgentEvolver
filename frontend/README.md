@@ -51,3 +51,16 @@ The original Ink terminal client remains available when needed:
 ```bash
 npm run dev:terminal -- --workspace ..
 ```
+
+## Visual design
+
+`src/style/theme.css` owns the shared color, surface, typography and shadow tokens.
+The default dark theme follows `agentevolver/visual` (deep green, mint, and the same
+amber/red/blue/purple status colors); an explicit saved light preference is preserved.
+Light mode uses green-tinted neutrals and darker accents for readable contrast.
+Tailwind/Radix components, the app shell, canvas and Science panels all consume these
+tokens, including dialogs rendered outside the app shell. Borders use opaque HSL
+channels so Tailwind opacity modifiers remain valid. Monaco uses matching editor
+palettes in `src/workspace/WorkspaceEditor.tsx` because its theme API needs hex colors.
+Keep layout rules in each view's stylesheet and use semantic tokens when adding UI.
+Embedded websites, remote desktops and the external IDE retain their own appearance.

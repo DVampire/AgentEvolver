@@ -23,10 +23,10 @@ export interface PortSpec { name: string; label: string; type: PortType; descrip
 
 /** Data-flow port colors (a small closed set; Langflow-style colored handles). */
 export const PORT_COLORS: Record<PortType, string> = {
-  text: '#4F46E5',   // indigo
-  list: '#D97706',   // amber
-  object: '#059669', // emerald
-  any: '#94A3B8',    // slate
+  text: 'var(--violet)',
+  list: 'var(--amber)',
+  object: 'var(--green)',
+  any: 'var(--text-mid)',
 };
 
 export function portsCompatible(source: PortType, target: PortType): boolean {
