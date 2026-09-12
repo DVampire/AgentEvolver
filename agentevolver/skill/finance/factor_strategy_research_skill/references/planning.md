@@ -20,7 +20,10 @@ implementation, evaluation, decision, stage transition or blocker; reconcile wit
 
 The detailed plan should cover:
 
-- Data source feasibility and schema, calendar, corporate actions and data-quality checks.
+- The first executable milestone: native Connector download, saved-file path/hash and verified
+  local OHLCV/calendar coverage. Data source feasibility, adjustment/action/volume semantics,
+  research readiness and strict qualification are separate recorded checks. Do not begin
+  market trials or report polishing with no accepted local dataset.
 - Proposed connector and two environment interfaces, shared utilities and deterministic checks.
 - Frozen chronological protocol, trial accounting, metric definitions/units/nulls/aggregation,
   admission rules and stop criteria from [metrics-and-evaluation.md](metrics-and-evaluation.md).

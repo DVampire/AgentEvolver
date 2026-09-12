@@ -463,7 +463,10 @@ class ToolExecutionPipeline:
             if self._approval_resolver is None:
                 return (
                     ToolErrorCode.APPROVAL_UNAVAILABLE,
-                    decision.reason or "Tool call requires approval, but no approval channel is available.",
+                    "Approval channel unavailable in this runtime; the call was not executed. "
+                    + (decision.reason or "Tool call requires approval.")
+                    + " Use an interactive approval-capable entry point or repair the operation's "
+                    "actual effects within the authorized scope; changing hints alone does not grant permission.",
                 )
             try:
                 accepted = self._approval_resolver(execution, decision.reason)

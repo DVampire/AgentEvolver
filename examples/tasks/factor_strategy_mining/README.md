@@ -32,6 +32,11 @@ The default study uses NVDA daily observations through **2026-09-11**, with trai
 Only completed trading sessions are eligible. Exact boundaries, gaps and numerical
 criteria are authoritative in [study.json](signal_foundry/study.json).
 
+Documented public historical data may support the research under the study's data policy.
+Keep adjustment conventions and limitations explicit. Strict as-traded prices, consolidated
+volume and verified corporate-action accounting are separate qualifications; unmet evidence
+must remain visible and must not be reported as passing merely because performance is good.
+
 Iterations use training and validation. Final-test results must not guide factor or
 strategy selection. An unsuccessful or inconclusive study must remain visible in the
 reports; a useful research product does not imply a profitable strategy.

@@ -11,7 +11,9 @@ It fixes data identity, market/calendar, session frequency, dates, fit/score bou
 horizons, execution timing, adjustments, cost model, factor admission, strategy selection,
 final acceptance, experiment budgets and insufficient-evidence rules. Compute additional
 diagnostics freely on research splits; freeze any extra selection criterion before using it.
-Do not weaken the task's supplied thresholds. Record a data incompatibility as a blocker.
+Do not weaken the task's supplied thresholds. Apply the study's explicit data_policy when
+classifying incompatibility: an authorized adjusted/public-data research mode may proceed
+with strict data qualification unmet. Unsupported scope changes still require user input.
 
 Interpret date boundaries as inclusive exchange-local session dates and translate them to
 the provider's timestamp/range semantics explicitly. When completed_sessions_only is true,
@@ -127,6 +129,11 @@ explicit split/share changes and dividend entitlement/payment rules. If precise 
 payment records are unavailable, declare and validate a consistent total-return convention;
 do not silently credit both adjusted prices and dividend cash. Publish assumptions and
 unresolved approximations. No intrabar stop execution can be inferred from daily OHLC alone.
+
+When the study authorizes adjusted-price research, use the qualified proxy mode described in
+[data-and-environments.md](data-and-environments.md). Apply consistent adjustment to OHLC,
+disable separate action cash/share credits in that mode, and label the resulting simulations
+as research proxies. Strict raw-price/consolidated-volume qualification remains separate.
 
 Charge commission and slippage on actual traded notional at every entry, rebalance and exit,
 including terminal liquidation. Account for drift, position limits and affordability after

@@ -64,6 +64,26 @@ a downloader that writes snapshot files has a write effect even if its HTTP requ
 Use the appropriate permitted workspace scope and accurate declarations, not false read-only
 hints or broader permissions to silence an error.
 
+### Large read results saved locally
+
+For a read-only remote query that returns a dataset, set `result_mode: artifact` in
+CONNECTOR.md (the default is `inline`). Return a JSON object from the MCP method. The
+framework saves the complete result atomically under the session's connector log directory
+and returns a compact receipt: `artifact_path`, `sha256`, `bytes`, `result_key: result`.
+The saved JSON envelope contains `connector`, `version`, `action` and `result`; a text-only
+response remains a string in `result`. Read that artifact using Bash, verify the hash and
+normalize/copy it into the workspace if needed. The log root is available to workspace tools.
+No provider-chosen filesystem destination is accepted by this persistence mode. Errors
+remain failed calls and do not produce successful dataset receipts.
+
+The server must actually perform reads only for `readOnlyHint: true`: no arbitrary
+`output_dir`, cache writes or remote mutations. A public HTTP GET has `openWorldHint: true`;
+that does not make it a remote write. Framework result persistence is separate from the
+server operation, like trace logging. Never relabel a file-writing server as read-only.
+For mixed or uncertain effects, use an approval-capable entry point and correct declarations.
+The interactive CLI can request one-call approval; detached CLI runs have no live terminal
+approval channel and return an explicit failure rather than silently waiting for input.
+
 ---
 
 ## Writing a new one

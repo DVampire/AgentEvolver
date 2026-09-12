@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "study_id": "signal-foundry-nvda-daily-v1",
+  "study_id": "signal-foundry-nvda-daily-v2",
   "market": {
     "symbol": "NVDA",
     "exchange_calendar": "XNAS",
@@ -10,8 +10,19 @@
     "start": "2016-01-01",
     "end": "2026-09-11",
     "completed_sessions_only": true,
-    "volume_scope": "consolidated_US_equities",
+    "volume_scope": "provider_reported_US_equity_volume",
     "corporate_actions_required": true
+  },
+  "data_policy": {
+    "mode": "public_data_research",
+    "allow_documented_adjusted_price_proxy": true,
+    "allow_unverified_consolidated_volume_for_research": true,
+    "require_explicit_basis_and_limitations": true,
+    "strict_data_required_for_research_completion": false,
+    "strict_reference_requirements": ["as_traded_execution_prices", "consolidated_US_equities_volume", "verified_corporate_action_accounting"],
+    "strict_data_status_separate_from_statistical_gates": true,
+    "adjusted_proxy_accounting": "Apply the documented adjusted-close/close ratio consistently to provider OHLC; simulate fractional units on that total-return-adjusted proxy without additional split or dividend cash flows. Retain original fields and action metadata. This is a research proxy, not as-traded fills.",
+    "no_automatic_change_to_dates_costs_or_statistical_thresholds": true
   },
   "splits": {
     "train": ["2016-01-01", "2020-12-31"],
@@ -33,7 +44,7 @@
     "cash_annual_return": 0.0,
     "sharpe_reference_annual_return": 0.0,
     "annualization_sessions": 252,
-    "accounting": "raw execution prices with explicit split/share and dividend cash accounting",
+    "accounting": "verified raw execution with explicit actions when available; otherwise the explicitly qualified adjusted-price research proxy defined in data_policy",
     "terminal_liquidation": true,
     "benchmarks": ["cash", "same_stock_buy_and_hold_total_return"]
   },

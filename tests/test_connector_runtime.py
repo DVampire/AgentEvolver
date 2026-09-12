@@ -23,6 +23,10 @@ def fetch(fail: bool = False) -> str:
         raise ValueError("source request failed: HTTP 401")
     return "training snapshot received"
 
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": True})
+def bars() -> dict:
+    return {"scope": "synthetic", "bars": [{"date": "2020-01-02", "close": 100.0}]}
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
 ''')
@@ -36,7 +40,7 @@ connection:
   transport: stdio
   command: python
   args: [server.py]
-actions: [fetch]
+actions: [fetch, bars]
 ---
 # Source
 ''')
@@ -64,6 +68,32 @@ async def test_local_mcp_result_keeps_execution_status(tmp_path, local_server, f
         await manager.cleanup()
 
 
+@pytest.mark.asyncio
+async def test_read_only_dataset_is_archived_by_framework_not_mcp(tmp_path, local_server):
+    import hashlib
+    manifest = local_server / "CONNECTOR.md"
+    manifest.write_text(manifest.read_text().replace("permission_mode: read_only", "permission_mode: read_only\nresult_mode: artifact"))
+    manager = ConnectorContextManager(base_dir=str(tmp_path / "logs"))
+    cfg = manager._parse_connector_dir(local_server)
+    manager._connector_configs[cfg.name] = cfg
+    try:
+        result = await manager(name=cfg.name, action="bars", input={})
+        assert result.success
+        path = Path(result.data["artifact_path"])
+        assert path.is_relative_to(tmp_path / "logs" / "results")
+        body = path.read_bytes()
+        assert hashlib.sha256(body).hexdigest() == result.data["sha256"]
+        assert json.loads(body)["result"]["bars"][0]["close"] == 100.0
+        assert "bars" not in json.loads(result.message)  # compact receipt, no array in prompt
+        assert cfg.model_dump()["result_mode"] == "artifact"
+        replay = await manager(name=cfg.name, action="bars", input={})
+        assert replay.data["artifact_path"] == str(path)
+        failed = await manager(name=cfg.name, action="fetch", input={"fail": True})
+        assert not failed.success and len(list(path.parent.glob("*.json"))) == 1
+    finally:
+        await manager.cleanup()
+
+
 def test_documented_probe_cli_discovers_local_server(local_server):
     script = Path(__file__).parents[1] / (
         "agentevolver/skill/evolving/self_evolving_skill/scripts/connector/probe.py"
@@ -77,6 +107,25 @@ def test_documented_probe_cli_discovers_local_server(local_server):
     assert tools[0]["name"] == "fetch"
     assert tools[0]["input_schema"]["properties"]["fail"]["type"] == "boolean"
     assert tools[0]["annotations"]["readOnlyHint"] is True
+
+
+@pytest.mark.asyncio
+async def test_artifact_write_failure_is_not_a_successful_download(tmp_path, local_server, monkeypatch):
+    manager = ConnectorContextManager(base_dir=str(tmp_path / "logs"))
+    cfg = manager._parse_connector_dir(local_server)
+    cfg.result_mode = "artifact"
+    manager._connector_configs[cfg.name] = cfg
+
+    def failed_commit(*args):
+        raise OSError("Disk full while committing saved result")
+
+    monkeypatch.setattr("agentevolver.connector.context.os.replace", failed_commit)
+    try:
+        result = await manager(name=cfg.name, action="bars", input={})
+        assert not result.success and "Disk full" in result.message
+        assert not list((tmp_path / "logs" / "results").iterdir())
+    finally:
+        await manager.cleanup()
 
 
 @pytest.mark.asyncio

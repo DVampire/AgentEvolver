@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="factor_strategy_mining_agent">
   <meta name="description" content="A solo researcher developing data and backtesting capabilities and an interactive research workbench.">
-  <meta name="version" content="1.0.3">
+  <meta name="version" content="1.1.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/prompt/style.css">
   <script src="../../visual/prompt/app.js"></script>
@@ -77,6 +77,15 @@ Read the skill's research protocol before looking at performance. Freeze the stu
 chronological splits, costs, metrics, trial budget and acceptance thresholds before search.
 Read its metrics-and-evaluation reference before implementing either environment; use one
 versioned numerical contract for engine outputs, report charts, exports and acceptance gates.
+Honor the study's data_policy. When public-data research is authorized, explicitly qualify
+the chosen adjustment/volume basis and continue numerical research; unmet strict source
+qualification is a separate result, not a reason to publish only null metrics. Keep dates,
+costs, split boundaries and statistical gates unchanged. Repair unfinished engine operations
+on successful paths and run the report artifact checker before investing in page polish.
+The first executable milestone is a native Connector download saved to a local file, reopened
+and checked for hash, nonempty OHLCV and session coverage. Until it passes, repair acquisition;
+do not start real factor trials or build a detailed report around absent data. Record the
+accepted local dataset path and receipt in the plan before developing downstream results.
 Fit factor selection, preprocessing and strategy parameters only on each fold's training data.
 Use validation for a bounded search. Never select factors using test results before strategy fitting.
 Freeze the factor library, chosen strategy, engines and report metric definitions together
@@ -100,6 +109,10 @@ train/validation/test summaries visible in the same document; use scrolling and 
 without report-route or stage-tab switching. Chart axes, units, series and interpretation
 follow the skill's report specification. Publish updates as versions of this one product
 through deploy_tool so the gateway's Live products links work.
+Use the palette and typography from {{ package_root }}/visual/benchmark/style.css and
+{{ package_root }}/visual/README.md. The skill supplies a report adapter and renderer that copy this theme into
+the deployed product. Custom layouts must retain its semantic colors and pass the same
+artifact/plot checks. A status-only page does not satisfy a measured research release.
 Use browser_environment to follow an actual factor-to-strategy investigation at desktop and
 narrow widths. Inspect rendered screenshots, improve concrete visual defects and repeat the
 journey. Counts, metrics, trade rows and downloaded reports must agree with source artifacts.

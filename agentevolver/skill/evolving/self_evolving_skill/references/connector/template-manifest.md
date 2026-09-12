@@ -5,6 +5,9 @@ description: One line — what this MCP server provides and when to use it (this
 version: 1.0.0
 type: worker
 permission_mode: read_only
+# Optional: artifact saves the full response in session logs and returns a path/hash.
+# The MCP method itself must still be genuinely read-only (no cache/output_dir writes).
+result_mode: inline                 # inline (default) | artifact
 connection:
   # transport is one of: streamable_http | sse | stdio
   transport: streamable_http

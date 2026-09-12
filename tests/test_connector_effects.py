@@ -138,3 +138,5 @@ async def test_unknown_mcp_effect_fails_closed_without_approval(tmp_path, monkey
 
     assert not response.success and not called
     assert response.extra["execution"]["error_code"] == "approval_unavailable"
+    assert "Approval channel unavailable" in response.message
+    assert "not executed" in response.message

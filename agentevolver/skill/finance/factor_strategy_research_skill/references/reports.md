@@ -105,11 +105,23 @@ engineering evidence and cannot populate real factor/strategy tables or final ga
 
 ## Visual design and delivery
 
-Choose typography, layout and palette for this research product in the detailed plan. Use
+Use the existing AgentEvolver visual theme, with the canonical CSS at
+`{package_root}/visual/benchmark/style.css`: deep green background #07100e, green panels
+#0e1c19, light text #ecf7f2, secondary text #8da69c, mint #63e6b5, amber #f3bd71 and red #ff7f87.
+Copy the CSS into deployed assets so the page never depends on an inaccessible host path.
+Use mint for emphasis/success, amber for pending/qualified and red for failures; series names,
+line styles and signs must also distinguish states. Choose layout and typography within
+this theme in the detailed plan. Use
 a clear editorial hierarchy, readable chart labels, generous space around interpretation
 and compact comparison tables. Keep factor/strategy identity and train/validation/test
 semantics consistent throughout. Color is supplemented by names, line styles and signs.
 Avoid decorative plots, tiny axes, giant empty cards and repeated tiles without analysis.
+
+Use [the report adapter](report-data.md) for the first successful numerical-to-visual path.
+Run its check before styling or publishing; all-null candidate metrics or missing measured
+series must fail that milestone. Its renderer is an extensible starting point with actual
+SVG charts, tables and downloads. Complete the detailed chart/metric acceptance above;
+passing the structural checker alone does not certify statistical correctness or completeness.
 
 The page must work with keyboard focus, anchor links, chart tooltips, reset controls and
 responsive layouts. Tables may scroll horizontally within a labelled region on narrow

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 from agentevolver.session import BaseContext
@@ -52,6 +52,10 @@ class ConnectorConfig(BaseModel):
         default_factory=dict,
         description="Per-action MCP effect annotations (readOnly/destructive/idempotent/openWorld).",
     )
+    result_mode: Literal["inline", "artifact"] = Field(
+        default="inline",
+        description="Keep results inline, or archive the complete response in session connector logs and return a receipt.",
+    )
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         return {
@@ -69,6 +73,7 @@ class ConnectorConfig(BaseModel):
             "action_schemas": self.action_schemas,
             "action_descriptions": self.action_descriptions,
             "action_annotations": self.action_annotations,
+            "result_mode": self.result_mode,
         }
 
 

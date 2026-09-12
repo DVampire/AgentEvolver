@@ -24,13 +24,43 @@ authentication failure as a study-wide blocker. Absence of an API key does not e
 public download. An imported licensed CSV is a possible separate
 study input, but cannot satisfy a task explicitly requiring a real connector download.
 
-For the default consolidated-volume study, a single-exchange feed changes the hypothesis.
+For a study requiring strictly consolidated volume, a single-exchange feed changes the hypothesis.
 Do not silently splice feeds, mix adjusted close with raw open, or infer dividends from
 price gaps. Record source revisions and historical-data/PIT limitations. A source that cannot
-provide required actions, calendar or dates cannot pass the study's data acceptance.
+provide strict fields cannot pass strict qualification. Apply the explicit research policy
+below separately; required session coverage and valid OHLCV still need to pass.
 In particular, disabling a client's auto-adjustment does not prove that provider OHLC or
 volume is in as-traded units. Verify the underlying adjustment basis and corporate actions;
 report a specific unmet contract field rather than declaring every public source invalid.
+
+### Public-data research policy
+
+Read data_policy from the study before deciding a source is blocking. Signal Foundry v2
+explicitly authorizes public-data research with separately reported strict qualification.
+Provider-native volume with uncertain consolidated coverage and documented adjusted prices
+may support that qualified research. Do not require a commercial feed or raw-price certificate
+before any factor or strategy calculation when the user has authorized this mode.
+
+Retain the original provider OHLCV, adjusted close, actions and source/version metadata.
+For an adjusted-price proxy, validate adjusted_close/close as finite and positive and apply
+that ratio consistently to all four OHLC fields. Verify OHLC inequalities and session coverage
+after normalization. Execute the simulation on fractional proxy units, with no extra split
+share changes or dividend cash credits; otherwise actions are counted twice. Retain action
+records for audit. State provider-volume units and uncertainty in volume-based hypotheses.
+Never label these proxy prices as raw, SIP-certified or historically executable fills.
+Do not mix raw opens with adjusted closes. Test both raw/action accounting and adjusted-proxy
+accounting as distinct modes with different cache identities. Treat gaps, malformed prices,
+inadequate coverage and unknown adjustment ratios as actual data defects to repair.
+
+This proxy convention follows the adjustment-ratio method in the maintained
+[yfinance implementation](https://github.com/ranaroussi/yfinance/blob/main/yfinance/utils.py),
+not an assertion that the upstream data is certified as-traded history. Preserve the client
+version or inspected source revision and the exact normalization method in the snapshot.
+
+The report presents research performance and strict data qualification separately. All numeric
+gates are still calculated on the declared research basis with unchanged dates/costs/thresholds.
+Passing those gates does not turn unmet strict-source requirements into a pass. If the study
+does not authorize a fallback, keep its original requirements and request a scope/source change.
 
 ## Recovering data access
 
@@ -72,6 +102,15 @@ the component lifecycle belongs to that shared skill. Design bounded
 actions such as source description, coverage probe, stock bars, corporate actions and snapshot
 export. The agent chooses final names from actual schemas.
 
+Prefer read-only remote retrieval returning a JSON object (bars/actions/provenance), with
+permission_mode: read_only and result_mode: artifact in CONNECTOR.md. The server must actually
+perform reads only: no cache files, arbitrary output_dir, remote changes or hidden writes.
+The framework persists the complete response in its session connector logs and returns
+artifact_path, sha256, bytes and result_key. Normalize the JSON artifact's result field into
+workspace snapshots using Bash. This preserves native acquisition evidence without dumping
+bar arrays into context or falsely labelling a file-writing MCP method read-only. The common
+self_evolving_skill Connector reference owns this reusable transport pattern.
+
 Return compact structured metadata and artifact paths, not thousands of bars into prompt
 context. Require explicit symbol, interval, feed, session and adjustment parameters. Preserve
 raw response provenance, canonical schema, timestamps, completeness, request count and hashes.
@@ -87,6 +126,32 @@ exchange-local session date, currency, provider/feed, raw/adjusted status and co
 tables. Check positive prices, nonnegative volume, finite numeric fields, OHLC inequalities,
 duplicates, sorted sessions and missing bars against the exchange calendar. Never fill a
 missing trading price with a future price. Declarations of data quality do not replace checks.
+
+Reopen the saved native response before accepting acquisition. Compare its SHA-256 with the
+receipt; normalize into a workspace snapshot and reopen that file too. Keep both hashes and
+paths in the plan's data receipt. Check that every required field exists, the requested
+symbol/interval matches, counts are nonzero, numeric values are finite and the expected
+exchange sessions match exactly. Calendar dates may be holidays: construct the calendar with
+padding around request bounds, then select sessions inside the requested interval. Do not
+treat January 1 or a weekend endpoint as an invalid request or missing trading session.
+Exercise a changed interval, holiday bounds, empty/partial responses and disk-read failures.
+For this study, request only train/validation during research; download test after freeze.
+
+Run the bundled structural checker against the actual saved artifact. It never downloads
+data or grants source qualification. Dependencies: exchange_calendars (which supplies pandas).
+Adapt the bars to the canonical fields above or pass their JSON pointer:
+
+```bash
+python {skill_dir}/scripts/check_snapshot.py /absolute/saved-response.json \
+  --sha256 RECEIPT_SHA256 --symbol NVDA --start 2016-01-01 --end 2023-12-31 \
+  --calendar XNAS --bars-pointer /result/bars --adjusted-close adjusted_close
+```
+
+Use the current study's symbol/dates, not these example values. `--adjusted-close` names the
+retained provider field and checks that its ratio is valid; it does not normalize prices or
+certify action semantics. Save the check's JSON receipt. A nonzero exit means acquisition
+acceptance is unfinished. Re-run on any changed snapshot. Preserve provider timestamps,
+currency, query/version and actions alongside the bars and inspect their semantics separately.
 
 ## Two stateful environments
 

@@ -1,10 +1,12 @@
 """Connector Context Manager for loading, managing, and serving connectors (MCP servers)."""
 
 import json
+import hashlib
 import os
 import re
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -235,6 +237,7 @@ class ConnectorContextManager(BaseModel):
             "permission_mode", "connection", "actions", "action_schemas",
             "action_descriptions",
             "action_annotations",
+            "result_mode",
         }
         metadata = {k: v for k, v in frontmatter.items() if k not in reserved}
 
@@ -253,6 +256,7 @@ class ConnectorContextManager(BaseModel):
             action_schemas=action_schemas,
             action_descriptions=action_descriptions,
             action_annotations=action_annotations,
+            result_mode=frontmatter.get("result_mode", "inline"),
         )
 
     @staticmethod
@@ -879,6 +883,37 @@ class ConnectorContextManager(BaseModel):
                     )
                 msg = self._unwrap_mcp_result(result)
 
+                if connector_config.result_mode == "artifact":
+                    # Response persistence belongs to the framework, like trace logging.
+                    # A read-only remote tool need not acquire filesystem write effects
+                    # merely to return a large dataset. Never accept a provider-chosen path.
+                    try:
+                        content = json.loads(msg)
+                    except (ValueError, TypeError):
+                        content = msg
+                    envelope = {"schema": 1, "connector": connector_config.name,
+                                "version": connector_config.version, "action": action,
+                                "result": content}
+                    encoded = json.dumps(envelope, ensure_ascii=False, allow_nan=False).encode("utf-8")
+                    digest = hashlib.sha256(encoded).hexdigest()
+                    folder = Path(self.base_dir) / "results"
+                    folder.mkdir(parents=True, exist_ok=True)
+                    destination = folder / f"{digest}.json"
+                    fd, temporary = tempfile.mkstemp(prefix=".response-", dir=folder)
+                    try:
+                        with os.fdopen(fd, "wb") as stream:
+                            stream.write(encoded)
+                        os.replace(temporary, destination)
+                    finally:
+                        if os.path.exists(temporary):
+                            os.unlink(temporary)
+                    receipt = {"connector": connector_config.name, "version": connector_config.version,
+                               "action": action, "artifact_path": str(destination.resolve()),
+                               "sha256": digest, "bytes": len(encoded), "result_key": "result"}
+                    return Response(type=ResponseType.CONNECTOR, success=True,
+                                    message=json.dumps(receipt), data=receipt,
+                                    files=[str(destination.resolve())])
+
                 return Response(
                     type=ResponseType.CONNECTOR,
                     success=True,
@@ -886,8 +921,12 @@ class ConnectorContextManager(BaseModel):
                     data={"connector": connector_config.name, "action": action, "args": payload},
                 )
         except Exception as e:
-            logger.error(f"| ❌ Connector call failed: {e}")
-            return Response(type=ResponseType.CONNECTOR, success=False, message=f"Connector call failed: {e}")
+            # Session teardown wraps transport and persistence errors in an
+            # ExceptionGroup. Keep the underlying cause available for repair.
+            import traceback
+            detail = "".join(traceback.format_exception(e))[-3000:]
+            logger.error(f"| ❌ Connector call failed: {detail}")
+            return Response(type=ResponseType.CONNECTOR, success=False, message=f"Connector call failed: {detail}")
 
     @staticmethod
     def _unwrap_mcp_result(result: Any) -> str:

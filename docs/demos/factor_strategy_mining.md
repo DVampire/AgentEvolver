@@ -88,9 +88,13 @@ data/write authority; this demo does not claim to supply that boundary.
 Verify data credentials and entitlements before running a long experiment. Provider discovery
 starts with a small **training-only** request. Never print API keys or buy access automatically.
 The [source reference](../../agentevolver/skill/finance/factor_strategy_research_skill/references/data-and-environments.md)
-links official Alpaca and Alpha Vantage contracts. Consolidated volume, requested coverage,
-splits/dividends and exchange sessions must be verified, not inferred from an endpoint name.
-If no authorized source satisfies the study, the agent should publish a precise data blocker.
+links provider contracts and public-data alternatives. Signal Foundry v2 permits documented
+public adjusted-price research, while strict as-traded/consolidated/action qualification is
+reported separately as unmet when unverified. Dates, costs and numerical gates remain fixed.
+The first milestone is a native Connector download saved locally, with a checked hash,
+nonempty OHLCV and exchange-session coverage. The skill includes a local snapshot checker
+and a source-bound report adapter with executable line/bar charts using the visual theme.
+If no source satisfies even the authorized research policy, publish a precise data blocker.
 Synthetic data is only for engine fixtures. No broker orders or live trading are included.
 
 ## Work records and reports

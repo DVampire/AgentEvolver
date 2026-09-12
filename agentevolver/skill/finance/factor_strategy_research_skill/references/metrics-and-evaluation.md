@@ -150,6 +150,13 @@ Zero-position days remain in the calendar with their actual cash return. An orde
 does not shorten the scored interval. For Signal Foundry, K = 252 scored sessions/year and
 cash/Sharpe reference rates come from study.json, rather than hidden engine defaults.
 
+Those explicit action rules apply to verified raw-price accounting. When the study authorizes
+the documented adjusted-price proxy, use consistently adjusted OHLC for fills and marks,
+fractional proxy units, and zero additional split/dividend credits. Preserve original action
+records for provenance only. Freeze this accounting mode in result/cache identities and
+label its performance as proxy research, with strict data qualification reported separately.
+The same return/risk formulas, chronology, costs and statistical gates still apply.
+
 For a reference open p, slippage fraction s and commission fraction c, the default buy
 fill is p*(1+s) and sell fill is p*(1-s). Commission is c*abs(shares_traded)*fill_price;
 debit buys and credit sells after commission. Enforce affordability including fees and

@@ -419,7 +419,14 @@ async def main(*, prepare_session=None):
     # --- Wait for completion ---
     from agentevolver.runtime import kernel
     outcome = "interrupted"
+    approval_disposers = []
     try:
+        # Detached runs cannot answer stdin. Interactive launchers reuse the same
+        # question channel for genuine ASK decisions, without blanket permission.
+        if sys.stdin.isatty():
+            from agentevolver.conversation.approval import ask_action_approval
+            for manager in (tool_manager, connector_manager, environment_manager):
+                approval_disposers.append(manager.set_approval_resolver(ask_action_approval))
         tick = 0
         while True:
             record = await task_manager.get(task_id)
@@ -436,6 +443,8 @@ async def main(*, prepare_session=None):
                 break
             await asyncio.sleep(1)
     finally:
+        for dispose in reversed(approval_disposers):
+            dispose()
         answering_stop.set()
         answering.cancel()
         await asyncio.gather(answering, return_exceptions=True)

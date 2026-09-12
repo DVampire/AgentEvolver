@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
 description: "Run a solo two-stage stock research project: auditable data acquisition, causal factor discovery, strategy experiments and one continuous evidence report."
-version: "1.1.0"
+version: "1.2.0"
 type: worker
 category: finance
 requirements: [cpu]
@@ -22,6 +22,7 @@ having these instructions with having implemented or verified those capabilities
 - Before computing performance: [research protocol](references/research-protocol.md).
 - Before implementing either engine or evaluating candidates: [metrics and evaluation contract](references/metrics-and-evaluation.md).
 - Before report design: [report experience and acceptance](references/reports.md).
+- Before the first result export: [report data adapter and executable checks](references/report-data.md).
 
 Read referenced files using the absolute skill path returned by the loader. Keep the
 shared index concise; retain detailed evidence as files and read it on demand.
@@ -34,13 +35,28 @@ shared index concise; retain detailed evidence as files and read it on demand.
    not registered capabilities; register a completed candidate before inspecting or calling
    that name. Repository implementations can inform a baseline, but read their source with
    Bash at observed paths rather than passing file/class names to inspect_tool.
-2. Establish data feasibility with a training-period query. Fix the provider/feed, calendar,
+2. Make local data acquisition the first executable milestone: author/register the Connector,
+   invoke a native training-period query and verify its saved artifact from disk. A successful
+   HTTP probe, schema inspection or in-memory response is not a downloaded dataset. Record
+   the native call ID, actual path, SHA-256, bytes, symbol, interval, adjustment basis, row
+   count and requested/observed dates. Check OHLCV values and exchange-session coverage.
+   After the probe passes, acquire and freeze the permitted train/validation snapshot locally;
+   final-test acquisition remains deferred until submission freeze. Engines must reopen this
+   verified snapshot, not refetch data for each candidate. Until local data acceptance passes,
+   repair acquisition and avoid market trials, research releases or elaborate report styling.
+   Fix the provider/feed, calendar,
    adjustment policy, dates and data fingerprints in the research contract. If access or
    coverage fails, follow the recovery workflow in the sources reference before spending
    on downstream trials or reports. Keep real research pending; fixtures cannot replace it.
    Provider choice is open: a missing commercial API key is a reason to check suitable public
    access, not to declare the whole study impossible. Use self_evolving_skill for component
    generation, repair and versioned verification.
+   Follow the supplied data_policy: authorized public-data research proceeds with explicit
+   adjustment/volume limitations and separate strict qualification. Do not turn an unmet
+   strict qualification into an unconditional research blocker. For remote read operations,
+   prefer a genuinely read-only MCP method and result_mode: artifact in CONNECTOR.md; the
+   framework saves the full response and returns a path/hash receipt. Read its result field
+   with Bash for normalization instead of implementing unrestricted MCP filesystem writes.
 3. Establish the frozen protocol and an append-only experiment ledger. Build deterministic
    small fixtures with hand-computed outcomes before researching real performance. These
    check engineering correctness, not the existence of profitable signals. Implement the
@@ -55,6 +71,11 @@ shared index concise; retain detailed evidence as files and read it on demand.
    admitted factors. Evaluate training and bounded walk-forward validation, cost sensitivity
    and ablations. Add strategy rules, results and comparisons to the same report page.
    Update the workbench and the plan after meaningful experiments.
+   Before expanding search, complete one real factor evaluation and one executable strategy
+   baseline through the native interfaces, export actual values/series and run scripts/report.py
+   check on the adapter manifest. This is a training/validation integration milestone, not a
+   test reveal or permission to admit a failed factor. Then complete fold admission, strategy
+   fitting, robustness and finalization before calling the environments research-ready.
 6. Feed strategy failures back into factor research before freezing the final submission.
    Give each return to stage one a diagnosis, evidence, a new hypothesis and a bounded budget.
    Read the exported metric/gate summaries and apply the metrics reference's diagnostic
