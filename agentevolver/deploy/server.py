@@ -1300,18 +1300,26 @@ class DeploymentManagerServer(BaseModel):
         acceptance worker needs: a verdict on "the current site" is not a verdict on the
         release it was asked about.
         """
+        record = self._serving_record(name)
+        return int(record.port) if record is not None and record.port else None
+
+    def _serving_record(self, name: str) -> Optional[SiteRecord]:
+        """Select one live identity for both URL resolution and backend recovery.
+
+        An idle archive server can leave a STOPPED record for the current release.
+        It must not shadow the stable site's live instance of those same bytes.
+        Older releases may only use their own backend, never the latest version.
+        """
         record = self._sites.get(name)
-        if record is None and "--r" in name:
-            base, _, suffix = name.rpartition("--r")
-            if suffix.isdigit():
-                record = self._sites.get(base)
-                if record is not None and str(
-                    getattr(record, "release_number", "")
-                ) != suffix:
-                    return None
-        if record is None or record.status is not SiteStatus.RUNNING:
-            return None
-        return int(record.port) if record.port else None
+        if record is not None and record.status is SiteStatus.RUNNING and record.port:
+            return record
+        split = self._split_release(name)
+        if split:
+            current = self._sites.get(split[0])
+            if (current is not None and current.status is SiteStatus.RUNNING
+                    and current.port and current.release_number == split[1]):
+                return current
+        return None
 
     @staticmethod
     def _split_release(name: str) -> Optional[tuple]:
@@ -1325,12 +1333,7 @@ class DeploymentManagerServer(BaseModel):
 
     def resolve_url(self, name: str) -> Optional[str]:
         """The registered backend address, including container exposure/mapping."""
-        if not self.resolve_port(name):
-            return None
-        record = self._sites.get(name)
-        if record is None:
-            split = self._split_release(name)
-            record = self._sites.get(split[0]) if split else None
+        record = self._serving_record(name)
         return record.url if record else None
 
     async def ensure_release(self, name: str) -> Optional[int]:

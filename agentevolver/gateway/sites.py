@@ -27,6 +27,7 @@ from agentevolver.port import GATEWAY
 site_relay = APIRouter()
 #: One rebuild at a time per site; concurrent visitors to a dead address share it.
 _reviving: dict[str, asyncio.Lock] = {}
+_UPSTREAM_HEADERS_TIMEOUT_S = 30.0
 _HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
         "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length"}
 
@@ -67,24 +68,28 @@ async def _revive(name: str) -> None:
     doing it here means the first visitor after a death pays a rebuild instead of finding
     a dead page. The port changes, the name does not, so no published address breaks.
     """
-    split = deployment_manager._split_release(name)
-    site_id = split[0] if split else name
+    # Follow the record that supplied the URL, including a pinned archive's own
+    # backend. Rebuilding its base would leave the broken archive untouched and
+    # interrupt unrelated readers of the latest release.
+    record = deployment_manager._serving_record(name) or deployment_manager._sites.get(name)
+    if record is None:
+        split = deployment_manager._split_release(name)
+        candidate = deployment_manager._sites.get(split[0]) if split else None
+        if candidate is not None and candidate.release_number == split[1]:
+            record = candidate
+    if record is None or not record.request:
+        return
+    site_id = record.site_id
     lock = _reviving.setdefault(site_id, asyncio.Lock())
     if lock.locked():
         async with lock:  # another visitor is already rebuilding it; take their result
             return
-    record = deployment_manager._sites.get(site_id)
-    if record is None or not record.request:
-        return
     async with lock:
         logger.warning(f"| ⚠️ Site {site_id!r} is registered but unreachable; rebuilding it")
         try:
-            # Deploy, not redeploy: redeploy stops first, and stopping refuses to report
-            # a resource it cannot verify as gone — correctly, since an unreachable
-            # address is not proof that a process died. That refusal is exactly what a
-            # site whose backend has already vanished can never satisfy, so the rebuild
-            # goes straight to a fresh deployment and lets the stored request stand up a
-            # new backend under the same name.
+            # Deploy from the preserved recipe/archive. The manager verifies old
+            # resource ownership before replacement; a dead port alone is not proof
+            # that an unknown backend process may be killed.
             await deployment_manager.deploy(deployment_manager.restoration_request(record))
             logger.info(f"| ♻️ Site {site_id!r} rebuilt after an unreachable backend")
         except Exception as error:  # noqa: BLE001 - a failed revival still answers 502
@@ -196,11 +201,21 @@ async def deployed_site(request: Request, name: str, path: str = ""):
                 body_bytes.extend(chunk)
             data = bytes(body_bytes)
             headers["Content-Length"] = str(len(data))
-        upstream = await client.request(request.method, target_url(target, path, request.url.query),
-                                        data=data, headers=headers, allow_redirects=False)
+        # A listening TCP socket need not ever send HTTP headers. Bound that wait
+        # without imposing a total lifetime on SSE or streamed downloads.
+        upstream = await asyncio.wait_for(
+            client.request(request.method, target_url(target, path, request.url.query),
+                           data=data, headers=headers, allow_redirects=False),
+            timeout=_UPSTREAM_HEADERS_TIMEOUT_S,
+        )
     except BaseException as error:
         await client.close()
-        if isinstance(error, (aiohttp.ClientError, TimeoutError)):
+        if isinstance(error, TimeoutError):
+            return Response(
+                "The deployed service did not respond in time. Retry or check its deployment log.",
+                status_code=504, media_type="text/plain", headers={"Cache-Control": "no-store"},
+            )
+        if isinstance(error, aiohttp.ClientError):
             return Response("Site is unreachable", status_code=502)
         raise
 

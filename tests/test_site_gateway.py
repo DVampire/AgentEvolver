@@ -236,3 +236,94 @@ def test_backend_exposure_and_gateway_paths():
     assert manager.resolve_url("container--r2") == "https://sandbox.example/expose/abc/"
     assert manager.resolve_url("container--r1") is None
     assert target_url(manager.resolve_url("container"), "api/data", "x=1") == "https://sandbox.example/expose/abc/api/data?x=1"
+
+
+@pytest.mark.asyncio
+async def test_dead_pinned_backend_restores_that_release_not_the_latest(tmp_path, monkeypatch):
+    from agentevolver.gateway import sites
+    from agentevolver.deploy.types import DeployRequest
+
+    manager = DeploymentManagerServer()
+    monkeypatch.setattr(manager, "refresh", lambda: None)
+    manager._sites["report"] = SiteRecord(
+        site_id="report", runtime="static", status=SiteStatus.RUNNING,
+        url="http://localhost:9003", port=9003, release_number=3,
+        request=DeployRequest(site_id="report", source_dir=str(tmp_path / "r3")).model_dump(),
+    )
+    manager._sites["report--r1"] = SiteRecord(
+        site_id="report--r1", runtime="static", status=SiteStatus.RUNNING,
+        url="http://localhost:8001", port=8001, release_number=1,
+        request=DeployRequest(site_id="report--r1", source_dir=str(tmp_path / "r1")).model_dump(),
+    )
+    rebuilt = []
+
+    async def ensure_release(name):
+        return manager.resolve_port(name)
+
+    async def alive(url):
+        return url != "http://localhost:8001"
+
+    async def deploy(request):
+        rebuilt.append(request)
+        record = manager._sites[request.site_id]
+        record.port = 9011
+        record.url = "http://localhost:9011"
+        return record
+
+    monkeypatch.setattr(manager, "ensure_release", ensure_release)
+    monkeypatch.setattr(manager, "deploy", deploy)
+    monkeypatch.setattr(sites, "deployment_manager", manager)
+    monkeypatch.setattr(sites, "_backend_alive", alive)
+    monkeypatch.setattr(sites, "_reviving", {})
+    assert await sites.site_target("report--r1") == "http://localhost:9011"
+    assert [r.site_id for r in rebuilt] == ["report--r1"]
+    assert rebuilt[0].source_dir == str(tmp_path / "r1")
+    assert manager.resolve_url("report") == "http://localhost:9003"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_unresponsive_headers_time_out_but_streams_can_continue(monkeypatch, streaming):
+    from agentevolver.gateway import sites
+
+    release = asyncio.Event()
+
+    async def handler(request):
+        if streaming:
+            response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+            await response.prepare(request)
+            await response.write(b"data: first\n\n")
+            await asyncio.sleep(.15)
+            await response.write(b"data: second\n\n")
+            return response
+        await release.wait()
+        return web.Response(text="too late")
+
+    app = web.Application()
+    app.router.add_get("/", handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    server = web.TCPSite(runner, "127.0.0.1", 0)
+    await server.start()
+    port = server._server.sockets[0].getsockname()[1]
+
+    async def target(name):
+        return f"http://127.0.0.1:{port}"
+
+    monkeypatch.setattr(sites, "site_target", target)
+    monkeypatch.setattr(sites, "_UPSTREAM_HEADERS_TIMEOUT_S", .05)
+    gateway = FastAPI()
+    gateway.include_router(site_relay)
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=gateway), base_url="http://gateway") as client:
+            response = await asyncio.wait_for(client.get("/s/report/"), 2)
+            if streaming:
+                assert response.status_code == 200
+                assert response.text == "data: first\n\ndata: second\n\n"
+            else:
+                assert response.status_code == 504
+                assert response.text and response.headers["cache-control"] == "no-store"
+            assert (await client.get("/_sites/health")).status_code == 200
+    finally:
+        release.set()
+        await runner.cleanup()

@@ -62,6 +62,28 @@ def test_an_unknown_name_resolves_to_nothing(registered):
     assert registered.resolve_port("echo-ark--rx") is None
 
 
+@pytest.mark.parametrize("status", [SiteStatus.STOPPED, SiteStatus.DETACHED, SiteStatus.FAILED])
+def test_inactive_archive_record_does_not_hide_the_same_running_release(status):
+    from agentevolver.deploy import DeploymentManagerServer
+
+    manager = DeploymentManagerServer()
+    manager._sites["report"] = SiteRecord(
+        site_id="report", runtime="static", status=SiteStatus.RUNNING,
+        url="http://localhost:9003", port=9003, release_number=3,
+    )
+    manager._sites["report--r3"] = SiteRecord(
+        site_id="report--r3", runtime="static", status=status,
+        url="http://localhost:8000", port=8000, release_number=3,
+    )
+    assert manager.resolve_port("report--r3") == 9003
+    assert manager.resolve_url("report--r3") == "http://localhost:9003"
+    assert manager.resolve_url("report--r2") is None
+    # An explicit stop of the stable site still stays stopped.
+    manager._sites["report"].status = SiteStatus.STOPPED
+    assert manager.resolve_url("report") is None
+    assert manager.resolve_url("report--r3") is None
+
+
 def test_the_publish_receipt_carries_the_address_that_outlives_the_release(monkeypatch):
     """Subscribers are told the stable address, not only the port that minted it."""
     from agentevolver.tool.default.deployment.deploy import DeployTool

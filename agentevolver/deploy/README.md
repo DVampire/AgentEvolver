@@ -63,6 +63,12 @@ Previews have their own site identity and version sequence. Feedback round numbe
 are separate from these persistent artifact versions. Both monitoring pages list
 version history; old links and source are retained until explicitly removed.
 
+An inactive archive-server record does not hide a running copy of the same release.
+When a pinned release loses its backend, the gateway restores that release's own
+archived source, without restarting the latest release. The relay bounds the wait for
+upstream HTTP headers to 30 seconds and returns a visible 504 on timeout; this does not
+limit the lifetime of an established event stream or streamed download.
+
 Launcher teardown reclaims its sandbox resources and stops temporary previews. Published
 sites become `DETACHED`: the persistent gateway restores them on the next visit from their
 archived source, rather than from an edited working tree. An explicit stop remains `STOPPED`
