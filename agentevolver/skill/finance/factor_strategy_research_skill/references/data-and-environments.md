@@ -90,12 +90,18 @@ missing trading price with a future price. Declarations of data quality do not r
 
 ## Two stateful environments
 
+Read [metrics-and-evaluation.md](metrics-and-evaluation.md) before implementing numerical
+operations. Both environments bind the same versioned metric contract, export definitions,
+candidate/result identities, per-fold and aggregate values, series, counts, gate verdicts and
+explicit null reasons. Their artifacts feed the continuous report described in
+[reports.md](reports.md); factor and strategy outputs do not require separate website routes.
+
 | Responsibility | Factor environment | Strategy environment |
 | --- | --- | --- |
 | Inputs | Versioned market snapshot, protocol, causal factor specification | Same snapshot/protocol, admitted factor-library version, strategy specification |
 | State | Fitted transforms, fold definitions, factor trials, library and rejection reasons | Frozen factor bindings, orders/positions/cash, strategy trials and exposure ledger |
 | Operations | Bind study, describe schema, evaluate training, validate bounded candidates, compare, admit, export report artifacts | Bind study/library, simulate training, validate, compare/ablate, freeze submission, finalize once, export ledgers/reports |
-| Output | Factor IDs, coverage, IC diagnostics, eligible status, result paths | Net/gross returns, risk/cost metrics, acceptance results, trades and artifact paths |
+| Output | Exact formulas/fitted versions, coverage, IC/RankIC, fold/horizon/quantile diagnostics, admission/rejection evidence and result paths | Exact trading rules/factor bindings, net/gross/benchmark series, risk/cost metrics, gates, trades/ablations and artifact paths |
 
 These are interface requirements, not a fixed action-name list. Follow the real Environment
 base class and action decorator. Inspect the current transport contract and return compact
@@ -113,7 +119,7 @@ must not have an independent early test-reveal action. Store trial IDs, validati
 the test-attempt marker durably before evaluation; concurrent or retried calls must not reset
 them. Same submission may read the cached final result; changed submissions are refused.
 
-Cache keys include snapshot, split, candidate, fitted state, engine and cost assumptions.
+Cache keys include snapshot, split, candidate, fitted state, engine, metric contract and cost assumptions.
 Use chronological slices and bounded batches; do not download data or rebuild the report
 runtime for every formula. Results must carry schema/version information so a later engine
 change cannot silently reuse stale metrics. Test this invalidation explicitly.

@@ -22,7 +22,8 @@
 <h2>Mission and research scope</h2>
 <p>Create an interactive workbench for researching a stock, discovering useful factors
     and turning them into testable trading strategies. The two research stages should form
-    one coherent investigation, with clear conclusions and evidence that readers can explore.</p>
+    one continuous report page, with clear conclusions and evidence that readers can explore
+    by scrolling, without switching pages or tabs between the stages.</p>
 <p>The accompanying study.json specifies the stock, dates, trading assumptions, research
     budget and numerical acceptance targets. The default study uses NVDA daily OHLCV.
     Detailed implementation choices remain open.</p>
@@ -56,7 +57,10 @@
     Give every candidate an ID, formula, units, lookback, availability time, prediction horizon,
     direction, rationale and falsification condition. Parameter variations count as trials.
     Select directions and transformations on training observations only.</p>
-<p>Publish a detailed factor report with a sortable accepted/rejected candidate table,
+<p>Show every proposed and evaluated factor in the report's factor section, distinguishing
+    pending, blocked and failed evaluations from admitted or rejected research candidates.
+    Readers must see which factors were mined, their formulas and how well each performed.
+    Include a sortable candidate table,
     time-series IC and RankIC by horizon and fold, rolling stability, quantile response curves,
     coverage and missingness, uncertainty, regime behavior, redundancy clusters and admission
     reasons. Define metrics before use. A single stock has no daily cross-sectional IC.
@@ -76,7 +80,9 @@
     declared long-or-cash execution model. Measure the incremental value of each factor with
     ablations and compare against cash and holding the same stock. Rank candidates using the
     frozen validation objective, risk and complexity, not the prettiest training curve.</p>
-<p>Publish separate train, validation and final-test views with gross/net equity, benchmark
+<p>List all strategy candidates with their exact factor composition, readable trading rules,
+    actual evaluation state, results and selection/rejection reasons. Show labelled train,
+    validation and final-test sections together on the same page, with gross/net equity, benchmark
     comparison, drawdown and recovery, monthly/yearly returns, exposure, turnover, transaction
     costs, trade distributions and traceable orders. Report CAGR, annualized volatility,
     Sharpe, Sortino, Calmar, maximum drawdown, trade count, win rate, payoff/profit factor and
@@ -87,13 +93,14 @@
 <constraints data-format="html" id="iteration">
 <h2>Research loop and the final evaluation</h2>
 <p>Iterate factor and strategy research on train and validation: diagnose a specific
-    weakness, investigate a new hypothesis and record the outcome.
+    weakness, investigate a new hypothesis and record the outcome. Each iteration explains
+    the evidence, the intended improvement and whether measured results improved afterward.
     Carry strategy diagnoses back into factor research when useful. Keep a complete trial
     history including rejected candidates, validation exposure, cost and changes in reasoning.</p>
 <p>Keep training, validation and test results distinct. Selection must use only information
     available at the relevant time, with no future-data leakage. Fix the evaluation criteria
     before research and finalize the selected factors and strategy before the final test.
-    Both reports should describe that same final evaluation; test factor rankings must not
+    Both report sections should describe that same final evaluation; test factor rankings must not
     influence a strategy that is still being optimized.</p>
 <p>Successful research requires every frozen final-test strategy criterion to pass on real
     data. Repeatedly tuning against the same test invalidates this outcome. On a failed test,
@@ -108,6 +115,11 @@
 <p>Design a premium analytical interface: disciplined typography, calm surfaces, deliberate
     spacing and a consistent semantic palette for returns, risk and uncertainty. Use a
     coherent visual direction and an investigative layout rather than interchangeable KPI cards.</p>
+<p>Use one continuous page for the overview, factor inventory and evidence, strategy inventory
+    and evidence, research decisions and metric definitions. A table of contents may scroll
+    to sections; it must not replace them with another page or a hidden tab. Local sorting,
+    filtering and chart comparisons should preserve the surrounding investigation. All factor
+    and strategy summary rows should be available by default.</p>
 <ul>
 <li>A study overview connects source provenance, the chronological split timeline,
       research progress and separate engineering/research acceptance states.</li>
@@ -120,13 +132,18 @@
 <li>A cost-sensitivity explorer uses predeclared scenarios computed from the frozen
       backtest. Mark exploratory controls clearly; they cannot overwrite the accepted result.</li>
 <li>An experiment lineage view links hypotheses, rejected trials, versions and artifacts.
-      Visitors can download the permitted metric tables and a reproducibility manifest.</li>
+      Visitors can download the permitted metric tables, a compact structured analysis summary
+      and a reproducibility manifest.</li>
+<li>Every line or bar chart states its question, axes, units, series, time range, aggregation
+      and sample support. Show baselines, uncertainty where justified, missing values and a
+      readable conclusion. Definitions, charts, tables and downloads must agree.</li>
 <li>The final-test panel stays unavailable until the final evaluation. Test values must
       not be accessible through other report views or downloads beforehand.</li>
 </ul>
 <p>Provide real keyboard interactions, readable charts, responsive layouts and useful
     loading, empty and failed states. The main investigation should work on desktop and narrow
-    screens. Deliver an accessible factor-report preview and a later integrated strategy report,
+    screens. Publish measured factor research first, then extend that same page with strategy
+    evidence in a later release. Keep unfinished sections clearly pending,
     with working links and evidence that the key reader journeys function as intended.</p>
 </interface>
 
@@ -137,8 +154,10 @@
       inputs and reproduce its conclusions.</li>
 <li>Real data provenance, frozen protocol, factor library, strategy specifications,
       trial history, deterministic checks and reproducible machine-readable metrics.</li>
-<li>Two detailed, connected report pages whose displayed values reconcile with the
-      exported records, with usable navigation and interactions.</li>
+<li>One detailed, continuous report page showing which factors and strategies were explored,
+      what their definitions are and how they performed, including rejected candidates.
+      Both stages remain readable without changing pages or tabs. Displayed metrics and
+      chart values reconcile with exported records, with usable scroll navigation and interactions.</li>
 <li>Explicit final outcome: passed, failed, inconclusive or blocked; each unmet numerical
       criterion, test exposure state, limitations and a precise reproduction/resume path.</li>
 </ul>

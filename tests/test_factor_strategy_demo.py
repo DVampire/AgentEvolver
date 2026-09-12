@@ -1,5 +1,7 @@
 """The research demo assembles without running a model or querying market data."""
 import json
+from pathlib import Path
+import re
 import sys
 from types import SimpleNamespace
 
@@ -54,7 +56,6 @@ def test_task_and_study_are_staged_with_runtime_policy_from_config(tmp_path):
     assert manifest["subscribers"] == []
     assert manifest["research"]["holdout_control"] == "protocol_only"
     # Configuration is applied to runtime input, never written into the product document/view.
-    from pathlib import Path
     assert "runtime-input-manifest" not in Path(metadata["task_view"]).read_text()
     staged = [f"/session/inputs/{i}_{path.name}" for i, path in enumerate(inputs)]
     bound = bind_manifest(text, staged)[2]
@@ -79,7 +80,16 @@ def test_prompt_modules_and_domain_skill_can_be_loaded(tmp_path):
     manager = SkillContextManager(base_dir=str(tmp_path))
     skill = manager._parse_skill_dir(folder)
     assert skill.name == "factor_strategy_research_skill"
-    assert len(skill.references) == 4
+    # The loader must expose every routed reference, including newly added methods.
+    references = {Path(path).resolve() for path in skill.references}
+    entry_links = re.findall(r"\]\((references/[^)]+)\)", skill.content)
+    assert entry_links
+    assert {(folder / link).resolve() for link in entry_links} == references
+    # Follow local reference links as the agent would after receiving a skill path.
+    for source in [folder / "SKILL.md", *references]:
+        for link in re.findall(r"\]\(([^)]+)\)", source.read_text()):
+            if "://" not in link and not link.startswith("#"):
+                assert (source.parent / link.split("#", 1)[0]).is_file(), (source, link)
 
 
 @pytest.mark.asyncio

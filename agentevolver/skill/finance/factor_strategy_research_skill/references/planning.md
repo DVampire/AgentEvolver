@@ -22,9 +22,11 @@ The detailed plan should cover:
 
 - Data source feasibility and schema, calendar, corporate actions and data-quality checks.
 - Proposed connector and two environment interfaces, shared utilities and deterministic checks.
-- Frozen chronological protocol, trial accounting, metrics, admission rules and stop criteria.
+- Frozen chronological protocol, trial accounting, metric definitions/units/nulls/aggregation,
+  admission rules and stop criteria from [metrics-and-evaluation.md](metrics-and-evaluation.md).
 - Factor hypotheses, expected economic mechanism, strategy designs and falsification conditions.
-- Report information architecture, visual direction, interaction journeys and browser checks.
+- One continuous report page with factor and strategy inventories/evidence, chart specifications,
+  shared result artifacts, visual direction, scroll/anchor journeys and browser checks.
 - Implementation progress and acceptance evidence, including partial and failed outcomes.
 - Capability baselines, candidates, version-scoped decisions and subsequent real consumer calls.
 
@@ -41,6 +43,7 @@ Choose extra files based on the work. A useful starting layout under the same pl
 index.md
 plan.md
 research/contract.json            # immutable protocol and source/data identities
+research/metric-contract.json     # versioned definitions shared by engines and report
 research/trials.jsonl             # every attempt, parameters, exposure and cost
 research/submission.json          # frozen factor/strategy/engine hashes
 research/test-access.jsonl        # test requests, exposure and result identity
@@ -48,6 +51,7 @@ design/data-and-engines.md
 design/report-experience.md
 reviews/factors.md
 reviews/strategies.md
+reviews/research-decisions.md      # evidence, baseline/candidate changes and next hypotheses
 reviews/visual.md
 evaluations/                      # capability evaluation reports and receipts
 ```
@@ -63,3 +67,10 @@ parameter trials, including crashes and rejected results, before evaluation begi
 resumed run uses the same remaining validation budget and holdout-exposure ledger. Before
 claiming completion, reconcile each acceptance criterion with its result ID and unresolved
 items. A missing report or unexecuted check is pending, not implicitly passed.
+
+Each research decision names the actual result IDs, metric values and gate failures that
+motivated it, one bounded next hypothesis and its falsification condition. After execution,
+record whether that change helped and why it was retained/rejected. Link the compact analysis
+JSON and full artifacts from the index; do not replace these records with screenshots or
+repeatedly place full factor/strategy tables in live context. Report versions update the same
+single-page product; publication count and the number of pages are separate concepts.

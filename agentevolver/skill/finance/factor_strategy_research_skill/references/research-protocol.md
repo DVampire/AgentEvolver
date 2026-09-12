@@ -2,6 +2,10 @@
 
 ## Freeze before performance search
 
+Use [metrics-and-evaluation.md](metrics-and-evaluation.md) for exact formulas, scopes,
+aggregation, null states, numerical fixtures and evidence-driven iteration. Bind that
+versioned contract to both environments and the report before researching performance.
+
 Read the study specification and write a content-hashed contract before evaluating candidates.
 It fixes data identity, market/calendar, session frequency, dates, fit/score boundaries,
 horizons, execution timing, adjustments, cost model, factor admission, strategy selection,
@@ -57,9 +61,10 @@ fingerprints, metric definitions and acceptance rules. A permitted refit on all 
 must be specified beforehand and exclude boundary-overlapping labels. Freeze its resulting
 parameters before reveal. Do not try all validation winners on test and pick the best.
 
-Evaluate that bundle once for both reports. The factor page can show the selected factors'
-test diagnostics only now; these are descriptive results, not another factor-admission pass.
-The strategy page compares the single selected strategy with the fixed benchmarks and cost
+Evaluate that bundle once for both sections of the continuous report. The factor section can
+show the selected factors' test diagnostics only now; these are descriptive results, not
+another factor-admission pass.
+The strategy section compares the single selected strategy with the fixed benchmarks and cost
 scenarios. Do not use test ablations, cost sliders or extra horizons to select a new strategy.
 
 Record the test-attempt marker before reading/evaluating test. Allow idempotent retrieval of
@@ -97,8 +102,8 @@ same-bar returns or call a single-stock statistic cross-sectional IC.
 
 The default admission RankIC is the equally weighted mean of the three annual validation
 fold RankICs at the training-selected primary horizon and direction. Report each fold and
-the pooled statistic separately. Require the study's positive-fold count, coverage and
-non-overlapping-label minimum across all scored validation folds, with finite evidence in
+the pooled statistic separately. Require the study's positive-fold count, pooled coverage and
+total non-overlapping-label minimum across scored validation folds, with finite evidence in
 each fold. A constant factor, zero-variance return, too-small sample or
 undefined correlation is null/inconclusive, never zero by convenience or a passing infinity.
 

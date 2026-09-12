@@ -467,7 +467,7 @@ Framework writes are resolved centrally through `agentevolver.paths`. The main w
 | [Contributor guide](https://dvampire.github.io/AgentEvolver/development.html) | Module contracts, verification gates, invariants, and safe extension patterns |
 | [`scripts/INSTALL.md`](scripts/INSTALL.md) | Installation, optional extras, Vault, and environment setup |
 | [`frontend/README.md`](frontend/README.md) | Gateway and Web UI development and deployment |
-| [Factor and strategy mining demo](docs/demos/factor_strategy_mining.md) | One researcher develops a market connector and two backtesting environments, with linked research reports and a frozen final-test protocol |
+| [Factor and strategy mining demo](docs/demos/factor_strategy_mining.md) | One researcher develops a market connector and two backtesting environments, with one continuous research report and a frozen final-test protocol |
 | [`docs/workflows.md`](docs/workflows.md) | Dynamic HTML workflows |
 | [`docs/canvas.md`](docs/canvas.md) | Visual Canvas flows |
 | [`docs/capability-schemas.md`](docs/capability-schemas.md) | Capability schema protocol |

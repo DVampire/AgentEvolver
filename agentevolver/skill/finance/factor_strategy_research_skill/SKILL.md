@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
-description: "Run a solo two-stage stock research project: auditable data acquisition, causal factor discovery, strategy experiments and interactive evidence reports."
-version: "1.0.3"
+description: "Run a solo two-stage stock research project: auditable data acquisition, causal factor discovery, strategy experiments and one continuous evidence report."
+version: "1.1.0"
 type: worker
 category: finance
 requirements: [cpu]
@@ -20,6 +20,7 @@ having these instructions with having implemented or verified those capabilities
 - Before implementation: [planning and work records](references/planning.md).
 - Before acquiring data: [sources and capability interfaces](references/data-and-environments.md).
 - Before computing performance: [research protocol](references/research-protocol.md).
+- Before implementing either engine or evaluating candidates: [metrics and evaluation contract](references/metrics-and-evaluation.md).
 - Before report design: [report experience and acceptance](references/reports.md).
 
 Read referenced files using the absolute skill path returned by the loader. Keep the
@@ -42,19 +43,26 @@ shared index concise; retain detailed evidence as files and read it on demand.
    generation, repair and versioned verification.
 3. Establish the frozen protocol and an append-only experiment ledger. Build deterministic
    small fixtures with hand-computed outcomes before researching real performance. These
-   check engineering correctness, not the existence of profitable signals.
+   check engineering correctness, not the existence of profitable signals. Implement the
+   metrics reference's definitions, null handling, aggregation and gate records in the
+   environments; export their results for the report instead of recalculating them in the UI.
 4. Develop or improve the data Connector and factor Environment against demonstrated baseline
    limitations. Download a real snapshot through the kept connector. Evaluate causal factors,
    retain rejected trials and admit only eligible, complementary versions. Publish the first
-   interactive factor report without exposing final-test data.
+   continuous report with factor definitions, actual diagnostics and admission/rejection
+   evidence; show strategy progress in the same document without exposing final-test data.
 5. Develop or improve the strategy Environment. Start with simple baselines, then combine
    admitted factors. Evaluate training and bounded walk-forward validation, cost sensitivity
-   and ablations. Update the workbench and the plan after meaningful experiments.
+   and ablations. Add strategy rules, results and comparisons to the same report page.
+   Update the workbench and the plan after meaningful experiments.
 6. Feed strategy failures back into factor research before freezing the final submission.
    Give each return to stage one a diagnosis, evidence, a new hypothesis and a bounded budget.
+   Read the exported metric/gate summaries and apply the metrics reference's diagnostic
+   decision table. Record baseline/candidate changes and the decision with exact result IDs.
    A new report, renamed formula or parameter permutation is not progress by itself.
 7. After validation eligibility, freeze one final factor/strategy/engine bundle. Evaluate
-   final test once, with the predeclared scenarios and metrics. Release both final reports.
+   final test once, with the predeclared scenarios and metrics. Publish the integrated page
+   with both stages and all final gates continuously visible; no report routes or stage tabs.
    Preserve a failed/inconclusive result; do not mine the test until something passes.
 
 ## Capability evolution

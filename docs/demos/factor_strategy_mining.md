@@ -1,8 +1,8 @@
 # Factor and factor strategy mining
 
 Signal Foundry is a **single-agent, two-stage research demo**. The agent develops its
-market-data and simulation capabilities while building a connected factor/strategy report
-website. It uses the standard Agent execution loop, shared plan module, memory/compaction,
+market-data and simulation capabilities while building one continuous factor/strategy report
+page. It uses the standard Agent execution loop, shared plan module, memory/compaction,
 native capability router, evolution rules and deployment gateway.
 
 The [task folder](../../examples/tasks/factor_strategy_mining/README.md) holds only the
@@ -32,7 +32,7 @@ Runs register on the usual gateway at port 9876; deploy_tool publishes the repor
 | --- | --- |
 | Agent | `agentevolver/agent/actor/factor_strategy_mining_agent.py`: thin MetaAgent specialization with child dispatch disabled |
 | Prompt | `agentevolver/prompt/default/factor_strategy_mining_agent.html`: two-stage ownership and integrity rules; includes shared evolution rules |
-| Skill | `agentevolver/skill/finance/factor_strategy_research_skill/`: planning, data/interfaces, research protocol and report methods |
+| Skill | `agentevolver/skill/finance/factor_strategy_research_skill/`: planning, data/interfaces, research protocol, numerical evaluation contract and single-page report methods |
 | Config | `configs/factor_strategy_mining_demo.py`: exactly one actor; Bash, job, browser, inspection, adoption, deployment and completion |
 | Task | `signal_foundry/task.html`: English product outline and acceptance requirements; no inline style or scripts |
 | Study | `signal_foundry/study.json`: stock, dates, costs, research budgets and numerical objectives |
@@ -47,11 +47,11 @@ share verified numerical utilities. The router makes registered environments cal
 
 1. **Factor research:** authorize source access, acquire real OHLCV/corporate actions,
    develop the factor environment, evaluate causal hypotheses, admit factor versions and
-   publish the Factor Observatory.
+   publish the Factor Observatory section of the continuous report.
 2. **Strategy research:** develop the strategy environment, combine admitted factors,
    backtest training and validation, inspect costs/ablations, return to factor research
-   when evidence warrants it, then publish the Strategy Atelier.
-3. Freeze one final bundle before revealing test for **both** reports. Report the frozen
+   when evidence warrants it, then extend the same page with the Strategy Atelier.
+3. Freeze one final bundle before revealing test for **both** report sections. Report the frozen
    test outcome, uncertainty, failed gates and reproducibility artifacts.
 
 The framework audit requires one connector and two distinctly named environments with
@@ -98,8 +98,18 @@ Synthetic data is only for engine fixtures. No broker orders or live trading are
 The agent expands the brief into the session's plan/plan.md and updates plan/index.md
 with progress, current stage, test state and paths. The skill suggests supporting records
 under that directory without imposing a fixed framework schema. Large results and data stay
-in the workspace. Both report pages include chart interactions, traceable candidate/strategy
-versions, split comparisons, failed trials, definitions, uncertainty and downloadable evidence.
+in the workspace. One continuous report contains all factor/strategy definitions and measured
+effects, split comparisons, failed trials, chart interactions, uncertainty and downloadable
+evidence. Both stages remain visible in normal page flow; navigation scrolls to anchors without
+route or stage-tab switching. Two research-bearing releases update that same product over time.
+
+The [metric contract](../../agentevolver/skill/finance/factor_strategy_research_skill/references/metrics-and-evaluation.md)
+defines factor IC/RankIC, sample support, admission, portfolio accounting, performance/risk/cost
+metrics, null states and numerical examples. The
+[report specification](../../agentevolver/skill/finance/factor_strategy_research_skill/references/reports.md)
+defines every chart's question, axes, series, scope and interpretation. Engines export versioned
+results for the page and compact machine-readable analysis; the researcher records each
+diagnosis, baseline/candidate metric change and next hypothesis under the shared plan directory.
 
 ## Relationship to the numerical benchmark
 

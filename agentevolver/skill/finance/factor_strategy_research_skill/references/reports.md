@@ -1,72 +1,152 @@
-# Factor and strategy report experience
+# One continuous factor and strategy report
 
-Read frontend_ui_engineering_skill and its planning reference before implementation.
-Use one coherent report website with two distinct research surfaces, shared source/split
-controls and clear links between a factor, its admission evidence and a strategy using it.
-Task HTML is a brief; the agent designs the actual application and iteratively improves it.
+Read frontend_ui_engineering_skill and its planning reference before implementation, and
+[metrics-and-evaluation.md](metrics-and-evaluation.md) before binding any numbers to the UI.
+Task HTML is the product brief; the agent designs and implements the actual application.
 
-## Information and interaction
+## Page contract
 
-| Surface | Required content | A visitor should be able to do |
+Deliver **one continuous document at one report URL**. Overview, Factor Observatory,
+Strategy Atelier, research history and definitions all occupy the normal page flow and
+remain present together. Readers and the researching agent must be able to inspect the
+whole investigation by scrolling. Do not put factors and strategies on separate routes,
+tabs, page switches, modal-only views or collapsed sections. Train, validation and test
+are labelled adjacent columns or consecutive sections, not mutually exclusive tabs.
+
+Provide a compact sticky table of contents with in-page anchors. Links from a factor to a
+consumer strategy scroll to its inline definition/evidence; they do not replace the page.
+Sorting, optional local filters, chart brushing and an inline comparison inspector are
+welcome. A local control must not hide the other research stage or change the official
+scores. Show all real candidate summary rows by default (the study bounds their number);
+do not require pagination, virtual scrolling or clicking every candidate to discover which
+factors/strategies were evaluated and how they performed. Long trade ledgers may scroll in
+a labelled table region with an explicit total, local filters and a complete permitted
+export. Reset clears local investigation filters without replacing any report section.
+
+Stage one publishes an early version of this same page: measured factors, strategy progress
+and explicit pending areas. Stage two fills out and improves that page. Two research-bearing
+releases mean two versions over time, not two report pages. Preserve older immutable release
+links for audit, while the main product link opens the latest integrated document.
+
+## Visible information hierarchy
+
+| Section | Always-visible content |
+| --- | --- |
+| Study overview | Stock, source/coverage/quality, split timeline, as-of time, research status, candidate counts by execution/selection state, validation-selected strategy, all final gate states and the next research question. Separate engineering readiness from market results. |
+| Factor inventory | Every proposed and executed factor with ID/version, readable formula, rationale, lookback, availability, direction/horizon, train and per-fold validation IC/RankIC, primary mean RankIC, coverage, non-overlapping count, redundancy and admission/rejection reason. Mark unexecuted rows pending, with no invented performance. |
+| Factor evidence | Inline fitted-definition details and the predictive/coverage/stability charts below; selected-factor diagnostics after the joint final test only. Connect admitted versions to the strategies that use them. |
+| Strategy inventory | Every candidate/version, exact factor composition, readable entry/exit/sizing/rebalance/risk rules, train and validation performance, costs, completed trips, failed gates and selection reason. Readers can answer what it actually trades without reading source code. |
+| Strategy evidence | Selected strategy and baseline curves, aligned split/fold metrics, costs, exposure, drawdown episodes, trades, parameter comparisons and factor ablations. Final test shows only the frozen strategy and predeclared scenarios. |
+| Research decisions | Chronological hypothesis → experiment → baseline/candidate metric changes → diagnosis → decision → next experiment; include rejected, errored and blocked trials, budgets and validation usage. |
+| Definitions and evidence | Plain-language metric definitions, units, denominators, scope, uncertainty, execution assumptions, source rights, result identities, limitations and permitted JSON/CSV exports. |
+
+Use a compact comparison table for all candidates and readable inline detail for selected
+comparisons; long expressions may wrap. Do not replace definitions/results with only counts,
+ranking badges or generic "signal quality" scores. Before test reveal, its section says
+sealed/pending and explains prerequisites; no test metrics or bars are shipped in HTML,
+JavaScript, JSON, downloads or network responses. After reveal the official result is fixed.
+
+## Chart specifications
+
+Each chart has a question it answers, labelled axes/units, scope and result identity, exact
+series names, sample count, baseline, aggregation and null/empty behavior. Use the frozen
+metric contract for definitions. Include a concise text conclusion and an adjacent table
+or permitted export of the underlying values so the agent can analyze evidence directly.
+Display uncertainty method/support where applicable, not unexplained error bars.
+
+| Chart and question | Axes and series | Required conventions |
 | --- | --- | --- |
-| Study overview | Data provenance and quality, split timeline, progress, holdout status, frozen objective, engineering and research outcomes | Inspect what was measured and follow an unmet gate to its evidence |
-| Factor Observatory | Hypotheses/formulas/versions, IC and RankIC, coverage, horizons, rolling stability, quantile responses, redundancy, admission/rejection | Sort/filter candidates, compare folds and factors, inspect a rejection and open a consumer strategy |
-| Strategy Atelier | Factor composition, gross/net/benchmark equity, drawdown, returns heatmap, costs, exposure, trades, risk metrics, ablations | Compare research candidates, brush a drawdown interval and inspect its trades and factor contributions |
-| Research history | Every trial, parent hypothesis, parameters, engine/data hashes, validation usage, cost and decision | Trace a hypothesis through rejected attempts to the frozen result |
-| Reproducibility | Metric definitions, split boundaries, assumptions, source rights, engine checks, artifacts and known limitations | Download permitted results and reproduce the displayed numbers |
+| Factor fold bars: is predictiveness stable? | x = candidate (grouped by validation fold); y = oriented primary RankIC, unitless, with each fold and the equal-fold mean identified. | Zero baseline; positive and negative bars; explicit horizon/direction and counts. The frozen admission threshold applies to the mean, not every bar. An undefined fold is a labelled gap, not zero. |
+| Factor horizon lines: how quickly does the signal decay? | x = label horizon in trading sessions; y = oriented IC/RankIC; distinguish statistic and fold with labelled series or separate aligned plots. | Fixed research horizon grid and zero baseline; mark the training-selected primary horizon. Do not select a new horizon from the final-test chart. |
+| Rolling RankIC lines: when is the factor unstable? | x = latest included label's exit date; y = trailing oriented RankIC for selected factors. | Display window/minimum support and fold boundaries; break at insufficient data/gaps. Explain that the statistic becomes known at label exit, not signal time. |
+| Quantile response bars: are higher scores followed by higher returns? | x = training-fitted low-to-high factor bins; y = mean gross h-session forward return (%); counts and dependence-aware intervals in tooltips/table. | Zero baseline; medians and top-minus-bottom difference alongside. Empty/tied bins visible. This is conditional label response, not a compounded tradable long-short curve. |
+| Coverage bars and redundancy matrix: is evidence usable/complementary? | x = factor/fold, y = available/paired/eligible counts or explicitly labelled coverage %; matrix axes = exact factor versions, cells = Spearman factor correlation. | Show missingness and denominator; label signed coefficients and the absolute cutoff. Pair counts accompany correlations; undefined cells remain undefined. |
+| Equity lines: does the strategy add value after costs? | x = actual scored sessions; y = growth of common starting capital (default indexed to 100); lines = net strategy, zero-cost replay, matched net buy-and-hold and cash. | Separate aligned train, validation and test plots with the same series colors and labelled scales. Show initial value, costs and terminal liquidation; never concatenate all splits into a claimed unseen curve. Label validation fold resets/composite gaps. |
+| Drawdown lines/areas: how deep and long are losses? | x = same sessions as equity; y = drawdown %, at or below zero, for net strategy and benchmark. | Include initial capital in peaks; shared time brush and peak/trough/recovery markers. Gate/table maximum drawdown uses positive loss magnitude. Mark ongoing episodes unrecovered. |
+| Return bars: which periods contribute? | x = calendar month/year, y = compounded net period return %, grouped strategy/benchmark. | Zero baseline, partial-period and split/fold labels; never sum daily returns. Optional heatmap supplements rather than replaces the readable period table. |
+| Exposure and cost attribution: what caused the drag? | x = session for actual/target exposure (%); separate period bars for commission/slippage (currency or explicitly labelled bps of initial capital). | Do not overlay currency and percentages on an unlabelled axis. Show actual weights versus prior-close targets, turnover definition and fill count; gross/net replay difference is not automatically sum of fees. |
+| Cost stress bars: does it survive the declared scenarios? | x = frozen cost scenario; y = net total return %; adjacent labelled table for net Sharpe, drawdown and costs. | Default/stress scenario boundaries and zero baseline; rerun the frozen policy without tuning. No sliders that launch new test experiments. |
+| Ablation/parameter bars: what actually helps? | x = named research variant; y = delta in one specified validation metric versus the full/fixed baseline; separate plots for return percentage points, Sharpe and drawdown. | Same scored dates/cost/refit scope; show every tested variant, paired uncertainty if valid and trial IDs. An omitted factor's whole-strategy delta is not per-trade causal PnL attribution. |
+| Trade distribution bars: is success concentrated? | x = frozen net episode-PnL or holding-session bins; y = completed round-trip count, with zero-PnL boundary and sample size. | Explain bin edges, completed versus open inventory, median/tails and wins/losses. Adds/resizes do not create extra trips; link bars to rows in the trade ledger. |
 
-Separate train, validation and test explicitly. Before joint final evaluation, final-test
-panels are unavailable and no test values are shipped to the browser, even in hidden JSON.
-After reveal, the accepted result is read-only. A visitor changing a descriptive time range
-does not create a new official score. Cost controls only switch among clearly labelled,
-precomputed frozen scenarios; they must not submit new test optimization jobs.
+Keep official train/validation/test summary columns visible simultaneously; local brushing
+can show a separate "selected interval — descriptive" summary, never overwrite official
+gates. Compare like with like: same dates, price basis, horizon and cost scenario. Unavailable
+benchmark/metric evidence is labelled, not omitted to improve apparent relative performance.
+No smoothing of returns or fitted trend lines that obscure the measured series. If dense
+series need display downsampling, disclose it and retain exact extrema, gate calculations
+and the full permitted data export; tables/metrics remain based on the complete series.
 
-Show uncertainty and null values with explanations. Display pending, blocked, failed,
-inconclusive and passed honestly. A report can be complete while the strategy failed.
-Separate engine engineering checks, financial objective and capability adoption; a green
-registration badge must not imply profitable or independently verified research.
+## Shared result artifacts and agent analysis
 
-## Visual direction
+Generate one versioned report manifest/dataset from the environments' saved result artifacts.
+Field names can follow the implemented schema, but it must contain:
 
-Choose a specific typography, layout and palette in the detailed plan. Use a strong
-information hierarchy and restrained accent colors, generous space around important
-charts and denser tables for comparison. Align chart typography, axes, number formatting,
-legend colors and drawdown conventions across both pages. Give loss, risk and uncertainty
-distinct semantics; color alone must not carry meaning. Avoid decorative plots, tiny axes,
-giant blank cards and repeated KPI tiles without investigative value.
+- Study/protocol/metric-contract identities, source snapshot, actual coverage, as-of time,
+  split/fold definitions and holdout state.
+- All candidate definitions, execution/selection states, parent IDs and consumer links.
+- Per-result metric values/status/reasons, counts, criterion records and uncertainty method.
+- Chart series with explicit timestamps/bins, units, metric IDs, scope/scenario and result IDs;
+  references to full equity, order, trade and factor-diagnostic artifacts.
+- Trial/decision history and comparisons linking baseline and candidate result identities.
 
-Provide linked chart hover/brush interactions, readable tooltips, table sorting/filtering,
-keyboard navigation, visible focus, reset controls, responsive navigation and useful empty
-states. Tables may scroll on narrow screens; headlines and primary controls must not clip.
-Preserve selected factor/fold in shareable navigation where feasible. Keep raw host paths,
-credentials and internal registration schemas out of ordinary report UX.
+Use relative downloadable artifact URLs, not host paths or credentials. Provide both a
+compact analysis JSON (candidate metrics, gates and next-decision evidence) and complete
+permitted CSV/JSON details. The agent should read these for numerical comparison and use
+the browser for rendered verification; screenshots are not the primary numeric data source.
+Link detailed research judgments and artifact paths from the plan index rather than
+copying large arrays/reports into prompt context.
 
-## Data and delivery
+Reconcile chart points, tables, ledgers, gates and exports from the same result versions.
+Never hand-author market performance values. Include a visible build/result identity;
+update manifest and assets atomically so a refresh cannot mix old metrics with a new curve.
+Distinguish old immutable releases from current results. A fixture demonstration stays in
+engineering evidence and cannot populate real factor/strategy tables or final gates.
 
-Render from versioned machine-readable results, never numbers transcribed by the model.
-Every chart/table carries a result ID, split, metric schema and data/engine identity. Reconcile
-net/gross curves, trade costs, positions and aggregate metrics. Export tables must agree with
-displayed values and precision. Preserve structured failures and count all attempted trials.
-Separate distributable report artifacts from raw licensed source data.
+## Visual design and delivery
 
-Use deploy_tool and the existing deployment module. Publish a stage-one report preview and
-a later integrated stage-two release on the monitoring gateway. An unfinished/test-sealed
-preview is labelled as such. Use the returned URL; HTTP 200 alone is not a browser check.
-These releases follow research progress. If source feasibility fails before research begins,
-preserve a concise status/evidence view and any existing work; defer result-dependent surfaces
-and mark their acceptance unmet. A synthetic accounting demonstration is optional engineering
-evidence, not a replacement for the requested factor and strategy reports.
+Choose typography, layout and palette for this research product in the detailed plan. Use
+a clear editorial hierarchy, readable chart labels, generous space around interpretation
+and compact comparison tables. Keep factor/strategy identity and train/validation/test
+semantics consistent throughout. Color is supplemented by names, line styles and signs.
+Avoid decorative plots, tiny axes, giant empty cards and repeated tiles without analysis.
 
-Verify concrete journeys with webapp_testing_skill and browser_environment:
+The page must work with keyboard focus, anchor links, chart tooltips, reset controls and
+responsive layouts. Tables may scroll horizontally within a labelled region on narrow
+screens; headings, conclusions and primary controls must not clip. Printable/exportable
+HTML contains both stages and definitions without visiting hidden tabs. Preserve already
+visible findings while loading secondary artifacts; show useful retry/error states.
 
-1. Open overview, inspect split/data quality, enter factors and filter a rejected hypothesis.
-2. Compare eligible factors, open one formula and trace its exact version into a strategy.
-3. Select a validation fold, brush a drawdown, inspect trade rows and reset the selection.
-4. Switch precomputed cost assumptions and reconcile a metric with the downloaded artifact.
-5. Verify test is unavailable before reveal and a failed final gate remains visible afterward.
-6. Repeat primary navigation and inspection at desktop and narrow widths, using keyboard too.
+Publish via deploy_tool and use the returned gateway URL. First publish measured factor
+research on the continuous report; later publish the integrated strategy evidence as a new
+version of the same product. If data access fails before research begins, preserve a concise
+status/evidence view and the specific missing prerequisite, with research acceptance unmet.
+Do useful engine work; do not spend the remaining budget decorating a synthetic substitute.
 
-Capture and actually inspect rendered views. Record a concrete defect, implement a purposeful
-visual/interaction improvement and compare equivalent before/after views. Preserve this as
-self-review evidence; do not call it independent user feedback. Detailed reviews live under
-the shared plan directory and are linked from index.md, not repeatedly injected into context.
+## Browser and numerical acceptance
+
+Use webapp_testing_skill and browser_environment on the deployed URL; HTTP 200 alone is
+insufficient. Read the compact exported analysis before each research decision, then check:
+
+1. Load the page once. Locate both factor and strategy inventories, definitions, results and
+   all split headings in the same document. Scroll/anchor from a factor to its consumer and
+   back; verify neither route navigation nor a tab/page replacement occurs.
+2. Match candidate counts/states and exact formulas to saved results. Inspect an admitted
+   and a rejected factor, when present, and trace an exact version into its strategy rules.
+   If either state is absent, show that honestly rather than inventing an example.
+3. Compare fold bars, horizon lines and quantile counts with factor artifacts; explain one
+   admission/rejection from the actual gate values and uncertainty.
+4. Brush a validation drawdown and inspect its fills, exposure and costs. Reset; official
+   full-scope metrics/gates must remain unchanged. Reconcile one daily equity return, a
+   drawdown, a cost total and a completed-trip count with the same result's ledger/export.
+5. Compare only precomputed cost scenarios, read one ablation and its decision rationale.
+   Verify metric units and train/validation/test identities in tooltip, table and export.
+6. Confirm test is absent from payloads before reveal, including downloadable artifacts;
+   afterward, all supplied final gates remain visible, including failures/nulls.
+7. Repeat scrolling, anchor navigation and controls at desktop/narrow widths with keyboard.
+   Inspect screenshots from overview, factor and strategy sections, not just the hero.
+
+Record a concrete presentation defect, implement a purposeful improvement and compare
+equivalent before/after views. Record this as self-review, not independent user approval.
+Keep numerical correctness, usability, engine readiness and research success as separate
+acceptance outcomes. Passing browser checks cannot turn a failed final test into success.

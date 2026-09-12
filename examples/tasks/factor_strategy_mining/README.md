@@ -9,13 +9,17 @@ independent of the implementation framework and can be used with different resea
 connected research stages:
 
 1. Discover and evaluate interpretable factors from a stock's price and volume history;
-   publish the Factor Observatory with selection evidence and rejected hypotheses.
-2. Turn selected factors into strategies; publish the Strategy Atelier with returns,
-   risk, costs, trade records and a final evaluation.
+   publish the Factor Observatory section with definitions, measured effects, selection
+   evidence and rejected hypotheses.
+2. Turn selected factors into strategies; extend the same page with the Strategy Atelier's
+   trading rules, returns, risk, costs, trade records and final evaluation.
 
 The experience should make an investigation easy to follow: inspect a factor, understand
-its selection, trace it into a strategy and explore the trades behind a drawdown. Both
-reports need coherent visual design, meaningful interactions and downloadable evidence.
+its selection, trace it into a strategy and explore the trades behind a drawdown. Deliver
+**one continuous report page**, with both stages visible through scrolling and in-page
+anchors. Do not split them into routes or tabs. Keep candidate inventories, split comparisons,
+metric/chart definitions, research decisions and downloadable evidence together. Stage-one
+and stage-two publications are versions of the same product, not separate report pages.
 
 ## Files and research constraints
 
