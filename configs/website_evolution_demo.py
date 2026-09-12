@@ -1,4 +1,4 @@
-"""One Website Builder builds, browses, critiques and evolves its own methods."""
+"""One Website Builder owns the product and can dispatch registered child agents."""
 from mmengine.config import read_base
 
 with read_base():
@@ -46,9 +46,10 @@ file_system_memory.update(
 # Browsing now consumes this same agent's steps. Keep room for six actual visits,
 # implementation, capability comparisons, adoption and subsequent consumer use.
 website_builder_agent.update(
-    model_name=model_name, enable_evolving=True, include_agents=False,
+    model_name=model_name, enable_evolving=True, include_agents=True,
     env_names=["job", "browser_environment"],
-    capability_allowlists={"environment": ["job", "browser_environment"], "agent": []},
+    # Use MetaAgent's registered-agent roster; only the Builder is preloaded above.
+    capability_allowlists={"environment": ["job", "browser_environment"]},
     max_step=10_000, timeout=28800, max_token=1_000_000_000, max_actions=3, max_screenshots=1,
     allow_token_budget_override=False, memory_name="file_system_memory", use_memory=True,
     use_plan=True, compact_strategy="text",

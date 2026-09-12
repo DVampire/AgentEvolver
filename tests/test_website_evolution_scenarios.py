@@ -1,5 +1,6 @@
 """Scenario inputs and callable consumers agree before a paid experiment starts."""
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from mmengine import Config
@@ -14,13 +15,13 @@ from agentevolver.task.context import bind_manifest, parse_manifest
 def test_each_scenario_requires_multiple_entities_and_stages_its_materials(name):
     args = parse_args(["--scenario-dir", str(SCENARIO_ROOT / name)])
     config, brief = resolve_inputs(args)
+    assert config == DEFAULT_CONFIG
     cfg = Config.fromfile(str(config))
+    assert cfg.agent_names == ["website_builder_agent"]
+    assert "general_agent" not in cfg
     assert cfg.website_builder_agent.include_agents
-    assert "agent" in cfg.website_builder_agent.accepts_evolved
     assert cfg.website_builder_agent.use_plan
-    assert cfg.general_agent.model_name == cfg.website_builder_agent.model_name
-    assert cfg.general_agent.env_names == []
-    assert cfg.general_agent.capability_allowlists.tool == ["done_tool"]
+    assert "agent" not in cfg.website_builder_agent.capability_allowlists
     task = build_task_text(brief)
     manifest = parse_manifest(task)[2]
     assert set(manifest["evolution"]["required_modules"]) == {"skill", "agent", "connector"}
@@ -34,24 +35,26 @@ def test_each_scenario_requires_multiple_entities_and_stages_its_materials(name)
     assert "record_use" not in task
 
 
-def test_commonspace_and_explicit_config_override_remain_supported():
+def test_commonspace_and_explicit_config_override_remain_supported(tmp_path):
     config, brief = resolve_inputs(parse_args([
         "--scenario-dir", str(SCENARIO_ROOT / "commonspace_forum"),
     ]))
     assert config == DEFAULT_CONFIG
     assert "required_modules" not in parse_manifest(build_task_text(brief))[2]["evolution"]
+    custom = tmp_path / "custom_demo.py"
+    custom.write_text("agent_names = ['website_builder_agent']\n")
     config, _ = resolve_inputs(parse_args([
         "--scenario-dir", str(SCENARIO_ROOT / "lumen_museum"),
-        "--config", str(DEFAULT_CONFIG),
+        "--config", str(custom),
     ]))
-    assert config == DEFAULT_CONFIG
+    assert config == custom
 
 
 @pytest.mark.asyncio
 async def test_new_specialist_becomes_callable_without_giving_it_parent_state(monkeypatch):
     from agentevolver.agent.actor.website_builder_agent import WebsiteBuilderAgent
-    from agentevolver.agent.actor.general_agent import GeneralAgent
     from agentevolver.agent.context import capabilities
+    from agentevolver.agent.loop.decision import ActionCall
     from agentevolver.agent.loop.router import CapabilityRouter
     from agentevolver.extension import extension_manager
     from agentevolver.runtime.kernel import child_context
@@ -59,23 +62,35 @@ async def test_new_specialist_becomes_callable_without_giving_it_parent_state(mo
     config, _ = resolve_inputs(parse_args([]))
     cfg = Config.fromfile(str(config))
     builder = WebsiteBuilderAgent(**cfg.website_builder_agent)
-    worker = GeneralAgent(**cfg.general_agent)
-    manifest = SimpleNamespace(components=[])
-    monkeypatch.setattr(type(extension_manager), "read_manifest", lambda self: manifest)
-
-    async def assemble(agent, ctx, **kwargs):
-        assert kwargs["include_agents"]
-        return [], {name: ("agent", name) for name in ctx.extra["agent_allowlist"]}
-
-    monkeypatch.setattr(capabilities, "assemble_native_tools", assemble)
-    router = CapabilityRouter(include_agents=builder.include_agents)
+    worker = SimpleNamespace(name="expedition_designer")
+    registered = {builder.name: SimpleNamespace(name=builder.name, description="Own the website")}
+    revision = 0
+    manager = SimpleNamespace(
+        list=lambda: list(registered), get_info=lambda name: registered.get(name),
+        get_schema=lambda name, **kwargs: {
+            "type": "function", "function": {"name": name, "description": "Design an expedition",
+            "parameters": {"type": "object", "properties": {"task": {"type": "string"}}}},
+        },
+    )
+    monkeypatch.setattr(capabilities, "MOUNTED_TYPES", [SimpleNamespace(type="agent", manager=lambda: manager)])
+    monkeypatch.setattr(type(extension_manager), "capability_revision", property(lambda self: revision))
+    proc = SimpleNamespace(pid="child", exit_status=SimpleNamespace(value="done"), artifacts={})
+    kernel = SimpleNamespace(dispatch=AsyncMock(return_value=proc),
+                             wait=AsyncMock(return_value=SimpleNamespace(message="A runnable design")))
+    router = CapabilityRouter(include_agents=builder.include_agents, kernel=kernel)
     ctx = SimpleNamespace(id="builder", extra={"task_manifest": {"evolution": {
         "required_modules": ["agent"],
     }}, "task_state": {"private": "parent work"}})
     _, routes = await router.schemas(builder, ctx)
-    assert "expedition_designer" not in routes
-    manifest.components.append(SimpleNamespace(module="agent", name="expedition_designer"))
+    assert routes == {}  # No preloaded worker; the caller is excluded from its own roster.
+    registered[worker.name] = SimpleNamespace(name=worker.name, description="Design an expedition")
+    revision += 1  # Registration refreshes the shared capability catalog.
     _, routes = await router.schemas(builder, ctx)
     assert routes["expedition_designer"] == ("agent", "expedition_designer")
+    call = ActionCall(id="dispatch-design", name=worker.name, args={"task": "Design from the supplied packet."})
+    result = await router.invoke(call, agent=builder, ctx=ctx, routing=routes)
+    assert result.ok and "A runnable design" in result.output
+    kernel.dispatch.assert_awaited_once_with(worker.name, call.args, parent=builder, ctx=ctx)
+    kernel.wait.assert_awaited_once_with(proc)
     child = child_context(worker, {"task": "Design from the supplied packet."}, builder, ctx)
     assert "task_state" not in child.extra and "task_manifest" not in child.extra

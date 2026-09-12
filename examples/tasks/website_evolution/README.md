@@ -3,8 +3,8 @@
 One Website Builder owns design, implementation, native browser experience, creative critique,
 and capability evolution. No persona files, user agents, acceptance agents or subscribers are
 created. `scenario.html` contains product requirements; optional `materials/` supplies public
-creative inputs and documented source requests. `experiment.json` selects the runtime profile,
-declares material attachments and specifies evolution coverage separately from the product.
+creative inputs and documented source requests. `experiment.json` declares material attachments
+and specifies evolution coverage separately from the product. All scenarios use the same demo config.
 
 The launcher only loads that product brief and adds structured experiment settings.
 Behavior belongs to the WebsiteBuilder prompt and frontend/testing skills; capability
@@ -50,20 +50,26 @@ python examples/run_website_evolution_demo.py --scenario-dir examples/tasks/webs
 ```
 
 The default scenario is `arkbound_game`; the default model is `llm_hub/gpt-6-astra`.
-The three multi-entity scenarios select `configs/website_evolution_multientity.py` automatically.
-It mounts a bounded `general_agent` for fresh reasoning baselines and lets the builder invoke
-newly registered agents. It does not pre-create domain specialists. Baseline consumers have
-no environments or product-editing tools; they return results through `done_tool`. The builder
-performs the browser experience, evaluates the candidate and incorporates its result.
-Keep baseline and candidate inputs, model, capabilities and budgets comparable. Their source
-packets and returned designs may be passed by the builder; the website does not need a live
-LLM for every interaction. Commonspace retains the original single-agent profile.
+All scenarios use `configs/website_evolution_demo.py`, which preloads only
+`website_builder_agent`. The Builder inherits MetaAgent's ordinary sub-agent dispatch:
+`include_agents=True` exposes the registered-agent roster, excluding the caller, and the
+catalog refreshes when new agents register. There is no preloaded general-purpose worker
+or separate configuration for multi-entity evolution. The Builder owns the browser experience,
+creates or improves useful capabilities, and dispatches bounded work to available child agents.
+It evaluates their results and incorporates them into the product.
+
+Preserve an executed baseline before changing the method. Use an available callable consumer
+when a comparison needs fresh model contexts; creating a specialist does not by itself prove
+an improvement. Keep baseline and candidate inputs, model, capabilities and budgets comparable,
+and check that the consumer can execute the method within its actual permissions. If a required
+comparison cannot be executed, record it as inconclusive. Do not add a permanent evaluation
+agent or manufacture a weak baseline to satisfy coverage. The website does not need a live
+LLM for every interaction.
 
 `--site-brief` overrides the product brief. `--model` (or
-`--builder-model`) selects the builder's vision-capable route. `--config` overrides the selected
-profile; a profile unable to invoke a required type cannot fulfil that experiment. If overriding
-the comparison model, set `general_agent.model_name` through `--cfg-options` as well and use
-that same model for candidate comparisons. Persona, user-model and acceptance-model flags
+`--builder-model`) selects the builder's vision-capable route. `--config` explicitly overrides
+the demo config; a configuration unable to invoke a required type cannot fulfil that experiment.
+Persona, user-model and acceptance-model flags
 have been removed. Existing sessions retain their staged task. Declared materials are staged
 through ordinary task attachments; the manifest supplies their actual paths without adding
 their full contents to the launcher's task text.
@@ -119,8 +125,9 @@ After keep, invoke the candidate synchronously on product work and submit
 `consumer_call_id`, `evidence_ids`, and `outcome`. Reading a skill alone does not count: cite
 its subsequent execution/check as well. A directly callable consumer is required for this
 audit; an instance-only change without instrumented use remains unverified. Deterministic
-baseline/candidate fixtures can be run by the builder. The multi-entity profile also supports
-fresh model consumers; the single-agent profile cannot prove comparisons that require them.
+baseline/candidate fixtures can be run by the builder. Model-based comparisons can use fresh
+dispatches of available agents through the same runtime; callable access and executed evidence
+are required, not merely a configured agent name.
 
 `evolution.required_modules` adds type-specific coverage to the same receipt audit. Every
 listed family must have an active version registered by this task, evaluated, kept and actually

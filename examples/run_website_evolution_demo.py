@@ -17,7 +17,7 @@ OPTIMIZATION_CYCLES = 5
 
 def parse_args(argv: Sequence[str] | None = None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", help="Override the scenario experiment's config.")
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Demo runtime configuration.")
     parser.add_argument("--scenario-dir", default=str(DEFAULT_SCENARIO_DIR))
     parser.add_argument("--site-brief", help="Override <scenario-dir>/scenario.html.")
     parser.add_argument("--model", "--builder-model", dest="model", help="Builder model; must accept images.")
@@ -36,9 +36,8 @@ def _existing_file(raw, role):
 
 
 def resolve_inputs(args):
+    config = _existing_file(args.config, "config")
     brief = _existing_file(args.site_brief or str(Path(args.scenario_dir) / "scenario.html"), "site brief")
-    experiment = load_experiment(brief)
-    config = _existing_file(args.config or str(ROOT / experiment.get("config", str(DEFAULT_CONFIG))), "config")
     return config, brief
 
 

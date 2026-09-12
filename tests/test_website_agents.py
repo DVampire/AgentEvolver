@@ -661,7 +661,9 @@ def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
     )
 
     assert cfg.agent_names == ["website_builder_agent"]
-    assert not cfg.website_builder_agent.include_agents
+    assert cfg.website_builder_agent.include_agents
+    assert "agent" not in cfg.website_builder_agent.capability_allowlists
+    assert "general_agent" not in cfg
     assert cfg.website_builder_agent.env_names == ["job", "browser_environment"]
     assert cfg.tool_names == [
         "bash_tool",
