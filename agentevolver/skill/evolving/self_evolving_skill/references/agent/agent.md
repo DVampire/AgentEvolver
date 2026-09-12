@@ -41,8 +41,8 @@ Read the relevant template(s) first, copy, then adapt. They already encode the c
 
 ### Choosing the agent type
 
-- **Tool-calling agent** (default): reasons and acts step by step, choosing tools/skills dynamically each step. Use it for open-ended or multi-step tasks. It has a Python class + an HTML prompt, and it **inherits** the base loop. → `tool_calling_agent_template.py` + `html_prompt_template.html`.
-- **Procedural agent**: a fixed, deterministic pipeline (read → process → report) expressed in code with direct tool calls — no step-by-step LLM planning, no prompt. It overrides `__call__` and calls no model; the kernel does not care what is inside. → `procedural_agent_template.py`.
+- **Tool-calling agent** (default): reasons and acts step by step, choosing tools/skills dynamically each step. Use it for open-ended or multi-step tasks. It has a Python class + an HTML prompt, and it **inherits** the base loop. → `template.py` + `template-prompt.html`.
+- **Procedural agent**: a fixed, deterministic pipeline (read → process → report) expressed in code with direct tool calls — no step-by-step LLM planning, no prompt. It overrides `__call__` and calls no model; the kernel does not care what is inside. → `template-procedural.py`.
 
 When unsure, prefer a tool-calling agent — it's the more general, more capable form.
 
@@ -62,13 +62,13 @@ The base `Agent` owns the loop (`__call__` → `think` → `act`), prompt assemb
 **Do NOT override** `think`, `act` or anything in `agent/context/` unless the agent genuinely needs bespoke behaviour — reviewers treat unnecessary overrides as a defect. The seams that exist for real needs are `prompt_modules`, `project_context`, `working_memory`, `completion_blocker`, `finalize`, and the runtime phases `on_start` / `on_land` / `on_exit` / `on_suspend` / `on_resume`. Advice for the model belongs in a step middleware (`agent/loop/guards.py`), not in an override.
 
 Steps:
-1. Read `tool_calling_agent_template.py`, copy it to `{extension_root}/agent/{name}.py`, rename the class, and fill `name` / `description` (state what it does AND when to use it) / `prompt_name`.
+1. Read `template.py`, copy it to `{extension_root}/agent/{name}.py`, rename the class, and fill `name` / `description` (state what it does AND when to use it) / `prompt_name`.
 2. Write the HTML prompt (next section).
 3. `python -m py_compile /abs/path/{name}.py`; then register it: `adoption_tool` with `action="register"`, `module="agent"` and the `.py` path as `artifact_path`.
 
 #### Writing the HTML prompt (this is where agent quality lives)
 
-Copy `html_prompt_template.html` to `{extension_root}/prompt/{name}.html`, set `<meta name="name">` to the agent's name, and fill each block. The prompt is the agent's brain — treat it with the same care as a skill.
+Copy `template-prompt.html` to `{extension_root}/prompt/{name}.html`, set `<meta name="name">` to the agent's name, and fill each block. The prompt is the agent's brain — treat it with the same care as a skill.
 
 **Structure (do not break it):**
 - **system**: `profile`, `language-settings`, `project`, `input-rules`, `constraint-rules`, `task-rules`, `context-rules`, `response-protocol`.

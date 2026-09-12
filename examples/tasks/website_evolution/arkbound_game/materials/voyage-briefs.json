@@ -1,0 +1,52 @@
+{
+  "provenance": "Original fictional creative inputs. Not finished levels, measured playtest results or real navigation advice.",
+  "briefs": [
+    {
+      "id": "reef_exchange",
+      "goal": "Bring a fragile seed archive through a reef settlement; decide whose beacon to repair first.",
+      "tension": "The quick passage leaves little clearance for a wide cargo arrangement; a longer route meets a settlement that needs a useful module.",
+      "quality": "Read the route before committing, understand the trade-off, retreat and rearrange without losing all progress.",
+      "consequence": "The repaired beacon changes guidance on a later voyage."
+    },
+    {
+      "id": "silent_fog",
+      "goal": "Locate a drifting library and reconstruct why it left its harbour.",
+      "tension": "Landmarks are partly obscured; two recovered accounts disagree about the return route.",
+      "quality": "Understand navigation with sound disabled and reduced motion; comparing accounts changes a real route choice.",
+      "consequence": "The chosen account affects trust and access at the next settlement."
+    },
+    {
+      "id": "storm_return",
+      "goal": "Return a recovered lens while a temporary storm closes the expected passage.",
+      "tension": "The reef loadout is cumbersome here; shelter and replanning remain viable.",
+      "quality": "Communicate the changed condition before unavoidable failure; recovery works on a narrow touch screen.",
+      "consequence": "The repaired lens provides another way to orient during the resolution."
+    }
+  ],
+  "revision": {
+    "revises": "reef_exchange",
+    "change": "The archive must remain on deck, and the old shortcut is unavailable on the return leg.",
+    "preserve": "Earned discoveries and retreat; old expedition saves keep their original rules.",
+    "question": "Can a player understand the limitation, revise the vessel and complete an alternative route?",
+    "resource_change": "Halve the initial measured texture-download budget and handle an unavailable selected variant using a local replay fixture; retain recognisable landmarks and the source record.",
+    "comparison": "Run the previously working acquisition/design/review approach on this changed request before revising it. Preserve its output and measured work, then compare the revised approach on identical inputs and replay another voyage."
+  },
+  "transfer": "Author another expedition with different objectives, topology and constraints through the same studio; renamed landmarks do not establish transfer.",
+  "sources": {
+    "catalogue": "https://github.com/Poly-Haven/Public-API",
+    "contract": "https://github.com/Poly-Haven/Public-API/blob/master/swagger.yml",
+    "service_terms": "https://github.com/Poly-Haven/Public-API/blob/master/ToS.md"
+  },
+  "resource_requests": [
+    {
+      "for": "reef_exchange",
+      "need": "Weathered timber and rock materials plus daylight lighting that keep reef edges readable.",
+      "constraints": "Discover real assets; inspect available variants, licence and sizes; choose a compatible bounded pack."
+    },
+    {
+      "for": "silent_fog",
+      "need": "A different lighting and material combination for fog, with readable landmarks and no essential sound cue.",
+      "constraints": "Reuse the acquisition path with new selections; do not present a daylight pack with renamed scenery as the result."
+    }
+  ]
+}

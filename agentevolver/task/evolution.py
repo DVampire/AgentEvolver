@@ -9,9 +9,21 @@ from copy import deepcopy
 
 
 def required(ctx):
-    return (getattr(ctx, "extra", None) or {}).get("task_manifest", {}).get(
+    settings = (getattr(ctx, "extra", None) or {}).get("task_manifest", {}).get("evolution", {})
+    return settings.get("require_verified_improvement") is True or bool(settings.get("required_modules"))
+
+
+def required_modules(ctx):
+    """Explicit experiment coverage; ordinary tasks do not impose a type quota."""
+    from agentevolver.capability.types import COMPONENT_TYPES
+
+    modules = (getattr(ctx, "extra", None) or {}).get("task_manifest", {}).get(
         "evolution", {}
-    ).get("require_verified_improvement") is True
+    ).get("required_modules", [])
+    allowed = {entry.type for entry in COMPONENT_TYPES}
+    if not isinstance(modules, list) or any(not isinstance(m, str) or m not in allowed for m in modules):
+        raise ValueError("evolution.required_modules must be a list of supported component types")
+    return list(dict.fromkeys(modules))
 
 
 def state(ctx):
@@ -153,6 +165,7 @@ def status(ctx):
     from agentevolver.extension import extension_manager
 
     audit = state(ctx)
+    expected = required_modules(ctx)
     reasons = []
     ready = []
     for key, candidate in audit["candidates"].items():
@@ -171,7 +184,12 @@ def status(ctx):
             reasons.append(f"{key}: post-adoption consumer evidence is missing; call adoption_tool record_use")
     if not ready:
         reasons.append("No verified capability improvement has completed registration, evaluation, keep and real use")
+    verified_modules = {audit["candidates"][key]["module"] for key in ready}
+    missing_modules = [module for module in expected if module not in verified_modules]
+    if missing_modules:
+        reasons.append("Required component types still need verified adoption and real use: " + ", ".join(missing_modules))
     return {"required": True, "ready": bool(ready) and not reasons,
+            "required_modules": expected, "missing_modules": missing_modules,
             "verified_components": ready, "reasons": reasons,
             "receipts": {key: {
                 "registration_call_id": audit["candidates"][key]["registration"],

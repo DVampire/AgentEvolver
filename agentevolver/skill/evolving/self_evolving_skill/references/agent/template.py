@@ -2,7 +2,7 @@
 
 Copy to `{extension_root}/agent/{name}.py`, rename the class, fill in name/description,
 and pair it with an HTML prompt at `{extension_root}/prompt/{name}.html` (see
-`html_prompt_template.html`). This is the common agent type: it reasons and acts step by
+`template-prompt.html`). This is the common agent type: it reasons and acts step by
 step over tools, skills and connectors, driven entirely by the base-class loop.
 
 KEY RULE — the class is a DECLARATION, not an implementation.

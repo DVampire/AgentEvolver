@@ -1,0 +1,7 @@
+{
+  "config": "configs/website_evolution_multientity.py",
+  "materials": ["materials/inquiry-requests.json"],
+  "evolution": {
+    "required_modules": ["skill", "agent", "connector"]
+  }
+}

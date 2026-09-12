@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
 description: Turn a concrete reusable improvement opportunity into a small verified framework capability change. Use for learning from self-verification, a first correction or success, expected reuse, a better quality/cost/reliability method even when the task already works, a missing capability, or an explicit component request. Repeated failure is not required. Covers inspect → generate/optimize → evaluate → keep/rollback/unload across all eight component types. NOT for ordinary edits to the user's deliverable.
-version: 2.5.2
+version: 2.6.0
 license: N/A
 type: [orchestrator]
 category: meta
@@ -58,6 +58,26 @@ the default. An existing component can be improved without creating another comp
 Read only the selected type's reference for its artifact, registration and evaluation
 contract. Verify that the current consumer scope can exercise it before implementation;
 registration alone neither changes running instances nor grants missing capabilities.
+
+When an experiment explicitly names `evolution.required_modules`, preserve that coverage
+in the work record. A verified Tool does not fulfil a required Skill, Agent or Connector.
+Keep form and behavior aligned: a skill teaches a reusable method with exercised branches;
+an agent owns a bounded reasoning task and is evaluated in fresh consumers with comparable
+inputs, model, capabilities and budgets; a connector exposes a real provider through its
+declared actions. Follow the selected type's reference for execution and evidence. Loading
+instructions, renaming a deterministic helper or fetching data only through Bash does not
+demonstrate those outcomes. A failed or unjustified required experiment remains unmet.
+
+For a chain of components, link input/output artifacts and consumer call IDs in the plan
+records. Evaluate each component against a preserved baseline, then replay the full product
+journey with the adopted versions. Revisit them on changed inputs: inspect the current
+version, diagnose the weak layer, optimize that component and compare with its kept version
+under the same inputs and budgets. Retain earlier success cases as downstream regressions.
+Record version lineage, quality and measured cost; do not create a parallel component merely
+to avoid evaluating an existing one. Successful reuse needs no artificial version bump.
+For model-based comparisons, use fresh, equivalent contexts without the candidate's answer;
+the builder may pass source packets and consume returned designs itself. This does not
+require a remote model inside the deployed website or a separate audience/reviewer agent.
 
 ## Prepare an opportunity
 

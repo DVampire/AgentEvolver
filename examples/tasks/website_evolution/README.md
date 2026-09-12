@@ -2,7 +2,9 @@
 
 One Website Builder owns design, implementation, native browser experience, creative critique,
 and capability evolution. No persona files, user agents, acceptance agents or subscribers are
-created. Each scenario contains only `scenario.html`.
+created. `scenario.html` contains product requirements; optional `materials/` supplies public
+creative inputs and documented source requests. `experiment.json` selects the runtime profile,
+declares material attachments and specifies evolution coverage separately from the product.
 
 The launcher only loads that product brief and adds structured experiment settings.
 Behavior belongs to the WebsiteBuilder prompt and frontend/testing skills; capability
@@ -11,10 +13,34 @@ There is no second behavioral prompt embedded in the launcher.
 
 | Directory | Product intent |
 | --- | --- |
-| `arkbound_game/` | A visually striking 3D ocean exploration game with meaningful voyages. |
+| `arkbound_game/` | A 3D ocean adventure with branching consequences, functional vessel construction and a playable expedition studio using retrieved visual resources. |
 | `commonspace_forum/` | A connected community workspace: discover and follow projects, discuss linked materials, compare proposals, coordinate actions and return to relevant changes. Includes reversible personal comparisons and local fictional materials. |
-| `lumen_museum/` | A hands-on museum that teaches real AI and technology concepts. |
-| `orbital_simulator/` | An interactive universe with explained frames and physically grounded motion. |
+| `lumen_museum/` | Connected experiments, evidence notebooks and an editable curatorial workbench that turns new scholarly source packets into runnable inquiries. |
+| `orbital_simulator/` | A 3D universe with physical frames, real numerical and imagery sources, and reconstructable investigations that test competing explanations. |
+
+## Multiple entity types within each task
+
+Arkbound, Lumen and Orbital each request verified `skill`, `agent` and `connector` improvements
+in the same run. They are not three separate single-type demonstrations. Tools, workflows and
+other component types remain available when a demonstrated need warrants them.
+
+| Task | Connected opportunity for Connector → Agent → Skill | Changed-input follow-up |
+| --- | --- | --- |
+| Arkbound | Retrieve compatible visual resources → design a constrained branching expedition → apply a reusable play/design review method and publish playable content. | Revise cargo and return routes, halve the measured texture budget, preserve landmarks and earlier saves. |
+| Lumen | Resolve a real source packet → reason about evidence and design an inquiry → apply a reusable experiment/explanation review method and publish a runnable route. | Missing source content, duplicated evaluation items, a shorter keyboard-only visit; preserve uncertainty and prior notebooks. |
+| Orbital | Retrieve source states and imagery → design a discriminating investigation → apply a reusable scientific/visual verification method and reproduce it in the scene. | Different body, units and interval, offline replay and a deliberately exaggerated display; preserve physical measurements and earlier comparisons. |
+
+These are opportunity hypotheses, not prebuilt components or guaranteed positive results.
+The builder chooses component names, contracts and division of work from actual experience.
+Each contribution needs a baseline comparison, independent case and post-adoption consumer;
+the full product journey must also work with their combined results. A registered wrapper,
+an unused skill or a hard-coded generated answer does not establish these outcomes.
+
+After the first working chain, apply the changed input to the **kept versions first**. Diagnose
+the weak layer, optimize its existing component, evaluate the new exact version and replay
+downstream regressions. New names or version numbers do not prove optimization. If the kept
+method still works, record successful reuse; do not manufacture a failure or replace it just
+to increase the component count. Keep lineage and measured quality/cost in the plan records.
 
 ## Run
 
@@ -24,11 +50,25 @@ python examples/run_website_evolution_demo.py --scenario-dir examples/tasks/webs
 ```
 
 The default scenario is `arkbound_game`; the default model is `llm_hub/gpt-6-astra`.
-`--site-brief` overrides the product brief. `--model` (or
-`--builder-model`) selects the single builder's vision-capable route. Persona, user-model and
-acceptance-model flags have been removed. Existing sessions retain their staged task.
+The three multi-entity scenarios select `configs/website_evolution_multientity.py` automatically.
+It mounts a bounded `general_agent` for fresh reasoning baselines and lets the builder invoke
+newly registered agents. It does not pre-create domain specialists. Baseline consumers have
+no environments or product-editing tools; they return results through `done_tool`. The builder
+performs the browser experience, evaluates the candidate and incorporates its result.
+Keep baseline and candidate inputs, model, capabilities and budgets comparable. Their source
+packets and returned designs may be passed by the builder; the website does not need a live
+LLM for every interaction. Commonspace retains the original single-agent profile.
 
-## One agent, separate phases
+`--site-brief` overrides the product brief. `--model` (or
+`--builder-model`) selects the builder's vision-capable route. `--config` overrides the selected
+profile; a profile unable to invoke a required type cannot fulfil that experiment. If overriding
+the comparison model, set `general_agent.model_name` through `--cfg-options` as well and use
+that same model for candidate comparisons. Persona, user-model and acceptance-model flags
+have been removed. Existing sessions retain their staged task. Declared materials are staged
+through ordinary task attachments; the manifest supplies their actual paths without adding
+their full contents to the launcher's task text.
+
+## One builder, separate phases
 
 1. Define a concrete visitor journey and quality criteria, then build a coherent first release.
 2. Preview, operate the actual UI in the mounted browser, and inspect results and diagnostics.
@@ -79,8 +119,14 @@ After keep, invoke the candidate synchronously on product work and submit
 `consumer_call_id`, `evidence_ids`, and `outcome`. Reading a skill alone does not count: cite
 its subsequent execution/check as well. A directly callable consumer is required for this
 audit; an instance-only change without instrumented use remains unverified. Deterministic
-baseline/candidate fixtures can be run by the builder; comparisons requiring fresh model
-contexts remain inconclusive in this single-agent mode.
+baseline/candidate fixtures can be run by the builder. The multi-entity profile also supports
+fresh model consumers; the single-agent profile cannot prove comparisons that require them.
+
+`evolution.required_modules` adds type-specific coverage to the same receipt audit. Every
+listed family must have an active version registered by this task, evaluated, kept and actually
+used. Missing families are named in status and cannot be satisfied by extra Tools. An optimized
+version of an existing component qualifies through this same lifecycle; registering a newer
+version invalidates the older active-version evidence until the new version is verified.
 
 Runtime checks call provenance, lifecycle and active version; semantic benefit remains an
 explicit, reviewable evaluation judgment. Missing evidence makes completion unsuccessful,
