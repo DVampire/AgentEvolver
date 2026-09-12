@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 
@@ -73,6 +74,11 @@ async def test_read_only_dataset_is_archived_by_framework_not_mcp(tmp_path, loca
     import hashlib
     manifest = local_server / "CONNECTOR.md"
     manifest.write_text(manifest.read_text().replace("permission_mode: read_only", "permission_mode: read_only\nresult_mode: artifact"))
+    validator = runpy.run_path(str(Path(__file__).parents[1] / (
+        "agentevolver/skill/evolving/self_evolving_skill/scripts/connector/validate.py"
+    )))["validate_connector"]
+    valid, message = validator(local_server)
+    assert valid, message  # The authoring preflight must accept the runtime contract.
     manager = ConnectorContextManager(base_dir=str(tmp_path / "logs"))
     cfg = manager._parse_connector_dir(local_server)
     manager._connector_configs[cfg.name] = cfg
@@ -107,6 +113,29 @@ def test_documented_probe_cli_discovers_local_server(local_server):
     assert tools[0]["name"] == "fetch"
     assert tools[0]["input_schema"]["properties"]["fail"]["type"] == "boolean"
     assert tools[0]["annotations"]["readOnlyHint"] is True
+
+
+@pytest.mark.parametrize("mode,valid", [("inline", True), ("artifact", True), ("file", False)])
+def test_authoring_validator_and_runtime_agree_on_manifest_fields(tmp_path, local_server, mode, valid):
+    import yaml
+    validator = runpy.run_path(str(Path(__file__).parents[1] / (
+        "agentevolver/skill/evolving/self_evolving_skill/scripts/connector/validate.py"
+    )))["validate_connector"]
+    path = local_server / "CONNECTOR.md"
+    frontmatter = path.read_text().split("---", 2)[1]
+    fields = yaml.safe_load(frontmatter)
+    fields.update(result_mode=mode, action_descriptions={"bars": "Historical rows"},
+                  action_annotations={"bars": {"readOnlyHint": True, "openWorldHint": True}})
+    path.write_text("---\n" + yaml.safe_dump(fields) + "---\n# Source\n")
+    accepted, message = validator(local_server)
+    assert accepted is valid, message
+    manager = ConnectorContextManager(base_dir=str(tmp_path / "logs"))
+    if valid:
+        cfg = manager._parse_connector_dir(local_server)
+        assert cfg.result_mode == mode and cfg.action_annotations["bars"]["readOnlyHint"]
+    else:
+        with pytest.raises(ValueError):
+            manager._parse_connector_dir(local_server)
 
 
 @pytest.mark.asyncio

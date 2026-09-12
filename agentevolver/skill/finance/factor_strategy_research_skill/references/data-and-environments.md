@@ -121,8 +121,9 @@ Use MCP execution errors for failed downloads or invalid requests, so the runtim
 failed call. Returning an ordinary JSON string with `ok:false` is not an MCP error. Source
 inspection can successfully report missing credentials, but that is not a successful download.
 
-Normalize `timestamp, symbol, open, high, low, close, volume` with explicit UTC timestamps,
-exchange-local session date, currency, provider/feed, raw/adjusted status and corporate-action
+Normalize `timestamp, date, symbol, open, high, low, close, volume`: `timestamp` is UTC and
+`date` is the exchange-local YYYY-MM-DD session date (map a provider's `session_date` here).
+Keep currency, provider/feed, raw/adjusted status and corporate-action
 tables. Check positive prices, nonnegative volume, finite numeric fields, OHLC inequalities,
 duplicates, sorted sessions and missing bars against the exchange calendar. Never fill a
 missing trading price with a future price. Declarations of data quality do not replace checks.

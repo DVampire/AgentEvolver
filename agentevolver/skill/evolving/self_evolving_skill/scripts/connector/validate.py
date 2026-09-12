@@ -12,6 +12,7 @@ ALLOWED_PROPERTIES = {
     'name', 'description', 'version', 'type', 'license', 'category',
     'requirements', 'metadata', 'enable_evolving', 'permission_mode',
     'featured', 'connection', 'actions', 'action_schemas',
+    'action_descriptions', 'action_annotations', 'result_mode',
 }
 
 
@@ -48,6 +49,12 @@ def validate_connector(connector_path):
     for req in ('name', 'description', 'connection', 'actions'):
         if req not in fm:
             return False, f"Missing '{req}' in frontmatter"
+
+    if fm.get('result_mode', 'inline') not in ('inline', 'artifact'):
+        return False, "'result_mode' must be inline or artifact"
+    for key in ('action_schemas', 'action_descriptions', 'action_annotations'):
+        if key in fm and not isinstance(fm[key], dict):
+            return False, f"'{key}' must be a mapping keyed by action name"
 
     name = str(fm.get('name', '')).strip()
     if not re.match(r'^[a-z0-9_]+$', name):
