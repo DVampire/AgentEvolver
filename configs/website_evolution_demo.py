@@ -14,7 +14,7 @@ tag = "website_evolution_demo"
 log_path = "agent.log"
 optimization_cycles = 5
 extension_root = "output/website_evolution_demo/extension"
-model_name = "llm_hub/claude-fable-5-1"
+model_name = "llm_hub/gpt-6-astra"
 model_roles = dict(main=model_name, judge=model_name, summarize=model_name)
 agent_model_policy = "per_agent"
 agent_names = ["website_builder_agent"]
@@ -29,7 +29,8 @@ workflow_names = []
 env_names = ["job", "browser_environment"]
 browser_environment = dict(
     base_dir="environment/browser", headless=True,
-    viewport=dict(width=1280, height=900), use_sandbox=False, use_som=True,
+    # Preserve clean visual evidence; element coordinates remain in textual state.
+    viewport=dict(width=1280, height=900), use_sandbox=False, use_som=False,
     state_detail="elements", max_state_elements=140, command_timeout=30.0,
 )
 
@@ -50,6 +51,7 @@ website_builder_agent.update(
     capability_allowlists={"environment": ["job", "browser_environment"], "agent": []},
     max_step=10_000, timeout=28800, max_token=1_000_000_000, max_actions=3, max_screenshots=1,
     allow_token_budget_override=False, memory_name="file_system_memory", use_memory=True,
+    use_plan=True, compact_strategy="text",
     retain_recent_steps=4, compact_after_steps=0, compact_body_tokens=0,
     compact_input_tokens=100_000, fold_at_pressure=0.85,
 )

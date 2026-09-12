@@ -98,6 +98,11 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, task, defe
         assert "Improve an evolvable target, or write a new one" in rendered
         assert "Change and evaluation stay sequential" in rendered
         assert "Before finishing, join and close" in rendered
+        assert "Task-required evidence" in rendered
+        assert "evolution.require_verified_improvement" in rendered
+        assert "record_use" in rendered and "capability_gap" in rendered
+        assert "observation and baseline call IDs before registering" in rendered
+        assert "Self-observations and runtime status notices are not user feedback" in rendered
         for opportunity in ("Reusable learning", "Expected reuse", "Better method",
                             "Missing capability", "New experience", "Self-verification",
                             "before implementation fails", "repeated failure is not required"):
@@ -108,6 +113,12 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, task, defe
             assert guard in rendered
         for kind in COMPONENT_TYPE_NAMES:
             assert kind.lower() in message.text.lower()
+        assert "Choose the form" in rendered
+        assert "do not default to a new Tool" in rendered
+        assert "a reusable procedure, design/review method" in rendered
+        assert "Agent/prompt" in rendered and "reusable reasoning, planning" in rendered
+        assert "an Agent improvement need not create another agent" in rendered
+        assert "consumer can actually load and exercise the chosen form" in rendered
     finally:
         forget(ctx, agent.name)
 
@@ -194,12 +205,13 @@ def test_the_conventions_support_bounded_verified_improvements():
 @pytest.mark.parametrize("scenario_name", ["arkbound_game", "commonspace_forum", "lumen_museum", "orbital_simulator"])
 def test_demo_requires_experiment_but_keeps_product_brief_independent(scenario_name):
     from examples.run_website_evolution_demo import build_task_text
+    from agentevolver.task.context import parse_manifest
 
     scenario = ROOT / "examples/tasks/website_evolution" / scenario_name
     task = build_task_text(scenario / "scenario.html")
-    assert "After the first browser experience pass, invoke self_evolving_skill" in task
-    assert "independent reuse/regression case" in task
-    assert "A rejected experiment is a trigger exercised" in task
+    assert parse_manifest(task)[2]["evolution"]["require_verified_improvement"] is True
+    assert "self_evolving_skill" not in task
+    assert "record_use" not in task
     assert "self_evolving_skill" not in (scenario / "scenario.html").read_text()
     for forbidden in ("generate_agent", "optimize_agent",
                       "target_type", "minimum_kept_evolutions", "must evolve"):

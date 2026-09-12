@@ -678,16 +678,24 @@ def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
     ]
 
 
-def test_website_demo_model_roster_matches_launcher_and_vision_catalog():
+def test_website_demo_model_roster_matches_agent_defaults_and_vision_catalog():
     from mmengine import Config
     from agentevolver.model.config import llm_hub_models
-    from examples.run_website_evolution_demo import DEFAULT_BUILDER_MODEL
 
     cfg = Config.fromfile(str(Path(__file__).resolve().parents[1] / "configs/website_evolution_demo.py"))
-    assert cfg.website_builder_agent.model_name == DEFAULT_BUILDER_MODEL
+    default = "llm_hub/gpt-6-astra"
+    agent_cfg = Config.fromfile(str(Path(__file__).resolve().parents[1] / "configs/agents/website_builder_agent.py"))
+    assert cfg.website_builder_agent.model_name == agent_cfg.website_builder_agent.model_name == default
+    assert cfg.model_name == default
+    assert set(cfg.model_roles.values()) == {default}
+    builder = WebsiteBuilderAgent(**cfg.website_builder_agent)
+    assert builder.use_plan and builder.compact_strategy == "text"
+    assert builder.compact_input_tokens == 100_000
+    assert builder.max_step == 10_000 and builder.max_token == 1_000_000_000
+    assert cfg.browser_environment.use_som is False
     catalog = llm_hub_models(max_tokens=1, default_temperature=0.0, default_timeout=1.0)
     specs = {entry["model_name"]: entry for group in catalog.values() for entry in group}
-    assert specs[DEFAULT_BUILDER_MODEL].get("supports_vision", True)
+    assert specs[default].get("supports_vision", True)
     assert "browser_agent" not in cfg.agent_names and "website_user_agent" not in cfg.agent_names
 
 
@@ -737,7 +745,7 @@ def test_website_task_manifest_has_no_participants(tmp_path):
 
 @pytest.mark.parametrize("scenario_name", ["arkbound_game", "commonspace_forum", "lumen_museum", "orbital_simulator"])
 def test_scenario_brief_reaches_builder_without_private_personas(scenario_name):
-    from agentevolver.task.context import load_task_document
+    from agentevolver.task.context import load_task_document, parse_manifest
     from examples.run_website_evolution_demo import SCENARIO_ROOT, build_task_text, parse_args, resolve_inputs
 
     scenario = SCENARIO_ROOT / scenario_name
@@ -746,9 +754,14 @@ def test_scenario_brief_reaches_builder_without_private_personas(scenario_name):
     assert not list(scenario.glob("persona_*.html"))
     task = build_task_text(brief)
     assert task.startswith(load_task_document(str(brief)).content)
-    assert "You are the only agent" in task
-    assert "observation_evidence_ids" in task
-    assert "actual consumer use (or blocker)" in task
+    # The launcher carries the product document and experiment settings, not a
+    # second set of behavioral instructions masquerading as user requirements.
+    product, explanation, manifest = parse_manifest(task)
+    assert product.strip() == load_task_document(str(brief)).content.strip()
+    assert explanation.strip() == "Experiment configuration; agent behavior follows its system prompt and skills."
+    assert manifest["evolution"]["require_verified_improvement"] is True
+    assert "observation_evidence_ids" not in task
+    assert "record_use" not in task
 
 
 def test_website_prompts_do_not_encode_one_demo_protocol():

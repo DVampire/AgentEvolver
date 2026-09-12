@@ -1,7 +1,7 @@
 ---
 name: frontend_ui_engineering_skill
 description: "Builds production-quality UIs. Use when building or modifying user-facing interfaces. Use when creating components, implementing layouts, managing state, or when the output needs to look and feel production-quality rather than AI-generated."
-version: 1.1.0
+version: 1.2.0
 type: worker
 license: N/A
 category: web
@@ -15,6 +15,10 @@ metadata: {}
 Build an accessible, responsive, polished interface for the actual users and content.
 Follow the project's instructions, stack and design system. Use mounted framework tools;
 do not introduce a framework or dependency merely because an example uses it.
+
+For multi-step product work with planning enabled, first read
+[the website planning guide](references/planning.md). Use the session's shared
+index.md/plan.md paths; choose additional records to fit the work.
 
 ## Design and implementation
 
@@ -50,6 +54,28 @@ independent acceptance route. Check the primary action, keyboard/focus behavior,
 persistence, responsive layout, console/runtime errors and loading/error/empty states.
 Use accessibility tools when available, but do not treat automated results as full usability
 proof. Run code/build checks relevant to the change and report skipped or unavailable checks.
+
+## Visual self-review and improvement
+
+Choose a coherent art direction before styling: audience and mood, typography, palette,
+composition, imagery/graphics and motion. Implement that direction in the actual content
+and primary interaction, not only a landing page. Use licensed assets or original graphics
+when useful; downloading assets or counting decorative elements is not an aesthetic result.
+
+During each product iteration, view real browser screenshots of the discovery view, a
+content detail and the primary action/result. Include a narrow-screen reading/composition
+path. Name the most consequential visible weakness and explain a concrete alternative:
+for example, clearer editorial hierarchy, less repetitive cards, more expressive yet legible
+type, better imagery/cropping, balanced density or more coherent reply/composer states.
+Prioritize that implementation batch over unrelated feature expansion or repeated reports.
+
+After the change, compare the same content, viewport and interaction state, then replay
+the affected journey. Record what visibly improved, what regressed and the next needed
+change. Preserve primary actions, keyboard access, reading comfort and user data. A palette
+swap, screenshot count, HTTP 200 or a contrast/geometry metric alone cannot establish beauty.
+Use diagnostic helpers to explain a defect; judge the actual rendered result yourself.
+Keep unresolved visual work pending and label this as self-review, not user endorsement.
+Respect explicit limits on browser execution and report unobserved design as unverified.
 
 ## Read on demand
 

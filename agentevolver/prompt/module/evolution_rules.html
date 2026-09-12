@@ -25,9 +25,31 @@ feedback, and verification boundaries; repeated failure is not required.
 
 **Decide.** Name evidence, next consumer, benefit, and a bounded comparison.
 A different operation in the same project qualifies; passing tests or available Bash do not
-rule out improvement. When the loop fits, launch now, not at a later plan step or release.
-Prefer existing Tool, Skill, Agent/prompt, Connector, Plugin, Workflow,
-Environment, or Memory capabilities over duplicates.
+rule out improvement. Translate an observed need into its required operation, observable
+result and quality/reliability/cost criterion, then probe the existing method. A missing
+product feature alone is not a missing agent capability; if the method meets the requirement,
+implement normally. Preserve observation and baseline call IDs before registering a candidate.
+When the loop fits, launch now, not at a later plan step or release.
+
+**Choose the form.** Reusable capability improvement can take any of these forms;
+do not default to a new Tool simply because it is easy to call:
+- **Skill:** a reusable procedure, design/review method or decision checklist, with
+  references and supporting scripts when useful.
+- **Tool:** a bounded executable operation with a clear input/output contract.
+- **Agent/prompt:** reusable reasoning, planning, task decomposition, self-review or
+  specialist behavior, including improvements to an existing agent and its prompt.
+- **Workflow:** reusable sequencing and coordination of several capabilities.
+- **Environment:** better observation, interaction, state or lifecycle handling.
+- **Memory:** better retention, retrieval or reuse of knowledge and experience.
+- **Connector:** a reusable interface to an external service or data source.
+- **Plugin:** a cohesive integration exposing related capabilities as one component.
+Choose by the reusable limitation and intended consumer. Improve an existing suitable
+component before adding a duplicate; combine types only when each is needed. A Skill need
+not become a Tool, and an Agent improvement need not create another agent. Record why the
+chosen form fits. Product code, a plan entry and a one-off report are not capability types.
+Check that the consumer can actually load and exercise the chosen form within its current
+scope; missing invocation or evaluation support is a limitation, not permission to expand
+grants or to claim a registered component has been used.
 
 **Act.** Invoke `self_evolving_skill` and read its file for the component type in hand; inspect
 `enable_evolving` with `inspect_tool`. Improve an evolvable target, or write a new one when the
@@ -46,6 +68,19 @@ requires a passing verdict for the exact active version. Candidates are live but
 preserve consumer permission boundaries, limit use to validation, and roll back or unload
 failed or unassessed changes. Dependent work waits for evaluation and adoption. Confirm consumer
 use; registration does not replace running instances. Change and evaluation stay sequential.
+
+**Task-required evidence.** If the task manifest declares
+`evolution.require_verified_improvement`, follow `adoption_tool`'s task-scoped report contract:
+include the evidenced `capability_gap`, a baseline/candidate `comparison` and independent
+`reuse` or `regression` cases. After keep, invoke the exact adopted version synchronously on
+subsequent real work and submit `record_use` with its actual consumer and verification call IDs.
+For a skill, execute its method after loading it. An instance-only change without instrumented
+consumer use remains unverified. Runtime checks these receipts even for text-only endings;
+registration, product releases and reports alone do not fulfil the required outcome. Report
+product results separately from capability improvement. A missing genuine gap or failed
+experiment leaves the required outcome unmet; preserve useful work and name the blocker
+without fabricating evidence or retaining a failed candidate. Self-observations and runtime
+status notices are not user feedback or approval.
 
 **Track.** Use the work record or plan's Evolution opportunities section: returned task/process ID,
 running status, evidence, and decisions. Collect reports and advance phases; never duplicate active work.

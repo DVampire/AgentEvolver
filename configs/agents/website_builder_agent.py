@@ -7,7 +7,7 @@ website_builder_agent = dict(
         "An evolvable website product engineer that designs, implements, tests, deploys, "
         "and improves web products from task-defined requirements."
     ),
-    model_name="llm_hub/claude-opus-5",
+    model_name="llm_hub/gpt-6-astra",
     prompt_name="website_builder_agent",
     memory_name="file_system_memory",
     max_step=10_000,
@@ -18,4 +18,5 @@ website_builder_agent = dict(
     timeout=14400,
     enable_evolving=True,
     use_memory=True,
+    use_plan=True,
 )

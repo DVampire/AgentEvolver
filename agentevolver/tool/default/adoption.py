@@ -82,7 +82,7 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
   For tasks declaring `evolution.require_verified_improvement`, the preceding evaluation
   also needs `capability_gap`: `user_need`, `required_operation`, `limitation`,
   `acceptance_criterion`, `observation_evidence_ids`, `baseline_evidence_ids`. Cite actual
-  browser experience or feedback collection and a baseline probe made before registration.
+  environment interaction or feedback collection and a baseline probe made before registration.
   Tag evaluation cases
   with `kind: comparison` and `kind: reuse` or `regression`, using independent executed
   evidence. These task requirements do not apply to ordinary adoption decisions.

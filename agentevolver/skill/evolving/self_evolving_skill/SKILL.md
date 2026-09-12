@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
 description: Turn a concrete reusable improvement opportunity into a small verified framework capability change. Use for learning from self-verification, a first correction or success, expected reuse, a better quality/cost/reliability method even when the task already works, a missing capability, or an explicit component request. Repeated failure is not required. Covers inspect → generate/optimize → evaluate → keep/rollback/unload across all eight component types. NOT for ordinary edits to the user's deliverable.
-version: 2.5.1
+version: 2.5.2
 license: N/A
 type: [orchestrator]
 category: meta
@@ -52,6 +52,12 @@ itself.
 Eight types: `tool`, `skill`, `agent` (including its prompt), `connector`, `environment`,
 `memory`, `workflow`, `plugin`. Choose the family and component name for inspection, authoring and registration;
 these are `capability_type`/`name` for inspect and `module`/`name` for adoption.
+Use the shared rules' **Choose the form** guidance to select the smallest useful target.
+Skills, tools and agent/prompt changes are all valid outcomes; executable tools are not
+the default. An existing component can be improved without creating another component.
+Read only the selected type's reference for its artifact, registration and evaluation
+contract. Verify that the current consumer scope can exercise it before implementation;
+registration alone neither changes running instances nor grants missing capabilities.
 
 ## Prepare an opportunity
 
