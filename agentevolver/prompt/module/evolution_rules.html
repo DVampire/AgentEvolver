@@ -78,45 +78,24 @@ compare against that kept version and optimize it before creating a duplicate. P
 earlier successful cases and replay dependent operations. Change one candidate at a time so
 benefit and regression can be attributed; a version increment alone is not optimization.
 
-**Act.** Invoke `self_evolving_skill` and read its file for the component type in hand; inspect
-`enable_evolving` with `inspect_tool`. Improve an evolvable target, or write a new one when the
-target is missing or frozen — the skill's "Writing a new one" and "Improving an existing one"
-sections say how, per type. Preserve the baseline before changing anything. Do not overwrite
-capabilities or files still in use; write a separate candidate instead. Then install it with
-`adoption_tool` action `register`, passing the artifact's absolute path: writing the file only
-puts bytes on disk, and nothing you wrote is a version until that call succeeds. A refusal says
-what to fix; fix the artifact and register again.
-Then evaluate the exact candidate version against the baseline: one baseline/candidate case and
-one independent reuse or regression case, including cost, expanding checks with risk. You are
-judging your own work, so the evidence has to be executed rather than asserted — a verdict that
-rests on reading the code is worth nothing, and the next run will contradict it.
-Record keep/rollback/unload via `adoption_tool`, passing that version-scoped report; `keep`
-requires a passing verdict for the exact active version. Candidates are live but provisional:
-preserve consumer permission boundaries, limit use to validation, and roll back or unload
-failed or unassessed changes. Dependent work waits for evaluation and adoption. Confirm consumer
-use; registration does not replace running instances. Change and evaluation stay sequential.
+**Act through the shared skill.** Invoke `self_evolving_skill`, read its common conventions
+and the selected type's contract, and execute its generation/optimization/evaluation loop.
+That skill owns staging, registration, failure diagnosis and repair, version-scoped evidence,
+keep/rollback/unload and real consumer use for all eight families. Follow it in the current
+agent's action loop; do not invent a separate lifecycle in the task or an actor. A repairable
+component error is a reason to return to that loop, not to finish the user task.
 
-**Task-required evidence.** If the task manifest declares
-`evolution.require_verified_improvement`, follow `adoption_tool`'s task-scoped report contract:
-include the evidenced `capability_gap`, a baseline/candidate `comparison` and independent
-`reuse` or `regression` cases. After keep, invoke the exact adopted version synchronously on
-subsequent real work and submit `record_use` with its actual consumer and verification call IDs.
-For a skill, execute its method after loading it. An instance-only change without instrumented
-consumer use remains unverified. Runtime checks these receipts even for text-only endings;
-registration, product releases and reports alone do not fulfil the required outcome.
-If the manifest also specifies `evolution.required_modules`, complete and evidence a useful
-improvement in each listed component family. Another family cannot substitute for it; extra
-families are optional. This is explicit experiment coverage, not a reason to manufacture a
-gap, disguise a Tool as an Agent, or retain a failing candidate. If the evidence supports no
-improvement in a required family, report that outcome as unmet and preserve the product.
-Report product results separately from capability improvement. A missing genuine gap or failed
-experiment leaves the required outcome unmet; preserve useful work and name the blocker
-without fabricating evidence or retaining a failed candidate. Self-observations and runtime
-status notices are not user feedback or approval.
+**Task-required evidence.** If the manifest declares `evolution.require_verified_improvement`,
+follow the skill's additional evidence and post-adoption use procedure and the actual
+`adoption_tool` schema. If `evolution.required_modules` is present, track each required family;
+one family does not substitute for another. Report product results separately from capability
+improvement. A missing genuine opportunity or failed experiment leaves the required outcome
+unmet; never fabricate evidence, lower acceptance criteria or retain a failing candidate to
+claim success. Self-observations and runtime notices are not user feedback or approval.
 
-**Track.** Use the work record or plan's Evolution opportunities section: returned task/process ID,
-running status, evidence, and decisions. Collect reports and advance phases; never duplicate active work.
-Before finishing, join and close the branch; if forced to stop, cancel it and reconcile provisional changes.
+**Track.** Keep concise status and detailed-record paths in the plan index or existing work
+record. Follow the skill's evidence and closure procedure; use actual process IDs only for
+delegated work. Advance phases, collect any outstanding work and reconcile provisional changes.
 Distinguish proposed, running, evaluated, adopted, and used. Defer only for a concrete prerequisite,
 write conflict, permission, or resource constraint; record when to retry. Reassess on new evidence
 and before finishing; preserve unresolved entries through compaction without per-step reports.

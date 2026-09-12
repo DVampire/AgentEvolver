@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
 description: "Run a solo two-stage stock research project: auditable data acquisition, causal factor discovery, strategy experiments and interactive evidence reports."
-version: "1.0.1"
+version: "1.0.3"
 type: worker
 category: finance
 requirements: [cpu]
@@ -34,8 +34,12 @@ shared index concise; retain detailed evidence as files and read it on demand.
    that name. Repository implementations can inform a baseline, but read their source with
    Bash at observed paths rather than passing file/class names to inspect_tool.
 2. Establish data feasibility with a training-period query. Fix the provider/feed, calendar,
-   adjustment policy, dates and data fingerprints in the research contract. Stop honestly
-   if credentials or coverage cannot satisfy it; do not substitute synthetic performance.
+   adjustment policy, dates and data fingerprints in the research contract. If access or
+   coverage fails, follow the recovery workflow in the sources reference before spending
+   on downstream trials or reports. Keep real research pending; fixtures cannot replace it.
+   Provider choice is open: a missing commercial API key is a reason to check suitable public
+   access, not to declare the whole study impossible. Use self_evolving_skill for component
+   generation, repair and versioned verification.
 3. Establish the frozen protocol and an append-only experiment ledger. Build deterministic
    small fixtures with hand-computed outcomes before researching real performance. These
    check engineering correctness, not the existence of profitable signals.
@@ -75,11 +79,17 @@ repeated research exposes a reusable limitation; do not generate entities just t
 Runtime receipts verify provenance and lifecycle, not financial correctness. The same
 agent authors and evaluates this work. Report the limits of that evidence and the exact
 test access controls. Never label a protocol-only holdout as an isolated evaluator.
+Verify the engines' successful numerical paths through their research interfaces as well as
+their rejection paths. A failure-reporting wrapper or fixture-only calculator leaves the
+market-research capability incomplete; see the sources reference for readiness checks.
 
 ## Stop conditions
 
 Successful research requires the task's real-data final-test criteria and all requested
-deliverables. Budget exhaustion, no validation progress, unavailable data, a defective
-engine, insufficient observations and a failed final test each require an explicit
-non-success outcome. Preserve detailed reasons and a reproduction/resume path. Never
+deliverables. Budget exhaustion, exhausted validation search, unresolved external access,
+insufficient observations and a failed final test require an explicit non-success outcome.
+Repair engine defects and implement missing operations while useful work and budget remain;
+discovering an unfinished function is not itself a stop condition.
+Preserve detailed reasons and a reproduction/resume path. Never
 relax criteria, hide unsuccessful trials or purchase data to manufacture a passing run.
+Missing connector or engine code is work to implement, not an external-access blocker.

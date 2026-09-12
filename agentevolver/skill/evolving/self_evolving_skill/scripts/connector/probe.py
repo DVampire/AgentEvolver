@@ -60,6 +60,8 @@ class MCPConnection(ABC):
                 "name": tool.name,
                 "description": tool.description,
                 "input_schema": tool.inputSchema,
+                "annotations": tool.annotations.model_dump(exclude_none=True)
+                if tool.annotations is not None else {},
             }
             for tool in response.tools
         ]
@@ -149,3 +151,43 @@ def create_connection(
 
     else:
         raise ValueError(f"Unsupported transport type: {transport}. Use 'stdio', 'sse', or 'http'")
+
+
+def main():
+    """List a server's actual tools using the documented command-line interface."""
+    import argparse
+    import asyncio
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("transport", choices=["stdio", "sse", "http", "streamable_http", "streamable-http"])
+    parser.add_argument("endpoint", help="Server URL, or the stdio executable")
+    parser.add_argument("server_args", nargs=argparse.REMAINDER, help="Arguments to the stdio executable")
+    args = parser.parse_args()
+    if args.timeout <= 0:
+        parser.error("--timeout must be positive")
+    if args.transport != "stdio" and args.server_args:
+        parser.error("server arguments apply only to stdio")
+
+    async def inspect():
+        connection = create_connection(
+            args.transport,
+            **({"command": args.endpoint, "args": args.server_args}
+               if args.transport == "stdio" else {"url": args.endpoint}),
+        )
+        async with connection:
+            return await connection.list_tools()
+
+    try:
+        tools = asyncio.run(asyncio.wait_for(inspect(), timeout=args.timeout))
+    except Exception as error:
+        print(f"MCP discovery failed: {type(error).__name__}: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps({"tools": tools}, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

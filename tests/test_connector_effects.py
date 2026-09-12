@@ -60,6 +60,44 @@ def test_frontmatter_effect_annotations_are_normalized(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("read_only", [True, False])
+async def test_live_sdk_annotations_control_read_only_calls(tmp_path, monkeypatch, read_only):
+    from langchain_mcp_adapters.tools import convert_mcp_tool_to_langchain_tool
+    from mcp.types import Tool, ToolAnnotations
+
+    tool = convert_mcp_tool_to_langchain_tool(
+        session=SimpleNamespace(),
+        tool=Tool(
+            name="lookup", description="Inspect a source",
+            inputSchema={"type": "object", "properties": {}},
+            annotations=ToolAnnotations(readOnlyHint=read_only, destructiveHint=False),
+        ),
+    )
+    manager = _manager(tmp_path)
+    config = ConnectorConfig(name="records", version="1", permission_mode="read_only")
+    manager._absorb_contract(config, [tool])
+    manager._connector_configs["records"] = config
+    called = []
+
+    async def invoke(config, action, args):
+        called.append(action)
+        return Response(type=ResponseType.CONNECTOR, success=True, message="source inspected")
+
+    monkeypatch.setattr(manager, "_invoke_mcp", invoke)
+    result = await manager(name="records", action="lookup", input={})
+
+    assert result.success is read_only
+    assert called == (["lookup"] if read_only else [])
+    assert config.action_annotations["lookup"]["readOnlyHint"] is read_only
+
+
+def test_provider_meta_is_not_an_effect_declaration(tmp_path):
+    tool = SimpleNamespace(name="lookup", metadata={"_meta": {"readOnlyHint": True}})
+    _, _, _, annotations = _manager(tmp_path)._contract_from_tools([tool])
+    assert annotations == {}
+
+
+@pytest.mark.asyncio
 async def test_read_only_mcp_action_runs_without_approval(tmp_path, monkeypatch):
     manager = _manager(tmp_path)
     manager._connector_configs["records"] = ConnectorConfig(

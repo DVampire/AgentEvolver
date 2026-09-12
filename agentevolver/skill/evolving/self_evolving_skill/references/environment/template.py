@@ -2,7 +2,7 @@
 
 Copy to `{extension_root}/environment/{name}/environment.py`, rename the class, and
 implement the actions. Pair it with an `ENVIRONMENT.md` manifest (see
-`environment_md_template.md`) in the same directory, plus an `__init__.py` that
+`template-manifest.md`) in the same directory, plus an `__init__.py` that
 imports the class so it registers on load.
 
 Key points:
@@ -53,10 +53,15 @@ class MyEnvironment(Environment):
         self._state.clear()
         logger.info(f"| 🧹 {self.name} cleaned up")
 
+    async def get_state(self, ctx=None, **kwargs) -> Dict[str, Any]:
+        """Return compact current state for the environment context."""
+        return {"success": True, "state": {"keys": sorted(self._state)}}
+
     # ---------------------------------------------------------------- actions
     @environment_manager.action(
         name="set_value",
         description="Store a value under a key. Args: key (str), value (str).",
+        read_only=False, destructive=False, idempotent=True, open_world=False,
     )
     async def set_value(self, key: str, value: str, **kwargs) -> Dict[str, Any]:
         self._state[key] = value
@@ -65,6 +70,7 @@ class MyEnvironment(Environment):
     @environment_manager.action(
         name="get_value",
         description="Read the value stored under a key. Args: key (str).",
+        read_only=True, destructive=False, idempotent=True, open_world=False,
     )
     async def get_value(self, key: str, **kwargs) -> Dict[str, Any]:
         value = self._state.get(key)

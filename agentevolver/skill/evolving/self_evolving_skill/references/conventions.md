@@ -1,157 +1,179 @@
-# Conventions
+# Shared authoring, repair and evaluation conventions
 
-What holds across all eight component types, per operation. A type's own file — `<type>/<type>.md`
-— says what that component *is* and what its contract requires; this says how the work is done
-whatever the type turns out to be.
+This is the operational reference for the loop in [SKILL.md](../SKILL.md). It applies to
+`tool`, `skill`, `agent` (including its prompt), `connector`, `environment`, `memory`,
+`workflow` and `plugin`. Type references supply artifact contracts and specific checks.
+No family has a separate generation, optimization, evaluation or failure-completion policy.
 
-## Writing a new one
+## Author and register
 
-**Where things go.** Write to `{extension_root}/{target_type}/`, and nowhere else. That is this
-session's staging tree; a component is promoted to the shared extension root only after
-validation and explicit approval. Mounted framework source and the shared library are writable;
-keep generated candidates in staging so their evaluation and adoption remain recorded. Temporary verification scripts
-go in `{workspace_root}` — never the project root.
+Use the actual paths supplied in the current context. Write candidates under the session's
+`{extension_root}/{type}/` staging tree, with supporting artifacts in the locations required
+by the type. Do not overwrite package source, a shared installed component or a candidate
+still being consumed. Temporary checks and fixtures belong in the authorized workspace.
 
-**How registration happens.** You never edit an `__init__.py`, never touch a registry, and never
-restart anything. Call `adoption_tool` with `action="register"`, the component's `module` and
-`name`, and its **absolute path** as `artifact_path`; that promotes it out of staging and
-registers it. Nothing you wrote is a version until this call succeeds — the file is bytes on
-disk, `inspect_tool` still reports it unregistered, and a decision recorded against it is
-refused. A refusal names what to fix; fix the artifact and register again.
+Inspect before writing: read the target's source, related files, current version and
+`enable_evolving`. Missing means generate; frozen means create an alternative under a new
+name when needed; evolvable means optimize the existing name. Preserve the prior good version
+and baseline evidence before installing a candidate. Read exact source context, keep
+unrelated edits intact and use the mounted editing tools for the smallest correct change.
 
-Registration used to ride on `done_tool.reasoning`, because installing was the last act of a
-worker whose whole run was the evolution. You do this work yourself now, mid-run, and the
-install is a call you make when the artifact is ready.
+Preserve input/output compatibility. If a correction requires a contract change, document
+the change and update authorized consumers or introduce a compatible alternative. Keep
+manifests, schemas, documentation and implementation consistent. Declare real side effects;
+an HTTP GET that writes an artifact is not a read-only operation. Do not broaden permissions
+or falsify effects to make a denied operation pass.
 
-**Verify before you finish.** Every type has a check, named in its file: Python compiles
-(`python -m py_compile /abs/path.py && echo "syntax OK"`), a manifest directory has its manifest
-where the loader expects it, a workflow compiles. Then exercise what you built at least once — a
-component that has never been run is a guess.
+Perform the type's pre-registration checks: syntax, manifest parsing, dependency imports,
+default/intended construction or workflow compilation as applicable. Check the real success
+and failure path where feasible. A compile pass does not prove initialization or execution.
 
-**Name it once.** Check the name is not already taken (`inspect_tool`) before writing.
-A second component under an existing name is refused at registration if the first is frozen, and
-silently replaces it if not.
+Register with `adoption_tool` using `action="register"`, `module`, `name` and the absolute
+`artifact_path` specified by the type reference. Use the existing session authorization and
+runtime permission policy; this skill adds no separate approval ceremony. Do not edit
+framework registries/imports or restart the agent to install a candidate. Component-local
+imports such as `__init__.py` are valid when required by its loader.
 
-## Changing an existing one
+Writing bytes does not create a version. On success, preserve the reply's candidate version,
+active version, artifact path and rollout status. Managers may assign versions; never guess
+a bump or re-register unchanged code to repair a report. An active candidate is live but
+provisional. Under shadow/canary rollout, ordinary calls may use the baseline; use supported
+candidate execution and verify attribution. If it is unavailable, the candidate remains
+unverified. Registration does not migrate a running instance or grant consumer capabilities.
 
-**Check the gate first.** `inspect_tool` with the target's type gives its source path
-and `enable_evolving`. **Frozen means stop**: a frozen component cannot be optimized — the write is
-refused at registration. Report that it is frozen and say a new component in `extension/` is the
-way, rather than trying and failing.
+## Diagnose and recover in the same agent loop
 
-**Read before you write.** Read the current source; never assume its contents. If related files
-are listed, read those too — they may hold dependencies or tests your change affects.
+Read the actual failed call, schema and source before choosing a fix. Record the cause and
+the next changed action; the same failing call without new evidence is not a repair attempt.
 
-**The smallest correct change.** Do the thing the task asks and nothing else; do not refactor
-around it. Use the tools actually mounted for this run: `apply_patch_tool` for targeted
-patches or `bash_tool` for scoped edits when available and authorized. Inspect exact source
-context, keep unrelated changes intact, and overwrite only when a rewrite is genuinely
-necessary. Do not request an unmounted file tool just to follow an editing example.
+| Observation | Next action |
+|---|---|
+| Bad arguments or a wrong path | Inspect the exposed schema and actual filesystem; correct the call. Change the component only if its interface/docs are defective. |
+| Registration rejects syntax, imports, construction or a manifest | Repair the staged artifact or its declared dependencies, repeat the relevant check and register again. A rejected attempt has no version to adopt. |
+| Discovery or invocation fails in authored code | Inspect the underlying error and implementation, preserve the failed version's evidence, repair in staging and register/evaluate the changed version. Local MCP server code follows this path too. |
+| Permission/effect mismatch | Check actual effects and allowed paths. Correct inaccurate declarations or target paths within existing authorization; do not relabel writes as reads. A real missing grant remains a prerequisite. |
+| Runtime reports success but the result is wrong or incomplete | Treat the behavior as a failed case; fix the implementation and ensure real execution failures reach the caller through that type's failure contract. A report describing an error is not a successful required operation. |
+| Evaluation reveals a regression or no claimed benefit | Record the failed comparison, restore the prior good version or unload a new candidate, then revise using the evidence if the opportunity still warrants it. |
+| Evidence/report submission is rejected | Read the validator's reason, correct the report or collect missing evidence for the same version. Do not edit or re-register working code solely to fix call IDs. |
+| External access, credentials or a service is unavailable | Distinguish that source's constraint from general infeasibility. Probe permitted alternatives with a bounded effort and continue useful independent work. Preserve a real unresolved prerequisite if none works. |
 
-**Preserve the contract.** What the contract is, the type's file says — a tool's `__call__`
-signature and `Response`, a skill's frontmatter, a plugin's tool ids, a workflow's declared
-inputs. Change it only when the task explicitly asks, because everything already pointing at it
-breaks silently.
+Record a failed registered candidate before rollback/unload when possible; cleanup should
+not be abandoned because receipt submission itself failed. A decision does not execute
+rollback/unload: call the operation and inspect the resulting active state. Do not consume
+a known failed candidate as though it were kept. Preserve old evidence, source lineage and
+the original requirement; each repaired version needs its own checks.
 
-**Write to the staging tree.** The improved version goes under `{extension_root}/{target_type}/`,
-never over a file in `{package_root}`.
+Retry the original failed native operation after repair, plus a different regression case.
+Missing code or a fixable local server is implementation work, not a requirement that the
+user supply an external MCP endpoint. If the defect belongs to a frozen framework component,
+do not overwrite it; investigate an authorized alternative and document the precise blocker
+if none is feasible. Stop identical retries or an unproductive experiment, not all useful
+task work. Never call `done_tool` merely because one component failed.
 
-**Verify, then register.** Run the type's check after every edit, then any available test or a
-quick functional call. Then call `adoption_tool` with `action="register"` and the changed
-component's **absolute path** — that is how the new version gets registered.
+## Evaluate behavior, with fixed candidate source
 
-## Judging one
+Freeze the candidate source and comparison inputs while evaluating a version. Evaluation
+is immutable evidence, not a read-only mode for the entire agent. Exercise authorized writes
+in isolated files, state or service sandboxes, verify reset/cleanup and keep unrelated work
+intact. A failing check returns to authoring a new candidate; do not patch the evaluated
+source in place or relabel its failed evidence as passing.
 
-### Evaluating changes nothing
+Exercise the registered component through the framework and verify the actual version.
+Supporting scripts may construct fixtures, calculate reference outputs or check artifacts.
+Their success alone does not prove that the native Tool, Connector, Environment, Agent,
+Memory, Workflow or Plugin consumer works. A Skill must be invoked and its method executed;
+loading instructions is not outcome evidence.
 
-You never edit the thing you are judging — a grader with write access can resolve a bad grade by
-editing what it graded, so this run is read-only. The one exception is recording your own verdict
-through `adoption_tool`.
+Use a representative baseline/candidate comparison and an independent reuse or regression
+case for a small change. Expand for affected operations, state transitions, permissions,
+recovery and downstream consumers when the change is broader. Keep inputs, model, capabilities
+and budgets comparable. For nondeterministic claims, use proportionate repeated observations
+and report uncertainty. Preserve earlier successful cases during optimization.
 
-**Read the exact candidate version once**, then record the version and source path in the
-existing work record. Reuse source reads and scores only for that version in this evaluation;
-if the target changes, inspect and evaluate the new version rather than recycling old evidence.
+The current agent can run deterministic comparisons and judge concrete outputs. When the
+claim depends on fresh model behavior, use an available authorized consumer with equivalent
+contexts and no leaked candidate answer. Do not require MetaAgent or `general_agent` to exist,
+or pretend a continuing conversation has forgotten a skill. If necessary execution is
+unavailable, record the limitation as inconclusive rather than passing from source review.
 
-**Then exercise it.** The evidence is what you observed, not what you expect from reading. How to
-exercise each type is in its file; in general, call a tool directly, invoke a skill and apply
-its method to a representative case, dispatch an agent on a small task, or make an authorized
-read-only call against a connector or environment. Reading instructions alone does not prove
-that a skill improves outcomes. If necessary execution or isolation is unavailable, report
-inconclusive rather than bypassing permissions.
+Evaluate the original required successful operation on valid inputs, not only graceful
+rejection of missing inputs. Mark an expected negative case as passing only if its observed
+behavior matches the expectation; it cannot substitute for positive coverage. Disclose
+tested scope and untested limits. A verified narrower improvement leaves the broader gap
+open until it is actually resolved.
 
-**Match verification to the change.** For a small method change, compare one representative
-baseline/candidate case and one independent reuse or regression case. The baseline may already
-work: test the claimed improvement, not just whether a defect disappears. Expand coverage for
-broader, stateful, permission-sensitive or externally mutating changes to the affected operations,
-isolation, recovery and relevant regressions. Never omit required safety checks. State the tested
-scope and untested limits; sampled success does not establish that every operation works.
+Use correctness, robustness, interface compliance, maintainability and performance as review
+lenses. Numerical scores are optional; they do not replace acceptance checks. Report measured
+latency, calls/tokens or other relevant cost when claiming savings, separating observations
+from estimates. Source review can identify risk but cannot measure performance or prove use.
 
-**No standalone scripts.** Do not write an eval script for `bash_tool` or `code_interpreter_tool`
-— those run in a fresh process where the target is not registered, so the run proves nothing.
-Exercise the component through the framework.
+## Record a decision for the evaluated version
 
-### Recording the verdict
+Call `adoption_tool action="record_decision"` with `report`, `decision` (`keep`, `rollback`
+or `unload`) and `evidence` explaining the need, comparison, benefit and remaining limits.
+The tool's schema is authoritative. The report has this shape (replace placeholders with
+observed values):
 
-Scoring is not the last step: an evaluation nobody recorded cannot be adopted. Pass the
-judgment to `adoption_tool` as `report`, alongside `decision` and `evidence`. It is validated
-on arrival, so it has to be the real shape:
-
-```
-report = {
-  "module":  one of tool | skill | agent | connector | environment | memory | workflow | plugin,
-  "name":    the component's registered name,
-  "version": the exact version you evaluated — `adoption_tool` action `register` replies with
-             it, and `inspect_tool` reports it; never invent it, and never assume registering
-             again bumped it,
-  "verdict": "pass" | "fail" | "inconclusive",
-  "baseline": what you compared against, in words,
+```json
+{
+  "module": "tool",
+  "name": "example_tool",
+  "version": "<exact returned candidate version>",
+  "verdict": "pass",
+  "baseline": "<prior version or existing method and its observed result>",
   "cases": [
-    {"case_id": "unique-within-this-report",
-     "expected": "what should happen",
-     "observed": "what did happen",
-     "passed": true,
-     "evidence_ids": ["toolu_… — the tool_call_id of a call you made, copied verbatim"]},
-    ...
-  ],
+    {
+      "case_id": "comparison-1",
+      "kind": "comparison",
+      "expected": "<required operation and acceptance criterion>",
+      "observed": "<actual baseline and candidate results>",
+      "passed": true,
+      "evidence_ids": ["<actual tool_call_id>"]
+    },
+    {
+      "case_id": "reuse-1",
+      "kind": "reuse",
+      "expected": "<criterion on a different input or operation>",
+      "observed": "<actual independent result>",
+      "passed": true,
+      "evidence_ids": ["<actual different tool_call_id>"]
+    }
+  ]
 }
 ```
 
-Four rules the validator enforces, each of which rejects the whole record rather than
-degrading it:
+- `module` names one of the eight families; an agent's prompt is supporting Agent content.
+- The version must exist in the archive. `keep` requires a passing verdict for the exact
+  active version; never credit a baseline call to a shadow candidate.
+- Each case needs a unique `case_id`, `expected`, `observed`, boolean `passed` and nonempty
+  `evidence_ids`. Failed and inconclusive evaluations use real observed calls too.
+- An evidence ID is a `tool_call_id` copied from this run, not a tool name, file path,
+  invented label or worker's private call ID. For delegated work, cite the observed call
+  that returned the evidence and retain its underlying report. Record decisions promptly
+  while the relevant calls are available.
+- `pass` requires executed passing cases and the claimed benefit. Record failure or missing
+  evidence honestly; no aggregate score can cancel a required failing case.
 
-- `case_id` must be unique inside the report.
-- `evidence_ids` must be non-empty for every case, and each one must be the `tool_call_id`
-  of a call this run actually made — copy it from the conversation. A tool's *name*, or a
-  label you compose (`case-1`, `eval:ACC1`), is checked against the calls on record and
-  rejected. A case with no evidence is an assertion.
-- **`verdict: "pass"` requires at least one case and every case passing.** A pass with no
-  executed cases is refused — this is where a verdict argued from reading the source dies.
-- The `version` must already be archived, and `decision: "keep"` additionally requires that
-  it is the manifest's *active* version. Evaluate the candidate you actually installed.
+For non-kept provisional changes, perform the recorded rollback/unload and verify the result.
+For a kept version, invoke it on subsequent real work and verify the consumer's output. If
+the consumer is instance-bound, use a supported fresh instance or handoff; a registry entry
+is not instance migration. Return to the loop when actual use exposes a defect.
 
-### The five dimensions
+## Additional receipts when the task explicitly requires evolution
 
-Each scored 0–20, total 100.
+For `evolution.require_verified_improvement`, include `capability_gap` with `user_need`,
+`required_operation`, `limitation`, `acceptance_criterion`, `observation_evidence_ids` and
+`baseline_evidence_ids`. Observation and baseline calls must precede registration. Include
+`kind="comparison"` and an independent `kind="reuse"` or `"regression"` case.
 
-**Correctness (20)** — does it produce the expected result for valid input? Test the scoped
-operations with known inputs; for a full component review, cover every supported operation.
-20 = all scoped cases pass; −4 per failing case. Disclose coverage with the score.
+After keep, use the adopted version synchronously on real subsequent work, then call
+`adoption_tool action="record_use"`. Its report contains `module`, `name`, exact `version`,
+`consumer_call_id`, `evidence_ids` and `outcome`. Cite successful calls at or after that
+consumer call, including the consumer itself where appropriate. For a Skill, cite its load
+and subsequent operations that executed the method. Earlier baseline/evaluation evidence
+belongs in the decision. An instance-only change needs instrumented consumer execution.
+Do not submit `record_use` for ordinary tasks without this declared requirement.
 
-**Robustness (20)** — does invalid input fail gracefully rather than crash? Test missing
-arguments, wrong types, out-of-range values. Expected: a failure *returned*, not an unhandled
-exception — a crash surfaces to the caller as an action error. 20 = all handled; −5 per unhandled
-exception.
-
-**Interface compliance (20)** — does it honour the contract its type declares? The type's file
-names that contract. Deduct per missing or malformed element.
-
-**Quality (20)** — is the source readable and free of obvious defects? Judge from reading alone:
-clear naming, no dead code, appropriate error handling. Syntax is implicitly valid — it would not
-be registered otherwise. Deduct per issue found.
-
-**Performance (20)** — does it respond acceptably? Judge from the source and your own calls; flag
-blocking I/O or heavy work in a hot path. A network call with no timeout is a finding regardless
-of how fast it was when you tried it. Precise timing is not required.
-
-Report per-dimension scores with the evidence behind each, and concrete suggestions an optimize
-run could act on.
+Track each explicitly required family separately. Lifecycle receipts establish component
+evidence; they do not override the task's substantive acceptance criteria. Keep detailed
+artifacts in the work record, with concise status and paths in the plan index when available.

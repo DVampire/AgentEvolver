@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from agentevolver.model.config import (
     anthropic_models,
     google_models,

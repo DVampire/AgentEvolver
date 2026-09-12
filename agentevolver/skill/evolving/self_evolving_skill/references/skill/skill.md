@@ -1,7 +1,8 @@
 # Skill
 
-The full lifecycle of one component type: what a skill is, how to write one, how to
-change one, and how to judge one. The contract below holds for all three.
+This reference defines the type's artifact contract and specific checks. Follow the
+[shared lifecycle](../../SKILL.md) and [conventions](../conventions.md) for inspection,
+staging, registration, failure repair, evaluation, adoption and actual consumer use.
 
 ## What it is
 
@@ -25,7 +26,9 @@ triggered at all.
   └── examples/       # optional — examples.md; only when scripts/ exists
   ```
 - **Registration is a call you make**: after you finish writing/editing the files, call `adoption_tool` with `action="register"`, `module="skill"`, the skill name, and the skill directory as `artifact_path`. Do NOT package a `.skill` file; this framework registers from the directory.
-- **Frontmatter** must include `name`, `description`, `version`, and `type`. `type` is one or more labels: `worker` (an SOP for one agent — visible to sub-agents) and/or `orchestrator` (a composition recipe for MetaAgent — how to fan work across sub-agents). Most skills are `worker`.
+- **Frontmatter** must include `name`, `description`, `version`, and `type`. Use `worker`
+  for a method executed by one agent and/or `orchestrator` for capability coordination.
+  These labels do not require a particular MetaAgent or authorize sub-agent dispatch.
 
 ---
 
@@ -40,7 +43,8 @@ Start by understanding the intent. The task (or conversation history) may alread
 1. What should this skill enable an agent to do?
 2. When should it trigger? (what user phrasings/contexts)
 3. What's the expected output format?
-4. Are there objectively verifiable outputs (file transforms, data extraction, code generation, fixed workflow steps)? Those benefit from test cases. Subjective outputs (writing style, design) usually don't.
+4. What evidence can check the outputs? Use executable checks for transforms or extraction,
+   and explicit comparisons of actual outputs for qualitative writing/design claims.
 
 #### Write the SKILL.md
 
@@ -49,7 +53,8 @@ Start by understanding the intent. The task (or conversation history) may alread
 Fill in these components:
 
 - **name**: the skill identifier (`snake_case`, ends in `_skill`).
-- **description**: the primary triggering mechanism — include both **what** the skill does AND the specific **when to use** contexts. All "when to use" info goes here, not in the body. Agents tend to *under*-trigger skills, so make the description a little **pushy**: instead of "How to build a dashboard", write "How to build a dashboard. Use this whenever the user mentions dashboards, data visualization, or wants to display any kind of data, even if they don't explicitly say 'dashboard.'"
+- **description**: state what the skill does and the concrete contexts where its method
+  helps. Include useful boundaries; do not trigger from broad keywords or unrelated tasks.
 - **version**, **type**, **requirements**, **metadata**: per the conventions above.
 - **the body** — the actual instructions.
 
@@ -107,7 +112,10 @@ Explain **why** things matter rather than piling on heavy-handed MUSTs. Today's 
 
 #### Test cases
 
-After the draft, write 2-3 realistic test prompts — the kind of thing a real user would actually say. Save them to `{skill_dir}/evals/evals.json` (prompts only; assertions come later during evaluation):
+Design representative prompts and independent cases for the affected method, following the
+common evaluation scope. Reusable fixtures may be bundled in the candidate before registration;
+store subsequent evaluation results in the work record without changing the evaluated source.
+The optional benchmark helpers accept an `evals.json` with this shape:
 
 ```json
 {
@@ -135,17 +143,17 @@ The `description` frontmatter is the primary mechanism that decides whether an a
 
 Skills appear in an agent's skill_context as name + description; the agent decides whether to consult a skill from that alone. Agents only reach for skills on tasks they can't trivially handle themselves — a simple one-step query may not trigger a skill even with a perfect description, because the agent just does it directly. So test queries must be **substantive** enough that an agent would actually benefit from the skill. Simple queries like "read file X" are poor test cases.
 
-#### Measuring triggering (general_agent probe)
+#### Measuring triggering
 
-We do NOT ship a special trigger tool. Triggering is measured with a `general_agent` probe dispatched by MetaAgent:
+For a description change, compare representative should-trigger queries and close near-miss
+negatives. Use an available authorized fresh consumer for a selection probe: present only the
+name/description and competing capabilities, then record its choice. This measures selection
+judgment, not actual method quality. A full task run with observed invocation provides stronger
+triggering evidence when warranted by the claim and budget. Do not assume `general_agent` is
+mounted, require a fixed query count, or dispatch when the task disables children.
 
-- Build a set of ~20 realistic labeled queries — a mix of should-trigger (8-10) and should-not-trigger (8-10). The most valuable negatives are **near-misses**: queries that share keywords with the skill but actually need something else. Don't make negatives obviously irrelevant ("write a fibonacci function" as a negative for a PDF skill tests nothing).
-- **Judge mode (default, cheap)**: dispatch a `general_agent` with a task that gives it the target skill's name+description alongside a few distractor skills and the labeled queries, and asks it to decide, per query, which skill it would invoke — then report per-query hits/misses/false-triggers and overall accuracy. This mirrors the real selection decision; use the misses to revise the description and re-run.
-- *(Higher-fidelity alternative, optional)*: dispatch `general_agent` on each real query with the skill in its `skill_allowlist` and observe whether it actually invokes the target skill. This measures real triggering but costs a full run per query and needs the invocation read from the run's trace.
-
-Revise the description to fix under-triggering (misses) and over-triggering (false triggers), then re-run until accuracy is good. Show the before/after description and the scores.
-
----
+Report false triggers and missed opportunities, preserving examples for the next revision.
+Keep triggering evaluation distinct from the method's executed outcome comparison below.
 
 ## Improving an existing one
 
@@ -162,14 +170,12 @@ Take your time here — thinking time is not the blocker. Draft a revision, rere
 
 ### The iteration loop
 
-1. Apply the improvements to the skill files.
-2. Re-run all test cases into a new `iteration-<N+1>/` directory, including the baseline. (For a *new* skill the baseline is always no-skill; for an *existing* skill, the baseline can be the original version — snapshot it before editing.)
-3. Re-grade and re-aggregate; compare against the previous iteration.
-4. Repeat until the outputs are good, the benchmark stops improving, or you've stopped making meaningful progress.
-
-When re-registering an edited skill, pass the edited `SKILL.md` path to `adoption_tool` (`action="register"`, `module="skill"`).
-
----
+Use the shared author → register → evaluate → repair/adopt loop. Skill-specific changes may
+include its description, instructions, references or supporting scripts. Keep evaluation
+outputs outside the registered skill directory so collection does not mutate the candidate.
+Register the staged directory, including `SKILL.md` and dependencies; use the returned version.
+Preserve prior comparisons and rerun affected cases and regressions after a revision. Stop an
+unproductive experiment according to its budget; do not keep expanding a benchmark indefinitely.
 
 ## Evaluating one
 
@@ -181,31 +187,33 @@ Read the SKILL.md and score it on: instruction clarity, completeness, structure/
 
 ### Empirical check (with-skill vs baseline)
 
-The heart of quantitative evaluation is: does the skill help versus not having it? In this framework there is no `claude -p` subprocess and no browser viewer — **MetaAgent runs the comparison by dispatching agents** (see Orchestration). Concretely, for each test prompt:
+Invoke the registered skill and execute its method. For a procedural method with objective
+outputs, the current agent can compare concrete baseline and candidate operations and exercise
+a distinct branch/reuse input. Do not claim this proves independent model behavior.
 
-- **with-skill run**: use an available, authorized bounded consumer with the target skill
-  made available (`skill_allowlist` pinned to `[target_skill]`). Do not assume a particular
-  agent such as `general_agent` is mounted.
-- **baseline run**: use an equivalent fresh consumer on the same prompt with the prior
-  skill version or without the new skill (`skill_allowlist: []`). Keep the model, task,
-  other capabilities and budget comparable; never pretend previously learned instructions
-  have been removed from a continuing conversation.
+When the claim concerns reasoning or subjective output quality, use equivalent fresh consumers:
+- Candidate: make the exact skill version available and verify it was used.
+- Baseline: use the prior version or no new skill, keeping task, model, other capabilities
+  and budget comparable. Preserve baseline results before installing the candidate, or use
+  supported isolated version selection; do not switch a shared active version under a consumer.
 
-For a small change, one representative comparison and one independent reuse or regression
-case are sufficient when they cover the affected behavior. Larger changes require broader
-coverage. If the required consumer or permissions are unavailable, report the missing evidence
-as inconclusive; do not fabricate a comparison from reading the skill.
+Follow the common comparison scope and permission limits. A missing required consumer leaves
+that evidence inconclusive. Reading instructions alone, replaying an answer already seen, or
+pretending to unlearn the skill in the same conversation cannot establish improvement.
 
-Organize outputs under `{skill_dir}/evals/iteration-N/eval-<id>/{with_skill,baseline}/`. Then grade.
+If using the optional aggregator, organize results under a work-record directory as
+`iteration-N/eval-<id>/{with_skill,baseline}/`, then grade.
 
 ### Grading
 
 For each test case, evaluate the outputs against the assertions (objectively verifiable checks with descriptive names). Where an assertion is programmatically checkable, write and run a small script rather than eyeballing it — faster, reliable, reusable. Save results to `grading.json` per run (use fields `text`, `passed`, `evidence`). Aggregate into a benchmark:
 ```bash
-python {skill_dir}/scripts/skill/benchmark.py {skill_dir}/evals/iteration-N --skill-name {name}
+python {skill_dir}/scripts/skill/benchmark.py {evaluation_root}/iteration-N --skill-name {name}
 ```
 This produces pass_rate / time / tokens per configuration (with-skill vs baseline), with the delta — the objective signal for whether the skill helps. See `references/skill/schemas.md` for the exact JSON the aggregator expects.
 
-Produce a scored report: per-dimension scores (static) + the with-skill/baseline benchmark (empirical) + concrete improvement suggestions.
+Record concrete static findings and executed outcome comparisons through the shared decision
+contract. Optional benchmark aggregates and scores support that evidence; they do not adopt
+the skill or replace actual consumer use.
 
 ---

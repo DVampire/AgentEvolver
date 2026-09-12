@@ -436,7 +436,8 @@ async def test_a_run_whose_artifact_cannot_be_found_is_told_what_to_include(boun
         )
     )
     assert result.decision == HookDecision.BLOCK
-    assert "done_tool reasoning" in result.reason
+    assert "adoption_tool" in result.reason and "artifact_path" in result.reason
+    assert "done_tool" not in result.reason
 
 
 @pytest.mark.asyncio

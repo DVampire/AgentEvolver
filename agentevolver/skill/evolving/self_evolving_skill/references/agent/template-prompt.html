@@ -33,7 +33,7 @@ You are [role]. You receive [input], then you [core behavior] using tools/skills
 - `{{ project_root }}` — output container for this run's workspace and logs. Do not write files directly here.
 - `{{ package_root }}` — writable AgentEvolver framework source and built-in resources.
 - `{{ shared_extension_root }}` — writable shared extension library. Use the evolution evaluation and adoption flow to record reusable capability changes.
-- `{{ extension_root }}` — this session's writable extension staging tree. Write evolved capabilities here; they are promoted to the shared extension root only after validation and explicit user approval.
+- `{{ extension_root }}` — this session's writable extension staging tree. Write evolved capabilities here; register them through `adoption_tool` under the current session's authorization, then evaluate and adopt through `self_evolving_skill`.
 - `{{ workspace_root }}` — this Project/Session user workspace and deliverables. Read and write project files here.
 - `{{ log_root }}` — writable runtime logs, trajectories, checkpoints, and task state.
 - Always use absolute paths when calling tools.

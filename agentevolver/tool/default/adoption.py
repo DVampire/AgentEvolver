@@ -40,7 +40,9 @@ _DESCRIPTION = (
 )
 
 _GUIDANCE = """
-Manage the version lifecycle of evolved components (tools/agents/prompts/skills/environments/connectors/workflows created or optimized under `extension/`). Use it to UNDO a bad evolution a reviewer flagged — roll back to the previous good version, or unload a newly generated component that made things worse.
+Manage versions and evidence for all eight evolved component families under `extension/`.
+Follow `self_evolving_skill` for the common authoring, evaluation and repair procedure;
+this tool supplies registration, decision records, rollback/unload and use receipts.
 
 ### Actions (pass `action`)
 - `list_active`: list all active evolved components (module, name, version). No args.
@@ -73,7 +75,9 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
   with `module`, `name`, exact `version`, `consumer_call_id`, `evidence_ids`, and `outcome`.
   Invoke the adopted capability synchronously on real subsequent product work first.
   Copy that invocation's tool_call_id into consumer_call_id; cite successful result/check
-  calls in evidence_ids. Loading a skill alone is insufficient: also execute and cite a
+  calls in evidence_ids, all at or after that consumer call. The successful consumer call
+  itself may be cited; earlier baseline/evaluation calls belong in record_decision instead.
+  Loading a skill alone is insufficient: also execute and cite a
   subsequent product operation using its method. Register/list/inspect calls are not use.
   This task-scoped receipt is checked against observed actions and the active version.
   It supports directly callable components; an instance-only change needs an instrumented
@@ -90,7 +94,9 @@ Manage the version lifecycle of evolved components (tools/agents/prompts/skills/
 `module` is one of: tool | agent | skill | environment | connector | workflow | plugin | memory.
 The associated prompt can also be inspected/restored as an agent's supporting artifact.
 
-- Pair with `reviewer_agent`: if the reviewer's verdict is that an evolution regressed the outcome, `rollback` to the prior version (use `list_versions` first to see what to roll back to), or `unload` a brand-new component that has no prior good version.
+- If evaluation or actual consumer use reveals a regression, restore the prior good version
+  (`list_versions` first) or unload a new candidate with no prior good version, then follow
+  the shared skill's repair loop. No particular reviewer agent is required.
 - Only affects `extension/` components; built-in capabilities cannot be rolled back/unloaded here.
 - A rollback/unload takes effect for the NEXT dispatched sub-agent, not one already running.
 """

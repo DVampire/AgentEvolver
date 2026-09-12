@@ -1,7 +1,8 @@
 # Tool
 
-The full lifecycle of one component type: what a tool is, how to write one, how to
-change one, and how to judge one. The contract below holds for all three.
+This reference defines the type's artifact contract and specific checks. Follow the
+[shared lifecycle](../../SKILL.md) and [conventions](../conventions.md) for inspection,
+staging, registration, failure repair, evaluation, adoption and actual consumer use.
 
 ## What it is
 
@@ -69,13 +70,17 @@ class MyTool(Tool):
     guidance: str = _GUIDANCE
     examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    enable_evolving: bool = Field(default=False, description="Whether the tool may be evolved (self-optimized)")
+    enable_evolving: bool = Field(default=True, description="Whether the tool may be evolved (self-optimized)")
 
-    def __init__(self, enable_evolving: bool = False, **kwargs):
+    def __init__(self, enable_evolving: bool = True, **kwargs):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, arg_name: str, **kwargs) -> Response:
-        """Do the work. Args mirror the Parameters block."""
+        """Do the work.
+
+        Args:
+            arg_name: Value to process.
+        """
         # ... perform the operation ...
         return Response(type=ResponseType.TOOL, success=True, message="result",
                         data={"arg_name": arg_name})
@@ -95,19 +100,20 @@ After writing: `python -m py_compile /abs/path/{name}.py`. When it compiles, reg
 
 ## Improving an existing one
 
-The target is named in the task. Call `inspect_tool` (capability_type="tool") FIRST for its source path and `enable_evolving` — if `enable_evolving=False`, the tool is frozen; do NOT edit it, report and stop. Read the source before editing; make the smallest correct change; preserve `@TOOL.register_module` and `name`; keep `_DESCRIPTION` one line and `_GUIDANCE` / `_EXAMPLES` in place. Verify with `py_compile`, then re-register with `adoption_tool` (`action="register"`, `artifact_path` = that path).
-
----
+Preserve `@TOOL.register_module`, the registered `name`, compatible arguments and `Response`
+semantics. Keep `_DESCRIPTION` one line and `_GUIDANCE` / `_EXAMPLES` consistent with the
+actual schema. Reproduce the failing call before changing its implementation or docs.
+Use the common staging and repair loop rather than editing the installed Python file.
 
 ## Evaluating one
 
-Call `inspect_tool` (capability_type="tool") on the target — it returns the full instruction plus registry facts (version, enable_evolving, source path). Score across:
+Call `inspect_tool` (capability_type="tool") on the target — it returns the full instruction plus registry facts (version, enable_evolving, source path). Check the type-specific requirements:
 1. **Interface Compliance** — `@TOOL.register_module`, subclass `Tool`, has `name`/`description`/`instruction`, `__call__` returns a `Response`.
 2. **Code Quality** — valid, clean, proper error handling (failures returned as `success=False`, not raised).
 3. **Documentation Quality** — `_GUIDANCE` says what the schema cannot; every argument has
    an `Args:` line; each entry of `_EXAMPLES` is valid JSON. No `## Parameters` or
    `## Function` block: both restate something the model is already sent.
 4. **Integration** — `inspect_tool` (capability_type="tool") shows it registered.
-5. **Execution** — a valid call path; where feasible, run the tool on a sample input and check the `Response`.
+5. **Execution** — call the registered tool with representative valid and invalid inputs; verify result values, actual effects and actionable failure responses. Include a distinct reuse/regression input in the common comparison.
 
 ---

@@ -95,22 +95,17 @@ async def test_policy_reaches_real_prompt_without_evolution_task(cls, task, defe
         assert message.text.count("<self-evolution-rules>") == 1
         assert "Do not wait for a task to mention evolution" in message.text
         assert "Repeated cost or inconsistency" in message.text
-        assert "Improve an evolvable target, or write a new one" in rendered
-        assert "Change and evaluation stay sequential" in rendered
-        assert "Before finishing, join and close" in rendered
+        # The stable prompt routes to the shared method; operational steps and report
+        # fields live in the skill instead of being duplicated into every request.
+        assert "self_evolving_skill" in rendered
         assert "Task-required evidence" in rendered
         assert "evolution.require_verified_improvement" in rendered
-        assert "record_use" in rendered and "capability_gap" in rendered
         assert "observation and baseline call IDs before registering" in rendered
-        assert "Self-observations and runtime status notices are not user feedback" in rendered
         for opportunity in ("Reusable learning", "Expected reuse", "Better method",
                             "Missing capability", "New experience", "Self-verification",
                             "before implementation fails", "repeated failure is not required"):
             assert opportunity in rendered
-        for guard in ("preserve consumer permission boundaries", "exact candidate version",
-                      "passing that version-scoped report", "roll back or unload",
-                      "At CRITICAL, start no new experiment"):
-            assert guard in rendered
+        assert "At CRITICAL, start no new experiment" in rendered
         for kind in COMPONENT_TYPE_NAMES:
             assert kind.lower() in message.text.lower()
         assert "Choose the form" in rendered
@@ -167,39 +162,26 @@ def test_orchestrators_use_one_shared_policy():
     assert "even when the task does not request it" in builder
 
 
-def test_evolution_skill_has_no_second_failure_or_memory_gate():
-    source = (ROOT / "agentevolver/skill/evolving/self_evolving_skill/SKILL.md").read_text()
-    assert "shared `evolution_rules` system-prompt module owns the detection policy" in source
-    for expected in ("Do not apply a second, stricter trigger gate", "expected reuse",
-                     "writing a memory file is not a prerequisite", "hypotheses",
-                     "action steps, not separate product releases"):
-        assert expected in source
-    for obsolete in ("Your conversation starts empty every turn", "≥2×",
-                     "Do not evolve** on a first-time fixable defect",
-                     "when the budget is TIGHT or CRITICAL", "no promotion step"):
-        assert obsolete not in source
-    for guard in ("enable_evolving", "exact candidate version", "adoption_tool",
-                  "rollback", "unload", "inconclusive", "necessary permissions"):
-        assert guard in source
+def test_shared_method_loads_and_links_every_component_contract(tmp_path):
+    """Progressive disclosure must leave every supported family reachable by the agent."""
+    import re
+    from agentevolver.skill.context import SkillContextManager
 
-
-def test_the_conventions_support_bounded_verified_improvements():
-    """The per-operation conventions, wherever they live, still bound the work.
-
-    They were three worker skills read by three agents; they are one file now, sectioned by
-    operation. What has to survive is the substance: a change edits through the patch tools
-    rather than overwriting whole files, a frozen target stops the run, and an evaluation
-    names an independent case, its safety checks, and what it could not test.
-    """
-    conventions = (
-        ROOT / "agentevolver/skill/evolving/self_evolving_skill/references/conventions.md"
-    ).read_text()
-    assert "apply_patch_tool" in conventions and "bash_tool" in conventions
-    assert "edit_file_tool" not in conventions and "write_file_tool" not in conventions
-    assert "enable_evolving" in conventions and "Frozen means stop" in conventions
-    for expected in ("independent reuse or regression case", "required safety checks",
-                     "untested limits", "inconclusive", "Reading instructions alone"):
-        assert expected in conventions
+    root = ROOT / "agentevolver/skill/evolving/self_evolving_skill"
+    skill = SkillContextManager(base_dir=str(tmp_path))._parse_skill_dir(root)
+    assert skill.name == "self_evolving_skill"
+    links = set(re.findall(r"\]\(([^)]+)\)", skill.content))
+    required = {"references/conventions.md"} | {
+        f"references/{kind}/{kind}.md" for kind in COMPONENT_TYPE_NAMES
+    }
+    assert required <= links
+    for target in links:
+        assert (root / target).is_file(), target
+    for kind in COMPONENT_TYPE_NAMES:
+        reference = root / f"references/{kind}/{kind}.md"
+        for target in re.findall(r"\]\(([^)]+)\)", reference.read_text()):
+            if not target.startswith(("https://", "http://")):
+                assert (reference.parent / target).is_file(), (kind, target)
 
 
 @pytest.mark.parametrize("scenario_name", ["arkbound_game", "commonspace_forum", "lumen_museum", "orbital_simulator"])
@@ -233,6 +215,7 @@ async def test_evolution_stays_enabled_without_child_agents(bound_session):
 
 def test_evolution_skill_does_not_require_removed_workers():
     source = (ROOT / "agentevolver/skill/evolving/self_evolving_skill/SKILL.md").read_text()
-    assert "Start a qualifying opportunity now in your own action loop" in source
+    for removed in ("generate_agent", "optimize_agent", "evaluate_agent"):
+        assert removed not in source
     assert "use `run_in_background=true`" not in source
     assert "Every dispatch names one as `target_type`" not in source

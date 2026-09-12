@@ -54,7 +54,7 @@ class MyAgent(Agent):
     #: Must match the HTML prompt's `<meta name="name">`.
     prompt_name: str = Field(default="my_agent")
     max_step: int = Field(default=20)
-    #: True lets the optimize agent edit this file.
+    #: True allows optimization through self_evolving_skill's shared candidate loop.
     enable_evolving: bool = Field(default=True)
 
 

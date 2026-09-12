@@ -52,6 +52,10 @@ Separate distributable report artifacts from raw licensed source data.
 Use deploy_tool and the existing deployment module. Publish a stage-one report preview and
 a later integrated stage-two release on the monitoring gateway. An unfinished/test-sealed
 preview is labelled as such. Use the returned URL; HTTP 200 alone is not a browser check.
+These releases follow research progress. If source feasibility fails before research begins,
+preserve a concise status/evidence view and any existing work; defer result-dependent surfaces
+and mark their acceptance unmet. A synthetic accounting demonstration is optional engineering
+evidence, not a replacement for the requested factor and strategy reports.
 
 Verify concrete journeys with webapp_testing_skill and browser_environment:
 

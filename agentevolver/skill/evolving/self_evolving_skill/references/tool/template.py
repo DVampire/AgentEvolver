@@ -50,7 +50,7 @@ class MyTool(Tool):
     guidance: str = _GUIDANCE
     examples: List[str] = _EXAMPLES
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    # enable_evolving=True marks the tool as evolvable (the optimize agent may edit it).
+    # enable_evolving=True marks the tool as evolvable (the current agent may optimize it through self_evolving_skill).
     enable_evolving: bool = Field(default=True, description="Whether the tool may be evolved (self-optimized)")
 
     def __init__(self, enable_evolving: bool = True, **kwargs):

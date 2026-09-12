@@ -1,7 +1,8 @@
 # Workflow
 
-The full lifecycle of one component type: what a workflow is, how to write one, how to
-change one, and how to judge one. The contract below holds for all three.
+This reference defines the type's artifact contract and specific checks. Follow the
+[shared lifecycle](../../SKILL.md) and [conventions](../conventions.md) for inspection,
+staging, registration, failure repair, evaluation, adoption and actual consumer use.
 
 ## What it is
 
@@ -38,31 +39,29 @@ program, not an Agent subtype and not a substitute for a Skill's domain instruct
 
 ## Improving an existing one
 
-1. Call `inspect_tool` (capability_type="workflow") first. Stop if missing or `enable_evolving=false`.
-2. Read evaluation evidence and identify a Workflow-owned defect.
-3. Make the smallest structural change; preserve public name and input/output compatibility
-   unless the task explicitly authorizes a breaking change.
-4. Increment the semantic version and keep status `active`.
-5. Compile and check boundedness, reachability, capability names, and output references.
-6. Register the edited file with `adoption_tool` (`action="register"`, `module="workflow"`, `artifact_path` = the absolute HTML path).
-
-Never tune a Workflow to one benchmark case. Prefer parameterization over copying variants.
+Locate the Workflow-owned defect in the run trace before changing orchestration. Preserve
+compatible public inputs/outputs and use typed parameters instead of copies for individual
+benchmark cases. Keep semantic version metadata and status consistent with the staged change;
+use the actual returned registration version for evidence. Compile and check boundedness,
+reachability, capability names and output references before native execution.
 
 ## Evaluating one
 
-Evaluation is read-only:
+Add these checks to the common evaluation:
 
-1. Call `inspect_tool` (capability_type="workflow"); confirm name, version, active status, source, and contract.
-2. Check schema safety, bounded termination, path coverage, capability existence, retry and
-   verification policy, input/output clarity, and applicability precision.
-3. Run a representative case when safe. Compare with the prior active version or manual
-   orchestration when available.
-4. Score outcome quality from 0.0–1.0 and report success, real run id, case id, elapsed time, token cost,
-   and concrete notes.
-5. Call `adoption_tool` with `action=record_workflow_evaluation`. Recommend keep,
-   optimize, rollback, or unload from concrete evidence.
+1. Inspect the exact version, declared inputs/outputs, applicability and available node
+   capabilities. Compile and check bounded termination, reachability and retry/verification
+   behavior; static checks cannot establish successful execution.
+2. Run representative inputs through the registered Workflow and compare with the previous
+   version or manual orchestration. Cover changed branches and a failing child operation;
+   verify retries terminate and final outputs match actual node results. Exercise authorized
+   stateful nodes in isolated state, following the common evaluation rules.
+3. Record version-scoped run evidence with `adoption_tool action=record_workflow_evaluation`.
+   A success needs a real terminal `run_id`; a static failure needs `case_id`. Include actual
+   success, quality (0.0–1.0), elapsed time, token cost and concrete observations.
+4. These Workflow run records supplement the shared `record_decision` and consumer-use
+   procedure; recording a quality score does not adopt the candidate or repair it.
 
-A version is provisionally healthy after at least 3 evaluations, success rate at least
-0.8, and average quality at least 0.7. This summary guides retention; it does not create a
-second publication state. Representative coverage and the absence of safety or termination
-defects remain mandatory.
+The runtime's health summary uses at least 3 evaluations, success rate at least 0.8 and
+average quality at least 0.7. This is a health indicator, not permission to skip required
+coverage or treat a failed safety/termination case as passing.

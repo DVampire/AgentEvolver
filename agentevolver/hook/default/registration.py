@@ -164,7 +164,8 @@ async def _prompt_only_change(extra: Dict[str, Any]) -> Optional[HookResult]:
     except Exception as e:  # noqa: BLE001
         logger.warning(f"| ⚠️  registration_hook: {e}")
         return HookResult.block(
-            f"[registration failed] {e}\nPlease fix the prompt and call done_tool again."
+            f"[registration failed] {e}\nFix the staged prompt and retry "
+            "adoption_tool action=register with the candidate artifact_path."
         )
 
 
@@ -338,7 +339,7 @@ class RegistrationHook(Hook):
     async def handle(self, ctx: HookContext) -> HookResult:
         """Locate the generated artifact, promote it if staged, and register it.
 
-        Fired after an evolution run calls ``done_tool``. Registers newly generated
+        Called by ``adoption_tool action=register``. Registers newly generated
         components as evolvable so a later round can optimize them; overwriting a *frozen*
         entity is still refused inside ``add_component``.
 
@@ -386,11 +387,12 @@ class RegistrationHook(Hook):
             recovered = await shape.recover(extra) if shape.recover else None
             if recovered is not None:
                 return recovered
-            msg = f"Could not locate generated {module} {noun} for '{target_name}' in reasoning."
+            msg = f"Could not locate generated {module} {noun} for '{target_name}'."
             logger.warning(f"| ⚠️  registration_hook: {msg}")
             return HookResult.block(
-                f"[registration failed] {msg}\nInclude the {module} {noun} path in "
-                f"done_tool reasoning and call done_tool again."
+                f"[registration failed] {msg}\nCreate or locate the staged {module} "
+                f"{noun}, then retry adoption_tool action=register with its absolute "
+                f"path as artifact_path."
             )
 
         from agentevolver.sandbox.project import is_staged_extension_root, validate_staged_extension

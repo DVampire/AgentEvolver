@@ -1,7 +1,8 @@
 # Memory
 
-The full lifecycle of one component type: what a memory is, how to write one, how to
-change one, and how to judge one. The contract below holds for all three.
+This reference defines the type's artifact contract and specific checks. Follow the
+[shared lifecycle](../../SKILL.md) and [conventions](../conventions.md) for inspection,
+staging, registration, failure repair, evaluation, adoption and actual consumer use.
 
 ## What it is
 
@@ -63,23 +64,23 @@ file path to `adoption_tool` (`action="register"`, `module="memory"`).
 
 ## Improving an existing one
 
-The target is named in the task. Call `inspect_tool` (`capability_type="memory"`) FIRST for its file path and `enable_evolving` — if `enable_evolving=False`, the memory system is frozen; do NOT edit it, report and stop. Read the file before editing; make the smallest correct change; preserve `@MEMORY_SYSTEM.register_module`, the class `name`, and the existing method signatures unless the task requires changing them. Verify with `py_compile`, then re-register with `adoption_tool` (`action="register"`, `artifact_path` = that file).
-
-Typical improvements, in order of how often they matter:
-- retaining a class of fact that was being dropped (the usual cause of a late-session failure)
-- summarizing instead of truncating, so old steps degrade gracefully rather than vanish
-- tightening an unbounded section that crowds out everything else
-
----
+Preserve `@MEMORY_SYSTEM.register_module`, the registered name and the loop's ingestion,
+retrieval and rendering interfaces. Diagnose a dropped fact, misleading summary or oversized
+view from a concrete event sequence. Keep per-session state isolated. Typical improvements
+include retaining necessary facts, summarizing older events and bounding rendered context.
+Use the common candidate loop; do not mutate a running consumer's memory instance in place.
 
 ## Evaluating one
 
-Call `inspect_tool` with `capability_type="memory"` and the target name for its registry facts. Score across:
+Call `inspect_tool` with `capability_type="memory"` and the target name for its registry facts. Check the type-specific requirements:
 1. **Interface Compliance** — `@MEMORY_SYSTEM.register_module`, subclasses `TieredMemory`/`Memory`, `name` matches the file stem, `enable_evolving` declared.
 2. **Code Quality** — valid, clean, no unbounded growth, per-session state correctly keyed.
 3. **Retention Quality** — does what it keeps actually serve the next step? Is anything load-bearing dropped? Is anything useless retained?
 4. **Boundedness** — does the rendered view stay within a sane size as the session grows?
-5. **Integration** — the component shows as registered, and `get()` returns usable text.
+5. **Integration** — exercise the registered version in a supported fresh consumer: feed a
+   controlled event sequence and check the rendered/retrieved result after later events.
+   Compare retention and output size against the baseline, including long histories and
+   session isolation. Registration alone does not replace an existing consumer's memory.
 
 The decisive question is not "is the code tidy" but **"after N steps, does the agent still know what it needs?"**
 

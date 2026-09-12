@@ -1,7 +1,8 @@
 # Plugin
 
-The full lifecycle of one component type: what a plugin is, how to write one, how to
-change one, and how to judge one. The contract below holds for all three.
+This reference defines the type's artifact contract and specific checks. Follow the
+[shared lifecycle](../../SKILL.md) and [conventions](../conventions.md) for inspection,
+staging, registration, failure repair, evaluation, adoption and actual consumer use.
 
 ## What it is
 
@@ -57,7 +58,7 @@ read includes — put what an operator must set there, not in the body prose.
 
 ## Writing a new one
 
-Copy the closest of the 88 built-ins rather than starting from an empty directory: pick one
+Copy the closest available built-in rather than starting from an empty directory: pick one
 with the same shape (a search plugin for a search plugin, a vector store for a vector store)
 and replace its service calls. Keep `id`, the directory name and `Plugin.name` identical.
 
@@ -73,9 +74,9 @@ called is a guess.
 
 ## Improving an existing one
 
-The target is named in the task. Call `inspect_tool` first for its source path and
-`enable_evolving`; a frozen plugin cannot be edited — report that and stop. Read
-`plugin.py`, `PLUGIN.md` and the tool files before changing anything.
+Read `plugin.py`, `PLUGIN.md` and the affected tool files. Use a failed native tool call,
+manifest mismatch or changed service contract to locate the defect, then follow the common
+candidate loop. Check shared authentication, transport and tool helpers for affected consumers.
 
 **Never renumber or rename a tool id** unless the task explicitly asks: canvas nodes and
 workflow steps hold those strings, and they break silently. Adding a tool means adding its
@@ -86,7 +87,7 @@ the frontmatter — leaving the counts behind is the most common defect here. Re
 ## Evaluating one
 
 Call `inspect_tool` (capability_type="plugin") on the target — it returns the instruction
-plus registry facts. Score across:
+plus registry facts. Check the type-specific requirements:
 
 1. **Interface Compliance** — package layout complete (`__init__.py`, `plugin.py`,
    `PLUGIN.md`, `tools/__init__.py`); `Plugin` subclass with `name` / `description` /
@@ -100,5 +101,7 @@ plus registry facts. Score across:
    a traceback.
 4. **Documentation Quality** — PLUGIN.md's body says what each tool does and what it returns;
    `## Credentials` names what an operator must set.
-5. **Execution** — run at least one tool. Where credentials are unavailable, say so and
-   report which checks that blocked rather than scoring them as passing.
+5. **Execution** — run affected registered plugin tools on valid inputs and a relevant
+   failure case, then an independent reuse/regression case. Check output keys consumed by
+   workflows and shared transport/auth behavior. Fixtures can verify local logic, but cannot
+   prove unavailable live access; disclose that limit and investigate permitted alternatives.

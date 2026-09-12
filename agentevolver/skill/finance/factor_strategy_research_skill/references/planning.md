@@ -28,6 +28,13 @@ The detailed plan should cover:
 - Implementation progress and acceptance evidence, including partial and failed outcomes.
 - Capability baselines, candidates, version-scoped decisions and subsequent real consumer calls.
 
+Track source access, engine implementation, engineering verification, real-data research and
+report delivery separately. For an engine, name which successful operations run and which
+remain missing; an adopted version is not automatically research-ready. On an access blocker,
+the index names the external prerequisite and any independent work still worth doing. Pending
+hypotheses stay distinct from executed research trials. On resume, read these records before
+repeating probes or assuming that credentials alone unblock the generated implementation.
+
 Choose extra files based on the work. A useful starting layout under the same plan directory:
 
 ```text

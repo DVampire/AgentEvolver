@@ -1,7 +1,8 @@
 # Connector
 
-The full lifecycle of one component type: what a connector is, how to write one, how to
-change one, and how to judge one. The contract below holds for all three.
+This reference defines the type's artifact contract and specific checks. Follow the
+[shared lifecycle](../../SKILL.md) and [conventions](../conventions.md) for inspection,
+staging, registration, failure repair, evaluation, adoption and actual consumer use.
 
 ## What it is
 
@@ -24,6 +25,7 @@ Two directions, don't confuse them:
   ```
   {connector_name}/
   ├── CONNECTOR.md    # REQUIRED — YAML frontmatter (connection + actions) + markdown body (module intro + per-action docs)
+  ├── server.py       # for a local, agent-authored Python MCP server
   └── references/       # optional — extra docs the agent READs as needed
   ```
 - **Naming**: the frontmatter `name` (registry key) follows the `<directory>_connector` convention — directory `pubmed` → `name: pubmed_connector`. Keep it snake_case.
@@ -53,6 +55,15 @@ Two directions, don't confuse them:
   The **body** below the frontmatter is a short module intro plus a per-action section documenting what each action does and its arguments — this is what an agent reads to call the connector.
 - **Registration is a call you make**: after writing/editing the files, call `adoption_tool` with `action="register"`, `module="connector"`, the connector name, and its directory as `artifact_path`.
 
+`permission_mode: read_only` restricts execution; it does not declare each action read-only.
+Check the server's MCP `ToolAnnotations` during discovery. Declare actual `readOnlyHint`,
+`destructiveHint`, `idempotentHint` and `openWorldHint` in the server, or document verified
+effects under frontmatter `action_annotations` when authoring a connector for a known service.
+Inspect the loaded contract and exercise a native action. Missing effects are not read-only;
+a downloader that writes snapshot files has a write effect even if its HTTP request is GET.
+Use the appropriate permitted workspace scope and accurate declarations, not false read-only
+hints or broader permissions to silence an error.
+
 ---
 
 ## Writing a new one
@@ -72,6 +83,8 @@ From the task, determine the connection: `transport` (`streamable_http` / `sse` 
 Connect to the server and list the tools it exposes — don't guess. Use the bundled probe:
 ```bash
 python {skill_dir}/scripts/connector/probe.py <transport> <url-or-command>
+# For a local server written by the agent:
+python {skill_dir}/scripts/connector/probe.py stdio python /absolute/path/server.py
 ```
 `scripts/connector/probe.py` is a lightweight MCP client (stdio/sse/streamable_http) that opens a session and lets you enumerate the server's tools and their input schemas. Record the action names and argument schemas — these become the `actions` list and the per-action docs.
 
@@ -90,7 +103,16 @@ Then register it: `adoption_tool` with `action="register"`, `module="connector"`
 
 #### If the server doesn't exist yet
 
-If the task requires wrapping an API that has no MCP server, first **Build an MCP server** (next section), host/run it, then come back and write the `CONNECTOR.md` pointing at it.
+If the task requires an operation that has no MCP server, **Build an MCP server** (next section)
+in the connector directory and use stdio. The connector manager starts the process on demand;
+the user does not need to supply or deploy a remote MCP service. It can wrap a suitable SDK,
+public-data client or authenticated API. Upstream access and credentials depend on that source,
+not on MCP itself. Probe the local server, register the directory and exercise its native actions.
+
+For execution failures, raise a server tool error or return `CallToolResult(isError=True, ...)`.
+A normal text block containing an error message or JSON `ok:false` still declares MCP success.
+Test the successful operation and a failed request through the registered connector; an
+inspection that reports missing credentials cannot substitute for a working data download.
 
 ---
 
@@ -114,7 +136,9 @@ Creating a high-quality MCP server is a four-phase process. The quality of a ser
 - Check code quality; build and run the server; connect to it with `scripts/connector/probe.py` and confirm the tools list and behave as intended.
 
 #### Phase 4 — Evaluations
-- Create ~10 evaluation questions and measure the server (see **Evaluating a connector** and `references/connector/evaluation.md`).
+- Apply the common evaluation scope and the native-action checks below. Use
+  [evaluation.md](evaluation.md) for connector-specific cases; there is no fixed question
+  quota or required multi-agent evaluation harness.
 
 Once the server runs, write a `CONNECTOR.md` for it (see **Creating a connector**).
 
@@ -122,15 +146,16 @@ Once the server runs, write a `CONNECTOR.md` for it (see **Creating a connector*
 
 ## Improving an existing one
 
-Given evaluation results, make the connector better. Edit its `CONNECTOR.md`:
-- **Fix action coverage** — add missing actions the agent needed, or drop noisy ones it never uses.
-- **Sharpen per-action docs** — clarify arguments and when-to-use so the agent calls them correctly; add examples for tricky ones.
-- **Tune the description** for triggering (what-it-does + when-to-use, a little pushy).
-- Keep it lean and explain the *why* in docs rather than piling on rigid rules.
+Read the manifest, discovered schemas/effects and failed native calls. For an authored local
+server, also read `server.py` and its dependencies; fixing a Connector can require code,
+not just documentation. Diagnose transport/startup, parsing, provider access, action coverage
+or response semantics from the concrete result. Keep connection paths portable and manifests
+aligned with the live server. Stage and register the whole directory through the shared loop,
+then repeat discovery and the failed action for the returned candidate version.
 
-Read the transcripts from the test runs, not just the outputs — if the agent misused an action or couldn't find the right one, that points at a doc or coverage fix. Re-register the edited connector with `adoption_tool` (`action="register"`, `artifact_path` = its `CONNECTOR.md`).
-
----
+When invocation misuse is the defect, clarify the action's arguments and purpose. Keep the
+description specific enough for appropriate selection; adding every provider endpoint or
+broad trigger wording is not automatically an improvement.
 
 ## Evaluating one
 
@@ -149,10 +174,13 @@ Confirm the server is reachable and exposes the declared actions — connect wit
 
 ### Empirical check (with-connector vs baseline)
 
-The heart of quantitative evaluation is: do the connector's actions help versus not having them? There is no separate eval tool — **MetaAgent runs the comparison by dispatching agents** (see Orchestration). For each realistic test task:
-- **with-connector run**: dispatch `general_agent` with the connector available.
-- **baseline run**: dispatch `general_agent` without it.
+Invoke the registered connector's native actions on a valid request and an expected failure,
+then a different reuse/regression case. Compare outputs, provenance, schema consistency and
+cost with the prior version or existing method. Discovery alone is not execution, and a
+successful metadata/credential inspection cannot replace the required data operation.
 
-Compare task success. See `references/connector/evaluation.md` for the evaluation methodology (writing good task questions, judging tool use). Produce a scored report: static + connection + empirical, with concrete improvement suggestions.
-
----
+The current agent can execute this comparison directly. If the claim concerns model tool
+selection or reasoning, use the common fresh-consumer rules; no particular MetaAgent or
+`general_agent` is assumed. See [evaluation.md](evaluation.md) for transport and service
+checks. Submit the common version-scoped decision and retry repaired candidates through the
+same lifecycle.

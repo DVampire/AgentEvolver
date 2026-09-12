@@ -1,7 +1,8 @@
 # Agent
 
-The full lifecycle of one component type: what a agent is, how to write one, how to
-change one, and how to judge one. The contract below holds for all three.
+This reference defines the type's artifact contract and specific checks. Follow the
+[shared lifecycle](../../SKILL.md) and [conventions](../conventions.md) for inspection,
+staging, registration, failure repair, evaluation, adoption and actual consumer use.
 
 ## What it is
 
@@ -57,9 +58,9 @@ The base `Agent` owns the loop (`__call__` → `think` → `act`), prompt assemb
 - `prompt_name`, which must match the HTML prompt's `<meta name="name">`,
 - `max_step`, if the default of 20 is wrong for this work.
 
-**Write no `__init__` and no `__call__`.** Every actor in `agentevolver/agent/actor/` is declarations and nothing else — that is the target shape. The base takes `base_dir` and forwards keyword arguments to pydantic, so a hand-written `__init__` that defaults fields to `None` and passes them through makes the agent fail to construct, which is what an earlier version of the template did.
+**Write no `__init__` and no `__call__`.** Prefer field declarations for a standard tool-calling actor. The base takes `base_dir` and forwards keyword arguments to pydantic, so a hand-written `__init__` that defaults fields to `None` and passes them through makes the agent fail to construct, which is what an earlier version of the template did.
 
-**Do NOT override** `think`, `act` or anything in `agent/context/` unless the agent genuinely needs bespoke behaviour — reviewers treat unnecessary overrides as a defect. The seams that exist for real needs are `prompt_modules`, `project_context`, `working_memory`, `completion_blocker`, `finalize`, and the runtime phases `on_start` / `on_land` / `on_exit` / `on_suspend` / `on_resume`. Advice for the model belongs in a step middleware (`agent/loop/guards.py`), not in an override.
+**Do NOT override** `think`, `act` or anything in `agent/context/` unless the agent genuinely needs bespoke behaviour — reviewers treat unnecessary overrides as a defect. The seams that exist for real needs are `prompt_modules`, `project_context`, `working_memory`, `completion_blocker`, `finalize`, and the runtime phases `on_start` / `on_land` / `on_exit` / `on_suspend` / `on_resume`. Behavioral guidance belongs in the prompt or an applicable skill; do not add runtime guards merely to remind the model.
 
 Steps:
 1. Read `template.py`, copy it to `{extension_root}/agent/{name}.py`, rename the class, and fill `name` / `description` (state what it does AND when to use it) / `prompt_name`.
@@ -119,20 +120,26 @@ invent a new `<memory>` slot. An unknown or misspelled variable silently drops c
 
 ## Improving an existing one
 
-Most agent improvement is **prompt improvement**. The target is named in the task. Call `inspect_tool` (`capability_type="agent"`) FIRST for its file paths and `enable_evolving` — if `enable_evolving=False`, the agent is frozen; do NOT edit it, report and stop. (The built-in default agents are all frozen; the optimizer edits generated agents under `extension/`, which keep every block inline.)
+Most agent improvement is **prompt improvement**. Inspect the actual Agent and its supporting
+prompt together. Diagnose the behavior from a real transcript; do not infer mutability from
+whether an agent is built-in or generated. Follow the common optimize/alternative path.
 
 - Read the Python and HTML before editing. Decide whether the fix is in the **prompt** (behavior, rules, reasoning — most common) or the **class** (a real code bug).
 - Make the smallest correct change. Preserve `@AGENT.register_module`, `name`, and the prompt's `agent-context` structure and template variables.
-- If you ever edit a `agentevolver/prompt/default/` agent and see a `<module src="../module/NAME.html">` tag, that block is a **shared module** used by many agents — editing the module file changes all of them; to change one agent only, inline the block into that file first.
-- Keep the class a declaration — prefer fixing the prompt over adding loop overrides. An actor that overrides `think`, `act`, or anything in `agent/context/` is a candidate to remove: the loop, the assembler and the executor are the same for every agent, so an override is either a genuine new behaviour or an accident. Advice for the model belongs in a step middleware (`agent/loop/guards.py`), not in an override.
+- A `<module src="...">` block can be shared by several agents. Keep a scoped candidate's
+  prompt self-contained according to the template; do not edit shared package modules to
+  change one generated agent.
+- Keep the class a declaration — prefer fixing the prompt over adding loop overrides. An actor that overrides `think`, `act`, or anything in `agent/context/` is a candidate to remove: the loop, the assembler and the executor are the same for every agent, so an override is either a genuine new behaviour or an accident. Behavioral guidance belongs in the prompt or an applicable skill; do not add runtime guards merely to remind the model.
 - Apply the prompt writing principles above: explain the why, cut dead instructions, sharpen the rules the agent kept getting wrong.
-- Verify with `py_compile` (and that the HTML still has valid template variables), then re-register with `adoption_tool` (`action="register"`, `artifact_path` = the edited file).
+- Verify construction and prompt rendering as well as Python compilation. Register the
+  staged Agent `.py` together with its supporting prompt in the expected layout, even when
+  only the prompt changed; inspect the returned version before evaluation.
 
 ---
 
 ## Evaluating one
 
-Call `inspect_tool` (`capability_type="agent"`) on the target for its registry facts (registered / instantiated / version / file paths). Score across five dimensions (0–20 each):
+Call `inspect_tool` (`capability_type="agent"`) on the target for its registry facts (registered / instantiated / version / file paths). Check the type-specific requirements:
 
 1. **Interface Compliance** — `@AGENT.register_module`, inherits `Agent`, has `name`/`description`/`metadata`/`enable_evolving`; **cleanly inherits the base loop**. Tool-calling agents must not override `__call__`; an agent whose main function is code overrides `__call__` and calls no model.
 2. **Code Quality** — clean, valid, no dead code; lifecycle hooks come from the inherited loop, not re-implemented.
@@ -140,6 +147,10 @@ Call `inspect_tool` (`capability_type="agent"`) on the target for its registry f
 4. **Integration** — `inspect_tool` (`capability_type="agent"`) shows Registered + Instantiated.
 5. **Task Execution** — a valid execution path: a tool-calling agent with a valid `prompt_name` inheriting the loop, or a code-driven agent overriding `__call__`.
 
-For an empirical check, MetaAgent can dispatch the agent on a sample task and inspect the result.
+Exercise the registered Agent in a supported fresh bounded consumer and collect its actual
+output, trace and cost. Compare with an equivalent baseline and an independent case, keeping
+model, task, capabilities and budgets comparable. Registration cannot replace the current
+running agent. A missing dispatch/handoff facility leaves behavioral evidence inconclusive;
+a valid Python class and rendered prompt alone cannot establish improved reasoning.
 
 ---

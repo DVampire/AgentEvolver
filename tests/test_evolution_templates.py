@@ -87,3 +87,34 @@ def test_a_template_names_only_seams_that_still_exist(path):
         if name in text and not hasattr(Agent, name)
     ]
     assert not gone, f"{path.name} names methods the base class no longer has: {gone}"
+
+
+@pytest.mark.asyncio
+async def test_environment_template_state_actions_and_effects():
+    from agentevolver.environment.server import EnvironmentManagerServer
+    from agentevolver.permission import EffectContract
+
+    path = TEMPLATE_ROOT / "self_evolving_skill/references/environment/template.py"
+    env = _load(path).MyEnvironment()
+    await env.initialize()
+    try:
+        for action in env.actions.values():
+            decision = EffectContract.from_annotations(action.metadata).policy_decision(
+                mode=env.permission_mode, label=action.name,
+            )
+            assert decision.allowed and not decision.requires_approval
+
+        write_effect = EffectContract.from_annotations(env.actions["set_value"].metadata)
+        assert not write_effect.policy_decision(mode="read_only", label="set_value").allowed
+        await env.set_value(key="phase", value="training")
+        raw = await env.get_value(key="phase")
+        result = EnvironmentManagerServer._normalize_response(env.name, "get_value", raw)
+        assert result.success and result.data["data"]["value"] == "training"
+        assert (await env.get_state(ctx=None))["state"]["keys"] == ["phase"]
+        missing = EnvironmentManagerServer._normalize_response(
+            env.name, "get_value", await env.get_value(key="missing"),
+        )
+        assert not missing.success and missing.message
+    finally:
+        await env.cleanup()
+    assert (await env.get_state(ctx=None))["state"]["keys"] == []

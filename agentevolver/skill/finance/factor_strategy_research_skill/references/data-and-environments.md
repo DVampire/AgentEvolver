@@ -12,23 +12,63 @@ These official sources are starting points, checked on 2026-09-12:
 | Source | Relevant contract and feasibility check |
 | --- | --- |
 | [Alpaca historical stock bars](https://docs.alpaca.markets/us/reference/stockbars) | Multi-symbol bars, pagination via next_page_token, explicit feed and adjustment options. Freeze every query parameter and follow all pages. |
-| [Alpaca market data FAQ](https://docs.alpaca.markets/us/docs/market-data-faq) | SIP consolidates US exchanges; IEX is one venue. Historical SIP access and recency restrictions differ from latest-data permissions. Probe the actual account rather than inferring entitlement from a plan name. |
+| [Alpaca market data FAQ](https://docs.alpaca.markets/us/docs/market-data-faq) | SIP consolidates US exchanges; IEX is one venue. Historical SIP queries ending at least 15 minutes ago can be available without a paid subscription, but still require valid credentials. Verify account access and session semantics; a 401 alone does not establish a paid-plan requirement. |
 | [Alpha Vantage documentation](https://www.alphavantage.co/documentation/) | TIME_SERIES_DAILY_ADJUSTED provides raw OHLCV, adjusted close, splits and dividends. It is marked premium; compact data has only 100 observations. Verify full-history access. |
+| [Tiingo EOD documentation](https://www.tiingo.com/documentation/end-of-day) | Token-authenticated historical date-range queries expose raw and adjusted fields plus split/dividend information. Verify account limits, volume/session coverage and rights against the study before selecting it. |
+| [yfinance](https://github.com/ranaroussi/yfinance) and its [download API](https://ranaroussi.github.io/yfinance/reference/api/yfinance.download.html) | A public-data client that can be wrapped by a local MCP server. Check use rights, actual availability, adjustment semantics and volume coverage; it is not an official Yahoo SDK or a guaranteed study-ready source. Set date range and adjustment/action flags explicitly. |
 
-Use other documented providers if their licensed data meets the contract. The absence of
-a configured provider is a feasibility problem to resolve with bounded probes, not a reason
-to scrape arbitrary undocumented endpoints. An imported licensed CSV is a possible separate
+These are candidates, not a provider allowlist or a requirement to obtain commercial keys.
+Use other documented providers or maintained public-data clients if their data meets the
+contract and use rights. Check at least a plausible alternative before treating one provider's
+authentication failure as a study-wide blocker. Absence of an API key does not exclude a
+public download. An imported licensed CSV is a possible separate
 study input, but cannot satisfy a task explicitly requiring a real connector download.
 
 For the default consolidated-volume study, a single-exchange feed changes the hypothesis.
 Do not silently splice feeds, mix adjusted close with raw open, or infer dividends from
 price gaps. Record source revisions and historical-data/PIT limitations. A source that cannot
 provide required actions, calendar or dates cannot pass the study's data acceptance.
+In particular, disabling a client's auto-adjustment does not prove that provider OHLC or
+volume is in as-traded units. Verify the underlying adjustment basis and corporate actions;
+report a specific unmet contract field rather than declaring every public source invalid.
+
+## Recovering data access
+
+Check credential presence in the actual connector process without exposing values. A key in
+the launcher's shell is not evidence that a container or MCP subprocess received it. Record
+missing configuration, invalid authentication, insufficient entitlement and unavailable
+coverage separately. Retry transient failures with bounds; do not retry unchanged 401/403
+requests or a documented demo-key restriction as if they were transient. Investigate another
+documented source within an explicit small feasibility budget, keeping the study unchanged.
+
+If no usable source is available, write the source receipt and the exact configuration or
+access change needed in the plan. Request that prerequisite through the available user-facing
+channel, without requesting secret values in a report or conversation. Do not invent repeated
+factor/strategy trials against the same missing snapshot: record proposals as pending and one
+representative prerequisite check. Research budgets count evaluations, not renamed blocked
+proposals; retain all attempted calls in the operational record. Failed numerical evaluations
+still consume their trial allowance. Preserve any attempts already charged by the existing
+ledger rather than reclaiming budget on resume.
+
+Implement the source-independent numerical engines while data access is being resolved,
+within the remaining budget. Their missing implementation is not an external prerequisite.
+Use the same numerical implementation and research interfaces on
+isolated, explicitly synthetic fixtures; keep those states out of real factor admission and
+financial results. If meaningful independent work is exhausted, stop with a concise blocked
+handoff and any existing usable report. Release counts and evolution coverage may remain
+unmet. An elaborate substitute dashboard, dummy trials or additional failure-only components
+do not resolve an access prerequisite.
+
+On resume, inspect the prior plan, source configuration and generated implementations before
+launching another full run. A new credential does not complete missing engine operations.
+Repeat the bounded acquisition check after the prerequisite changes, then implement and
+verify the remaining successful paths without resetting exposure or experiment history.
 
 ## Connector contract
 
-Build an MCP wrapper only when no adequate service exists. Follow self_evolving_skill's
-connector templates; a bare requests script is not an AgentEvolver Connector. Design bounded
+Follow self_evolving_skill's Connector reference for local MCP authoring, registration and
+repair, exactly as for other generated component types. The market-data methods belong here;
+the component lifecycle belongs to that shared skill. Design bounded
 actions such as source description, coverage probe, stock bars, corporate actions and snapshot
 export. The agent chooses final names from actual schemas.
 
@@ -38,6 +78,9 @@ raw response provenance, canonical schema, timestamps, completeness, request cou
 Retry transient failures with bounds; respect rate limits and fail visibly on malformed or
 partial data. Distinguish a cache hit from a fresh request. Make cache keys include every semantic
 parameter and provider revision where available. Support a changed symbol/interval in reuse tests.
+Use MCP execution errors for failed downloads or invalid requests, so the runtime receives a
+failed call. Returning an ordinary JSON string with `ok:false` is not an MCP error. Source
+inspection can successfully report missing credentials, but that is not a successful download.
 
 Normalize `timestamp, symbol, open, high, low, close, volume` with explicit UTC timestamps,
 exchange-local session date, currency, provider/feed, raw/adjusted status and corporate-action
@@ -55,8 +98,9 @@ missing trading price with a future price. Declarations of data quality do not r
 | Output | Factor IDs, coverage, IC diagnostics, eligible status, result paths | Net/gross returns, risk/cost metrics, acceptance results, trades and artifact paths |
 
 These are interface requirements, not a fixed action-name list. Follow the real Environment
-base class and action decorator. Inspect the current transport contract, serialize compact
-action results explicitly (JSON text is portable) and return real failures. Include manifests,
+base class and action decorator. Inspect the current transport contract and return compact
+results as a Response or mapping with explicit success/message/data. A JSON string containing
+an error does not mark the native call failed. Include manifests,
 session-scoped state keyed by context and cleanup. Do not assume a registered environment is
 in env_names: the demo permits evolved Environment actions through the shared capability router.
 
@@ -75,6 +119,17 @@ runtime for every formula. Results must carry schema/version information so a la
 change cannot silently reuse stale metrics. Test this invalidation explicitly.
 
 ## Engineering evidence before financial claims
+
+Before calling either environment implemented, exercise a successful path through the same
+interfaces and numerical code that will consume market data. A separate `run_fixture` demo
+cannot validate a research action that unconditionally returns blocked or null metrics.
+Use isolated fixture studies to check factor values, labels, fitted transforms, diagnostics
+and admission decisions; then strategy signals, next-open orders, cash/shares, costs and
+result metrics. Also exercise validation, joint freeze and finalization state transitions.
+Fixtures may simulate eligibility within their own test state but never enter the real study's
+eligible library or consume its test attempt. Exported artifacts must contain computed results
+on valid inputs and explicit errors on invalid ones. Track missing operations individually;
+registration and rejection-path tests are not full engine readiness.
 
 Use hand-computable fixtures for a next-open fill, zero signal/cash, buy-and-hold, split,
 dividend, fee on entry/exit, terminal liquidation and a gap in required prices. Compare an

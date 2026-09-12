@@ -572,9 +572,17 @@ class ConnectorContextManager(BaseModel):
                     pass
             raw_annotations = getattr(tool, "annotations", None)
             if raw_annotations is None:
-                raw_annotations = (getattr(tool, "metadata", None) or {}).get(
-                    "annotations"
-                )
+                metadata = getattr(tool, "metadata", None) or {}
+                raw_annotations = metadata.get("annotations")
+                if raw_annotations is None:
+                    # langchain-mcp-adapters flattens ToolAnnotations into metadata.
+                    # Only consume effect fields, not arbitrary provider _meta data.
+                    raw_annotations = {
+                        key: metadata[key] for key in (
+                            "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint",
+                            "read_only_hint", "destructive_hint", "idempotent_hint", "open_world_hint",
+                        ) if key in metadata
+                    }
             normalized = ConnectorContextManager._normalise_annotations(raw_annotations)
             if normalized:
                 annotations[action] = normalized
@@ -594,12 +602,13 @@ class ConnectorContextManager(BaseModel):
         self._invalidate_instruction()
         return names
 
-    async def discover(self, name: str) -> Optional[List[str]]:
+    async def discover(self, name: str, *, raise_errors: bool = False) -> Optional[List[str]]:
         """Connect to a connector's MCP server and refresh its action list.
 
         Unlike ``initialize`` (which only reads connector.json), this actually
         opens a session to the server. Returns the discovered action names, or
-        None if the connector is unknown or the connection fails.
+        None if the connector is unknown or the connection fails. Execution callers can
+        request the original exception so a failed discovery becomes a useful observation.
         """
         cfg = self._connector_configs.get(name)
         if cfg is None:
@@ -607,11 +616,7 @@ class ConnectorContextManager(BaseModel):
             return None
 
         try:
-            try:
-                from langchain_mcp_adapters.client import MultiServerMCPClient
-            except Exception as e:
-                logger.error(f"| ❌ Missing MCP dependency: {e}. Install `langchain_mcp_adapters`.")
-                return None
+            from langchain_mcp_adapters.client import MultiServerMCPClient
 
             client = MultiServerMCPClient({cfg.name: cfg.connection}, tool_name_prefix=False)
             tools = await client.get_tools(server_name=cfg.name)
@@ -622,6 +627,8 @@ class ConnectorContextManager(BaseModel):
             return action_names
         except Exception as e:
             logger.error(f"| ❌ Connector '{name}' discovery failed: {e}")
+            if raise_errors:
+                raise
             return None
 
     # ------------------------------------------------------------------
@@ -763,7 +770,25 @@ class ConnectorContextManager(BaseModel):
         )
         effect = EffectContract.from_annotations(annotations)
 
-        def effect_guard(_execution):
+        async def effect_guard(_execution):
+            nonlocal effect
+            if effect.read_only is None and connector_config.connection:
+                # A freshly generated MCP server may declare effects only in list_tools.
+                # Discover before deciding; never invoke an unknown action to discover it.
+                import asyncio
+                try:
+                    await asyncio.wait_for(self.discover(name, raise_errors=True), timeout=30)
+                except Exception as error:
+                    import traceback
+                    detail = "".join(traceback.format_exception(error))[-3000:]
+                    return ToolPolicyDecision.deny(
+                        f"MCP discovery failed for {name}:\n{detail}\n"
+                        f"Inspect the server and connection in {connector_config.connector_dir}; "
+                        "repair the candidate and retry registration/call."
+                    )
+                effect = EffectContract.from_annotations(
+                    (connector_config.action_annotations or {}).get(action) or {}
+                )
             decision = effect.policy_decision(
                 mode=connector_config.permission_mode,
                 label=f"MCP action {name}__{action}",
@@ -805,6 +830,7 @@ class ConnectorContextManager(BaseModel):
             try:
                 from langchain_mcp_adapters.client import MultiServerMCPClient
                 from langchain_mcp_adapters.tools import load_mcp_tools
+                from langchain_core.tools import ToolException
             except Exception as e:
                 return Response(
                     type=ResponseType.CONNECTOR,
@@ -837,7 +863,20 @@ class ConnectorContextManager(BaseModel):
                     )
 
                 payload = args or {}
-                result = await tool.ainvoke(payload)
+                # The adapter otherwise converts MCP isError into ordinary content
+                # when invoked with a dict, losing the failed status before we see it.
+                # Let this manager's exception boundary preserve the failure instead.
+                tool.handle_tool_error = False
+                try:
+                    result = await tool.ainvoke(payload)
+                except ToolException as error:
+                    # Catch inside the session: its TaskGroup would otherwise wrap
+                    # the error and hide the useful provider message during teardown.
+                    return Response(
+                        type=ResponseType.CONNECTOR, success=False,
+                        message=f"MCP action {action} failed: {error}",
+                        data={"connector": connector_config.name, "action": action},
+                    )
                 msg = self._unwrap_mcp_result(result)
 
                 return Response(

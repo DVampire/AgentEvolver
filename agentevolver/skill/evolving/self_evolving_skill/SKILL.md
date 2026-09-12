@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
-description: Turn a concrete reusable improvement opportunity into a small verified framework capability change. Use for learning from self-verification, a first correction or success, expected reuse, a better quality/cost/reliability method even when the task already works, a missing capability, or an explicit component request. Repeated failure is not required. Covers inspect → generate/optimize → evaluate → keep/rollback/unload across all eight component types. NOT for ordinary edits to the user's deliverable.
-version: 2.6.0
+description: Generate, optimize, repair and evaluate reusable framework capabilities across tool, skill, agent/prompt, connector, environment, memory, workflow and plugin. Use after a concrete improvement opportunity, component failure, first correction or discovery, expected reuse, or an explicit component request. Owns the shared inspect → author → register → evaluate → repair or adopt → use loop. Repeated failure is not required. NOT for ordinary edits to the user's deliverable.
+version: 2.7.0
 license: N/A
 type: [orchestrator]
 category: meta
@@ -11,205 +11,146 @@ metadata: {}
 
 # Self-Evolving
 
-**How** to investigate and close an opportunity identified by the shared `evolution_rules`.
-This is an orchestrator's document. *How* to write, change or judge a component is in this
-skill's own references, organised by what you are working on rather than by which of the three
-things you are doing to it.
+The current agent owns generation, optimization, evaluation and repair of all eight
+component families through this skill. Use the existing editing, inspection, invocation
+and adoption tools in the normal action loop. There is no separate generate, optimize or
+evaluate agent to dispatch, and a component error is feedback for this loop.
 
-| what you need | where it is |
-|---|---|
-| when evolving is warranted at all | the `evolution_rules` system module, not here |
-| one type: its contract, and how to write / change / judge it | `references/<type>/<type>.md` |
-| what holds across every type, per operation | `references/conventions.md` |
-| a starting point rather than a blank file | `references/<type>/template*.…` |
-| something to run — probe, validate, aggregate | `scripts/<type>/` |
+The shared `evolution_rules` prompt decides **when** to investigate an opportunity. This
+skill defines **how** to complete it; domain skills supply domain methods and acceptance
+criteria. Task briefs describe user outcomes. Do not duplicate this lifecycle in each
+actor, domain skill or task, or add a second trigger gate here.
 
-`<type>` is one of `tool`, `skill`, `agent`, `connector`, `environment`, `memory`, `workflow`,
-`plugin`. Read the type's file when the work reaches it; they are not meant to be carried all
-at once. A `template-manifest.md` is the file the loader reads for that type — a skill's
-`SKILL.md`, a connector's `CONNECTOR.md`, an environment's `ENVIRONMENT.md` — under one name
-because it plays one role. It cannot be named `SKILL.md` here: a file by that name is
-discovered as a skill at any depth, so a template carrying the real name would register
-itself.
+## Read the common procedure and the selected contract
 
-## What this is
+Read [conventions.md](references/conventions.md) before authoring or evaluating a candidate.
+It defines staging, registration, failure recovery and the evidence/decision contract for
+every family. Then read only the selected type's reference and relevant template. Those
+references add artifact and execution requirements; they do not replace the common loop.
 
-- **Two directions, never confuse them.** *User work* — write the app, answer the question —
-  is done directly by the responsible agent or a suitable bounded worker. *Self-evolution* changes the framework's own
-  components and is work you do yourself, reading this skill's references for the shape of the
-  component in hand. Evolution serves the task; it is never the deliverable unless the user
-  asked for it.
-- **Register-is-live.** A generated or optimized component becomes the active version the
-  moment it registers. Callable rosters refresh according to each consumer's scope; this
-  does not replace an already running Agent, Environment, or Memory instance.
-  Staged artifacts pass registration checks and promotion, but this is not behavioral
-  acceptance. Keep use bounded to validation until the exact version has been evaluated.
-- **The decision is yours.** Nothing scores a report and promotes or rolls back for you. You
-  read the evaluation and decide, in your own reasoning, explicitly.
+| Family | Useful form | Type contract |
+|---|---|---|
+| `tool` | A bounded executable operation with explicit inputs and results | [Tool](references/tool/tool.md) |
+| `skill` | A reusable procedure, decision method or review method, optionally with scripts | [Skill](references/skill/skill.md) |
+| `agent` | Reasoning or specialist behavior; its prompt is part of this family | [Agent](references/agent/agent.md) |
+| `connector` | Access to an external service or data source, including an authored local MCP server | [Connector](references/connector/connector.md) |
+| `environment` | Stateful observation, interaction, simulation or execution | [Environment](references/environment/environment.md) |
+| `memory` | Retention, retrieval and bounded presentation of experience | [Memory](references/memory/memory.md) |
+| `workflow` | Reusable sequencing and coordination of capabilities | [Workflow](references/workflow/workflow.md) |
+| `plugin` | A cohesive package of related capabilities | [Plugin](references/plugin/plugin.md) |
 
-## What can be evolved
+Choose the smallest form that addresses the reusable limitation and has a real consumer.
+An existing component can be improved; creating another component is not the default.
+A Skill need not become a Tool, and an Agent improvement need not create another agent.
+Product source, preference storage and task reports are not framework capabilities.
 
-Eight types: `tool`, `skill`, `agent` (including its prompt), `connector`, `environment`,
-`memory`, `workflow`, `plugin`. Choose the family and component name for inspection, authoring and registration;
-these are `capability_type`/`name` for inspect and `module`/`name` for adoption.
-Use the shared rules' **Choose the form** guidance to select the smallest useful target.
-Skills, tools and agent/prompt changes are all valid outcomes; executable tools are not
-the default. An existing component can be improved without creating another component.
-Read only the selected type's reference for its artifact, registration and evaluation
-contract. Verify that the current consumer scope can exercise it before implementation;
-registration alone neither changes running instances nor grants missing capabilities.
+Templates live under `references/<type>/template*`; support scripts under `scripts/<type>/`.
+A `template-manifest.md` becomes the type's real manifest inside the new component. Do not
+rename templates in this skill to `SKILL.md`: nested files with that name are discoverable.
 
-When an experiment explicitly names `evolution.required_modules`, preserve that coverage
-in the work record. A verified Tool does not fulfil a required Skill, Agent or Connector.
-Keep form and behavior aligned: a skill teaches a reusable method with exercised branches;
-an agent owns a bounded reasoning task and is evaluated in fresh consumers with comparable
-inputs, model, capabilities and budgets; a connector exposes a real provider through its
-declared actions. Follow the selected type's reference for execution and evidence. Loading
-instructions, renaming a deterministic helper or fetching data only through Bash does not
-demonstrate those outcomes. A failed or unjustified required experiment remains unmet.
+## Establish the opportunity
 
-For a chain of components, link input/output artifacts and consumer call IDs in the plan
-records. Evaluate each component against a preserved baseline, then replay the full product
-journey with the adopted versions. Revisit them on changed inputs: inspect the current
-version, diagnose the weak layer, optimize that component and compare with its kept version
-under the same inputs and budgets. Retain earlier success cases as downstream regressions.
-Record version lineage, quality and measured cost; do not create a parallel component merely
-to avoid evaluating an existing one. Successful reuse needs no artificial version bump.
-For model-based comparisons, use fresh, equivalent contexts without the candidate's answer;
-the builder may pass source packets and consume returned designs itself. This does not
-require a remote model inside the deployed website or a separate audience/reviewer agent.
+Use the existing work record to preserve four short facts:
 
-## Prepare an opportunity
+- **Evidence:** the observation, feedback, first correction or successful discovery that
+  suggests a reusable improvement. Cite actual calls when claiming executed behavior.
+- **Consumer:** the next operation and a different reuse case. Future uses are expected,
+  not already observed. Confirm that the consumer can load and exercise the chosen family.
+- **Benefit and acceptance:** the required operation and observable quality, reliability,
+  effort or cost improvement, with a baseline and a bounded comparison. Qualitative
+  criteria can compare concrete outputs. Predicted savings are hypotheses.
+- **Scope and budget:** the smallest useful change, with resources for evaluation, repair
+  or rollback, integration and the user task. Follow the shared prompt's budget policy.
 
-The shared `evolution_rules` system-prompt module owns the detection policy. It applies to
-ordinary tasks without any task instruction to evolve. This skill explains how to investigate
-and close a detected opportunity; task wording or a component quota is not execution evidence.
+Inspect the existing method and collect baseline evidence before registration. A missing
+product feature does not establish a missing framework capability. A baseline can already
+work while a better reusable method is worth testing. Available Bash is not proof that a
+reliable method exists, nor is unfamiliarity proof that an operation is impossible.
 
-Do not apply a second, stricter trigger gate here. A first correction, successful discovery,
-expected reuse, or better method can justify an experiment even if direct task work could
-succeed. Repeated failure and a broken baseline are not required.
+Keep discovery and evaluation within authorized inputs and local checks. Do not inspect
+hidden grading data or change the benchmark. No opportunity means ordinary task work;
+never manufacture a gap or require repeated failure before investigating a real one.
 
-For an opportunity discovered during self-verification, capture the local check and what
-it revealed, then separate the immediate product/setup fix from the reusable method change.
-For example, an incomplete check may motivate a verification skill; repeated manual extraction
-of diagnostics may motivate an operation; a reasoning omission may motivate an agent/prompt
-alternative. Choose from the evidence and existing capabilities, not from these examples.
-Describe how the method would catch or avoid the mistake on a different permitted case.
-A different check or operation in the same project can supply that reuse case. Do not embed
-the current task's answer and call it a general capability, or count a summary as adoption.
+## One lifecycle for all eight families
 
-Keep benchmark discovery and candidate evaluation within solver-visible task inputs and
-local checks. Official grading remains outside this loop; do not inspect hidden tests or
-reference patches, alter grading, or claim a candidate comparison as an official score.
+1. **Inspect and choose.** Use `inspect_tool` with `capability_type` and `name`; read the
+   actual source, contract, version and `enable_evolving`. Optimize an existing evolvable
+   component. For a missing component, generate one; for a frozen target, generate a
+   suitable alternative under a new name. A frozen target does not end the user task.
+   Preserve the prior version, baseline inputs, outputs and call IDs for comparison.
+2. **Author in staging.** Use the available Bash/apply_patch tools to write the artifact
+   required by its type. Implement the real operation, dependencies, effects and failure
+   path. Keep public contracts compatible and avoid overwriting files still in use.
+   Perform the type's load/construction checks; syntax alone is insufficient.
+3. **Register.** Call `adoption_tool action=register` with `module`, `name` and the absolute
+   `artifact_path`. Failed registration returns to authoring; it is not an adopted version.
+   Preserve the returned `candidate_version`, `active_version` and rollout status. An
+   active candidate is provisional until evaluated. Shadow/canary calls may still execute
+   the baseline; attribute results to the version actually exercised. Registration neither
+   grants permissions nor replaces running Agent, Environment or Memory instances.
+4. **Evaluate the exact version.** Freeze candidate source and comparison inputs during
+   this evaluation, then invoke the registered capability. Compare a representative
+   baseline/candidate case and an independent reuse or regression case, expanding coverage
+   for broader changes. Test the required successful operation as well as relevant failure
+   handling; measure the claimed benefit and cost. Use isolated state for writes. Support
+   scripts and fixtures help verification but do not replace native consumer evidence.
+5. **Decide or repair.** Record the version-scoped `pass`, `fail` or `inconclusive` verdict
+   through `adoption_tool action=record_decision`. Keep only a passing active version whose
+   evidence supports the claimed benefit. For a failed or unassessed candidate, record the
+   result and perform `rollback` to the prior good version, or `unload` if none exists.
+   Read the failure, repair in staging and return to registration and evaluation. Recording
+   a rollback/unload decision alone does not perform the operation.
+6. **Use and verify.** Use the adopted version on subsequent real task work and check the
+   consumer result. For a Skill, load it and execute its method; for an instance-bound
+   component, use a supported fresh consumer or handoff. Record actual version and call
+   evidence. If the task requires verified evolution, submit the additional `record_use`
+   receipt described in the conventions. Registration or loading alone is not use.
 
-A new product experience can begin this investigation before any failure. Translate the
-chosen experience into a concrete operation or observation, inspect existing capabilities
-and relevant documentation, and use a bounded authorized probe when it resolves uncertainty.
-For example, a media interaction or external data integration may reveal a reusable method
-for building or verifying the experience. The desired feature is evidence of demand, not
-proof that a new component is necessary: establish the consumer, expected reuse and benefit.
-Do not require the user to name a Tool or Connector, and do not count a product-only API
-integration as framework evolution. Preserve the same evaluation and adoption loop below.
+Each edit returns through the same cycle. Never attribute old evidence to a repaired
+version, or change source during its evaluation. If registration did not create a version,
+keep the failed attempt in the work record and repair it without inventing a version or
+submitting an adoption decision for it.
 
-Prepare four short facts in the existing work record, then proceed to inspection:
+## Failure is work to diagnose
 
-- **Evidence:** the observation, feedback, or result that prompted the idea. Current
-  conversation, tool results, checkpoints, traces, and durable notes are valid sources;
-  writing a memory file is not a prerequisite. Cite actual sources when claiming repetition.
-- **Use:** the consumer and a concrete reuse case beyond this single product edit. Label
-  future uses as expected, not already observed. A shell can provide an operation without
-  providing the best reusable method; do not mislabel possible operations as impossible.
-- **Benefit and check:** the quality, effort, reliability, or creative outcome to improve,
-  the baseline comparison, and a bounded way to test it. Predicted savings are hypotheses,
-  not measured results. A qualitative criterion is acceptable if the evaluator can compare
-  concrete outputs against it.
-- **Scope and budget:** the smallest useful component change and enough remaining resources
-  for construction, evaluation, integration or rollback, and task completion. Follow the
-  shared policy's budget rules; no extra waiting period or failure count applies here.
+Registration, discovery, invocation and evaluation errors do not automatically end the
+task. Read the concrete result and relevant source, distinguish an argument/setup mistake
+from a component defect or external constraint, and follow the recovery table in the
+conventions. Missing implementation, dependencies or incorrect schemas/effect declarations
+are authoring work when repairable within the current scope. An MCP server can be authored
+as part of a Connector, just as Python implementation belongs to a Tool.
 
-Inspect existing components and reuse a suitable available capability rather than making a
-duplicate. Respect consumer grants: missing credentials or permissions are not authorization
-to bypass isolation. A transient error alone calls for recovery; an evidenced reusable recovery
-method may be an improvement opportunity. Do not confuse fixing product code with evolving
-the framework capability that produces or checks it.
+Repair using the available tools, then retry the failed operation and a relevant regression.
+Do not repeat unchanged failing calls, turn an error into a success-shaped report, or use
+`done_tool` to avoid repairable work. For external access problems, investigate permitted
+alternatives and continue independent work. A genuine prerequisite or exhausted budget can
+leave a gap unresolved; preserve evidence and reconcile provisional changes before ending.
 
-Keep this decision in the normal action loop, not a per-step audit or extra model request.
-Preserve useful unresolved opportunities through compaction; use authorized durable memory
-for knowledge needed by later independent threads. No opportunity means ordinary task work,
-not an obligation to manufacture an evolution or cover every entity type.
+Keep the original acceptance criterion. Correctly rejecting unavailable input verifies a
+failure path; it does not prove that the required successful operation works. A narrow
+improvement can be valid, but cannot close a broader unmet requirement. Do not invent a pass
+or keep a failing candidate to satisfy an entity count.
 
-## The evolvability gate
+## Evaluation and continuing work
 
-Every component carries `enable_evolving`, and it is enforced in code: an optimize run that
-tries to overwrite a frozen component is **blocked at registration**.
+The current agent evaluates its work using executed evidence. It can run deterministic
+fixtures and comparisons itself. Use an available authorized bounded consumer when the
+claim requires a fresh model context, independent reasoning or instance construction;
+do not assume `general_agent` or a reviewer exists. Never pretend to remove a learned skill
+from the same continuing conversation. If the needed comparison cannot run, state the
+missing evidence as inconclusive. Source review alone is not behavioral verification.
 
-- **Inspect the actual flag.** Do not infer mutability from a built-in or generated name.
-  If the target is frozen, generate an alternative in `extension/` rather than overwriting it.
-- **Always `inspect_tool` first**, with `capability_type` and the target name, to read
-  `enable_evolving` and whether the target is even
-  registered. Frozen means take the generate path, not the optimize path.
+For several components, change one candidate at a time, link input/output artifacts and
+consumer call IDs, evaluate each, then replay the complete consumer journey. On changed
+inputs, optimize the weak layer against its kept version and preserve earlier successes as
+regressions. Successful reuse needs no artificial version bump. Explicit
+`evolution.required_modules` requirements are coverage to track, not permission to fabricate
+gaps or disguise one family as another.
 
-## The loop
-
-Start a qualifying opportunity now in your own action loop. Inspect, author, register,
-evaluate and decide in sequence; there is no dedicated generate/optimize/evaluate Agent
-to dispatch. Delegate only a bounded probe or comparison to an available authorized
-consumer when useful. Such a dispatch may run in the background if independent work
-can continue; record and collect its actual process ID. Direct authoring has no process
-ID to invent. Never overwrite a component still being consumed; write a separate candidate.
-Only dependent work waits. Record concrete prerequisites or write conflicts and retry when
-resolved; a future plan entry alone does not execute an experiment.
-
-1. **Assess** — `inspect_tool` the target: registered? evolvable? source path? Decide generate
-   (missing, or a frozen target) versus optimize (exists and evolvable). Preserve baseline
-   evidence and the prior version before registering a change, so comparison and rollback
-   do not depend on reconstructing an overwritten baseline.
-2. **Change** — read `references/<type>/<type>.md`: "Writing a new one" for a component that
-   does not exist yet, "Improving an existing one" for one that does, plus the matching section
-   of `references/conventions.md`. Author the files under `extension/`, then install what you
-   wrote with `adoption_tool` action `register`, passing its absolute path as `artifact_path`.
-   Until that call succeeds the artifact is bytes on disk, not a version — `inspect_tool` still
-   reports it unregistered, and step 3 has nothing it is allowed to record against.
-3. **Evaluate** — read that type's "Evaluating one" section and judge the exact candidate
-   version — the exact candidate version, not the component in general — then record the verdict with `adoption_tool` so it is bound to that version. You are
-   grading your own work here, which is why the record is version-scoped and why the evidence
-   has to be executed rather than asserted. Do not evaluate a candidate still being changed.
-   Compare its behavior against the observed baseline and an independent case; check
-   regressions and cost.
-   For a small method change, use one representative baseline/candidate comparison and one
-   independent reuse or regression case. Expand coverage for broader, stateful, permission-
-   sensitive or externally mutating changes; never shrink required safety checks to save cost.
-   Use a bounded consumer with only the necessary permissions, not unrelated live participants.
-   In a single-agent run, execute deterministic baseline/candidate fixtures yourself, keeping
-   inputs and budgets comparable. Do not dispatch agents when the task disables them. A skill
-   that requires a fresh model comparison remains inconclusive without that consumer; choose
-   an objectively exercisable improvement when the real opportunity supports it. Never
-   pretend you can unlearn a skill inside the same continuing conversation.
-   If meaningful exercise is unavailable, the verdict is inconclusive, not a pass from reading.
-4. **Check it helped** — compare observed results with the claimed benefit, even when the
-   baseline already works. A higher score alone does not demonstrate that benefit.
-5. **Decide, and own it** — use the observed comparison, not the score alone. For a substantial
-   change, obtain proportionate independent verification through an available evaluator:
-   - **Helped** → keep it (it is already live) and continue the user task using it.
-   - **No better, or regressed** → you must not leave it live. Register-is-live means a bad
-     change is already active, so rolling back is required rather than optional:
-     `adoption_tool` `rollback` an optimized component to its previous version
-     (`list_versions` first), or `unload` a brand-new one that has no prior version. Then
-     revise or regenerate using the failure evidence.
-   - **Never evaluated at all** → also roll back. Not because the change is presumed bad, but
-     because nothing looked: an unexamined component is live in the run and in every run
-     after it. Execute the evaluation instead of skipping to a decision.
-6. **Integrate and record** — use `adoption_tool` to record the decision and verify that the
-   intended consumer actually uses the adopted version on subsequent real work. If changing
-   Agent, Environment or Memory, use a supported handoff or a fresh bounded consumer; a registry
-   entry alone is not an instance migration. Record the evidence, version, decision, actual
-   consumer and outcome. Product preference storage is not framework Memory evolution.
-
-Complete generate/optimize → evaluate → decide in one bounded improvement cycle. These are
-action steps, not separate product releases; do not wait for another release to evaluate.
-Advance the next phase and update the existing plan entry. Collect any delegated probes
-by their actual process IDs; do not duplicate running work. Before finishing, close the
-experiment and join any probes. If forced to stop, cancel outstanding probes and reconcile
-or roll back provisional changes; launching alone is not completion.
-
-One component change per optimize step, so the evaluation can attribute the effect.
+Keep a concise status and record path in the session's `plan/index.md` when planning is
+enabled. Store detailed comparisons, errors, versions and consumer evidence under its plan
+directory using the domain skill's layout; otherwise use the available durable work record.
+Distinguish proposed, staged, registered, evaluated, adopted and used. Preserve unresolved
+work through compaction and record decisions promptly. Advance the loop now rather than
+leaving only a future plan entry. Close any delegated probes and reconcile provisional
+changes before finishing; no extra per-step audit or model call is needed.
