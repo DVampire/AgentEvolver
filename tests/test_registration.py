@@ -110,23 +110,29 @@ def test_every_imported_stub_exists():
     assert not missing, "\n  ".join(missing)
 
 
-def test_every_agent_with_bash_can_collect_a_background_job():
-    """`run_in_background` without the job environment starts work nothing can read.
+def test_host_bash_has_job_collection_or_a_foreground_only_container():
+    """A controlled base container refuses background execution before starting it.
 
-    The agent is handed a job id and no way to use it — worse than not being able to
-    background at all, because the capability looks available and silently drops results.
-
-    It was three `job_*` tools; it is one mounted environment now, and the requirement did
-    not change with the shape. What did change is that mounting it also puts what is still
-    outstanding in front of the agent every step, rather than only when it asks.
+    Host Bash still needs the job environment to collect background work. Docker task
+    environments with a base image route Bash to that foreground-only container, so
+    they must not acquire a second host job interface just to satisfy a roster scan.
     """
+    from mmengine import Config
+
     stranded = []
     for path in sorted(CONFIG_DIR.glob("*.py")):
         text = path.read_text(encoding="utf-8")
         if '"bash_tool",' not in text:
             continue
         if '"job",' not in text:
-            stranded.append(f"{path.name} does not mount the job environment")
+            cfg = Config.fromfile(str(path))
+            controlled = any(
+                isinstance(cfg.get(name), dict) and cfg[name].get("backend") == "docker"
+                and cfg[name].get("base_image")
+                for name in cfg.get("env_names", [])
+            )
+            if not controlled:
+                stranded.append(f"{path.name} has neither job collection nor a controlled base container")
     assert not stranded, (
         "these agents can start background work but not collect it:\n  " + "\n  ".join(stranded)
     )

@@ -196,6 +196,10 @@ class HostSandbox(Sandbox):
             )
 
     # ------------------------------------------------------------- execution
+    def launched_alive(self) -> bool:
+        """Readiness must stop probing when the owned launch process has exited."""
+        return any(process.poll() is None for process in self._procs)
+
     async def run_command(
         self,
         command: str,

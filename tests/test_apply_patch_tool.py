@@ -42,6 +42,35 @@ def test_apply_patch_updates_one_file(tmp_path):
     assert response.data["deletions"] == 1
 
 
+@pytest.mark.parametrize("patch,expected", [
+    ("@@ -2 +2 @@\n-old\n+new\n", "before\nnew\nafter\n"),
+    ("@@ -1,1 +1,2 @@\n before\n+inserted\n", "before\ninserted\nold\nafter\n"),
+    ("@@ -2 +2,0 @@\n-old\n", "before\nafter\n"),
+])
+def test_minimal_hunks_work_inside_a_larger_file(tmp_path, patch, expected):
+    target = tmp_path / "app.js"
+    target.write_text("before\nold\nafter\n")
+    response = _call(tmp_path, "--- app.js\n+++ app.js\n" + patch)
+    assert response.success, response.message
+    assert target.read_text() == expected
+
+
+def test_unanchored_hunk_cannot_search_for_matching_text_on_another_line(tmp_path):
+    target = tmp_path / "app.js"
+    target.write_text("old\nchanged\nold\n")
+    response = _call(tmp_path, "--- app.js\n+++ app.js\n@@ -2 +2 @@\n-old\n+new\n")
+    assert not response.success
+    assert target.read_text() == "old\nchanged\nold\n"
+
+
+def test_one_stale_minimal_hunk_rejects_the_entire_edit(tmp_path):
+    target = tmp_path / "app.js"
+    target.write_text("old\nchanged\n")
+    response = _call(tmp_path, "--- app.js\n+++ app.js\n@@ -1 +1 @@\n-old\n+new\n@@ -2 +2 @@\n-stale\n+new\n")
+    assert not response.success
+    assert target.read_text() == "old\nchanged\n"
+
+
 def test_apply_patch_creates_a_small_file_outside_a_git_repo(tmp_path):
     patch = """diff --git a/src/main.py b/src/main.py
 new file mode 100644

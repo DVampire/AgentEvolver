@@ -63,6 +63,18 @@ Previews have their own site identity and version sequence. Feedback round numbe
 are separate from these persistent artifact versions. Both monitoring pages list
 version history; old links and source are retained until explicitly removed.
 
+Launcher teardown reclaims its sandbox resources and stops temporary previews. Published
+sites become `DETACHED`: the persistent gateway restores them on the next visit from their
+archived source, rather than from an edited working tree. An explicit stop remains `STOPPED`
+and does not revive through the stable site URL. The first visit after teardown may take time
+to start the service. A failed start returns 503 with a pointer to deployment diagnostics.
+
+Host recipes retain the executable search PATH used at deployment, with the launcher's
+Python bin directory available by default. An explicitly supplied PATH wins. This preserves
+runtime lookup across a gateway restart without copying unrelated process environment
+variables into the release recipe. It does not bundle installed interpreters or dependencies;
+use a container profile when those must be portable to another host.
+
 This preserves source and deployment configuration, not a snapshot of external
 databases or mutable application data. Direct `git_url` deployments do not yet
 archive cloned source: use a checked-out local source directory when reproducible

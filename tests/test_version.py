@@ -120,6 +120,23 @@ async def test_a_new_component_starts_at_one_zero_zero(versions):
     assert await versions.generate_next_version("tool", "brand-new") == "1.0.0"
 
 
+@pytest.mark.asyncio
+async def test_rollback_and_cold_archives_do_not_reuse_a_version(versions):
+    await versions.register_version("tool", "checker", "1.0.0")
+    await versions.register_version("tool", "checker", "1.0.1")
+    await versions.register_version("tool", "checker", "1.0.0")
+    assert await versions.generate_next_version("tool", "checker") == "1.0.2"
+    assert await versions.generate_next_version("skill", "cold", known_versions=["1.0.0", "1.0.3"]) == "1.0.4"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_allocations_reserve_distinct_versions(versions):
+    import asyncio
+
+    allocated = await asyncio.gather(*(versions.generate_next_version("agent", "planner") for _ in range(3)))
+    assert allocated == ["1.0.0", "1.0.1", "1.0.2"]
+
+
 @pytest.mark.parametrize(
     "bump, expected",
     [("patch", "1.2.4"), ("minor", "1.3.0"), ("major", "2.0.0")],

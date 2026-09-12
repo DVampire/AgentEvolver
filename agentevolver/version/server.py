@@ -38,6 +38,7 @@ class VersionManagerServer(BaseModel):
             "constraint": {},
             "workflow": {},
         }
+        self._allocated_versions = {}
 
     async def initialize(self):
         """Initialize version manager.
@@ -123,59 +124,41 @@ class VersionManagerServer(BaseModel):
         return version_history.current_version
     
     async def generate_next_version(self, component_type: str, name: str, 
-                                   version_type: str = "patch") -> str:
-        """Generate next version number for a component
+                                   version_type: str = "patch", *, known_versions=()) -> str:
+        """Reserve a fresh version above known history, including inactive versions.
         
         Args:
             component_type: Type of component (tool, agent, prompt, memory, benchmark, skill)
             name: Component name
             version_type: Type of version increment ("major", "minor", "patch")
+            known_versions: Additional durable archive versions supplied by the owner.
             
         Returns:
             Next version string (e.g., "1.0.1", "1.1.0", "2.0.0")
         """
-        current_version = await self.get_current_version(component_type, name)
-        
-        if current_version is None:
-            # First version
-            return "1.0.0"
-        
-        try:
-            # Parse current version (e.g., "1.2.3")
-            version_parts = current_version.split(".")
-            if len(version_parts) >= 3:
-                major = int(version_parts[0])
-                minor = int(version_parts[1])
-                patch = int(version_parts[2])
-            elif len(version_parts) == 2:
-                major = int(version_parts[0])
-                minor = int(version_parts[1])
-                patch = 0
-            elif len(version_parts) == 1:
-                major = int(version_parts[0])
-                minor = 0
-                patch = 0
-            else:
-                # Invalid version format, start fresh
-                return "1.0.0"
-            
-            # Increment based on version_type
+        history = await self.get_version_history(component_type, name)
+        allocated = self._allocated_versions.setdefault((component_type, name), set())
+        known = set(known_versions) | allocated | (set(history.versions) if history else set())
+        parsed = []
+        for value in known:
+            parts = str(value).split(".")
+            if 1 <= len(parts) <= 3 and all(part.isdecimal() for part in parts):
+                parsed.append(tuple(int(p) for p in parts) + (0,) * (3 - len(parts)))
+        if parsed:
+            major, minor, patch = max(parsed)
             if version_type == "major":
-                major += 1
-                minor = 0
-                patch = 0
+                major, minor, patch = major + 1, 0, 0
             elif version_type == "minor":
-                minor += 1
-                patch = 0
-            else:  # patch (default)
+                minor, patch = minor + 1, 0
+            else:
                 patch += 1
-            
-            return f"{major}.{minor}.{patch}"
-            
-        except (ValueError, IndexError):
-            # If version parsing fails, start fresh
-            logger.warning(f"| ⚠️ Failed to parse version {current_version} for {component_type}/{name}, starting fresh")
-            return "1.0.0"
+            version = f"{major}.{minor}.{patch}"
+        else:
+            version = "1.0.0"
+        # No awaits between choosing and reserving. Rollback changes the active pointer,
+        # never the high-water mark; rejected allocations may leave harmless gaps.
+        allocated.add(version)
+        return version
     
     async def get_version(self, 
                           component_type: str, 

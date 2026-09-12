@@ -1,7 +1,7 @@
 ---
 name: frontend_ui_engineering_skill
 description: "Builds production-quality UIs. Use when building or modifying user-facing interfaces. Use when creating components, implementing layouts, managing state, or when the output needs to look and feel production-quality rather than AI-generated."
-version: 1.2.0
+version: 1.2.1
 type: worker
 license: N/A
 category: web

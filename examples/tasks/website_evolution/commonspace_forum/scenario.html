@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="name" content="commonspace_forum">
   <meta name="description" content="A beautiful, genuinely shared forum where people discover worthwhile conversations and contribute something of their own.">
-  <meta name="version" content="4.0.0">
+  <meta name="version" content="5.0.0">
   <title>COMMONSPACE — A living forum</title>
 </head>
 <body><main>
   <h1>COMMONSPACE — A living forum</h1>
   <section id="product-intent">
     <h2>A community worth joining</h2>
-    <p>Create a useful, visually distinctive forum that people would enjoy reading and participating in. Choose a compelling community focus and voice: technology, science, creative projects or another coherent interest can provide a starting point. Give visitors a reason to ask, share, respond and return.</p>
+    <p>Create a useful, visually distinctive community for people working on small real-world projects: making, repairing, growing or improving a shared place. People arrive with rough material, uncertain choices and different constraints. Help them turn a good conversation into something they can understand and act on together. Choose the community's voice and visual identity yourself.</p>
     <p>Combine the visual ambition of a carefully art-directed publication with the warmth and responsiveness of a lively community. The community itself should occupy the opening view, and its strongest visual qualities should continue into actual reading and participation.</p>
   </section>
   <section id="participation">
@@ -19,12 +19,13 @@
     <p>Deliver a real discover-read-contribute-return journey. Visitors must be able to find a worthwhile discussion, understand its context, publish a contribution and respond to someone else. Make authorship and reply relationships legible. A visitor should be able to revisit a discussion directly and recognize their contribution.</p>
     <p>Choose the interaction grammar that suits the community. Threaded replies, quotations, topic collections, reactions, bookmarks, project showcases, thoughtful notifications or alternative ways of connecting conversations are possibilities. Do not implement them all by default. Build enough depth that participation changes what another visitor can experience.</p>
     <p>Make writing and reading feel carefully designed: helpful feedback, preserved work when a submission fails, understandable publication state and a clear path back to a discussion. Decide how visitors discover related material and follow an exchange. Search, organization or another discovery approach should work on the actual content.</p>
+    <p>Long discussions scatter the reasons behind a decision. Give participants a shared, visually expressive way to assemble the useful parts into a next step while keeping questions and disagreements visible. A second visitor must be able to understand and revise that result, follow its supporting material and return to the conversation that produced it. Choose the interaction yourself; a summary paragraph detached from its sources is insufficient.</p>
   </section>
   <section id="shared-reality">
     <h2>Contributions really reach another visitor</h2>
     <p>Shared discussion is a core requirement. Use a real persistent service so independent browser contexts can see posts and replies, and retain shared content across reloads, controlled service restarts and website revisions. Choose a practical architecture and synchronization method available in the environment. A local-only simulated feed does not satisfy this purpose.</p>
     <p>Choose a lightweight, clearly explained demo identity approach without requiring real contact information or a paid identity provider. Keep authorship and allowed edits consistent on the server. Validate submissions, render user content safely and avoid duplicate publication from repeated clicks. Never claim production authentication, real community activity or message delivery that does not exist.</p>
-    <p>Use an appropriate separation between preview test data and published discussion state. Explain which data is shared and which remains local. Advanced moderation, private messages, uploads and recommendation systems are optional directions rather than prerequisites.</p>
+    <p>Use an appropriate separation between preview test data and published discussion state. Explain which data is shared and which remains local. Keep each project's material and each visitor's personal choices separate. Advanced moderation, private messages and recommendation systems are optional directions rather than prerequisites.</p>
   </section>
   <section id="substance-and-craft">
     <h2>People and discussions with character</h2>
@@ -33,9 +34,12 @@
     <p>Make long contributions and small screens feel designed. Support keyboard reading and composition, clear focus, useful contrast and reduced motion. Richness should support comfortable reading and participation. Keep working content visible rather than hiding it behind an elaborate landing or decorative navigation.</p>
   </section>
   <section id="open-horizons">
-    <h2>Let a new idea open a new possibility</h2>
-    <p>A community might want to discuss a video at a specific moment, bring a project or publication into a conversation, explore linked evidence together or participate through a richer form of media. Public APIs, embeds and other services are possible ingredients; choose the experience and source only when they serve a concrete community need. None of these integrations is mandatory.</p>
-    <p>The first release is a starting point, not the limit of what the product may become. A valuable new function can justify investigating an unfamiliar service, format or interaction. Establish feasibility with available documentation and a small experiment, then choose the smallest version that preserves the user value. If access or evidence is missing, explain the dependency instead of simulating a successful integration. Maintain a useful core experience while exploring.</p>
+    <h2>Bring the thing being discussed into the conversation</h2>
+    <p>Text alone makes it hard to agree which corner of a plan, passage of a note or measurement someone means. Let participants bring a diagram or image, notes and a small table into a project through visible controls. They should be able to point to a meaningful part, attach a question or suggestion and follow that reference from the discussion or shared outcome. Preserve the original material and its attribution. Choose a focused, clearly advertised set of supported formats; explain unsupported or invalid input without losing the visitor's work.</p>
+    <p>The supplied <a href="materials/README.md">fictional project materials</a> contain two different situations: a narrow growing space and a shared repair bench. Both include visual material, notes and observations with unresolved trade-offs. Use them to make the experience concrete, then demonstrate a new project with changed material. A gallery of prewritten cards cannot stand in for bringing in and working with new content. No paid service, private account or live external API is required.</p>
+    <p>Material location: <code>examples/tasks/website_evolution/commonspace_forum/materials/README.md</code> in the repository, beside the original scenario's <code>materials/</code> folder. This is a source reference, not a path relative to the generated website workspace. The directory index links every supplied file.</p>
+    <p>References must keep their meaning when an image is resized, a narrow-screen layout changes, or another participant reopens the project. If a source is replaced or a measurement changes, make the affected conclusions inspectable and visibly uncertain until reviewed; do not silently attach an old remark to a different place or claim an obsolete number is current. A thoughtful visual treatment of these relationships should help people reason, not expose implementation details.</p>
+    <p>People may favour different outcomes, such as spending less, preserving access or making something easier to maintain. Let a visitor explicitly try a personal preference and see how it changes the presentation or proposed next step, then reset it. Keep an individual's exploration distinguishable from the shared decision. Preserve alternative views without inventing consensus, personal profiles or factual conclusions unsupported by the supplied material.</p>
   </section>
   <section id="creative-freedom">
     <h2>An open brief with a clear purpose</h2>
@@ -46,7 +50,8 @@
   <section id="quality-evidence">
     <h2>Demonstrate an actual exchange</h2>
     <p>On the exact deployed version, use two independent browser contexts: A contributes, B sees it and replies, and A sees the reply. Revisit the discussion, check the chosen identity and edit boundaries, recover from a submission error and verify durable content after a controlled restart with test data. Exercise the discovery and return flows you actually designed.</p>
-    <p>Check a narrow-screen keyboard path, safe rendering of submitted content and repeated publishing. Show an inviting discovery view and a readable active conversation separately from technical results. After visitor feedback, demonstrate how the changed experience improves participation; do not count a new theme as proof of a better discussion.</p>
+    <p>Use the growing-space and repair-bench material in different projects. A brings in material and makes a specific reference; B opens that same place, responds and changes the shared outcome; A returns and sees what changed and why. Repeat with new material rather than relying on prefilled answers. Replace a source with the supplied revision and demonstrate review of an affected reference. Verify that personal exploration can be reset without altering another visitor's choices or erasing shared work.</p>
+    <p>Check the complete narrow-screen keyboard path, safe rendering of submitted content, repeated publishing, invalid material and interrupted submission. Show inviting discovery, active reading, material inspection and participation views separately from technical results. Compare equivalent before/after views when improving a design. Demonstrate how the changed experience makes a difficult project decision clearer or participation easier; do not count a new theme as proof of improvement. Describe self-use as self-observation when no actual visitor feedback is available.</p>
   </section>
 </main></body>
 </html>

@@ -396,6 +396,14 @@ class ExtensionManagerServer(BaseModel):
     async def add_component(
         self, module: str, abspath: str, config: Optional[dict] = None,
     ) -> str:
+        # Allocation and archiving are one transaction across processes. The manifest
+        # lock inside the transaction remains separate from this admission lock.
+        async with file_lock(os.path.join(self.base_dir, ".admission.lock")):
+            return await self._add_component(module, abspath, config)
+
+    async def _add_component(
+        self, module: str, abspath: str, config: Optional[dict] = None,
+    ) -> str:
         """Register an already-written flat active file, archive its version, update the manifest.
 
         Returns the registered component name. The version is assigned by the owning
@@ -1023,7 +1031,7 @@ class ExtensionManagerServer(BaseModel):
         if module in _CLASS_MODULES:
             result = await self._load_class_component(module, abspath, version, config, return_version, enforce_evolvable)
         elif module == "prompt":
-            result = await self._load_prompt(abspath, return_version)
+            result = await self._load_prompt(abspath, return_version, version, enforce_evolvable)
         elif module == "skill":
             result = await self._load_skill(abspath, version, return_version, enforce_evolvable, config)
         elif module == "connector":
@@ -1035,6 +1043,13 @@ class ExtensionManagerServer(BaseModel):
         # Carry the admitted source into archiving. The author's working copy can
         # change while loading awaits; it is not evidence of what was installed.
         return (*result, abspath) if return_version else result
+
+    async def _fresh_version(self, module: str, name: str) -> str:
+        from agentevolver.version import version_manager
+
+        return await version_manager.generate_next_version(
+            module, name, known_versions=self.list_component_versions(module, name),
+        )
 
     async def _load_class_component(self, module: str, abspath: str, version: Optional[str],
                                     config: Optional[dict], return_version: bool,
@@ -1072,6 +1087,8 @@ class ExtensionManagerServer(BaseModel):
             intended = fields["name"].default if "name" in fields else getattr(cls, "name", stem)
             if isinstance(intended, str) and intended:
                 await self._assert_evolvable(module, intended)
+                if version is None:
+                    version = await self._fresh_version(module, intended)
 
         if module == "tool":
             from agentevolver.tool.server import tool_manager
@@ -1093,13 +1110,19 @@ class ExtensionManagerServer(BaseModel):
         name = getattr(cfg, "name", None) or getattr(cls, "__name__", "")
         return (name, getattr(cfg, "version", version or "1.0.0")) if return_version else name
 
-    async def _load_prompt(self, abspath: str, return_version: bool):
+    async def _load_prompt(self, abspath: str, return_version: bool,
+                           version: Optional[str] = None, enforce_evolvable: bool = False):
         from agentevolver.prompt.server import prompt_manager
         from agentevolver.prompt.types import parse_prompt_file
         cfg = parse_prompt_file(abspath)
         if not cfg.name:
             stem = os.path.splitext(os.path.basename(abspath))[0]
             cfg = cfg.model_copy(update={"name": stem})
+        if enforce_evolvable:
+            await self._assert_evolvable("prompt", cfg.name)
+            version = version or await self._fresh_version("prompt", cfg.name)
+        if version is not None:
+            cfg = cfg.model_copy(update={"version": version})
         registered = await prompt_manager.register(prompt=cfg.model_dump(), override=True)
         return (registered.name, getattr(registered, "version", "1.0.0")) if return_version else registered.name
 
@@ -1107,7 +1130,9 @@ class ExtensionManagerServer(BaseModel):
                           enforce_evolvable: bool = False, config: Optional[dict] = None):
         from agentevolver.skill.server import skill_manager
         if enforce_evolvable:
-            await self._assert_evolvable("skill", self._dir_component_name(abspath, "SKILL.md", os.path.basename(abspath)))
+            name = self._dir_component_name(abspath, "SKILL.md", os.path.basename(abspath))
+            await self._assert_evolvable("skill", name)
+            version = version or await self._fresh_version("skill", name)
         ev = (config or {}).get("enable_evolving")
         cfg = await skill_manager.register(skill_dir=abspath, override=True, version=version, enable_evolving=ev)
         name = getattr(cfg, "name", os.path.basename(abspath))
@@ -1117,7 +1142,9 @@ class ExtensionManagerServer(BaseModel):
                               enforce_evolvable: bool = False, config: Optional[dict] = None):
         from agentevolver.connector.server import connector_manager
         if enforce_evolvable:
-            await self._assert_evolvable("connector", self._dir_component_name(abspath, "CONNECTOR.md", os.path.basename(abspath)))
+            name = self._dir_component_name(abspath, "CONNECTOR.md", os.path.basename(abspath))
+            await self._assert_evolvable("connector", name)
+            version = version or await self._fresh_version("connector", name)
         ev = (config or {}).get("enable_evolving")
         cfg = await connector_manager.register(connector_dir=abspath, override=True, version=version, enable_evolving=ev)
         name = getattr(cfg, "name", os.path.basename(abspath))
@@ -1130,6 +1157,7 @@ class ExtensionManagerServer(BaseModel):
         definition = workflow_compiler.compile_file(abspath)
         if enforce_evolvable:
             await self._assert_evolvable("workflow", definition.name)
+            version = version or await self._fresh_version("workflow", definition.name)
         if version is None:
             current = await version_manager.get_current_version("workflow", definition.name)
             version = (

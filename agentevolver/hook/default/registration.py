@@ -420,7 +420,7 @@ class RegistrationHook(Hook):
         except Exception as e:  # noqa: BLE001
             logger.warning(f"| ⚠️  registration_hook: {e}")
             return HookResult.block(
-                f"[registration failed] {e}\nPlease fix the issue and call done_tool again."
+                f"[registration failed] {e}\nFix the reported issue and retry the registration operation that submitted this artifact."
             )
 
 

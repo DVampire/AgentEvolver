@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import shlex
+import sys
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -996,6 +997,13 @@ class DeploymentManagerServer(BaseModel):
         # Decide the backend *before* materializing inline content — materialization sets
         # source_dir, which would otherwise mask the "local source ⇒ host by default" rule.
         backend = self._backend_kind(request, previous)
+        if backend == "host" and "PATH" not in request.env:
+            # Archive the executable search path that made this host recipe work.
+            # An absolute Python launcher need not itself have its bin directory on
+            # PATH (notably the gateway). Explicit caller PATH always wins.
+            request.env = {**request.env, "PATH": os.pathsep.join(dict.fromkeys([
+                os.path.dirname(sys.executable), *os.get_exec_path(),
+            ]))}
 
         # Lightweight path: turn inline content/files into a source_dir the normal flow
         # can upload. git_url and an explicit source_dir take precedence and skip this.
@@ -1492,8 +1500,22 @@ class DeploymentManagerServer(BaseModel):
         await self.stop_site(site_id, include_versions=False)
         return await self.deploy(request)
 
+    def restoration_request(self, record: SiteRecord) -> DeployRequest:
+        """Restart the published bytes, even if the author's working tree changed."""
+        request = DeployRequest(**record.request)
+        if not self._split_release(record.site_id) and record.release_number:
+            archive = self._release_dir(record.site_id, record.release_number)
+            if os.path.isdir(archive):
+                request = request.model_copy(update={"source_dir": archive, "git_url": None})
+        return request
+
     async def cleanup(self) -> None:
-        """Stop only sites acquired by this process (called on global teardown)."""
+        """Reclaim this run's resources, keeping published URLs restorable by the gateway.
+
+        Host descendants die with their launcher, so skipping cleanup cannot transfer
+        their ownership. DETACHED hands the persisted recipe/archive to the durable
+        gateway; an explicit stop remains STOPPED and must not revive automatically.
+        """
         for site_id in list(self._owned_sites):
             rec = self._sites.get(site_id)
             if rec is None:
@@ -1506,7 +1528,9 @@ class DeploymentManagerServer(BaseModel):
                     resource_id=rec.resource_id,
                 )
                 if released:
-                    rec.status = SiteStatus.STOPPED
+                    rec.status = (SiteStatus.DETACHED
+                                  if rec.request and rec.request.get("stage", "published") == "published"
+                                  and rec.status is SiteStatus.RUNNING else SiteStatus.STOPPED)
                     rec.url = None
                     rec.resource_id = None
                     rec.updated_at = _now()

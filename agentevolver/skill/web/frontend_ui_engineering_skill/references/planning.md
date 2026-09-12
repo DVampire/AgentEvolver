@@ -33,6 +33,14 @@ reading/participation state as well as the opening view. Record aesthetic judgme
 functionality, accessibility and unresolved defects separately. Self-observations are not
 real user feedback, and fictional demonstration participants are not test reviewers.
 
+Maintain a compact coverage table for the journeys promised by this product, including
+material import/inspection, personal choices, return visits and failure recovery where
+applicable. For each, link the last observed version and remaining uncertainty. Experience
+the whole workflow before narrowing the next iteration to an easy local fix. Compare
+distinct creative approaches to an observed unmet goal, explain the selected trial and
+test it with different content. Keep the observation → design decision → method probe →
+product result connected through links; detailed evidence belongs in the linked records.
+
 For system evolution, connect an observed product need to an essential operation and its
 quality/reliability/cost requirement. Preserve baseline evidence before changing the method.
 Only an observed reusable limitation justifies a capability candidate. Keep the exact
@@ -40,6 +48,9 @@ registered version, baseline comparison, independent reuse/regression, decision 
 consumer result with the adoption-tool receipts. A new feature or prettier CSS is product
 work; a written evaluation or loaded skill alone does not establish capability improvement.
 Do not select a predetermined helper or invent a limitation to satisfy an evolution quota.
+Maintenance improvements may be useful, but cannot close another unmet experience goal.
+Revisit that goal after adoption and verify the resulting UI. Supported component forms,
+registration and evaluation policy are defined by the shared evolution rules.
 
 Update the affected record and its index entry after a coherent implementation, browser
 review, release or capability decision. Avoid per-click narration and repeated index
@@ -57,7 +68,9 @@ Keep the runtime-owned page intact and close the additional context after the ch
 not start a second browser or switch to API writes to manufacture a UI success.
 
 Preserve A's contribution, B's independently observed reply and A's return journey as
-actual outcomes. Separate browser storage from server durability. Choose persistent data
-outside replaceable release source, isolate preview data and verify controlled restarts
+actual outcomes. Separate browser storage from server durability. Check the outcome when
+an action starts from a direct contribution link: the resulting
+URL, scroll and keyboard focus should point to the saved contribution after rendering and reload.
+Keep persistent data outside replaceable release source, isolate preview data and verify controlled restarts
 and revisions with test content. Never silently reset published discussions to make a
 new release easier. Record any unavailable isolation, storage or browser step as a blocker.

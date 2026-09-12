@@ -34,6 +34,9 @@ run syntax checks, formatters, builds, and tests afterwards.
   extend it with later patches instead of emitting the whole application at once.
 - Context lines must match the current file. A stale or malformed patch is rejected without
   changing the workspace; inspect again and generate a fresh, smaller patch.
+- Include unchanged lines before and after each change when possible. Zero-context hunks
+  are accepted only when their old text matches at the declared line; they never search
+  elsewhere for a similar occurrence. Read the file again if those line numbers changed.
 - Paths are workspace-relative, optionally prefixed with Git's `a/` and `b/`. Absolute paths, traversal,
   binary patches, renames, and writes outside the active workspace are rejected.
 """
@@ -157,6 +160,30 @@ def _git_patch(patch: str) -> str:
     return "".join(lines)
 
 
+def _check_hunk_positions(patch: str, content: bytes | None) -> None:
+    """Allow minimal diffs without Git relocating an unanchored edit elsewhere."""
+    original = (content or b"").decode("utf-8").splitlines(keepends=True)
+    hunks = re.split(r"(?m)^(@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@[^\n]*)\n", patch)
+    for i in range(1, len(hunks), 2):
+        header, body = hunks[i], hunks[i + 1]
+        # Git handles anchored hunks (and verifies all of them before any write).
+        if any(line.startswith(" ") for line in body.splitlines()):
+            continue
+        match = re.match(r"@@ -(\d+)(?:,(\d+))?", header)
+        start = int(match[1])
+        old = []
+        previous_prefix = ""
+        for line in body.splitlines(keepends=True):
+            if line.startswith("-"):
+                old.append(line[1:])
+            elif line.startswith("\\ No newline") and previous_prefix == "-" and old:
+                old[-1] = old[-1].rstrip("\n")
+            previous_prefix = line[:1]
+        offset = max(0, start - 1) if old else start
+        if offset > len(original) or original[offset:offset + len(old)] != old:
+            raise PatchError("workspace unchanged: unanchored hunk does not match its declared line; inspect the file and include unchanged context")
+
+
 @TOOL.register_module(force=True)
 class ApplyPatchTool(Tool):
     """Apply one atomic, workspace-scoped text patch."""
@@ -207,8 +234,9 @@ class ApplyPatchTool(Tool):
                 )
 
             git_patch = _git_patch(patch)
+            _check_hunk_positions(git_patch, content_before)
             command = [
-                "git", "apply", "-p1", "--recount", "--whitespace=nowarn", "-",
+                "git", "apply", "-p1", "--recount", "--unidiff-zero", "--whitespace=nowarn", "-",
             ]
             checked = subprocess.run(
                 [*command[:2], "--check", *command[2:]],
@@ -251,7 +279,7 @@ class ApplyPatchTool(Tool):
                         "Inspect the target and unified-diff hunk ranges before retrying."
                     ),
                 )
-        except (PatchError, OSError, subprocess.SubprocessError) as error:
+        except (PatchError, UnicodeError, OSError, subprocess.SubprocessError) as error:
             return Response(
                 type=ResponseType.TOOL,
                 success=False,

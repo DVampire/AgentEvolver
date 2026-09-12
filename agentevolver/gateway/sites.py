@@ -85,7 +85,7 @@ async def _revive(name: str) -> None:
             # site whose backend has already vanished can never satisfy, so the rebuild
             # goes straight to a fresh deployment and lets the stored request stand up a
             # new backend under the same name.
-            await deployment_manager.deploy(DeployRequest(**record.request))
+            await deployment_manager.deploy(deployment_manager.restoration_request(record))
             logger.info(f"| ♻️ Site {site_id!r} rebuilt after an unreachable backend")
         except Exception as error:  # noqa: BLE001 - a failed revival still answers 502
             logger.warning(f"| ⚠️ Could not rebuild site {site_id!r}: {error}")
@@ -164,6 +164,14 @@ async def site_slash(request: Request, name: str):
 async def deployed_site(request: Request, name: str, path: str = ""):
     target = await site_target(name)
     if not target:
+        record = deployment_manager._sites.get(name)
+        if record is not None and record.status in {SiteStatus.FAILED, SiteStatus.BUILDING, SiteStatus.DETACHED}:
+            return Response(
+                "Deployment is unavailable: the service could not start or is still starting. "
+                "Check its deployment status and server log in the monitor.",
+                status_code=503, media_type="text/plain",
+                headers={"Retry-After": "30", "Cache-Control": "no-store"},
+            )
         return Response("Site is not running", status_code=404)
     prefix = f"/s/{quote(name, safe='')}/"
     client = aiohttp.ClientSession(auto_decompress=False, timeout=aiohttp.ClientTimeout(total=None, sock_connect=10))

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="560" viewBox="0 0 1024 560" role="img" aria-labelledby="title desc">
+  <title id="title">Fictional growing-space discussion sketch, revision 1</title>
+  <desc id="desc">A long narrow space with a door at left, a route across the centre, a wall edge at top and three containers at the brighter right corner.</desc>
+  <rect width="1024" height="560" fill="#f7f1e5"/>
+  <text x="55" y="64" fill="#294c42" font-size="29" font-family="serif">A small space, several possibilities</text>
+  <rect x="90" y="130" width="840" height="325" rx="10" fill="#e9ecd9" stroke="#405f51" stroke-width="4"/>
+  <path d="M95 140H920" stroke="#64755a" stroke-width="12"/>
+  <rect x="80" y="275" width="25" height="125" fill="#f7f1e5"/>
+  <path d="M100 395V280Q215 280 215 395Z" fill="#e8d1aa" stroke="#986c43" stroke-width="2"/>
+  <path d="M235 353H795" fill="none" stroke="#96a89a" stroke-width="56" stroke-dasharray="12 10"/>
+  <circle cx="785" cy="218" r="39" fill="#b6caa0" stroke="#567645" stroke-width="3"/>
+  <circle cx="866" cy="215" r="34" fill="#b6caa0" stroke="#567645" stroke-width="3"/>
+  <circle cx="848" cy="290" r="29" fill="#b6caa0" stroke="#567645" stroke-width="3"/>
+  <g fill="#294c42" font-size="21" font-family="sans-serif">
+    <text x="390" y="182">Wall edge</text><text x="371" y="360">Keep a route through</text>
+    <text x="113" y="434">Door</text><text x="718" y="405">Bright corner?</text>
+  </g>
+  <text x="55" y="518" fill="#716c5e" font-size="17" font-family="sans-serif">Fictional sample · positions are discussion references · not a construction plan</text>
+</svg>

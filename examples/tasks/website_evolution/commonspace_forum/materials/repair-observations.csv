@@ -1,0 +1,6 @@
+observation_id,trial,observation,value,unit,note,revision
+R01,back tray,loose pieces in working area,2,count,Rowan tried this once,1
+R02,side tray,loose pieces in working area,4,count,Ash tried this once,1
+R03,back tray,pack-away time,95,seconds,informal timed trial,1
+R04,side tray,pack-away time,62,seconds,informal timed trial,1
+R05,side tray,working area covered,18,percent,rough sketch estimate,1

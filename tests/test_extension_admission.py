@@ -41,6 +41,54 @@ class _Entry:
 
 
 @pytest.mark.asyncio
+async def test_evolve_after_shadow_and_cold_start_skips_archived_candidate(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+    from agentevolver.version import version_manager
+
+    monkeypatch.setattr(version_manager, "_version_histories", {key: {} for key in version_manager._version_histories})
+    monkeypatch.setattr(version_manager, "_allocated_versions", {})
+    manager = ExtensionManagerServer(base_dir=str(tmp_path / "extensions"))
+    source = tmp_path / "extensions" / "tool" / "archive_retry_probe.py"
+    source.parent.mkdir(parents=True)
+    template = '''from agentevolver.tool.types import Tool
+from agentevolver.response.types import Response, ResponseType
+class ArchiveRetryProbe(Tool):
+    name: str = "archive_retry_probe"
+    description: str = "A bounded probe of registration after rollback."
+    enable_evolving: bool = True
+    async def __call__(self, text: str, **kwargs):
+        """Return a string for the versioning test."""
+        return Response(type=ResponseType.TOOL, success=True, message=PREFIX + text)
+'''
+    # Isolation is tested separately; keep real registration, archiving and rollback.
+    monkeypatch.setattr(manager, "check", AsyncMock(side_effect=lambda _module, path, _config=None: path))
+    monkeypatch.setattr(manager, "_notify_change", AsyncMock())
+
+    async def shadow(module, name, baseline, candidate):
+        await manager.rollback(module, name, baseline)
+
+    monkeypatch.setattr(manager, "_begin_rollout", shadow)
+    for prefix, expected in [('first', '1.0.0'), ('second', '1.0.1')]:
+        source.write_text(template.replace('PREFIX', repr(prefix)))
+        await manager.add_component("tool", str(source))
+        assert expected in manager.list_component_versions("tool", "archive_retry_probe")
+    assert manager.read_manifest().find("tool", "archive_retry_probe").version == "1.0.0"
+    archive = source.parent.parent / ".versions" / "tool" / "archive_retry_probe" / "1.0.1.py"
+    old_candidate = archive.read_bytes()
+    # Only the active version is known in memory after startup; both archives survive.
+    for group in version_manager._version_histories.values():
+        group.clear()
+    version_manager._allocated_versions.clear()
+    await manager.rollback("tool", "archive_retry_probe", "1.0.0")
+    source.write_text(template.replace('PREFIX', repr('third')))
+    await manager.add_component("tool", str(source))
+    assert manager.list_component_versions("tool", "archive_retry_probe") == ['1.0.0', '1.0.1', '1.0.2']
+    assert archive.read_bytes() == old_candidate
+    from agentevolver.tool import tool_manager
+    await tool_manager.unregister("archive_retry_probe")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("module", ["tool", "agent", "skill", "connector", "plugin", "workflow", "environment", "memory"])
 async def test_all_families_must_pass_isolation_before_live_load(tmp_path, monkeypatch, module):
     manager = ExtensionManagerServer(base_dir=str(tmp_path))

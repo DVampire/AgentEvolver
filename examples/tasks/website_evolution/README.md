@@ -12,7 +12,7 @@ There is no second behavioral prompt embedded in the launcher.
 | Directory | Product intent |
 | --- | --- |
 | `arkbound_game/` | A visually striking 3D ocean exploration game with meaningful voyages. |
-| `commonspace_forum/` | A living community with persistent, shared conversations. |
+| `commonspace_forum/` | A shared project community: discuss images, notes and observations, trace decisions to their sources, and explore reversible personal choices. Local fictional materials are included. |
 | `lumen_museum/` | A hands-on museum that teaches real AI and technology concepts. |
 | `orbital_simulator/` | An interactive universe with explained frames and physically grounded motion. |
 

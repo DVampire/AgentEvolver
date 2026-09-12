@@ -132,6 +132,11 @@ class TraceHook(Hook):
             # taken from that log counted a failed run as a valid sample, which is how a
             # broken `derive_context` path was measured and reported as working.
             result = inp.get("result")
+            usage = self._usage.pop(ctx.id, None)
+            if inp.get("run_usage"):
+                # The loop counts auxiliary model work (including compaction) too.
+                # Replace overlapping step totals; adding them would charge twice.
+                usage = {"steps": (usage or {}).get("steps", 0), **inp["run_usage"]}
             event = agent_end_event(
                 session_id=ctx.id,
                 task_id=self._task_id(ctx),
@@ -140,7 +145,7 @@ class TraceHook(Hook):
                 result=str(result) if result is not None else None,
                 duration_ms=elapsed,
                 error=inp.get("error"),
-                usage=self._usage.pop(ctx.id, None),
+                usage=usage,
             )
 
         elif inp_event == HookEvent.PRE_STEP:

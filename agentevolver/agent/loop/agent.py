@@ -298,6 +298,7 @@ class Agent(BaseModel):
         #: see each turn's spend exactly once.
         self._unspent_tokens = 0
         self._used_tokens = 0
+        self._total_usage = {}
         self._started_at = 0.0
         #: How many consecutive completion attempts a single blocker has refused. A
         #: contract gate that never opens is a protocol fault, and a run that cannot
@@ -377,6 +378,7 @@ class Agent(BaseModel):
         self.ctx = ctx
         self._started_at = time.time()
         self._used_tokens = 0
+        self._total_usage = {}
         self._unspent_tokens = 0
         self.step = 0
         task, files = await self.prepare_task(task, list(files or ()), ctx)
@@ -1198,6 +1200,9 @@ class Agent(BaseModel):
         if usage is not None:
             self._used_tokens += usage.total
             self._unspent_tokens += usage.total
+            for key, value in usage.model_dump().items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    self._total_usage[key] = self._total_usage.get(key, 0) + value
             budget = getattr(self.proc, "budget", None)
             if budget is not None:
                 budget.record(usage)
@@ -1280,6 +1285,7 @@ class Agent(BaseModel):
                 "agent_name": self.name,
                 "result": response.message,
                 "success": response.success,
+                "run_usage": dict((response.data or {}).get("usage", self._total_usage)),
                 **self._identity(),
             },
             ctx=self.ctx,
@@ -1754,7 +1760,8 @@ class Agent(BaseModel):
 
         response = Response(
             type=ResponseType.AGENT, success=success, message=message,
-            data={"steps": self.step + 1, "elapsed": time.time() - self._started_at},
+            data={"steps": self.step + 1, "elapsed": time.time() - self._started_at,
+                  "usage": dict(self._total_usage)},
         )
         # Audit before notifying observers as well as at the final return boundary:
         # a failed task requirement must not emit a successful ON_STOP event.

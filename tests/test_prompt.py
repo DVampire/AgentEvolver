@@ -416,12 +416,13 @@ async def test_development_rules_render_incremental_work_without_truncation(name
     message = await prompt.get_system_message({"max_actions": 3}, reload=True)
     text = " ".join(message.text.split())
     assert text.count("<action-batching-rules>") == 1
-    for rule in ("up to 3 actions", "not to minimize turn count at any cost",
-                 "never as concurrent actions", "Do not truncate source or tool arguments",
-                 "no one-file-per-call rule", "requires interpreting output"):
+    for rule in ("Up to 3 actions", "Batch independent work",
+                 "an edit and its consuming test must be sequential", "Do not run concurrent edits",
+                 "truncate source/tool arguments", "no fixed file-length or one-file-per-call rule",
+                 "interpreting output, read it before choosing the next call"):
         assert rule in text
     assert "not the number of actions" not in text
     if name == "website_builder_agent":
-        for rule in ("a simple page may be one file", "separate rendering, state",
-                     "runnable skeleton", "across multiple calls", "never truncate code"):
+        for rule in ("smallest architecture", "Split by responsibility",
+                     "runnable skeleton", "coherent change", "never truncate source"):
             assert rule in text
