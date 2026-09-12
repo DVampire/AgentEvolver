@@ -1,7 +1,7 @@
 ---
 name: frontend_ui_engineering_skill
 description: "Builds production-quality UIs. Use when building or modifying user-facing interfaces. Use when creating components, implementing layouts, managing state, or when the output needs to look and feel production-quality rather than AI-generated."
-version: 1.2.1
+version: 1.3.0
 type: worker
 license: N/A
 category: web
@@ -22,7 +22,9 @@ index.md/plan.md paths; choose additional records to fit the work.
 
 ## Design and implementation
 
-- Build a runnable primary journey first. Separate rendering, data/state and interactions
+- Build a runnable primary journey first, then complete the task's connected workflows.
+  Keep the full required scope in the plan and design for its state relationships.
+  Separate rendering, data/state and interactions
   when useful; use focused, composable units without arbitrary file-length limits.
 - Use the simplest state owner: local for isolated UI, shared for related components,
   URL for shareable filters/views, cached server state for remote data. Add a global store
@@ -68,6 +70,9 @@ path. Name the most consequential visible weakness and explain a concrete altern
 for example, clearer editorial hierarchy, less repetitive cards, more expressive yet legible
 type, better imagery/cropping, balanced density or more coherent reply/composer states.
 Prioritize that implementation batch over unrelated feature expansion or repeated reports.
+Assess interaction depth separately: can people work with the actual content, see its effects
+and continue across the required views? Keep missing core workflows pending alongside visual
+defects; a well-styled initial slice does not complete a substantial application.
 
 After the change, compare the same content, viewport and interaction state, then replay
 the affected journey. Record what visibly improved, what regressed and the next needed

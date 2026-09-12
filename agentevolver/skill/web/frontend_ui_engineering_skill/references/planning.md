@@ -17,6 +17,21 @@ design, visual direction, component/service responsibilities, data ownership/per
 implementation dependencies and concrete acceptance journeys. Distinguish planned,
 implemented and browser-verified work. A release count is not a quality verdict.
 
+For a substantial application, plan its connected experience before the first slice: usable
+views and navigation, shared objects, meaningful state transitions, and how changes propagate
+to another view or visitor. Record each required workflow's initial state, visible actions,
+result, persistence and recovery. Keep required scope distinct from optional inspiration;
+the first runnable journey starts implementation, not a smaller definition of completion.
+Choose records proportional to the task; a small website needs no invented application modules.
+
+Design the working states as deliberately as the opening screen. Explain how someone can
+inspect or manipulate real content, compare alternatives, understand a consequence and resume
+unfinished work. Choose interactions that make those relationships visible; preserve selection,
+navigation and draft context across relevant views. Plan suitable direct links, browser Back,
+keyboard/touch equivalents and narrow-screen layouts. Where the product has shared editing,
+cover conflicting updates and recovery without losing work. Evaluate populated and long-content
+states as well as clean empty examples. Extra controls and pages alone do not establish depth.
+
 Choose any additional documents only when they help navigation or preserve useful detail.
 For example, a growing forum might use `design.md`, `reviews/iteration-02.md` and
 `evaluations/<capability>.md` beside the core files. These are optional examples, not a
