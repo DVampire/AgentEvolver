@@ -9,8 +9,8 @@ versioned contract to both environments and the report before researching perfor
 Read the study specification and write a content-hashed contract before evaluating candidates.
 It fixes data identity, market/calendar, session frequency, dates, fit/score boundaries,
 horizons, execution timing, adjustments, cost model, factor admission, strategy selection,
-final acceptance, experiment budgets and insufficient-evidence rules. Compute additional
-diagnostics freely on research splits; freeze any extra selection criterion before using it.
+submission readiness, final acceptance, experiment budgets and insufficient-evidence rules.
+Compute additional diagnostics freely on research splits; freeze any extra selection criterion before using it.
 Do not weaken the task's supplied thresholds. Apply the study's explicit data_policy when
 classifying incompatibility: an authorized adjusted/public-data research mode may proceed
 with strict data qualification unmet. Unsupported scope changes still require user input.
@@ -55,11 +55,48 @@ counts on restart. Choose the final strategy using the frozen validation ranking
 first, then net Sharpe, then lower drawdown/complexity with a deterministic tie break).
 Report search breadth and uncertainty, not only the winning row.
 
+### Submission readiness before test access
+
+Validation eligibility creates a shortlist; it does not authorize a final submission.
+Read `acceptance.final_submission` when supplied. Freeze its interpretation before search
+and implement the checks in the research environment using the same saved metrics and
+gate semantics as ordinary evaluations. Retain separate eligibility and readiness results.
+Do not add a launcher-specific completion shortcut or let the website decide readiness.
+
+The supplied Signal Foundry policy requires all of the following, with result IDs and
+unrounded values. For another study, apply its declared submission contract:
+
+- The strategy passes `acceptance.validation_strategy` and uses admitted factor versions.
+- Every `acceptance.final_test_strategy` criterion also passes on pooled **validation**
+  results: net CAGR, net Sharpe, maximum drawdown, completed round trips, scored sessions,
+  Sharpe advantage over the matched buy-and-hold benchmark, and stressed net total return.
+  Reference those thresholds rather than maintaining another numerical copy. Keep the scope
+  explicitly validation; these checks are readiness evidence, not final-test success.
+  Unknown/missing/nonfinite values or insufficient sample support cannot pass.
+- The predeclared research-only robustness checks are executed and interpreted: fold/regime
+  stability, required cost stress, and relevant parameter-neighborhood/ablation comparisons.
+  Bind the same candidate version and inputs, count those trials, and address contradictory
+  evidence. Freeze any additional pass thresholds before selection; do not invent significance
+  or demand an unbounded parameter sweep. A missing engine operation is work to implement.
+- A search-closure record explains why the selected version is ready: tested hypotheses,
+  remaining budgets/patience, unresolved weaknesses and why further research is not needed
+  before this submission. Do not close just because one candidate first became eligible,
+  a planned batch ended, or enough report releases were published.
+
+For example, an eligible strategy with validation Sharpe 0.95 and drawdown 29% cannot enter
+test when the readiness targets require at least 1.0 and at most 25%. Lowering exposure may
+fix drawdown while leaving return, Sharpe or trade support inadequate; check the entire vector.
+Select among ready candidates using the predeclared ranking. If none is ready, follow the
+diagnostic loop and research budget rather than opening test to see whether it rescues one.
+Passing readiness does not guarantee a passing test, nor require using every remaining trial.
+
 ### One joint final evaluation
 
-Before opening test, freeze a bundle containing the selected factor library, factor directions
-and horizons, preprocessing/refit policy, one strategy, engine versions, cost scenarios, data
-fingerprints, metric definitions and acceptance rules. A permitted refit on all pre-test data
+After submission readiness passes and before opening test, freeze a bundle containing the
+selected factor library, factor directions and horizons, preprocessing/refit policy, one
+strategy, engine versions, cost scenarios, data fingerprints, metric definitions and acceptance
+rules. Bind the saved readiness results and closure decision for that exact candidate; a stale
+check from another version cannot authorize test access. A permitted refit on all pre-test data
 must be specified beforehand and exclude boundary-overlapping labels. Freeze its resulting
 parameters before reveal. Do not try all validation winners on test and pick the best.
 
@@ -75,10 +112,44 @@ and resume only the exact frozen computation if its exposure/identity can be est
 Any data/accounting/engine fix after reveal invalidates confirmatory interpretation on that
 test. Preserve the old result and label corrected same-test calculations diagnostic.
 
-A failed or inconclusive test is a legitimate unsuccessful outcome. Further research can
-continue on train/validation, but passing research acceptance then needs genuinely unseen
-future observations under a newly frozen protocol. Renaming a study, resplitting seen history,
-changing the seed or choosing a different endpoint does not restore independence.
+A failed or inconclusive test closes that frozen attempt with an unsuccessful outcome;
+apply the lifecycle below to decide the next research action. Never overwrite its selected
+strategy, engine, source snapshots or results. New research versions use separate artifacts.
+Do not select a replacement winner on the consumed test. Renaming a study, resplitting seen
+history, changing the seed or choosing a different endpoint does not restore independence.
+
+### Research lifecycle and evidence for ending a run
+
+Keep three facts separate: each frozen attempt's outcome, current research activity, and
+whether the overall objective is satisfied. A runtime turn ending or a report being delivered
+does not change a failed objective to passed. Use the shared plan/index and report to retain
+these facts; the directory layout and implementation remain the agent's responsibility.
+
+| Current evidence | Next action |
+| --- | --- |
+| A candidate fails eligibility or submission readiness; useful work and budget remain | Diagnose on train/validation and continue a bounded factor or strategy experiment. Repair invalid computations before interpreting returns. |
+| A candidate passes readiness and search closure; test is genuinely unexposed | Freeze and perform the one predeclared evaluation. |
+| Final attempt fails or is inconclusive; useful work and budget remain | Preserve the failed attempt and continue exploratory train/validation work on separately versioned candidates, including a return to factor discovery when warranted. Record post-test exposure; further confirmation requires unused evaluation data. |
+| Useful research is finished but confirmation needs unavailable fresh observations | Record awaiting fresh evaluation data, overall objective unmet, and the exact data/protocol dependency. End the current execution without claiming success or repeatedly polling unavailable data. |
+| An applicable research/runtime budget or the frozen patience rule is exhausted | Stop the affected search and record counters, objective gaps and next hypotheses. Finish permitted reporting/reproducibility work; keep the research outcome unsuccessful. |
+| A prerequisite blocks all useful in-scope work, or the user stops the run | Preserve an explicit blocked/interrupted outcome and the concrete resume condition. |
+| All final criteria and required deliverables pass | Record successful completion with their actual evidence. |
+
+Research after test exposure is exploratory even when calculations use only train/validation:
+the researcher has seen the failure. It must not silently retune on test, rerank test candidates,
+or call that period unseen again. A future confirmatory attempt needs genuinely unused data,
+an explicit new protocol and appropriate sample support. Do not automatically extend dates,
+change instruments or reset counters to obtain it. A new version/session of the same study
+must carry forward prior trials and known exposure; a version label cannot reset independence.
+
+Keep total trial/submission counts and consecutive non-improvement rounds against the frozen
+validation objective. A new factor name, stage switch, cosmetic edit or restart does not reset
+patience. Document the measured improvement that resets it. Maximum budgets are ceilings,
+not quotas; use readiness, measured convergence or a concrete blocker to justify stopping
+search, rather than an arbitrary small batch count. Missing fresh test data alone is not a
+reason to skip remaining useful research, and failed final performance alone is not a reason
+to terminate the whole task. Preserve remaining budget and the exact stop reason in every
+unsuccessful handoff; never describe exhausted confirmation data as successful completion.
 
 ### Be precise about the trust boundary
 

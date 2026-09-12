@@ -17,6 +17,10 @@ Keep the index short: current stage/status, last verified result, next experimen
 budget, holdout state and links to the authoritative records. Full plan text, reports, price
 arrays and experiment ledgers do not belong in the live summary. Update after a meaningful
 implementation, evaluation, decision, stage transition or blocker; reconcile with disk on resume.
+Distinguish the last frozen attempt's outcome, whether research is active/awaiting a prerequisite,
+and the overall objective. For example, a failed attempt can coexist with active exploratory
+research. Keep eligibility, submission readiness and final acceptance separately linked. On a
+stop, name the applicable limit or dependency and next action, not simply "test failed".
 
 The detailed plan should cover:
 
@@ -26,7 +30,8 @@ The detailed plan should cover:
   market trials or report polishing with no accepted local dataset.
 - Proposed connector and two environment interfaces, shared utilities and deterministic checks.
 - Frozen chronological protocol, trial accounting, metric definitions/units/nulls/aggregation,
-  admission rules and stop criteria from [metrics-and-evaluation.md](metrics-and-evaluation.md).
+  admission rules, submission-readiness evidence and stop criteria from the
+  [research protocol](research-protocol.md) and [metric contract](metrics-and-evaluation.md).
 - Factor hypotheses, expected economic mechanism, strategy designs and falsification conditions.
 - One continuous report page with factor and strategy inventories/evidence, chart specifications,
   shared result artifacts, visual direction, scroll/anchor journeys and browser checks.
@@ -48,6 +53,7 @@ plan.md
 research/contract.json            # immutable protocol and source/data identities
 research/metric-contract.json     # versioned definitions shared by engines and report
 research/trials.jsonl             # every attempt, parameters, exposure and cost
+research/readiness.json           # separate validation eligibility/readiness and closure evidence
 research/submission.json          # frozen factor/strategy/engine hashes
 research/test-access.jsonl        # test requests, exposure and result identity
 design/data-and-engines.md
@@ -70,6 +76,10 @@ parameter trials, including crashes and rejected results, before evaluation begi
 resumed run uses the same remaining validation budget and holdout-exposure ledger. Before
 claiming completion, reconcile each acceptance criterion with its result ID and unresolved
 items. A missing report or unexecuted check is pending, not implicitly passed.
+Preserve failed frozen bundles and results; place later exploratory candidates in separate
+versions. On continuation, carry forward exposure even across study-version or session-name
+changes. Record which counters caused a budget/patience stop, or what fresh data confirmation
+needs and why other useful research is finished. A new folder does not create a new holdout.
 
 Each research decision names the actual result IDs, metric values and gate failures that
 motivated it, one bounded next hypothesis and its falsification condition. After execution,

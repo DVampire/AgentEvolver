@@ -27,6 +27,12 @@ Stage one publishes an early version of this same page: measured factors, strate
 and explicit pending areas. Stage two fills out and improves that page. Two research-bearing
 releases mean two versions over time, not two report pages. Preserve older immutable release
 links for audit, while the main product link opens the latest integrated document.
+Publication is a progress milestone, not a research stopping rule. Show preliminary eligibility,
+submission readiness and final acceptance separately. Keep the frozen attempt's failure visible
+when research continues, alongside current exploratory activity and the unmet overall objective.
+If confirmation awaits new data, state that dependency; do not relabel later validation results
+as a replacement passing test. Show remaining budgets and the next hypothesis or evidenced stop
+reason. Follow the [research lifecycle](research-protocol.md) when deciding whether work ends.
 
 ## Visible information hierarchy
 

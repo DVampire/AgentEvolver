@@ -51,8 +51,10 @@ share verified numerical utilities. The router makes registered environments cal
 2. **Strategy research:** develop the strategy environment, combine admitted factors,
    backtest training and validation, inspect costs/ablations, return to factor research
    when evidence warrants it, then extend the same page with the Strategy Atelier.
-3. Freeze one final bundle before revealing test for **both** report sections. Report the frozen
-   test outcome, uncertainty, failed gates and reproducibility artifacts.
+3. Check submission readiness and justify closing research before freezing one final bundle
+   for **both** report sections. Report the frozen test outcome, uncertainty, failed gates and
+   reproducibility artifacts. A failed attempt leaves the objective unmet; the skill directs
+   continued exploratory research while useful work and budget remain.
 
 The framework audit requires one connector and two distinctly named environments with
 registration, evaluated keep and later real native consumer receipts. Registering two
@@ -72,9 +74,18 @@ Sharpe no worse than holding NVDA and positive return under doubled trading cost
 These are **illustrative demo targets**, not an expected or promised return. Change the
 input specification before a new study starts, never to rescue a failing observed result.
 
-Ordinary iterations use train/validation. The same held-out test cannot guide repeated
-tuning: failed/inconclusive test or exhausted research budget yields an unsuccessful
-outcome with usable reports. A new directory does not make previously seen data unseen.
+Ordinary iterations use train/validation. The v3 study separates preliminary eligibility from
+submission readiness: all final numerical targets must also pass on pooled validation, with
+predeclared robustness evidence and documented search closure. Final thresholds remain unchanged.
+A first eligible candidate, completed batch or published report does not end the search.
+
+Keep frozen-attempt outcome, research activity and overall acceptance separate. A failed test
+can be followed by useful exploratory train/validation work on separate candidate versions;
+its failure and exposure remain immutable. Confirmation requires genuinely unused data under
+a new protocol fixed before access. If an applicable budget/patience limit is exhausted, the
+user stops, or a prerequisite leaves no useful in-scope work, end unsuccessfully with the exact
+stop reason and resume dependency. Do not poll unavailable future data or run meaningless trials.
+A new study version or directory does not reset prior exposure or the remaining research budget.
 
 The runtime config declares a **protocol-only** access boundary. The agent can author code and acquire
 data, so its self-written environment/ledger cannot enforce independence against itself.
@@ -88,7 +99,7 @@ data/write authority; this demo does not claim to supply that boundary.
 Verify data credentials and entitlements before running a long experiment. Provider discovery
 starts with a small **training-only** request. Never print API keys or buy access automatically.
 The [source reference](../../agentevolver/skill/finance/factor_strategy_research_skill/references/data-and-environments.md)
-links provider contracts and public-data alternatives. Signal Foundry v2 permits documented
+links provider contracts and public-data alternatives. Signal Foundry permits documented
 public adjusted-price research, while strict as-traded/consolidated/action qualification is
 reported separately as unmet when unverified. Dates, costs and numerical gates remain fixed.
 The first milestone is a native Connector download saved locally, with a checked hash,

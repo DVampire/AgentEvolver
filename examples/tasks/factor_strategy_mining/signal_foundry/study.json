@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "study_id": "signal-foundry-nvda-daily-v2",
+  "study_id": "signal-foundry-nvda-daily-v3",
   "market": {
     "symbol": "NVDA",
     "exchange_calendar": "XNAS",
@@ -70,6 +70,12 @@
       "minimum_pooled_net_sharpe": 0.75,
       "minimum_folds_with_positive_net_return": 2,
       "maximum_pooled_drawdown": 0.30
+    },
+    "final_submission": {
+      "require_validation_eligibility": true,
+      "require_final_test_strategy_criteria_on_pooled_validation": true,
+      "require_predeclared_robustness_evidence": true,
+      "require_documented_search_closure": true
     },
     "final_test_strategy": {
       "minimum_net_cagr": 0.12,

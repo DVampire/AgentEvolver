@@ -225,6 +225,11 @@ and pooled maximum drawdown. The joint final decision requires all seven study c
 net CAGR, net Sharpe, positive-loss maximum drawdown, completed round trips, scored sessions,
 Sharpe advantage over buy-and-hold and stressed net total return. Load thresholds directly
 from study.json. Extra attractive metrics cannot compensate for a failed criterion.
+These preliminary validation gates are not submission approval. Apply
+`acceptance.final_submission` as described in the [research protocol](research-protocol.md):
+Signal Foundry also checks all seven final criteria on pooled validation before opening test.
+Export that separate readiness vector with validation scope, exact values and reasons for
+missing metrics. Readiness is never a test result and does not overwrite initial eligibility.
 
 ## Evaluation drives the next experiment
 
@@ -232,7 +237,8 @@ Before each market evaluation write a hypothesis, parent IDs, intended change, e
 metric movement, falsification condition, scope and remaining budget. Afterward save a
 compact diagnosis with result IDs, baseline/candidate values and paired differences, gate
 failures, uncertainty, cost and one explicit decision: repair, reject, retain, combine,
-return to factor discovery, freeze or stop. Link the full record from index.md. Report
+return to factor discovery, continue exploratory research, freeze or stop with a reason from
+the research protocol. Link the full record from index.md. Report
 errors separately from low performance; fix invalid accounting before interpreting returns.
 
 | Observed training/validation evidence | Bounded next investigation |
@@ -245,8 +251,9 @@ errors separately from low performance; fix invalid accounting before interpreti
 | High return but poor drawdown, fold stability or benchmark advantage | Diagnose actual exposure and losing intervals; try a bounded causal risk/regime hypothesis. A bull-market equity curve alone is insufficient. |
 | Combination improves nothing over one factor | Ablate one factor at a time with the same dates, costs and refit policy; record both risk-adjusted and absolute-return changes and their paired uncertainty. |
 | Too few trades or labels | Report inadequate support; reject or change the economic hypothesis on research data. Do not split resizes into fake trades or count overlapping labels as independent. |
-| Repeated validation stagnation or exhausted budget | Apply the study's frozen patience/budget rules; preserve an unsuccessful conclusion when eligibility is unmet. |
-| Failed or inconclusive final test | Preserve the frozen failure. Do not choose another winner, modify an engine or tune against this same test and claim a fresh confirmatory result. |
+| Eligible strategy misses submission targets or robustness checks | Keep test unexposed. Compare the whole readiness vector and continue a bounded hypothesis; reducing position size alone may not fix return, Sharpe, benchmark advantage or support. |
+| Repeated validation stagnation or exhausted budget | Apply the study's frozen patience/budget rules with actual counters. Preserve unmet readiness/objectives; do not submit an unready candidate because search has stopped. |
+| Failed or inconclusive final test | Preserve the frozen failure and continue useful, budgeted exploratory research on separate versions. Mark test exposure and the need for unused confirmation data. Apply the protocol's lifecycle to stop only for an evidenced limit/blocker, not failure alone. |
 
 For parameter stability and ablations, predeclare small research-only comparisons, show every
 variant and charge the appropriate trial/validation budget. Refit trainable parts only on

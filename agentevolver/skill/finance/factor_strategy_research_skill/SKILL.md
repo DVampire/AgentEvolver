@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
 description: "Run a solo two-stage stock research project: auditable data acquisition, causal factor discovery, strategy experiments and one continuous evidence report."
-version: "1.2.0"
+version: "1.3.0"
 type: worker
 category: finance
 requirements: [cpu]
@@ -20,6 +20,7 @@ having these instructions with having implemented or verified those capabilities
 - Before implementation: [planning and work records](references/planning.md).
 - Before acquiring data: [sources and capability interfaces](references/data-and-environments.md).
 - Before computing performance: [research protocol](references/research-protocol.md).
+- Before freezing a submission or ending a run: the protocol's submission-readiness and research-lifecycle rules.
 - Before implementing either engine or evaluating candidates: [metrics and evaluation contract](references/metrics-and-evaluation.md).
 - Before report design: [report experience and acceptance](references/reports.md).
 - Before the first result export: [report data adapter and executable checks](references/report-data.md).
@@ -76,15 +77,19 @@ shared index concise; retain detailed evidence as files and read it on demand.
    check on the adapter manifest. This is a training/validation integration milestone, not a
    test reveal or permission to admit a failed factor. Then complete fold admission, strategy
    fitting, robustness and finalization before calling the environments research-ready.
-6. Feed strategy failures back into factor research before freezing the final submission.
+6. Feed strategy failures and unmet submission requirements back into factor or strategy research.
    Give each return to stage one a diagnosis, evidence, a new hypothesis and a bounded budget.
    Read the exported metric/gate summaries and apply the metrics reference's diagnostic
    decision table. Record baseline/candidate changes and the decision with exact result IDs.
    A new report, renamed formula or parameter permutation is not progress by itself.
-7. After validation eligibility, freeze one final factor/strategy/engine bundle. Evaluate
-   final test once, with the predeclared scenarios and metrics. Publish the integrated page
+7. Apply the research protocol's submission-readiness check on saved validation results.
+   Initial eligibility is only a shortlist. Continue research when readiness is unmet and
+   useful work and budget remain. Once readiness and documented search closure pass, freeze
+   one final factor/strategy/engine bundle. Evaluate final test once, with the predeclared
+   scenarios and metrics. Publish the integrated page
    with both stages and all final gates continuously visible; no report routes or stage tabs.
-   Preserve a failed/inconclusive result; do not mine the test until something passes.
+   Preserve a failed/inconclusive attempt and keep the research objective unmet. Apply the
+   lifecycle below to continue useful research; never reuse an exposed test as unseen.
 
 ## Capability evolution
 
@@ -112,13 +117,20 @@ Verify the engines' successful numerical paths through their research interfaces
 their rejection paths. A failure-reporting wrapper or fixture-only calculator leaves the
 market-research capability incomplete; see the sources reference for readiness checks.
 
-## Stop conditions
+## Research lifecycle
 
 Successful research requires the task's real-data final-test criteria and all requested
-deliverables. Budget exhaustion, exhausted validation search, unresolved external access,
-insufficient observations and a failed final test require an explicit non-success outcome.
-Repair engine defects and implement missing operations while useful work and budget remain;
-discovering an unfinished function is not itself a stop condition.
-Preserve detailed reasons and a reproduction/resume path. Never
+deliverables. A failed candidate, failed final attempt or report release does not by itself
+end the research task. Follow the protocol's research-lifecycle decision table: continue
+budgeted factor/strategy work or repair a demonstrated capability gap while useful work
+remains. Keep attempt outcome, research activity and overall acceptance separate in the plan
+and report. After test exposure, preserve the frozen attempt and mark further research as
+exploratory; fresh confirmation needs genuinely unused data under a new predeclared protocol.
+
+End unsuccessfully only with evidence of an exhausted applicable budget/patience rule, a user
+stop, or a concrete prerequisite with no useful in-scope work remaining. Awaiting fresh test
+data can block confirmation without immediately blocking research. Do not keep a process
+busy with repeated checks when no progress is possible. Record the actual stop reason,
+remaining budget, unmet criteria, next hypothesis and exact resume dependency. Repairable
+engine defects and missing connector code are work, not external-access blockers. Never
 relax criteria, hide unsuccessful trials or purchase data to manufacture a passing run.
-Missing connector or engine code is work to implement, not an external-access blocker.

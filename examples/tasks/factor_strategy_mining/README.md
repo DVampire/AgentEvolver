@@ -37,9 +37,14 @@ Keep adjustment conventions and limitations explicit. Strict as-traded prices, c
 volume and verified corporate-action accounting are separate qualifications; unmet evidence
 must remain visible and must not be reported as passing merely because performance is good.
 
-Iterations use training and validation. Final-test results must not guide factor or
-strategy selection. An unsuccessful or inconclusive study must remain visible in the
-reports; a useful research product does not imply a profitable strategy.
+Iterations use training and validation. Preliminary eligibility creates a shortlist; the
+study's final-submission requirements also demand the final numerical targets on validation,
+robustness evidence and justified search closure before test access. A failed candidate or
+final attempt does not by itself end the research objective: continue useful research within
+the budget, preserving the failure and labelling later work exploratory. Fresh confirmation
+requires genuinely unused data. Stop unsuccessfully only at an evidenced budget/patience limit,
+user stop or blocking prerequisite, with unmet requirements and a resume condition visible.
+A useful research product does not imply a profitable strategy.
 
 Research budgets count hypotheses and validation exposure, rather than execution steps
 or model tokens. Methods and implementation details can be designed for the chosen system
