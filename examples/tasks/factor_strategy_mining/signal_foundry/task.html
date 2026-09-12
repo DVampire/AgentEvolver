@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signal Foundry — Factor and Strategy Research Workbench</title>
+  <link rel="stylesheet" href="../../../../agentevolver/visual/task/style.css">
+  <script src="../../../../agentevolver/visual/task/app.js" defer></script>
+</head>
+<body>
+
+<div class="task">
+
+<objective data-format="html" id="mission">
+<header>
+<p>Project brief · Research workbench · From factors to strategies</p>
+<h1>Signal Foundry</h1>
+<p>Turn a stock's price and volume history into explainable factors, testable trading
+    hypotheses and a beautiful research workbench whose conclusions can be inspected.</p>
+</header>
+
+<h2>Mission and research scope</h2>
+<p>Create an interactive workbench for researching a stock, discovering useful factors
+    and turning them into testable trading strategies. The two research stages should form
+    one coherent investigation, with clear conclusions and evidence that readers can explore.</p>
+<p>The accompanying study.json specifies the stock, dates, trading assumptions, research
+    budget and numerical acceptance targets. The default study uses NVDA daily OHLCV.
+    Detailed implementation choices remain open.</p>
+<p>The user must be able to answer: What did we download? Why might this factor work?
+    Which evidence admitted or rejected it? How did it change a strategy? What survives
+    costs, another market regime and the untouched final evaluation?</p>
+</objective>
+
+<requirements data-format="html" id="data">
+<h2>A trustworthy data foundation</h2>
+<p>Base the research on real, lawfully accessible stock prices and trading volume, with
+    the corporate actions and trading-session information needed to interpret them. Readers
+    should be able to identify the source, actual coverage and adjustment assumptions, and
+    understand any missing data or access limitation. Support research on another stock or
+    date range through the same product.</p>
+<p>Retain raw prices and volume, split and dividend records, provider/feed identity,
+    retrieval time, dataset hashes and a data-quality report. Detect duplicate bars, missing
+    sessions, invalid OHLC ranges and inconsistent adjustments. A single-venue volume feed,
+    fabricated data or a short convenience sample cannot silently replace the requested study.</p>
+<p>Distinguish measured data quality from assumptions. Unavailable history must remain
+    visible as a limitation rather than being replaced by fabricated observations.</p>
+</requirements>
+
+<requirements data-format="html" id="factors">
+<h2>Stage 1 — Factor discovery and the Factor Observatory</h2>
+<p>Discover interpretable signals, compare their predictive usefulness and select a
+    complementary factor library for strategy research. Each conclusion must come from
+    reproducible calculations on the specified observations.</p>
+<p>Explore distinct economic hypotheses such as trend persistence, reversal after shocks,
+    volume-confirmed moves, range structure, volatility compression and regime transitions.
+    Give every candidate an ID, formula, units, lookback, availability time, prediction horizon,
+    direction, rationale and falsification condition. Parameter variations count as trials.
+    Select directions and transformations on training observations only.</p>
+<p>Publish a detailed factor report with a sortable accepted/rejected candidate table,
+    time-series IC and RankIC by horizon and fold, rolling stability, quantile response curves,
+    coverage and missingness, uncertainty, regime behavior, redundancy clusters and admission
+    reasons. Define metrics before use. A single stock has no daily cross-sectional IC.
+    Show insufficient evidence explicitly instead of inventing confidence or passing a factor.</p>
+<p>The factor library is the contract for stage two. Preserve exact expressions, fitted
+    state, code/data versions and admission evidence. Factors rejected on validation cannot
+    reappear as eligible simply because a strategy needs them.</p>
+</requirements>
+
+<requirements data-format="html" id="strategies">
+<h2>Stage 2 — Strategy mining and the Strategy Atelier</h2>
+<p>Turn selected factors into executable trading hypotheses and evaluate their returns,
+    risks and costs. Readers should be able to trace a strategy back to its factor evidence
+    and understand how signals lead to positions, trades and profit or loss.</p>
+<p>Design interpretable single-factor baselines before combining complementary factors.
+    Specify entry, exit, sizing, rebalance timing, neutral states and regime rules. Use the
+    declared long-or-cash execution model. Measure the incremental value of each factor with
+    ablations and compare against cash and holding the same stock. Rank candidates using the
+    frozen validation objective, risk and complexity, not the prettiest training curve.</p>
+<p>Publish separate train, validation and final-test views with gross/net equity, benchmark
+    comparison, drawdown and recovery, monthly/yearly returns, exposure, turnover, transaction
+    costs, trade distributions and traceable orders. Report CAGR, annualized volatility,
+    Sharpe, Sortino, Calmar, maximum drawdown, trade count, win rate, payoff/profit factor and
+    cost sensitivity with definitions and null states. Include fold/regime results, parameter
+    stability, uncertainty, factor ablations and all unsuccessful candidates.</p>
+</requirements>
+
+<constraints data-format="html" id="iteration">
+<h2>Research loop and the final evaluation</h2>
+<p>Iterate factor and strategy research on train and validation: diagnose a specific
+    weakness, investigate a new hypothesis and record the outcome.
+    Carry strategy diagnoses back into factor research when useful. Keep a complete trial
+    history including rejected candidates, validation exposure, cost and changes in reasoning.</p>
+<p>Keep training, validation and test results distinct. Selection must use only information
+    available at the relevant time, with no future-data leakage. Fix the evaluation criteria
+    before research and finalize the selected factors and strategy before the final test.
+    Both reports should describe that same final evaluation; test factor rankings must not
+    influence a strategy that is still being optimized.</p>
+<p>Successful research requires every frozen final-test strategy criterion to pass on real
+    data. Repeatedly tuning against the same test invalidates this outcome. On a failed test,
+    insufficient sample, exhausted budget or unrecoverable prerequisite, finish with an honest
+    unsuccessful report. A new folder, seed or tighter slice does not make seen data unseen;
+    further confirmatory research needs a genuinely new evaluation period. State how the
+    evaluation was controlled and distinguish self-review from independent evidence.</p>
+</constraints>
+
+<interface data-format="html" id="experience">
+<h2>A research workbench worth exploring</h2>
+<p>Design a premium analytical interface: disciplined typography, calm surfaces, deliberate
+    spacing and a consistent semantic palette for returns, risk and uncertainty. Use a
+    coherent visual direction and an investigative layout rather than interchangeable KPI cards.</p>
+<ul>
+<li>A study overview connects source provenance, the chronological split timeline,
+      research progress and separate engineering/research acceptance states.</li>
+<li>A Factor Observatory lets a visitor filter candidates, compare horizons and folds,
+      inspect a formula and trace selection into a strategy.</li>
+<li>A Strategy Atelier links factor composition, ablations, equity/drawdown charts,
+      trade markers, fold comparisons and a searchable trade ledger.</li>
+<li>A synchronized time brush and chart tooltips explain which trades and exposures
+      contributed to a selected drawdown. Descriptive filtering must not become test optimization.</li>
+<li>A cost-sensitivity explorer uses predeclared scenarios computed from the frozen
+      backtest. Mark exploratory controls clearly; they cannot overwrite the accepted result.</li>
+<li>An experiment lineage view links hypotheses, rejected trials, versions and artifacts.
+      Visitors can download the permitted metric tables and a reproducibility manifest.</li>
+<li>The final-test panel stays unavailable until the final evaluation. Test values must
+      not be accessible through other report views or downloads beforehand.</li>
+</ul>
+<p>Provide real keyboard interactions, readable charts, responsive layouts and useful
+    loading, empty and failed states. The main investigation should work on desktop and narrow
+    screens. Deliver an accessible factor-report preview and a later integrated strategy report,
+    with working links and evidence that the key reader journeys function as intended.</p>
+</interface>
+
+<acceptance data-format="html" id="acceptance">
+<h2>Delivery and acceptance evidence</h2>
+<ul>
+<li>A working data-to-factor-to-strategy research workflow that can evaluate changed
+      inputs and reproduce its conclusions.</li>
+<li>Real data provenance, frozen protocol, factor library, strategy specifications,
+      trial history, deterministic checks and reproducible machine-readable metrics.</li>
+<li>Two detailed, connected report pages whose displayed values reconcile with the
+      exported records, with usable navigation and interactions.</li>
+<li>Explicit final outcome: passed, failed, inconclusive or blocked; each unmet numerical
+      criterion, test exposure state, limitations and a precise reproduction/resume path.</li>
+</ul>
+<p>This is historical research software. Do not place orders, promise future profit,
+    purchase data subscriptions or claim independent evaluation from self-review.</p>
+</acceptance>
+
+</div>
+
+</body>
+</html>

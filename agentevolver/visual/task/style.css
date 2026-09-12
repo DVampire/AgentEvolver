@@ -69,7 +69,8 @@ div.task > * {
   border-left: 2px solid var(--border-hi);
   padding: 14px 16px;
   counter-increment: section;
-  cursor: pointer;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* shared label styling; content is set generically here and overridden per
@@ -105,10 +106,32 @@ div.task > notes::before        { content: counter(section, decimal-leading-zero
 div.task > objective { border-left-color: var(--green); background: var(--green-bg); }
 div.task > objective::before { color: var(--green); }
 
-/* collapsed section (toggled by task.js) — clips to just the ::before label */
-div.task > .collapsed,
-div.task > objective.collapsed,
-div.task > *.collapsed { max-height: 3em; overflow: hidden; }
+/* Keep labels readable without JavaScript; enhance them to keyboard controls. */
+div.task > [data-task-ready]::before { display: none; }
+.task-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 0 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-mid);
+  font: bold 10px var(--mono);
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.task-section-toggle::after { content: "−"; font-size: 16px; }
+.task-section-toggle[aria-expanded="false"]::after { content: "+"; }
+objective > .task-section-toggle { color: var(--green); }
+.task-section-toggle:focus-visible,
+div.task a:focus-visible { outline: 2px solid var(--green); outline-offset: 4px; }
+.task-section-body { padding-top: 4px; }
+.task-section-body[hidden] { display: none; }
 
 /* =====================================================
    CONTENT — text, lists, inline code, code blocks, tables
@@ -132,6 +155,18 @@ code {
 }
 
 div.task p { margin: 8px 0; }
+div.task h1 { font-size: 24px; line-height: 1.3; margin: 12px 0 18px; }
+div.task h2 { font-size: 18px; line-height: 1.4; margin: 12px 0; color: var(--green); }
+div.task h3, div.task h4, div.task h5, div.task h6 {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 20px 0 8px;
+}
+div.task article + article { margin-top: 20px; }
+div.task nav { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 16px 0; }
+div.task footer { color: var(--text-mid); }
+div.task [id] { scroll-margin-top: 20px; }
+div.task pre { max-width: 100%; overflow-wrap: normal; }
 
 /* code blocks — markdown fenced ``` renders to <pre><code>; the div.code
    module is the equivalent for hand-authored HTML (mirrors prompt.css). */
@@ -152,6 +187,14 @@ div.code code { background: none; border: none; padding: 0; }
 table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; margin: 6px 0; }
 th, td { border: 1px solid var(--border); padding: 7px 12px; text-align: left; }
 th { background: var(--surface-3); color: var(--green); }
+
+@media (max-width: 640px) {
+  body { padding: 16px 12px 48px; }
+  div.task { padding: 14px 12px; }
+  div.task > * { padding: 12px; }
+  div.task h1 { font-size: 21px; }
+  th, td { min-width: 140px; }
+}
 
 /* =====================================================
    MARKDOWN FALLBACK — .md tasks render into div.task-doc

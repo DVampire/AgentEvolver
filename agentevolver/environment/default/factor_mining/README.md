@@ -1,5 +1,9 @@
 # 因子与策略挖掘
 
+需要单个 Agent 在任务中开发 Connector 和两个 Environment，并生成交互式研究报告时，
+使用 [Signal Foundry demo](../../../../docs/demos/factor_strategy_mining.md)。
+以下文档描述保留的双 Agent、固定环境与独立 Benchmark 路径，两者的测试隔离保证不同。
+
 实现由两个专用 Agent、训练环境、数据适配器和独立 Benchmark 组成。
 Agent 复用项目标准执行循环；运行编排在
 [`examples/run_factor_mining.py`](../../../../examples/run_factor_mining.py)，

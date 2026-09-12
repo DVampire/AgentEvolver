@@ -5,8 +5,9 @@
   <meta name="name" content="gaia_maze_environment">
   <meta name="description" content="Solve real GAIA task 65afbc8a by building the stateful grid world it requires, discovering from real play that the world was modelled wrong, and evolving the environment until the answer matches GAIA ground truth">
   <meta name="version" content="1.0.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="../../agentevolver/visual/task/style.css">
-  <script src="../../agentevolver/visual/task/app.js"></script>
+  <script src="../../agentevolver/visual/task/app.js" defer></script>
 </head>
 <body>
 
@@ -94,7 +95,7 @@ Your FIRST action is Round 1. Run these rounds in order, one per turn.
     enable_evolving: bool = Field(default=True)
 ```
   - instance state (set in `__init__` after `super().__init__(**kwargs)`):
-    `grid` (dict of `(row, col) -> ARGB colour string`), `pos`, `came_from`,
+    `grid` (dict of `(row, col) -&gt; ARGB colour string`), `pos`, `came_from`,
     `turn`
   - `load_map(path)` — `openpyxl.load_workbook(path)`, read `ws.max_row` /
     `ws.max_column`, and for every cell store

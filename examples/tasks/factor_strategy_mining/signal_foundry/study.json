@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "study_id": "signal-foundry-nvda-daily-v1",
+  "market": {
+    "symbol": "NVDA",
+    "exchange_calendar": "XNAS",
+    "currency": "USD",
+    "bar_frequency": "1Day",
+    "session": "regular",
+    "start": "2016-01-01",
+    "end": "2026-09-11",
+    "completed_sessions_only": true,
+    "volume_scope": "consolidated_US_equities",
+    "corporate_actions_required": true
+  },
+  "splits": {
+    "train": ["2016-01-01", "2020-12-31"],
+    "validation": ["2021-01-01", "2023-12-31"],
+    "test": ["2024-01-01", "2026-09-11"],
+    "walk_forward": "annual validation folds with expanding past-only fitting",
+    "minimum_boundary_gap_sessions": 21,
+    "maximum_label_horizon_sessions": 20,
+    "final_test_attempts": 1
+  },
+  "execution": {
+    "signal_at": "completed regular-session close",
+    "earliest_fill": "next tradable regular-session open",
+    "position_range": [0.0, 1.0],
+    "initial_capital_usd": 100000,
+    "commission_bps_per_side": 5,
+    "slippage_bps_per_side": 5,
+    "stress_cost_multiplier": 2,
+    "cash_annual_return": 0.0,
+    "sharpe_reference_annual_return": 0.0,
+    "annualization_sessions": 252,
+    "accounting": "raw execution prices with explicit split/share and dividend cash accounting",
+    "terminal_liquidation": true,
+    "benchmarks": ["cash", "same_stock_buy_and_hold_total_return"]
+  },
+  "research_budget": {
+    "max_rounds": 12,
+    "max_factor_candidates": 60,
+    "max_strategy_candidates": 30,
+    "max_validation_submissions": 24,
+    "max_candidates_per_validation_submission": 5,
+    "max_rounds_without_validation_improvement": 3
+  },
+  "acceptance": {
+    "kind": "demo_research_objective_not_a_return_promise",
+    "factor_admission": {
+      "minimum_coverage": 0.95,
+      "minimum_validation_time_series_rank_ic": 0.02,
+      "minimum_validation_folds_with_positive_rank_ic": 2,
+      "maximum_pairwise_absolute_correlation": 0.85,
+      "minimum_nonoverlapping_validation_labels": 30,
+      "direction_and_primary_horizon_selected_on_train": true
+    },
+    "validation_strategy": {
+      "minimum_pooled_net_sharpe": 0.75,
+      "minimum_folds_with_positive_net_return": 2,
+      "maximum_pooled_drawdown": 0.30
+    },
+    "final_test_strategy": {
+      "minimum_net_cagr": 0.12,
+      "minimum_net_sharpe": 1.0,
+      "maximum_drawdown": 0.25,
+      "minimum_completed_round_trips": 20,
+      "minimum_scored_sessions": 400,
+      "minimum_net_sharpe_minus_buy_hold_sharpe": 0.0,
+      "positive_net_return_at_stress_cost": true,
+      "all_criteria_required": true
+    }
+  }
+}

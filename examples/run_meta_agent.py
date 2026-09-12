@@ -386,7 +386,10 @@ async def main(*, prepare_session=None):
     await task_manager.start(num_workers=1)
 
     # --- Build the task (inline --task string or --task-file document) ---
-    task_text, task_files, task_metadata = resolve_task(args, task_log_root)
+    task_text, task_files, task_metadata = resolve_task(
+        args, task_log_root,
+        manifest_defaults=getattr(config, "task_manifest_defaults", None),
+    )
     logger.info(f"| 📋 Submitting task:\n{task_text}")
     task_id = await task_manager.submit(
         content=task_text,

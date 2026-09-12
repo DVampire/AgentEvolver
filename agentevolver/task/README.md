@@ -70,6 +70,14 @@ saw — which for a goal usually *is* the news: someone else moved it.
 
 ## Optional execution evidence
 
+Launchers can supply `manifest_defaults` to `resolve_task` to keep runtime settings outside
+authored product documents. The shared `run_meta_agent.py` entry reads these from the assembled
+config's `task_manifest_defaults`, including command-line config overrides. With defaults
+enabled, task documents and attachments get input bindings automatically; staging still uses
+the ordinary Agent preparation path. An explicit task manifest replaces defaults by whole
+top-level section. The rendered task document remains unchanged. Existing launchers/configs
+without these defaults retain their previous behavior.
+
 `evolution.require_verified_improvement` enables task-scoped action receipts and an evolution
 completion audit in `evolution.py`. The agent loop records actual actions before compaction;
 registration, evaluated adoption and post-adoption consumer use must refer to the same version.
@@ -77,3 +85,10 @@ registration, evaluated adoption and post-adoption consumer use must refer to th
 must include interaction and a later observation. Both explicit done and text-only completion
 report unmet requirements as unsuccessful. Ordinary tasks retain their existing completion
 behavior. These provenance checks do not provide an independent semantic quality judgment.
+
+`evolution.required_modules` requires at least one verified component per named type.
+`evolution.required_module_counts` optionally sets higher counts, for example
+`{"connector": 1, "environment": 2}`. Counts are positive integers and measure distinct
+component names with an active evaluated version and subsequent consumer use. Updating one
+environment twice cannot satisfy a requirement for two environments. Counts audit execution
+coverage; task acceptance must still verify that the components fulfill distinct useful roles.

@@ -5,8 +5,9 @@
   <meta name="name" content="escalation_test">
   <meta name="description" content="End-to-end test of the escalation channel: a sub-agent blocks, asks the orchestrator, and resumes on the reply.">
   <meta name="version" content="1.0.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="../../agentevolver/visual/task/style.css">
-  <script src="../../agentevolver/visual/task/app.js"></script>
+  <script src="../../agentevolver/visual/task/app.js" defer></script>
 </head>
 <body>
 
@@ -17,7 +18,9 @@ asks you (the orchestrator) for a decision, and continues once you reply. Drive 
 as scripted below; the point is to exercise escalate → reply → resume, not to be clever.
 </objective>
 
-<steps>
+<plan>
+### Steps
+
 1. Dispatch `general_agent` with a task that FORCES it to escalate. Give it this EXACT instruction:
    "Report a codeword for a label. You are NOT allowed to choose the codeword yourself — it is a
     decision only the orchestrator may make. You MUST call `escalate_tool` (reason: 'Need the
@@ -27,7 +30,7 @@ as scripted below; the point is to exercise escalate → reply → resume, not t
 2. When `general_agent` escalates (you receive an ESCALATE event), reply to it — choose the
    codeword **BANANA**.
 3. After `general_agent` finishes, report the codeword it ended up with.
-</steps>
+</plan>
 
 <acceptance>
 - `general_agent` actually escalated (called `escalate_tool`) instead of guessing.

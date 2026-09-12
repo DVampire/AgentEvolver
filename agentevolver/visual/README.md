@@ -17,8 +17,7 @@ preview only.
 |---|---|
 | `prompt/style.css`, `prompt/app.js` | Prompt HTML preview |
 | `workflow/style.css`, `workflow/app.js` | Dynamic Workflow metadata and nested execution-program preview |
-| `task/style.css`, `task/app.js` | Task visualization with Markdown inside semantic section tags |
-| `task/task.css`, `task/task.js` | Authored HTML task briefs; preserve headings, tables and other semantic markup |
+| `task/style.css`, `task/app.js` | Shared task visualization for semantic sections containing Markdown or authored HTML |
 | `memory/style.css` | Memory visualization |
 | `plan/style.css` | Plan visualization |
 | `request/style.css`, `request/app.js` | Canonical LLM request viewer with context-layer, token-growth, cache, and compaction diagnostics |
@@ -32,11 +31,20 @@ its stylesheet (`style.css`) and optional script (`app.js`) together. Python
 renderers use `asset_path(view, filename)`, backed by PathManager. Do not recreate
 the former top-level `css/` and `js/` buckets.
 
-HTML task briefs use `data-task-layout="brief"` on a `.task-brief` wrapper and link
-`task/task.css` and `task/task.js` from their document head. The runtime task-page
-renderer selects these same assets for generated previews. Their layout reuses the
-common task palette and type via `task/style.css`; keep CSS and JavaScript in this
-directory instead of embedding them in individual task specifications.
+All task HTML uses a single `div.task` wrapper and the section tags `objective`,
+`requirements`, `interface`, `acceptance`, `plan`, `deliverables`, `constraints` and
+`notes`. Sections may repeat; use headings and stable IDs for subject-specific chapters.
+Link `task/style.css` and `task/app.js` from the head using paths relative to the
+document. The runtime task-page renderer uses the same two assets.
+
+Sections contain Markdown text by default; escape literal HTML in code examples
+(`&lt;h1&gt;`, for example). Use `data-format="html"` on a section containing authored
+HTML to preserve headings, nested lists, tables and links. This uses the same layout
+and section controls, with no separate page theme. Both forms are readable by the
+task loader without executing JavaScript. Keep styling and scripts here, never inline
+in task specifications. See [task authoring](../../examples/tasks/README.md).
+The legacy `task/task.css` and `task/task.js` remain only for previously saved previews;
+new task documents and generated pages do not select them.
 
 The views share the dashboard's deep-green/mint palette: `ground`, three surface
 levels, text tiers, semantic green/amber/red/blue/purple accents, borders, and the

@@ -7,7 +7,8 @@ not a requirement to adopt React, Tailwind, Storybook or a state library.
 
 ### File Structure
 
-Colocate everything related to a component:
+Colocate related code when it helps maintain a component. This is an optional example;
+do not scaffold tests, stories or extra files merely to match it:
 
 ```
 src/components/
@@ -23,23 +24,25 @@ src/components/
 
 **Prefer composition over configuration:**
 
+Start from the content's semantic structure. Composition does not require a Card wrapper;
+choose a section, list, table, figure or pane to suit the design.
+
 ```tsx
 // Good: Composable
-<Card>
-  <CardHeader>
-    <CardTitle>Tasks</CardTitle>
-  </CardHeader>
-  <CardBody>
-    <TaskList tasks={tasks} />
-  </CardBody>
-</Card>
+<section aria-labelledby="tasks-heading" className="task-section">
+  <header className="section-heading">
+    <h2 id="tasks-heading">Tasks</h2>
+    <TaskFilters />
+  </header>
+  <TaskList tasks={tasks} onToggle={toggleTask} onDelete={deleteTask} />
+</section>
 
 // Avoid: Over-configured
-<Card
+<TaskSection
   title="Tasks"
   headerVariant="large"
   bodyPadding="md"
-  content={<TaskList tasks={tasks} />}
+  content={<TaskList tasks={tasks} onToggle={toggleTask} onDelete={deleteTask} />}
 />
 ```
 
@@ -49,12 +52,14 @@ src/components/
 // Good: Does one thing
 export function TaskItem({ task, onToggle, onDelete }: TaskItemProps) {
   return (
-    <li className="flex items-center gap-3 p-3">
-      <Checkbox checked={task.done} onChange={() => onToggle(task.id)} />
-      <span className={task.done ? 'line-through text-muted' : ''}>{task.title}</span>
-      <Button variant="ghost" size="sm" onClick={() => onDelete(task.id)}>
-        <TrashIcon />
-      </Button>
+    <li className="task-row">
+      <label className="task-toggle">
+        <input type="checkbox" checked={task.done} onChange={() => onToggle(task.id)} />
+        <span className={task.done ? 'is-complete' : undefined}>{task.title}</span>
+      </label>
+      <button type="button" aria-label={`Delete ${task.title}`} onClick={() => onDelete(task.id)}>
+        <TrashIcon aria-hidden="true" />
+      </button>
     </li>
   );
 }
@@ -65,20 +70,28 @@ export function TaskItem({ task, onToggle, onDelete }: TaskItemProps) {
 ```tsx
 // Container: handles data
 export function TaskListContainer() {
-  const { tasks, isLoading, error, refetch } = useTasks();
+  const { tasks, isLoading, error, refetch, toggleTask, deleteTask } = useTasks();
 
   if (isLoading) return <TaskListSkeleton />;
   if (error) return <ErrorState message="Failed to load tasks" retry={refetch} />;
   if (tasks.length === 0) return <EmptyState message="No tasks yet" />;
 
-  return <TaskList tasks={tasks} />;
+  return <TaskList tasks={tasks} onToggle={toggleTask} onDelete={deleteTask} />;
 }
 
 // Presentation: handles rendering
-export function TaskList({ tasks }: { tasks: Task[] }) {
+type TaskListProps = {
+  tasks: Task[];
+  onToggle: TaskItemProps['onToggle'];
+  onDelete: TaskItemProps['onDelete'];
+};
+
+export function TaskList({ tasks, onToggle, onDelete }: TaskListProps) {
   return (
-    <ul role="list" className="divide-y">
-      {tasks.map(task => <TaskItem key={task.id} task={task} />)}
+    <ul role="list" className="task-list">
+      {tasks.map(task => (
+        <TaskItem key={task.id} task={task} onToggle={onToggle} onDelete={onDelete} />
+      ))}
     </ul>
   );
 }
@@ -97,4 +110,7 @@ Server state (React Query, SWR)  → Remote data with caching
 Global store (Zustand, Redux)    → Complex client state shared app-wide
 ```
 
-**Avoid prop drilling deeper than 3 levels.** If you're passing props through components that don't use them, introduce context or restructure the component tree.
+If pass-through props make a component tree hard to work with, consider composition,
+moving state closer to its consumers or context. A fixed nesting depth is not a reason
+to introduce a store. Keep rendering structure and styling independent enough that a
+visual redesign does not rewrite the data model or break accessible control behavior.

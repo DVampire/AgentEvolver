@@ -6,7 +6,52 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentevolver.task.context import bind_manifest, public_manifest, render_manifest
+from agentevolver.task.context import bind_manifest, parse_manifest, public_manifest, render_manifest, resolve_task
+
+
+def test_runtime_defaults_bind_inputs_without_mutating_configuration(tmp_path):
+    defaults = {"evolution": {"required_module_counts": {"environment": 2}}, "subscribers": []}
+    original = copy.deepcopy(defaults)
+    args = SimpleNamespace(task="Compare historical signals.", attach=["/inputs/study.json"])
+    content, files, metadata = resolve_task(args, str(tmp_path), manifest_defaults=defaults)
+    before, _, manifest = bind_manifest(content, ["/staged/study.json"])
+    assert before == args.task
+    assert manifest["attachments"] == [{"id": "input_0", "role": "requirements",
+                                        "name": "study.json", "path": "/staged/study.json", "staged": True}]
+    assert files == args.attach and metadata is None
+    manifest["evolution"]["required_module_counts"]["environment"] = 3
+    assert defaults == original
+
+
+def test_authored_manifest_overrides_config_by_whole_section(tmp_path):
+    explicit = {"attachments": [{"id": "answer", "role": "private"}],
+                "deployment": {"required_releases": 1}, "evolution": {"require_verified_improvement": False}}
+    args = SimpleNamespace(task=render_manifest("Review", "Input roles", explicit), attach=["/answer"])
+    content, _, _ = resolve_task(args, str(tmp_path), manifest_defaults={
+        "deployment": {"required_releases": 2, "topic": "demo.ready"},
+        "evolution": {"required_module_counts": {"environment": 2}},
+        "run_policy": {"self_review": True},
+    })
+    manifest = parse_manifest(content)[2]
+    assert manifest["deployment"] == explicit["deployment"]
+    assert manifest["evolution"] == explicit["evolution"]
+    assert manifest["attachments"] == explicit["attachments"]
+    assert manifest["run_policy"] == {"self_review": True}
+
+
+def test_resolving_ordinary_tasks_keeps_previous_behavior(tmp_path):
+    args = SimpleNamespace(task="Hello", attach=["notes.md"])
+    assert resolve_task(args, str(tmp_path)) == ("Hello", ["notes.md"], None)
+    assert resolve_task(args, str(tmp_path), manifest_defaults={}) == ("Hello", ["notes.md"], None)
+    with pytest.raises(ValueError, match="task_manifest_defaults"):
+        resolve_task(args, str(tmp_path), manifest_defaults=["environment"])
+
+
+def test_mismatched_config_attachment_declarations_fail_before_submission(tmp_path):
+    with pytest.raises(ValueError, match="attachment count"):
+        resolve_task(SimpleNamespace(task="Review", attach=[]), str(tmp_path), manifest_defaults={
+            "attachments": [{"id": "missing", "role": "requirements"}],
+        })
 
 
 def test_public_manifest_supports_domain_roles_without_mutating_private_input():

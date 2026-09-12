@@ -29,10 +29,10 @@ def observe(ctx, call_id, route, *, args=None, extra=None):
     )], {name: route})
 
 
-def adopted(audit, module, *, version="1.0.0", use=True):
+def adopted(audit, module, *, version="1.0.0", use=True, name=None):
     ctx, active = audit
-    name = f"reusable_{module}"
-    prefix = f"{module}-{version}"
+    name = name or f"reusable_{module}"
+    prefix = f"{name}-{version}"
     ids = {label: f"{prefix}-{label}" for label in (
         "observation", "baseline", "registration", "comparison", "reuse",
         "decision", "consumer", "operation",
@@ -147,3 +147,39 @@ def test_invalid_required_modules_fail_closed(audit, modules):
 
 def test_ordinary_tasks_keep_optional_evolution():
     assert evolution.status(SimpleNamespace(extra={})) == {"required": False, "ready": True}
+
+
+def test_two_environments_need_distinct_names_and_consumers(audit):
+    ctx, active = audit
+    ctx.extra["task_manifest"]["evolution"] = {
+        "required_module_counts": {"connector": 1, "environment": 2},
+    }
+    adopted(audit, "connector")
+    adopted(audit, "environment", name="factors")
+    adopted(audit, "environment", name="factors", version="1.1.0")
+    check = evolution.status(ctx)
+    assert not check["ready"]
+    assert check["missing_module_counts"] == {"environment": 1}
+    use = adopted(audit, "environment", name="strategies", use=False)
+    assert not evolution.status(ctx)["ready"]
+    evolution.record_use(ctx, use)
+    assert evolution.status(ctx)["ready"]
+    del active[("environment", "factors")]
+    assert evolution.status(ctx)["missing_module_counts"] == {"environment": 1}
+
+
+@pytest.mark.parametrize("counts", [{"environment": True}, {"environment": 0},
+    {"environment": -1}, {"environment": 1.5}, {"connetcor": 1}, ["environment"]])
+def test_invalid_module_counts_fail_closed(audit, counts):
+    ctx, _ = audit
+    ctx.extra["task_manifest"]["evolution"] = {"required_module_counts": counts}
+    with pytest.raises(ValueError, match="positive integers"):
+        evolution.status(ctx)
+    result = evolution.finalize(ctx, Response(type=ResponseType.AGENT, success=True, message="Done"))
+    assert not result.success
+
+
+def test_counts_extend_existing_required_modules(audit):
+    ctx, _ = audit
+    ctx.extra["task_manifest"]["evolution"]["required_module_counts"] = {"environment": 2, "skill": 2}
+    assert evolution.required_module_counts(ctx) == {"skill": 2, "agent": 1, "connector": 1, "environment": 2}

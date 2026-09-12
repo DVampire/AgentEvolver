@@ -2,6 +2,11 @@
 
 更新：2026-09-11。状态：**设计讨论稿；本次只更新文档，尚未完成策略实证或交易框架接入。**
 
+2026-09-12 补充：新增 [Signal Foundry 单 Agent 双阶段 demo](../demos/factor_strategy_mining.md)，
+入口为 `examples/run_factor_strategy_mining_demo.py`。它在运行中开发数据 Connector、因子 Environment
+和策略 Environment，并交付两个关联的网页报告。默认采用协议约束的单次最终测试，不宣称独立隔离或已获得盈利结果。
+本文后续的实盘目标和原双 Agent Benchmark 是不同范围；新 demo 的当前任务要求以其 task.html 和 study.json 为准。
+
 当前阶段：先定义因子与因子策略挖掘的历史输入，实盘讨论后置。**用户已明确当前研究市场为美股**；沿用单资产研究范围，首批建议准备原始量价、公司行动、证券与交易状态、历史股本、当时可见的财报、业绩披露、大盘/行业参照及回测成本，逐笔与全量新闻按假设扩展。字段、用途、优先级与来源见 [美股历史数据需求文档](us-stock-factor-data-requirements.md)。
 
 以 NVIDIA 为例的官方来源核查已整理为 [NVDA API、历史覆盖与数据粒度表](nvda-historical-data-api-matrix.md)：区分日/分钟/秒/逐笔与披露事件，列出多个来源、访问条件及实测/文档证据。

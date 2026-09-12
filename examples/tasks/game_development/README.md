@@ -39,7 +39,9 @@ acceptance requirements. Integration documentation belongs in this README.
 
 The HTML is a task specification, not a playable game or a claim of completed content.
 It can be read directly in a browser or through the task loader. Presentation is shared
-through `agentevolver/visual/task/task.css` and `task.js`, referenced from the HTML head.
+through `agentevolver/visual/task/style.css` and `app.js`, referenced from the HTML head.
+Use the [shared task section tags](../README.md); authored HTML sections carry
+`data-format="html"` so story headings, tables and chapter links stay intact.
 The brief contains no embedded styles or scripts; keep these relative resources available
 when moving or serving the document. Runtime previews use the same assets.
 

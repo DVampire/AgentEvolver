@@ -5,8 +5,9 @@
   <meta name="name" content="programbench_reconstruction">
   <meta name="description" content="Reconstruct a program's source from its compiled binary and docs">
   <meta name="version" content="3.6.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="../../agentevolver/visual/task/style.css">
-  <script src="../../agentevolver/visual/task/app.js"></script>
+  <script src="../../agentevolver/visual/task/app.js" defer></script>
 </head>
 <body>
 
@@ -23,7 +24,9 @@ binary and reading its docs — writing original code from observed behaviour is
 point.
 </objective>
 
-<environment>
+<notes>
+### Environment
+
 - Your working directory is `/workspace`; use that path or one relative to it. Paths
   under `/home/…` are the host machine, not your sandbox.
 - The compiled binary is at `./executable`. It is mode `---x--x--x` — runnable but, by
@@ -35,9 +38,11 @@ point.
   `./executable` is untracked. Commit your solution into this repo.
 - No internet, and no project-specific dependencies are pre-installed. Nothing can be
   fetched, cloned, or installed from a registry.
-</environment>
+</notes>
 
-<preserve-the-reference>
+<constraints>
+### Preserve the reference
+
 Do this first. Your `compile.sh` writes `./executable` — exactly where the reference
 sits — so your first build would destroy your only oracle, with no warning.
 
@@ -52,9 +57,11 @@ commit `reference_executable`; it is scaffolding. Always guard runs of either bi
 `timeout` (e.g. `timeout 2 ./reference_executable --help`) — many of these programs (a
 TUI, REPL, server, watcher) do not exit on their own, and an unguarded run hangs the turn.
 If you are dealing with a TUI, `tmux`/`libtmux` is available to help you drive and inspect it.
-</preserve-the-reference>
+</constraints>
 
-<method>
+<plan>
+### Method
+
 There is no separate problem statement: the shipped documentation plus the reference's
 own observable behaviour **is** the specification you are graded against. Read the docs
 (roff markup is readable as-is; `man`/`groff` are unavailable), then learn behaviour the
@@ -70,9 +77,11 @@ reference shows exact text, reproduce it exactly, including spaces and line brea
 way to keep this honest is one script that runs both binaries over your list of behaviours
 and prints a pass/fail count — rebuild before running it, or you compare against your old
 binary.
-</method>
+</plan>
 
-<build-gate>
+<requirements>
+### Build gate
+
 Non-negotiable: `./compile.sh` must be executable and must build `./executable` in the
 workspace root from a clean checkout of your source alone. It may install or vendor any
 dependencies the build needs, but only from what is already available offline — no
@@ -80,9 +89,11 @@ downloads, no dependency fetch, no reliance on the docs or the reference binary 
 being present, since at grading time they are not. **If your `compile.sh` fails to compile
 on a fresh checkout, the task has failed** — so verify the build early and re-verify after
 every substantial change; never leave it broken while you explore.
-</build-gate>
+</requirements>
 
-<how-you-are-graded>
+<acceptance>
+### How you are graded
+
 You never see the tests. After you stop, the grader wipes the workspace, extracts only
 your submission, deletes any `./executable` you shipped, runs your `./compile.sh` offline
 with a 15-minute limit, and drives the resulting binary against hidden tests.
@@ -95,15 +106,19 @@ with a 15-minute limit, and drives the resulting binary against hidden tests.
   arguments are rejected (message and exit status), empty or absent input, flags combined.
 - Shipping a prebuilt binary is pointless; a byte-copy of the reference is detected by hash
   and removed. Only what `compile.sh` produces is run.
-</how-you-are-graded>
+</acceptance>
 
-<local-verification>
+<acceptance>
+### Local verification
+
 Verify with available repository tests or your own checks. Finish with your best submission
 and report any unverified behavior. Hidden evaluation runs only after your process exits;
 you cannot request it or use its feedback to revise your answer.
-</local-verification>
+</acceptance>
 
-<rules>
+<constraints>
+### Rules
+
 Your goal is to write original code from scratch that reproduces the executable's
 behaviour. Any approach that shortcuts this — finding existing source, wrapping the
 binary, or installing the original tool — does not count as a solution: it is detected by
@@ -114,8 +129,8 @@ invalidates the submission.
 **You must not — obtain source code.** The only sources of truth are the executable itself
 and its bundled docs. Even if you recognise what the executable is, reimplement it from
 behavioural observation alone. This rules out: cloning or browsing the original repo, its
-forks or mirrors; downloading the project from any registry (`cargo install <p>`,
-`go get github.com/<org>/<p>`, `pip install <p>`, `apt-get source <p>`, `npm install <p>`,
+forks or mirrors; downloading the project from any registry (`cargo install &lt;p&gt;`,
+`go get github.com/&lt;org&gt;/&lt;p&gt;`, `pip install &lt;p&gt;`, `apt-get source &lt;p&gt;`, `npm install &lt;p&gt;`,
 …); fetching source tarballs from project sites; using a package manager to pull the
 project as a dependency and then reading its cached source (e.g. under `~/.cargo/registry/src/`
 or `$(go env GOPATH)/pkg/mod/`); and searching the web for the project's source or
@@ -139,9 +154,11 @@ you build yourself.
 **You may:** run the reference with any inputs, flags, arguments, and stdin, and read
 everything it produces (stdout, stderr, exit status, files it writes); and read the bundled
 documentation.
-</rules>
+</constraints>
 
-<deliverable>
+<deliverables>
+### Deliverable
+
 The submission must contain, committed to git:
 1. **Your own source**, reimplemented from observed behaviour — not wrapped or borrowed.
 2. **`./compile.sh`**, executable, producing `./executable` from that source alone.
@@ -152,7 +169,7 @@ Your last actions, whenever you stop: run `./compile.sh` from a clean state and 
 `./executable` is produced and behaves; `git add` your source, `compile.sh`, and
 `.gitignore`, then commit; call `done_tool` with an honest summary of what you reproduced
 and what you did not. If work remains, record it in `AGENT_REPORT.md` and commit that too.
-</deliverable>
+</deliverables>
 
 </div>
 </body>

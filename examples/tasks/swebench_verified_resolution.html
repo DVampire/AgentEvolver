@@ -5,8 +5,9 @@
   <meta name="name" content="swebench_verified_resolution">
   <meta name="description" content="Resolve a real GitHub issue in a Python codebase by editing it into a patch">
   <meta name="version" content="1.0.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="../../agentevolver/visual/task/style.css">
-  <script src="../../agentevolver/visual/task/app.js"></script>
+  <script src="../../agentevolver/visual/task/app.js" defer></script>
 </head>
 <body>
 
@@ -22,11 +23,15 @@ git patch and scored by a hidden test suite. Make the smallest correct change th
 the issue and does not break existing behaviour.
 </objective>
 
-<the-issue>
-{problem_statement}
-</the-issue>
+<requirements>
+### The issue
 
-<environment>
+{problem_statement}
+</requirements>
+
+<notes>
+### Environment
+
 - The repository is at `/testbed`: it is checked out at the base commit, and its package is
   installed **editable** into the active conda env (`testbed`), so edits you make under
   `/testbed` take effect when you run Python or the test suite. Always `cd /testbed` first —
@@ -41,12 +46,14 @@ the issue and does not break existing behaviour.
   environment. Do not go looking for them. Reason about the fix from the issue text and the
   existing code — that is the whole task.
 - The repository's OWN existing tests are yours to run, as often as you like, for free —
-  use `git log`, `grep`, and `python -m pytest <path>` to understand the code and check your
+  use `git log`, `grep`, and `python -m pytest &lt;path&gt;` to understand the code and check your
   change locally before spending a grader eval. Because the install is editable, a local
   `pytest` reflects your edits.
-</environment>
+</notes>
 
-<how-to-work>
+<plan>
+### How to work
+
 - Read first. Find the code the issue is about (`grep`, `git log`, read the files named in
   the issue). Understand the current behaviour before changing it.
 - Make a focused change that resolves the issue. Prefer editing existing code over adding
@@ -57,13 +64,15 @@ the issue and does not break existing behaviour.
   both collected, but committing keeps your work legible.
 - Do NOT rewrite unrelated code, reformat the whole file, or change behaviour the issue did
   not ask about — a change that breaks a previously-passing test costs you.
-</how-to-work>
+</plan>
 
-<local-verification>
+<acceptance>
+### Local verification
+
 Verify with available repository tests or your own checks. Finish with your best submission
 and report any unverified behavior. Hidden evaluation runs only after your process exits;
 you cannot request it or use its feedback to revise your answer.
-</local-verification>
+</acceptance>
 
 </div>
 </body>

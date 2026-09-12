@@ -194,14 +194,19 @@ def resolve_task(
     args: Any,
     task_log_root: str,
     default_text: Optional[str] = None,
+    *,
+    manifest_defaults: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Optional[str], Optional[List[str]], Optional[Dict[str, Any]]]:
-    """Resolve launcher input into ``content``, ``files``, and task metadata."""
-    attachments = [str(path) for path in (getattr(args, "attach", None) or [])]
-    if getattr(args, "task", None):
-        return args.task, (attachments or None), None
+    """Resolve product input, then apply separately configured runtime defaults.
 
-    task_file = getattr(args, "task_file", None)
-    if task_file:
+    An explicit manifest in the task overrides defaults by top-level section; its
+    contracts are not partially merged. The rendered task view remains product-only.
+    """
+    attachments = [str(path) for path in (getattr(args, "attach", None) or [])]
+    content, files, metadata = default_text, attachments, None
+    if getattr(args, "task", None):
+        content = args.task
+    elif task_file := getattr(args, "task_file", None):
         document = load_task_document(task_file)
         view_path = str(path_manager.under(
             task_log_root,
@@ -214,9 +219,24 @@ def resolve_task(
             "task_view": view_path,
             "task_kind": document.type,
         }
-        return document.content, [document.source_path, *attachments], metadata
+        content, files = document.content, [document.source_path, *attachments]
 
-    return default_text, (attachments or None), None
+    if manifest_defaults is not None:
+        if not isinstance(manifest_defaults, dict):
+            raise ValueError("task_manifest_defaults must be an object")
+        if manifest_defaults and content is not None:
+            parsed = parse_manifest(content)
+            before, explanation, declared = parsed or (content, "Runtime configuration and input bindings.", {})
+            manifest = {**manifest_defaults, **declared}
+            manifest.setdefault("attachments", [
+                {"id": f"input_{index}", "role": "requirements", "name": os.path.basename(path)}
+                for index, path in enumerate(files)
+            ])
+            content = render_manifest(before, explanation, manifest)
+            # Check attachment declarations now; Agent.prepare_task binds staged paths later.
+            bind_manifest(content, files)
+
+    return content, (files or None), metadata
 
 
 # ---------------------------------------------------------------------------

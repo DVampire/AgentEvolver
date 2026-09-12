@@ -1,7 +1,7 @@
 """A rendered task page is self-contained and opens from wherever it was written.
 
-``render_task_page`` produces one complete HTML document that links ``task.css``
-and ``task.js`` by a path computed relative to the page's own directory. That
+``render_task_page`` produces one complete HTML document that links ``style.css``
+and ``app.js`` by a path computed relative to the page's own directory. That
 computation is the load-bearing part: the page is written deep inside a session
 tree and read back through whatever origin the browser reached, so an absolute
 link resolves against the reader's machine and silently produces an unstyled
@@ -193,3 +193,27 @@ def test_unicode_in_the_body_survives(tmp_path):
     render_task_page("<div>修复这个缺陷</div>", out)
     assert "修复这个缺陷" in open(out, encoding="utf-8").read()
     assert 'charset="UTF-8"' in open(out, encoding="utf-8").read()
+
+
+def test_authored_html_task_uses_the_same_assets_without_losing_structure(tmp_path):
+    from agentevolver.task.context import load_task_document
+
+    source = tmp_path / "source.html"
+    source.write_text('''<!DOCTYPE html><html><body><div class="task">
+<objective data-format="html"><h1>Readable report</h1><p>Compare actual results.</p></objective>
+<requirements data-format="html"><h2>Evidence</h2>
+<table><tr><th>Case</th><th>Outcome</th></tr><tr><td>Changed input</td><td>Pass</td></tr></table>
+<p><a href="study.json">Study inputs</a></p></requirements>
+<acceptance>Keep `&lt;result&gt;` in the report.</acceptance>
+</div></body></html>''', encoding="utf-8")
+    doc = load_task_document(str(source))
+    assert "## objective" in doc.content and "## requirements" in doc.content
+    assert "Changed input | Pass" in doc.content
+    assert "`<result>`" in doc.content
+    assert "data-format" not in doc.content
+    out = tmp_path / "preview" / "task.html"
+    render_task_page(doc.html_body, str(out))
+    page = out.read_text()
+    assert doc.html_body in page
+    assert 'task/style.css' in page and 'task/app.js' in page
+    assert 'task/task.css' not in page and 'task/task.js' not in page

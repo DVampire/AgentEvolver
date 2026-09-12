@@ -1,6 +1,8 @@
 # Accessibility Checklist
 
-Quick reference for WCAG 2.1 AA compliance. Use alongside the `frontend-ui-engineering` skill.
+Practical checks informed by WCAG 2.2 AA, alongside `frontend_ui_engineering_skill`.
+This is not an exhaustive conformance audit. Accessibility and aesthetic quality need
+separate review; preserve both when changing typography, colors or layout.
 
 ## Table of Contents
 
@@ -13,11 +15,12 @@ Quick reference for WCAG 2.1 AA compliance. Use alongside the `frontend-ui-engin
 ## Essential Checks
 
 ### Keyboard Navigation
-- [ ] All interactive elements focusable via Tab key
+- [ ] Every function reachable by keyboard, using Tab and the control's appropriate arrow-key behavior
 - [ ] Focus order follows visual/logical order
 - [ ] Focus is visible (outline/ring on focused elements)
+- [ ] Sticky headers, overlays and scroll containers do not hide the focused control
 - [ ] Custom widgets have keyboard support (Enter to activate, Escape to close)
-- [ ] No keyboard traps (user can always Tab away from a component)
+- [ ] No unintended keyboard traps; modal dialogs can be dismissed with focus returned appropriately
 - [ ] Skip-to-content link at top of page - visible (at least) on keyboard focus
 - [ ] Modals trap focus while open, return focus on close
 
@@ -27,11 +30,11 @@ Quick reference for WCAG 2.1 AA compliance. Use alongside the `frontend-ui-engin
 - [ ] Buttons and links have descriptive text (not "Click here")
 - [ ] Icon-only buttons have `aria-label`
 - [ ] Page has one `<h1>` and headings don't skip levels
-- [ ] Dynamic content changes announced (`aria-live` regions)
+- [ ] Meaningful status/error changes announced without narrating every visual update
 - [ ] Tables have `<th>` headers with scope
 
 ### Visual
-- [ ] Text contrast ≥ 4.5:1 (normal text) or ≥ 3:1 (large text, 18px+)
+- [ ] Text contrast ≥ 4.5:1 normally, or ≥ 3:1 for large text: at least 24 CSS px regular or 18.67 CSS px bold
 - [ ] UI components contrast ≥ 3:1 against background
 - [ ] Color is not the only way to convey information
 - [ ] Text resizable to 200% without breaking layout
@@ -49,7 +52,7 @@ Quick reference for WCAG 2.1 AA compliance. Use alongside the `frontend-ui-engin
 - [ ] Language declared (`<html lang="en">`)
 - [ ] Page has a descriptive `<title>`
 - [ ] Links distinguish from surrounding text (not by color alone)
-- [ ] Touch targets ≥ 44x44px on mobile
+- [ ] Pointer targets meet 24×24 CSS px or the applicable spacing/exception conditions; aim for 44×44 touch areas where practical
 - [ ] Meaningful empty states (not blank screens)
 
 ## Common HTML Patterns
@@ -58,20 +61,20 @@ Quick reference for WCAG 2.1 AA compliance. Use alongside the `frontend-ui-engin
 
 ```html
 <!-- Use <button> for actions -->
-<button onClick={handleDelete}>Delete Task</button>
+<button type="button">Delete task</button>
 
 <!-- Use <a> for navigation -->
 <a href="/tasks/123">View Task</a>
 
 <!-- NEVER use div/span as buttons -->
-<div onClick={handleDelete}>Delete</div>  <!-- BAD -->
+<div>Delete</div> <!-- A click handler alone would not make this an accessible button. -->
 ```
 
 ### Form Labels
 
 ```html
 <!-- Explicit label association -->
-<label htmlFor="email">Email address</label>
+<label for="email">Email address</label>
 <input id="email" type="email" required />
 
 <!-- Implicit wrapping -->
@@ -97,7 +100,7 @@ Quick reference for WCAG 2.1 AA compliance. Use alongside the `frontend-ui-engin
 <!-- Alert messages -->
 <div role="alert">Error: Title is required</div>
 
-<!-- Modal dialogs -->
+<!-- Open a modal with showModal(); verify focus placement, containment and return. -->
 <dialog aria-modal="true" aria-labelledby="dialog-title">
   <h2 id="dialog-title">Confirm Delete</h2>
   ...
@@ -105,7 +108,7 @@ Quick reference for WCAG 2.1 AA compliance. Use alongside the `frontend-ui-engin
 
 <!-- Loading states -->
 <div aria-busy="true" aria-label="Loading tasks">
-  <Spinner />
+  <p role="status">Loading tasks…</p>
 </div>
 ```
 
@@ -114,28 +117,19 @@ Quick reference for WCAG 2.1 AA compliance. Use alongside the `frontend-ui-engin
 ```html
 <ul role="list" aria-label="Tasks">
   <li>
-    <input type="checkbox" id="task-1" aria-label="Complete: Buy groceries" />
-    <label htmlFor="task-1">Buy groceries</label>
+    <input type="checkbox" id="task-1" />
+    <label for="task-1">Buy groceries</label>
   </li>
 </ul>
 ```
 
 ## Testing Tools
 
-```bash
-# Automated audit
-npx axe-core          # Programmatic accessibility testing
-npx pa11y             # CLI accessibility checker
-
-# In browser
-# Chrome DevTools → Lighthouse → Accessibility
-# Chrome DevTools → Elements → Accessibility tree
-
-# Screen reader testing
-# macOS: VoiceOver (Cmd + F5)
-# Windows: NVDA (free) or JAWS
-# Linux: Orca
-```
+Use the project's installed accessibility checks, such as an axe-core integration,
+and the browser's accessibility tree. `axe-core` itself is a library, not a standalone
+command. Exercise keyboard navigation manually and use an available screen reader when
+the task needs that evidence. Report unavailable checks; a clean automated scan does
+not establish full conformance or pleasant interaction.
 
 ## Quick Reference: ARIA Live Regions
 
@@ -158,3 +152,11 @@ npx pa11y             # CLI accessibility checker
 | Removing focus outlines | Users can't see where they are | Style outlines, don't remove them |
 | Empty links/buttons | "Link" announced with no description | Add text or `aria-label` |
 | `tabindex > 0` | Breaks natural tab order | Use `tabindex="0"` or `-1` only |
+
+## Primary references
+
+- [W3C text contrast and large-text definition](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html)
+- [W3C minimum pointer target size and exceptions](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html)
+
+The 44×44 touch recommendation above is a comfortable design target, not the WCAG 2.2 AA
+minimum. Verify contrast with actual foreground/background pairs, including interactive states.

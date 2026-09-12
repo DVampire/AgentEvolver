@@ -6,68 +6,88 @@
   <meta name="description" content="An authored 3D ocean adventure with branching voyages, a functional vessel workshop and playable visitor-created expeditions.">
   <meta name="version" content="9.0.0">
   <title>ECHO — Arkbound: an ocean of possibilities</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../../../../agentevolver/visual/task/style.css">
+  <script src="../../../../agentevolver/visual/task/app.js" defer></script>
 </head>
-<body><main>
-  <h1>ECHO — Arkbound: an ocean of possibilities</h1>
-  <section id="product-intent">
-    <h2>A world that changes with the voyage</h2>
-    <p>Create an original, beautiful browser adventure about travelling a strange ocean and making a floating ark into a home. A broken network of ocean beacons is a starting premise: distant settlements disagree about what should be restored, and the player discovers why through sailing, encounters and choices. ECHO may be a companion with a point of view. Choose the characters, narrative and artistic identity yourself.</p>
-    <p>Deliver a substantial connected game: prepare at the ark, select a route, sail and investigate, face a consequential encounter, return with discoveries, change the vessel and sail again under different conditions. The first finished voyage is a milestone. The delivered game must support a branching sequence with consequences visible on later voyages and a satisfying resolution to its central question.</p>
-  </section>
-  <section id="connected-play">
-    <h2>Prepare, explore, build and return</h2>
-    <p>Connect a navigable chart, actual 3D sailing, distinct places to investigate, a vessel workshop and a voyage journal. Preserve orientation and progress between them. Route choices should expose known uncertainty; discoveries should change useful chart information. The journal connects what happened, the player's choice and the new possibility it created.</p>
-    <p>Give the ark a manipulable arrangement of functional modules and expressive details. Visitors can inspect placement, preview a change, understand its cost, undo a tentative arrangement and test the changed vessel at sea. Choose coherent constraints such as space, cargo, energy or stability. The loadout must change a later action or route, with clear feedback; a shop that only increments a number does not establish construction depth.</p>
-    <p>Make travel enjoyable. Reefs, fog, open water and inhabited places can differ through navigation cues, encounters and atmosphere. Risk should permit deliberate recovery, retreat or a changed approach. Consequences come from actual game state. Avoid long empty travel and compulsory repetitive gathering.</p>
-  </section>
-  <section id="story-and-choices">
-    <h2>A story expressed through play</h2>
-    <p>Develop connected discoveries, recurring characters and competing priorities. A choice about cargo, a beacon or a settlement must affect a later encounter, accessible route or ending. Let the player revisit its reasons. Scenes should respond to earlier actions and give control back promptly; important information can be reread without replaying a long scene.</p>
-    <p>The supplied <a href="materials/voyage-briefs.json">voyage briefs</a> describe contrasting goals and tensions, including a later changed condition. Turn them into distinct playable expeditions through your own design. They are fictional creative inputs, not a prescribed quest format, finished level or nautical advice. Identifiers and scenery names must not become hard-coded exceptions.</p>
-    <p>Material source: <code>examples/tasks/website_evolution/arkbound_game/materials/voyage-briefs.json</code>, relative to the repository, not the generated website workspace. Expand the story, mechanics, authored content, progression and acceptance cases in the session plan.</p>
-  </section>
-  <section id="expedition-studio">
-    <h2>Let someone make a voyage of their own</h2>
-    <p>Provide a focused expedition studio connected to the chart. A visitor can create or import an expedition using your documented supported format, arrange significant locations, choose objectives and conditions, and preview the route and vessel requirements. Explain invalid or unreachable arrangements without losing the draft. Offer keyboard or form alternatives to direct manipulation.</p>
-    <p>A new valid expedition becomes playable through normal sailing controls and contributes real journal events. Let its author revise a condition and replay from comparable starting state. Include export/import or equivalent reconstructable sharing. Preserve original and revised versions so a saved voyage does not silently acquire different rules. Arbitrary executable uploads are outside the format.</p>
-    <p>Compare actual play across the supplied expeditions and an independently authored one. A confusing landmark, trivial choice, resource dead end and inaccessible control need different diagnoses and design responses. Preserve the input, play observation, selected correction and replay evidence so the approach can be applied elsewhere without copying the previous solution.</p>
-  </section>
-  <section id="world-materials">
-    <h2>Give each expedition its own material character</h2>
-    <p>Connect the expedition studio to a real, documented asset collection. Search or filter its catalogue, inspect a selected material or environment, choose a suitable resolution and import it into a draft. Show the actual preview, source and download size. Allow a later search to supply a different expedition; a fixed set of bundled thumbnails is insufficient. A controlled development-time import followed by a reviewed content pack is acceptable; do not imply unrestricted live generation.</p>
-    <p>Use the <a href="https://github.com/Poly-Haven/Public-API">Poly Haven catalogue and API documentation</a> as a starting point for materials, lighting environments or props, or select an equivalent documented source. Discover actual identifiers and available files. Preserve source, licence, chosen variant and any conversion in an asset manifest. Cache downloads, use an identifying client header and provide the live-service credit required by the provider. Handle an unavailable variant, interrupted download and missing texture without silently publishing broken geometry.</p>
-    <p>Choose a coherent visual composition for each expedition from its story, available assets and device budget. Explain why a material, landmark or lighting choice supports the player's next decision. Compare alternative route and encounter designs under cargo, visibility and story constraints, and turn the selected design into playable content. The design process may be an explicit authoring step; the sailing loop stays local and responsive.</p>
-  </section>
-  <section id="visual-craft">
-    <h2>A crafted world, a tactile workshop</h2>
-    <p>Use genuine three-dimensional rendering, continuous movement, spatial depth and inspectable vessel geometry. Choose the camera and stack. Shape water, islands, materials, light and silhouettes into a coherent identity. Different voyages need recognizable atmosphere and landmarks beyond a palette swap. Licensed assets and original geometry are welcome; credit sources and replace weak placeholder art.</p>
-    <p>Give workshop, chart, journal and encounter interfaces the same care as the ocean. Use purposeful motion and immediate feedback for placement, selection, collision, spending and discovery. Keep destinations legible at ordinary play angles and in difficult conditions. Design the working states as well as the opening view.</p>
-    <p>Support keyboard and touch, pause/resume, reduced camera motion and visible focus. Release held input on lost focus or touch. Sound starts off and essential cues have visual alternatives. Measure responsiveness in the actual browser; disclose the tested renderer and provide sensible quality controls and rendering-failure recovery.</p>
-  </section>
-  <section id="continuity">
-    <h2>Keep the player's work</h2>
-    <p>Save vessel configuration, narrative choices, expeditions and preferences across reload. Resume with understandable location and objectives. Provide explicit reset, invalid-save recovery and migration or explanation for unsupported content versions. Explain local storage and export boundaries. Replacing a level must not erase a visitor's vessel or earlier journal.</p>
-  </section>
-  <section id="open-horizons">
-    <h2>Let play reveal the next possibility</h2>
-    <p>Use a complete voyage and return to discover an experience that remains weak. Consider distinct designs before choosing a useful trial: expressive construction, a route responsive to priorities, or a journal that reconstructs a difficult decision are possibilities. Preserve the essential value in a bounded trial, then apply it to different material and input methods.</p>
-    <p>Without actual player feedback, label findings as self-play observations. New media, services or models may help, but ordinary sailing remains playable without paid accounts or a remote model request for each action. Report unavailable prerequisites honestly.</p>
-  </section>
-  <section id="creative-freedom">
-    <h2>Strong experience goals, open design choices</h2>
-    <p>The connected voyage, consequence-bearing story, functional workshop, playable expedition authoring and retained progress are commitments. Choose engine, format, fiction, controls, content scope and implementation order. Complete the full experience incrementally; release count does not waive unfinished workflows. Keep product-development dialogue and experiment administration outside the game.</p>
-    <p>Source hashes and repeated deployments alone do not establish a better game. Justify refinements through actual play and preserve an ambitious, feasible scope.</p>
-  </section>
-  <section id="task-materials">
-    <h2>Working materials</h2>
-    <p>The runtime input manifest supplies a staged reference attachment named <code>voyage-briefs.json</code>. Use its actual staged path to read the requests and source documentation; repository paths above identify the authored source. Preserve the original packet and record detailed designs, revisions and acceptance evidence in the session plan.</p>
-  </section>
-  <section id="quality-evidence">
-    <h2>Play, change the conditions, play again</h2>
-    <p>On the exact deployed version, complete contrasting voyages using ordinary controls. Compare choices from equivalent saved conditions, bring a discovery home, visibly modify the ark, then use that modification on a later voyage. Reach a resolution and show a different choice's outcome. Console-injected progress is not play evidence.</p>
-    <p>Create a fresh expedition through the studio, recover an invalid arrangement, export and reconstruct it in a clean browser context, sail it and inspect the journal. Apply the changed-condition brief and verify an alternative route without silently changing an old save. Exercise a meaningful failure, retreat, pause, focus loss, reload and narrow-screen controls.</p>
-    <p>Compare equivalent before/after travel, encounter, construction and route-planning views. Record functional, aesthetic and interaction findings separately. Apply a useful design or verification approach from one expedition to a different expedition and show both the reused method and the new result.</p>
-    <p>Trace a newly retrieved resource through the selected expedition design, the imported content pack and actual play. After the first complete journey, apply the supplied revision and a stricter resource budget to that same expedition. Reconsider the affected acquisition, design and play-review decisions, compare the revised result with its preserved predecessor, and replay an earlier successful expedition. Explain which reusable approach improved and which continued to work unchanged; replacing every asset or renaming a level is not sufficient evidence.</p>
-  </section>
-</main></body>
+<body>
+
+<div class="task">
+
+<objective data-format="html" id="product-intent">
+<h1>ECHO — Arkbound: an ocean of possibilities</h1>
+
+<h2>A world that changes with the voyage</h2>
+<p>Create an original, beautiful browser adventure about travelling a strange ocean and making a floating ark into a home. A broken network of ocean beacons is a starting premise: distant settlements disagree about what should be restored, and the player discovers why through sailing, encounters and choices. ECHO may be a companion with a point of view. Choose the characters, narrative and artistic identity yourself.</p>
+<p>Deliver a substantial connected game: prepare at the ark, select a route, sail and investigate, face a consequential encounter, return with discoveries, change the vessel and sail again under different conditions. The first finished voyage is a milestone. The delivered game must support a branching sequence with consequences visible on later voyages and a satisfying resolution to its central question.</p>
+</objective>
+
+<requirements data-format="html" id="connected-play">
+<h2>Prepare, explore, build and return</h2>
+<p>Connect a navigable chart, actual 3D sailing, distinct places to investigate, a vessel workshop and a voyage journal. Preserve orientation and progress between them. Route choices should expose known uncertainty; discoveries should change useful chart information. The journal connects what happened, the player's choice and the new possibility it created.</p>
+<p>Give the ark a manipulable arrangement of functional modules and expressive details. Visitors can inspect placement, preview a change, understand its cost, undo a tentative arrangement and test the changed vessel at sea. Choose coherent constraints such as space, cargo, energy or stability. The loadout must change a later action or route, with clear feedback; a shop that only increments a number does not establish construction depth.</p>
+<p>Make travel enjoyable. Reefs, fog, open water and inhabited places can differ through navigation cues, encounters and atmosphere. Risk should permit deliberate recovery, retreat or a changed approach. Consequences come from actual game state. Avoid long empty travel and compulsory repetitive gathering.</p>
+</requirements>
+
+<requirements data-format="html" id="story-and-choices">
+<h2>A story expressed through play</h2>
+<p>Develop connected discoveries, recurring characters and competing priorities. A choice about cargo, a beacon or a settlement must affect a later encounter, accessible route or ending. Let the player revisit its reasons. Scenes should respond to earlier actions and give control back promptly; important information can be reread without replaying a long scene.</p>
+<p>The supplied <a href="materials/voyage-briefs.json">voyage briefs</a> describe contrasting goals and tensions, including a later changed condition. Turn them into distinct playable expeditions through your own design. They are fictional creative inputs, not a prescribed quest format, finished level or nautical advice. Identifiers and scenery names must not become hard-coded exceptions.</p>
+<p>Material source: <code>examples/tasks/website_evolution/arkbound_game/materials/voyage-briefs.json</code>, relative to the repository, not the generated website workspace. Expand the story, mechanics, authored content, progression and acceptance cases in the session plan.</p>
+</requirements>
+
+<requirements data-format="html" id="expedition-studio">
+<h2>Let someone make a voyage of their own</h2>
+<p>Provide a focused expedition studio connected to the chart. A visitor can create or import an expedition using your documented supported format, arrange significant locations, choose objectives and conditions, and preview the route and vessel requirements. Explain invalid or unreachable arrangements without losing the draft. Offer keyboard or form alternatives to direct manipulation.</p>
+<p>A new valid expedition becomes playable through normal sailing controls and contributes real journal events. Let its author revise a condition and replay from comparable starting state. Include export/import or equivalent reconstructable sharing. Preserve original and revised versions so a saved voyage does not silently acquire different rules. Arbitrary executable uploads are outside the format.</p>
+<p>Compare actual play across the supplied expeditions and an independently authored one. A confusing landmark, trivial choice, resource dead end and inaccessible control need different diagnoses and design responses. Preserve the input, play observation, selected correction and replay evidence so the approach can be applied elsewhere without copying the previous solution.</p>
+</requirements>
+
+<requirements data-format="html" id="world-materials">
+<h2>Give each expedition its own material character</h2>
+<p>Connect the expedition studio to a real, documented asset collection. Search or filter its catalogue, inspect a selected material or environment, choose a suitable resolution and import it into a draft. Show the actual preview, source and download size. Allow a later search to supply a different expedition; a fixed set of bundled thumbnails is insufficient. A controlled development-time import followed by a reviewed content pack is acceptable; do not imply unrestricted live generation.</p>
+<p>Use the <a href="https://github.com/Poly-Haven/Public-API">Poly Haven catalogue and API documentation</a> as a starting point for materials, lighting environments or props, or select an equivalent documented source. Discover actual identifiers and available files. Preserve source, licence, chosen variant and any conversion in an asset manifest. Cache downloads, use an identifying client header and provide the live-service credit required by the provider. Handle an unavailable variant, interrupted download and missing texture without silently publishing broken geometry.</p>
+<p>Choose a coherent visual composition for each expedition from its story, available assets and device budget. Explain why a material, landmark or lighting choice supports the player's next decision. Compare alternative route and encounter designs under cargo, visibility and story constraints, and turn the selected design into playable content. The design process may be an explicit authoring step; the sailing loop stays local and responsive.</p>
+</requirements>
+
+<requirements data-format="html" id="visual-craft">
+<h2>A crafted world, a tactile workshop</h2>
+<p>Use genuine three-dimensional rendering, continuous movement, spatial depth and inspectable vessel geometry. Choose the camera and stack. Shape water, islands, materials, light and silhouettes into a coherent identity. Different voyages need recognizable atmosphere and landmarks beyond a palette swap. Licensed assets and original geometry are welcome; credit sources and replace weak placeholder art.</p>
+<p>Give workshop, chart, journal and encounter interfaces the same care as the ocean. Use purposeful motion and immediate feedback for placement, selection, collision, spending and discovery. Keep destinations legible at ordinary play angles and in difficult conditions. Design the working states as well as the opening view.</p>
+<p>Support keyboard and touch, pause/resume, reduced camera motion and visible focus. Release held input on lost focus or touch. Sound starts off and essential cues have visual alternatives. Measure responsiveness in the actual browser; disclose the tested renderer and provide sensible quality controls and rendering-failure recovery.</p>
+</requirements>
+
+<requirements data-format="html" id="continuity">
+<h2>Keep the player's work</h2>
+<p>Save vessel configuration, narrative choices, expeditions and preferences across reload. Resume with understandable location and objectives. Provide explicit reset, invalid-save recovery and migration or explanation for unsupported content versions. Explain local storage and export boundaries. Replacing a level must not erase a visitor's vessel or earlier journal.</p>
+</requirements>
+
+<requirements data-format="html" id="open-horizons">
+<h2>Let play reveal the next possibility</h2>
+<p>Use a complete voyage and return to discover an experience that remains weak. Consider distinct designs before choosing a useful trial: expressive construction, a route responsive to priorities, or a journal that reconstructs a difficult decision are possibilities. Preserve the essential value in a bounded trial, then apply it to different material and input methods.</p>
+<p>Without actual player feedback, label findings as self-play observations. New media, services or models may help, but ordinary sailing remains playable without paid accounts or a remote model request for each action. Report unavailable prerequisites honestly.</p>
+</requirements>
+
+<constraints data-format="html" id="creative-freedom">
+<h2>Strong experience goals, open design choices</h2>
+<p>The connected voyage, consequence-bearing story, functional workshop, playable expedition authoring and retained progress are commitments. Choose engine, format, fiction, controls, content scope and implementation order. Complete the full experience incrementally; release count does not waive unfinished workflows. Keep product-development dialogue and experiment administration outside the game.</p>
+<p>Source hashes and repeated deployments alone do not establish a better game. Justify refinements through actual play and preserve an ambitious, feasible scope.</p>
+</constraints>
+
+<notes data-format="html" id="task-materials">
+<h2>Working materials</h2>
+<p>The runtime input manifest supplies a staged reference attachment named <code>voyage-briefs.json</code>. Use its actual staged path to read the requests and source documentation; repository paths above identify the authored source. Preserve the original packet and record detailed designs, revisions and acceptance evidence in the session plan.</p>
+</notes>
+
+<acceptance data-format="html" id="quality-evidence">
+<h2>Play, change the conditions, play again</h2>
+<p>On the exact deployed version, complete contrasting voyages using ordinary controls. Compare choices from equivalent saved conditions, bring a discovery home, visibly modify the ark, then use that modification on a later voyage. Reach a resolution and show a different choice's outcome. Console-injected progress is not play evidence.</p>
+<p>Create a fresh expedition through the studio, recover an invalid arrangement, export and reconstruct it in a clean browser context, sail it and inspect the journal. Apply the changed-condition brief and verify an alternative route without silently changing an old save. Exercise a meaningful failure, retreat, pause, focus loss, reload and narrow-screen controls.</p>
+<p>Compare equivalent before/after travel, encounter, construction and route-planning views. Record functional, aesthetic and interaction findings separately. Apply a useful design or verification approach from one expedition to a different expedition and show both the reused method and the new result.</p>
+<p>Trace a newly retrieved resource through the selected expedition design, the imported content pack and actual play. After the first complete journey, apply the supplied revision and a stricter resource budget to that same expedition. Reconsider the affected acquisition, design and play-review decisions, compare the revised result with its preserved predecessor, and replay an earlier successful expedition. Explain which reusable approach improved and which continued to work unchanged; replacing every asset or renaming a level is not sufficient evidence.</p>
+</acceptance>
+
+</div>
+
+</body>
 </html>

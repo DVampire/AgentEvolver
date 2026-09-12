@@ -5,8 +5,9 @@
   <meta name="name" content="capability_environment">
   <meta name="description" content="Smoke test: the meta agent drives the browser environment">
   <meta name="version" content="1.0.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="../../agentevolver/visual/task/style.css">
-  <script src="../../agentevolver/visual/task/app.js"></script>
+  <script src="../../agentevolver/visual/task/app.js" defer></script>
 </head>
 <body>
 
@@ -18,7 +19,7 @@ page using the browser.
 
 <requirements>
 - Use `browser_environment__*` actions to open `https://example.com`.
-- Read the page's `<h1>` heading back from the live page — navigate, then read.
+- Read the page's `&lt;h1&gt;` heading back from the live page — navigate, then read.
   Do not fetch the URL with `bash_tool` (curl/wget) and do not answer from
   memory. The point of this task is the environment action itself.
 - Close or leave the browser in a clean state when you are done.

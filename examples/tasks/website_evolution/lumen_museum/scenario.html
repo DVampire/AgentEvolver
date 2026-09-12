@@ -6,65 +6,84 @@
   <meta name="description" content="An interactive museum of evidence and machine learning, with linked experiments, personal inquiry routes and a curatorial workbench for new questions.">
   <meta name="version" content="4.0.0">
   <title>LUMEN — How do we know?</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../../../../agentevolver/visual/task/style.css">
+  <script src="../../../../agentevolver/visual/task/app.js" defer></script>
 </head>
-<body><main>
-  <h1>LUMEN — How do we know?</h1>
-  <section id="product-intent">
-    <h2>A museum where an answer can be questioned</h2>
-    <p>Create a visually ambitious museum about how learning systems use evidence and why convincing results can mislead. Visitors should manipulate an experiment, form an explanation, test a counterexample and carry a better question into another exhibit. Choose the curatorial voice and visual identity. A working exhibit belongs near the entrance.</p>
-    <p>Deliver connected galleries, an experiment workspace, a personal inquiry notebook and a curatorial workbench. The visitor moves from question to trial to evidence to a revised explanation. A facilitator can assemble a new inquiry from different materials and publish a reconstructable route through the exhibits. The delivered product must go beyond independent sliders and static explanation cards.</p>
-  </section>
-  <section id="learning-through-action">
-    <h2>Follow a question across experiments</h2>
-    <p>Build a coherent exhibition with distinct mechanisms. Learning a rule from examples, testing it on different examples, and deciding which errors or missing evidence matter can form one connected investigation. The implementation and visual form are yours to choose, but central exhibits must differ in the questions and actions they support.</p>
-    <p>Visitors can choose or edit examples, change a meaningful condition, compare runs and inspect the resulting predictions, measurements or error cases. Carry a selected dataset, question or result into another exhibit while retaining its provenance. Make controls input-sensitive and the toy mechanism inspectable. Never draw a result chart from a fixed answer irrespective of the visitor's input.</p>
-    <p>Ask for a prediction or explanation when useful, then let the visitor test a counterexample and revise it. Offer scaffolding without pretending a local quiz proves learning. Maintain reset, undo and reproducible initial conditions. Support an explicit distinction between observation, interpretation and what remains untested.</p>
-  </section>
-  <section id="curatorial-workbench">
-    <h2>Design a visit for a new question</h2>
-    <p>A facilitator can create an inquiry with an audience, question, time or interaction constraints, source material and a proposed claim. Provide an editable route of experiments and discussion prompts, with reasons for the order and links from each claim to evidence. The facilitator can compare alternatives, preview the visitor experience, revise the route and export it for another browser to reconstruct.</p>
-    <p>Use the <a href="materials/inquiry-requests.json">inquiry requests</a> during development. They require different diagnoses: contaminated evaluation, a changed population, and a tempting aggregate result that hides a subgroup. Decide what can be explained, what needs a further test and what cannot be concluded. A request missing the evidence necessary for its claim must remain qualified. Changing audience or time alone should not erase a scientific limitation.</p>
-    <p>The source is <code>examples/tasks/website_evolution/lumen_museum/materials/inquiry-requests.json</code> in the repository. Develop the detailed lessons, toy datasets and source-to-claim records in the session plan. These requests are fictional teaching briefs, not testimonials or finished answers.</p>
-    <p>Author and review a new inquiry after the first exhibition works. Its investigation should change the experiment choices or explanation, not merely substitute a title. Show how the result becomes usable exhibit content and a runnable route. The workbench may use an explicit authoring/review step; advertise the supported scope honestly. A live open-ended tutor is optional and must not be simulated with canned replies.</p>
-  </section>
-  <section id="intellectual-integrity">
-    <h2>Keep the evidence attached</h2>
-    <p>Use inspectable authoritative sources for scientific and historical claims. Separate source facts, synthetic examples, toy assumptions, computed results and interpretation. Preserve the dataset version, random seed where relevant, transformation and settings behind a saved result. An explanation should identify a limitation or counterexample that a visitor can actually investigate.</p>
-    <p>If source material or an experiment changes, expose which saved explanations and routes need review. Preserve earlier runs and let someone compare revisions without silently rewriting their notebook. Incompatible inputs should produce an actionable explanation. Missing subgroup labels or missing evaluation data must stay missing rather than being invented to complete a chart.</p>
-    <p>Start research with <a href="https://scikit-learn.org/stable/common_pitfalls.html">scikit-learn's common pitfalls</a> and <a href="https://scikit-learn.org/stable/modules/cross_validation.html">evaluation and cross-validation guide</a>; consult the primary sources appropriate to the final exhibits. These references do not require that library or a particular algorithm. Keep the ordinary exhibits usable without paid accounts or a remote model request on every interaction.</p>
-    <p>Give the curatorial workbench a real source-discovery and import path. Use <a href="https://www.crossref.org/documentation/retrieve-metadata/rest-api/">Crossref's public scholarly metadata API</a> or an equivalent documented provider to search for a new inquiry, inspect candidate records and resolve a selected stable identifier. Carry identity, retrieval time, available links and licence information into a source packet. Distinguish a search match from relevant evidence and bibliographic metadata from a paper's actual content; absent abstracts, unavailable full text or missing licences stay explicit. Consult accessible primary content before making scientific claims.</p>
-    <p>Turn that source packet into a proposed inquiry: compare plausible explanations, choose a discriminating experiment, identify unsupported claims and adapt the route to the audience and interaction constraints. The facilitator can review and revise the result before it becomes exhibit content. Show the link from a chosen source to the experiment and a visitor's saved result. Source lookup, interpretation and exhibit review should remain inspectable when the materials change.</p>
-  </section>
-  <section id="visual-craft">
-    <h2>Every exhibit deserves its own visual language</h2>
-    <p>Create an art-directed exhibition with distinctive interactive diagrams, typography, annotation and composition. A selected example should connect visibly to the transformation, result and explanation it affects. Use purposeful motion to reveal a mechanism; offer a paused view that is equally understandable. Related exhibits should feel like a collection without all becoming the same slider and chart.</p>
-    <p>Design comparison, notebook and route-authoring states with comfortable information density and immediate feedback. Preserve selection, scroll and draft context when inspecting a source or changing galleries. Provide meaningful direct locations and browser Back. At narrow widths, retain access to both evidence and explanation through thoughtfully arranged views rather than shrinking a desktop diagram.</p>
-    <p>Essential gestures need keyboard/touch alternatives, visible focus, non-colour-only meaning and reduced motion. Sound is optional and starts off. Credit imagery and assets. Source citations should help visitors inspect a claim without dominating the exhibition.</p>
-  </section>
-  <section id="lasting-value">
-    <h2>Take an investigation with you</h2>
-    <p>The notebook retains the question, initial prediction, settings, actual results, selected evidence and revised explanation. Let visitors compare saved trials, annotate a surprising result and export a reconstructable investigation. Local choices remain explicit and resettable. Distinguish a private draft from a published or exported route; do not promise shared storage without implementing it.</p>
-  </section>
-  <section id="open-horizons">
-    <h2>Let a misunderstanding change the exhibition</h2>
-    <p>Experience a full inquiry, including a deliberately misleading initial interpretation. Identify what a visitor cannot yet inspect or distinguish. Consider different experiments or explanatory forms before choosing a small faithful trial, then try it on a different inquiry with different evidence. An unavailable source or unresolved claim is a valid limit, not permission to invent an explanation.</p>
-    <p>Authentic artifacts, new datasets, annotated media and new curatorial approaches may extend the exhibition when they answer a real question. Label self-observations accurately. A readable, engaging explanation and a supported scientific conclusion are separate quality judgments.</p>
-  </section>
-  <section id="creative-freedom">
-    <h2>Choose the museum, complete the investigation</h2>
-    <p>The connected experiments, evidence-aware notebook, editable inquiry routes and ability to accommodate new teaching material are commitments. Choose branding, algorithms, exhibit count, layouts and implementation order. The first working exhibit is an intermediate milestone. Preserve imaginative design while completing the whole promised workflow.</p>
-    <p>Keep development dialogue outside the museum. Source hashes and repeated deployments alone do not establish improved learning or a better exhibit. Record uncertainty and unfinished work honestly.</p>
-  </section>
-  <section id="task-materials">
-    <h2>Working materials</h2>
-    <p>The runtime input manifest supplies a staged reference attachment named <code>inquiry-requests.json</code>. Use its actual staged path to read the requests and source documentation; repository paths above identify the authored source. Preserve the original packet and record detailed designs, revisions and acceptance evidence in the session plan.</p>
-  </section>
-  <section id="quality-evidence">
-    <h2>Show an inquiry becoming more precise</h2>
-    <p>On the deployed version, predict a result, change examples or conditions, run an experiment, compare the actual outcome, inspect its evidence, then carry the question into another exhibit. Save an explanation, test a counterexample and revise it. Verify deterministic results or appropriate invariants separately from browser use.</p>
-    <p>Complete the supplied contrasting inquiry requests, including the incomplete-evidence case. Create another inquiry with changed materials through the workbench, revise its route, export it and reconstruct it in an independent browser context. Verify that linked controls, evidence and results still work. Replace an underlying source or dataset and show affected saved work as needing review.</p>
-    <p>Check keyboard and narrow-screen experiment, comparison, notebook and authoring paths, including invalid input, interrupted work, reload and Back. Compare equivalent before/after views and changed explanations. Record scientific correctness, interaction quality and aesthetic judgment separately. No self-test is independent proof of learning.</p>
-    <p>After a full inquiry works, process the revision with an incomplete source packet and a shorter visit. Locate the affected source-handling, reasoning or explanation method; improve the weak approach and compare against its earlier result under the same revised inputs. Repeat a different inquiry to check that uncertainty, accessibility and valid explanations were preserved. Keep provenance from the real lookup through the revised route to the visitor's notebook; disconnected demonstrations do not establish that this workflow works.</p>
-  </section>
-</main></body>
+<body>
+
+<div class="task">
+
+<objective data-format="html" id="product-intent">
+<h1>LUMEN — How do we know?</h1>
+
+<h2>A museum where an answer can be questioned</h2>
+<p>Create a visually ambitious museum about how learning systems use evidence and why convincing results can mislead. Visitors should manipulate an experiment, form an explanation, test a counterexample and carry a better question into another exhibit. Choose the curatorial voice and visual identity. A working exhibit belongs near the entrance.</p>
+<p>Deliver connected galleries, an experiment workspace, a personal inquiry notebook and a curatorial workbench. The visitor moves from question to trial to evidence to a revised explanation. A facilitator can assemble a new inquiry from different materials and publish a reconstructable route through the exhibits. The delivered product must go beyond independent sliders and static explanation cards.</p>
+</objective>
+
+<requirements data-format="html" id="learning-through-action">
+<h2>Follow a question across experiments</h2>
+<p>Build a coherent exhibition with distinct mechanisms. Learning a rule from examples, testing it on different examples, and deciding which errors or missing evidence matter can form one connected investigation. The implementation and visual form are yours to choose, but central exhibits must differ in the questions and actions they support.</p>
+<p>Visitors can choose or edit examples, change a meaningful condition, compare runs and inspect the resulting predictions, measurements or error cases. Carry a selected dataset, question or result into another exhibit while retaining its provenance. Make controls input-sensitive and the toy mechanism inspectable. Never draw a result chart from a fixed answer irrespective of the visitor's input.</p>
+<p>Ask for a prediction or explanation when useful, then let the visitor test a counterexample and revise it. Offer scaffolding without pretending a local quiz proves learning. Maintain reset, undo and reproducible initial conditions. Support an explicit distinction between observation, interpretation and what remains untested.</p>
+</requirements>
+
+<requirements data-format="html" id="curatorial-workbench">
+<h2>Design a visit for a new question</h2>
+<p>A facilitator can create an inquiry with an audience, question, time or interaction constraints, source material and a proposed claim. Provide an editable route of experiments and discussion prompts, with reasons for the order and links from each claim to evidence. The facilitator can compare alternatives, preview the visitor experience, revise the route and export it for another browser to reconstruct.</p>
+<p>Use the <a href="materials/inquiry-requests.json">inquiry requests</a> during development. They require different diagnoses: contaminated evaluation, a changed population, and a tempting aggregate result that hides a subgroup. Decide what can be explained, what needs a further test and what cannot be concluded. A request missing the evidence necessary for its claim must remain qualified. Changing audience or time alone should not erase a scientific limitation.</p>
+<p>The source is <code>examples/tasks/website_evolution/lumen_museum/materials/inquiry-requests.json</code> in the repository. Develop the detailed lessons, toy datasets and source-to-claim records in the session plan. These requests are fictional teaching briefs, not testimonials or finished answers.</p>
+<p>Author and review a new inquiry after the first exhibition works. Its investigation should change the experiment choices or explanation, not merely substitute a title. Show how the result becomes usable exhibit content and a runnable route. The workbench may use an explicit authoring/review step; advertise the supported scope honestly. A live open-ended tutor is optional and must not be simulated with canned replies.</p>
+</requirements>
+
+<requirements data-format="html" id="intellectual-integrity">
+<h2>Keep the evidence attached</h2>
+<p>Use inspectable authoritative sources for scientific and historical claims. Separate source facts, synthetic examples, toy assumptions, computed results and interpretation. Preserve the dataset version, random seed where relevant, transformation and settings behind a saved result. An explanation should identify a limitation or counterexample that a visitor can actually investigate.</p>
+<p>If source material or an experiment changes, expose which saved explanations and routes need review. Preserve earlier runs and let someone compare revisions without silently rewriting their notebook. Incompatible inputs should produce an actionable explanation. Missing subgroup labels or missing evaluation data must stay missing rather than being invented to complete a chart.</p>
+<p>Start research with <a href="https://scikit-learn.org/stable/common_pitfalls.html">scikit-learn's common pitfalls</a> and <a href="https://scikit-learn.org/stable/modules/cross_validation.html">evaluation and cross-validation guide</a>; consult the primary sources appropriate to the final exhibits. These references do not require that library or a particular algorithm. Keep the ordinary exhibits usable without paid accounts or a remote model request on every interaction.</p>
+<p>Give the curatorial workbench a real source-discovery and import path. Use <a href="https://www.crossref.org/documentation/retrieve-metadata/rest-api/">Crossref's public scholarly metadata API</a> or an equivalent documented provider to search for a new inquiry, inspect candidate records and resolve a selected stable identifier. Carry identity, retrieval time, available links and licence information into a source packet. Distinguish a search match from relevant evidence and bibliographic metadata from a paper's actual content; absent abstracts, unavailable full text or missing licences stay explicit. Consult accessible primary content before making scientific claims.</p>
+<p>Turn that source packet into a proposed inquiry: compare plausible explanations, choose a discriminating experiment, identify unsupported claims and adapt the route to the audience and interaction constraints. The facilitator can review and revise the result before it becomes exhibit content. Show the link from a chosen source to the experiment and a visitor's saved result. Source lookup, interpretation and exhibit review should remain inspectable when the materials change.</p>
+</requirements>
+
+<requirements data-format="html" id="visual-craft">
+<h2>Every exhibit deserves its own visual language</h2>
+<p>Create an art-directed exhibition with distinctive interactive diagrams, typography, annotation and composition. A selected example should connect visibly to the transformation, result and explanation it affects. Use purposeful motion to reveal a mechanism; offer a paused view that is equally understandable. Related exhibits should feel like a collection without all becoming the same slider and chart.</p>
+<p>Design comparison, notebook and route-authoring states with comfortable information density and immediate feedback. Preserve selection, scroll and draft context when inspecting a source or changing galleries. Provide meaningful direct locations and browser Back. At narrow widths, retain access to both evidence and explanation through thoughtfully arranged views rather than shrinking a desktop diagram.</p>
+<p>Essential gestures need keyboard/touch alternatives, visible focus, non-colour-only meaning and reduced motion. Sound is optional and starts off. Credit imagery and assets. Source citations should help visitors inspect a claim without dominating the exhibition.</p>
+</requirements>
+
+<requirements data-format="html" id="lasting-value">
+<h2>Take an investigation with you</h2>
+<p>The notebook retains the question, initial prediction, settings, actual results, selected evidence and revised explanation. Let visitors compare saved trials, annotate a surprising result and export a reconstructable investigation. Local choices remain explicit and resettable. Distinguish a private draft from a published or exported route; do not promise shared storage without implementing it.</p>
+</requirements>
+
+<requirements data-format="html" id="open-horizons">
+<h2>Let a misunderstanding change the exhibition</h2>
+<p>Experience a full inquiry, including a deliberately misleading initial interpretation. Identify what a visitor cannot yet inspect or distinguish. Consider different experiments or explanatory forms before choosing a small faithful trial, then try it on a different inquiry with different evidence. An unavailable source or unresolved claim is a valid limit, not permission to invent an explanation.</p>
+<p>Authentic artifacts, new datasets, annotated media and new curatorial approaches may extend the exhibition when they answer a real question. Label self-observations accurately. A readable, engaging explanation and a supported scientific conclusion are separate quality judgments.</p>
+</requirements>
+
+<constraints data-format="html" id="creative-freedom">
+<h2>Choose the museum, complete the investigation</h2>
+<p>The connected experiments, evidence-aware notebook, editable inquiry routes and ability to accommodate new teaching material are commitments. Choose branding, algorithms, exhibit count, layouts and implementation order. The first working exhibit is an intermediate milestone. Preserve imaginative design while completing the whole promised workflow.</p>
+<p>Keep development dialogue outside the museum. Source hashes and repeated deployments alone do not establish improved learning or a better exhibit. Record uncertainty and unfinished work honestly.</p>
+</constraints>
+
+<notes data-format="html" id="task-materials">
+<h2>Working materials</h2>
+<p>The runtime input manifest supplies a staged reference attachment named <code>inquiry-requests.json</code>. Use its actual staged path to read the requests and source documentation; repository paths above identify the authored source. Preserve the original packet and record detailed designs, revisions and acceptance evidence in the session plan.</p>
+</notes>
+
+<acceptance data-format="html" id="quality-evidence">
+<h2>Show an inquiry becoming more precise</h2>
+<p>On the deployed version, predict a result, change examples or conditions, run an experiment, compare the actual outcome, inspect its evidence, then carry the question into another exhibit. Save an explanation, test a counterexample and revise it. Verify deterministic results or appropriate invariants separately from browser use.</p>
+<p>Complete the supplied contrasting inquiry requests, including the incomplete-evidence case. Create another inquiry with changed materials through the workbench, revise its route, export it and reconstruct it in an independent browser context. Verify that linked controls, evidence and results still work. Replace an underlying source or dataset and show affected saved work as needing review.</p>
+<p>Check keyboard and narrow-screen experiment, comparison, notebook and authoring paths, including invalid input, interrupted work, reload and Back. Compare equivalent before/after views and changed explanations. Record scientific correctness, interaction quality and aesthetic judgment separately. No self-test is independent proof of learning.</p>
+<p>After a full inquiry works, process the revision with an incomplete source packet and a shorter visit. Locate the affected source-handling, reasoning or explanation method; improve the weak approach and compare against its earlier result under the same revised inputs. Repeat a different inquiry to check that uncertainty, accessibility and valid explanations were preserved. Keep provenance from the real lookup through the revised route to the visitor's notebook; disconnected demonstrations do not establish that this workflow works.</p>
+</acceptance>
+
+</div>
+
+</body>
 </html>

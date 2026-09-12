@@ -5,8 +5,9 @@
   <meta name="name" content="online_shop_site">
   <meta name="description" content="Build and deploy a large, polished React shopping website with a product recommendation system">
   <meta name="version" content="4.1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="../../agentevolver/visual/task/style.css">
-  <script src="../../agentevolver/visual/task/app.js"></script>
+  <script src="../../agentevolver/visual/task/app.js" defer></script>
 </head>
 <body>
 
@@ -19,7 +20,9 @@ discover products, get relevant recommendations, manage a cart, check out, and r
 past orders.
 </objective>
 
-<scope>
+<requirements>
+### Scope
+
 - A substantial catalog: at least ~30 products spanning several categories (e.g.
   electronics, home, fashion, books…), each with a name, price, image, rating,
   short description, and category.
@@ -28,7 +31,7 @@ past orders.
   project** so the deployed site is self-contained (no dependency on an external image
   host at runtime, which breaks when that host is blocked/offline).
 - A real React single-page app with multiple routed pages, not a single static file.
-</scope>
+</requirements>
 
 <requirements>
 Discovery & catalog:

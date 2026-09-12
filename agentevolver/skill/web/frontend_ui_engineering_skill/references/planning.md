@@ -17,6 +17,17 @@ design, visual direction, component/service responsibilities, data ownership/per
 implementation dependencies and concrete acceptance journeys. Distinguish planned,
 implemented and browser-verified work. A release count is not a quality verdict.
 
+For a new identity or substantial visual change, use [visual-direction.md](visual-direction.md)
+to make concrete decisions before layout spreads across the product. Record the main subject,
+composition, type roles, surface/accent roles and a meaningful distinguishing feature. Reference
+actual content or relevant visual material; adjectives such as "premium" or "modern" are not
+a design specification. Explicit project branding wins over example palettes in the skill.
+
+Make the first useful journey visually credible early. Plan where the main exhibit/chart/scene
+and action appear on desktop and phone, not just where to put a large title. Review a populated
+working state before copying the layout across views. Preserve the product's full functional
+scope while giving the largest visual weakness priority over decorative finishing touches.
+
 For a substantial application, plan its connected experience before the first slice: usable
 views and navigation, shared objects, meaningful state transitions, and how changes propagate
 to another view or visitor. Record each required workflow's initial state, visible actions,
@@ -47,6 +58,12 @@ idea; the selected implementation; and equivalent before/after evidence. Cover a
 reading/participation state as well as the opening view. Record aesthetic judgment,
 functionality, accessibility and unresolved defects separately. Self-observations are not
 real user feedback, and fictional demonstration participants are not test reviewers.
+
+Include actual asset/font loading and fallback behavior in implementation evidence. A declared
+font or downloaded image is not proof that it appeared correctly. Keep the visual verdict based
+on rendered composition and content quality; console, geometry and contrast checks answer
+different questions. A review entry should lead to a concrete design decision, not another
+unchanged screenshot or a self-assigned beauty score.
 
 Maintain a compact coverage table for the journeys promised by this product, including
 material import/inspection, personal choices, return visits and failure recovery where

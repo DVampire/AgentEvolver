@@ -1,5 +1,6 @@
 // Task document view — renders the Markdown authored inside each semantic
-// section tag (<objective>, <requirements>, …) to HTML, client-side. This is
+// section tag (<objective>, <requirements>, …) to HTML, client-side. Sections
+// with data-format="html" preserve authored headings, tables and links. This is
 // the task analogue of how prompt.js renders Markdown inside the prompt tags,
 // so opening a task .html file directly shows nicely formatted lists / tables /
 // code without any build step. No dependencies.
@@ -81,8 +82,17 @@
 
       if (line.trim() === "") { i++; continue; }        // blank
 
+      var heading = line.match(/^\s*(#{1,6})\s+(.+)$/);
+      if (heading) {
+        var level = heading[1].length;
+        out.push("<h" + level + ">" + inline(heading[2]) + "</h" + level + ">");
+        i++;
+        continue;
+      }
+
       var para = [];                                     // paragraph
       while (i < lines.length && lines[i].trim() &&
+             !/^\s*#{1,6}\s+/.test(lines[i]) &&
              !/^\s*```/.test(lines[i]) &&
              !/^\s*[-*]\s+/.test(lines[i]) &&
              !/^\s*\d+\.\s+/.test(lines[i]) &&
@@ -95,13 +105,49 @@
   }
 
   function init() {
-    document.querySelectorAll("div.task > *").forEach(function (sec) {
-      sec.innerHTML = renderMarkdown(sec.textContent);
-      sec.addEventListener("click", function () {
-        if (window.getSelection && String(window.getSelection())) return;
-        sec.classList.toggle("collapsed");
+    document.querySelectorAll("div.task > *").forEach(function (sec, index) {
+      if (sec.dataset.taskReady) return;
+      if (sec.dataset.format !== "html") {
+        sec.innerHTML = renderMarkdown(sec.textContent);
+      }
+      var body = document.createElement("div");
+      body.className = "task-section-body";
+      body.id = "task-section-body-" + (index + 1);
+      while (sec.firstChild) body.appendChild(sec.firstChild);
+
+      var toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "task-section-toggle";
+      var role = sec.tagName.toLowerCase() === "div" ? sec.classList[0] : sec.tagName.toLowerCase();
+      toggle.textContent = String(index + 1).padStart(2, "0") + " · " + role;
+      toggle.setAttribute("aria-controls", body.id);
+      toggle.setAttribute("aria-expanded", "true");
+      toggle.addEventListener("click", function () {
+        body.hidden = !body.hidden;
+        toggle.setAttribute("aria-expanded", String(!body.hidden));
       });
+      sec.append(toggle, body);
+      sec.dataset.taskReady = "true";
     });
+
+    // A chapter link also reveals its destination if that section was collapsed.
+    function revealAnchor(hash) {
+      var id;
+      hash = typeof hash === "string" ? hash : window.location.hash;
+      try { id = decodeURIComponent(hash.slice(1)); } catch (_) { return; }
+      var target = document.getElementById(id);
+      var section = target && target.closest("div.task > *");
+      if (!section) return;
+      section.querySelector(".task-section-body").hidden = false;
+      section.querySelector(".task-section-toggle").setAttribute("aria-expanded", "true");
+      target.scrollIntoView();
+    }
+    document.addEventListener("click", function (event) {
+      var link = event.target.closest("a[href^='#']");
+      if (link) revealAnchor(link.hash);
+    });
+    window.addEventListener("hashchange", revealAnchor);
+    if (window.location.hash) revealAnchor();
   }
 
   if (typeof document !== "undefined") {

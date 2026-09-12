@@ -10,7 +10,8 @@ from copy import deepcopy
 
 def required(ctx):
     settings = (getattr(ctx, "extra", None) or {}).get("task_manifest", {}).get("evolution", {})
-    return settings.get("require_verified_improvement") is True or bool(settings.get("required_modules"))
+    return (settings.get("require_verified_improvement") is True
+            or bool(settings.get("required_modules")) or bool(settings.get("required_module_counts")))
 
 
 def required_modules(ctx):
@@ -24,6 +25,22 @@ def required_modules(ctx):
     if not isinstance(modules, list) or any(not isinstance(m, str) or m not in allowed for m in modules):
         raise ValueError("evolution.required_modules must be a list of supported component types")
     return list(dict.fromkeys(modules))
+
+
+def required_module_counts(ctx):
+    """Count distinct adopted components, never multiple versions of one name."""
+    from agentevolver.capability.types import COMPONENT_TYPES
+
+    counts = (getattr(ctx, "extra", None) or {}).get("task_manifest", {}).get(
+        "evolution", {}
+    ).get("required_module_counts", {})
+    allowed = {entry.type for entry in COMPONENT_TYPES}
+    if not isinstance(counts, dict) or any(
+        module not in allowed or type(count) is not int or count < 1
+        for module, count in counts.items()
+    ):
+        raise ValueError("evolution.required_module_counts must map supported component types to positive integers")
+    return {**{module: 1 for module in required_modules(ctx)}, **counts}
 
 
 def state(ctx):
@@ -165,7 +182,8 @@ def status(ctx):
     from agentevolver.extension import extension_manager
 
     audit = state(ctx)
-    expected = required_modules(ctx)
+    expected_counts = required_module_counts(ctx)
+    expected = list(expected_counts)
     reasons = []
     ready = []
     for key, candidate in audit["candidates"].items():
@@ -184,12 +202,18 @@ def status(ctx):
             reasons.append(f"{key}: post-adoption consumer evidence is missing; call adoption_tool record_use")
     if not ready:
         reasons.append("No verified capability improvement has completed registration, evaluation, keep and real use")
-    verified_modules = {audit["candidates"][key]["module"] for key in ready}
-    missing_modules = [module for module in expected if module not in verified_modules]
+    verified = {module: {audit["candidates"][key]["name"] for key in ready
+                         if audit["candidates"][key]["module"] == module} for module in expected}
+    missing_counts = {module: count - len(verified[module]) for module, count in expected_counts.items()
+                      if len(verified[module]) < count}
+    missing_modules = list(missing_counts)
     if missing_modules:
         reasons.append("Required component types still need verified adoption and real use: " + ", ".join(missing_modules))
+        reasons.append("Additional distinct components required: " + ", ".join(
+            f"{module}={count}" for module, count in missing_counts.items()))
     return {"required": True, "ready": bool(ready) and not reasons,
             "required_modules": expected, "missing_modules": missing_modules,
+            "required_module_counts": expected_counts, "missing_module_counts": missing_counts,
             "verified_components": ready, "reasons": reasons,
             "receipts": {key: {
                 "registration_call_id": audit["candidates"][key]["registration"],
