@@ -13,7 +13,7 @@ from pydantic import Field, PrivateAttr
 
 from agentevolver.benchmark.types import Benchmark, EvaluationResult, Stats, Task
 from agentevolver.data.factor_mining import FactorMarketDataset
-from agentevolver.environment.default.factor_mining.research import (
+from .research import (
     Diagnosis,
     FactorSpec,
     ResearchProtocol,

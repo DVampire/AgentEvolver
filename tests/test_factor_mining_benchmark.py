@@ -1,13 +1,18 @@
-"""Real data/environment/BenchmarkManager flow, without starting any agent or model."""
+"""Real data/validation/BenchmarkManager flow, without an Environment or model."""
 
 import json
 import uuid
+from functools import partial
+from pathlib import Path
 
 import pytest
 
 from agentevolver.benchmark import BenchmarkManager, Task
 from agentevolver.data import FactorMarketDataset
-from agentevolver.environment.default.factor_mining.environment import FactorMiningEnvironment
+from agentevolver.benchmark.default.factor_mining.bridge import request_validation
+from agentevolver.benchmark.default.factor_mining.research import (
+    FactorSpec, ResearchProtocol, StrategySpec, factor_report, strategy_backtest,
+)
 
 
 @pytest.fixture
@@ -26,28 +31,33 @@ async def study(tmp_path, dataset, **kwargs):
                             base_dir=str(tmp_path / "benchmark"), **kwargs)
     task = await manager.reset("factor_mining")
     prepared = await manager.prepare("factor_mining", task)
-    env = FactorMiningEnvironment(workspace=prepared.workspace_dir)
-    await env.initialize()
-    return manager, task, prepared, env
+    validate = partial(request_validation, Path(prepared.workspace_dir) / "bridge")
+    return manager, task, prepared, validate
+
+
+def training_inputs(prepared):
+    root = Path(prepared.workspace_dir)
+    manifest = json.loads((root / "study.json").read_text())
+    panel = FactorMarketDataset.load(root / "train", frequency=manifest["frequency"],
+                                    symbols=manifest["symbols"])
+    return panel, ResearchProtocol.model_validate(manifest["protocol"])
 
 
 @pytest.mark.asyncio
 async def test_factor_admission_final_score_and_no_test_feedback(tmp_path, dataset):
-    manager, task, prepared, env = await study(tmp_path, dataset, goal="factors")
+    manager, task, prepared, validate = await study(tmp_path, dataset, goal="factors")
     try:
         assert (await manager.stats("factor_mining")).attempted == 0
         assert not (tmp_path / "benchmark/study/test_equity.parquet").exists()
         from pathlib import Path
         assert not list(Path(prepared.workspace_dir).rglob("test"))
         assert not list(Path(prepared.workspace_dir).rglob("valid"))
-        result = await env.run_factor_backtest([FACTOR])
-        assert result["reports"][0]["passed"]
-        sample = await env.inspect_data(rows=2)
-        assert sample["split"] == "train" and len(sample["records"]) == 6
-        assert not (await env.get_factor_library())["factors"]  # train is not admission
-        validation = await env.validate("factors", [FACTOR])
+        panel, protocol = training_inputs(prepared)
+        assert factor_report(panel, FactorSpec(**FACTOR), protocol)["passed"]
+        assert not (await validate({"kind": "library"}))["factors"]  # train is not admission
+        validation = await validate({"kind": "factors", "candidates": [FACTOR]})
         assert validation["reports"][0]["passed"]
-        state = await env.get_factor_library()
+        state = await validate({"kind": "library"})
         assert state["factors"]["momentum"]["version"] == 1
         assert state["remaining_validations"] == 7
         assert (await manager.stats("factor_mining")).attempted == 0  # validation has its own ledger
@@ -65,19 +75,20 @@ async def test_factor_admission_final_score_and_no_test_feedback(tmp_path, datas
 
 @pytest.mark.asyncio
 async def test_strategy_feedback_cannot_lower_factor_thresholds(tmp_path, dataset):
-    manager, task, _, env = await study(tmp_path, dataset)
+    manager, task, prepared, validate = await study(tmp_path, dataset)
     try:
         diagnosis = {"id": "gap0", "kind": "coverage_gap", "description": "Need a trend signal alongside volume.",
                      "evidence": "The library is empty.", "requested_direction": "Explore causal momentum."}
-        await env.record_diagnosis(diagnosis)
-        response = await env.validate("factors", [{**FACTOR, "triggered_by_gap": "gap0"}])
+        await validate({"kind": "diagnosis", "diagnosis": diagnosis})
+        response = await validate({"kind": "factors", "candidates": [{**FACTOR, "triggered_by_gap": "gap0"}]})
         assert response["reports"][0]["passed"]
-        state = await env.get_factor_library()
+        state = await validate({"kind": "library"})
         assert state["factors"]["momentum"]["spec"]["triggered_by_gap"] == "gap0"
         with pytest.raises(ValueError, match="forbidden"):
-            await env.run_strategy_backtest({"name": "bad", "expression": "volume"})
-        response = await env.validate("strategy", [{"name": "trend", "expression": "momentum",
-                                                    "position_rule": "threshold"}])
+            panel, protocol = training_inputs(prepared)
+            strategy_backtest(panel, StrategySpec(name="bad", expression="volume"), state["factors"], protocol)
+        response = await validate({"kind": "strategy", "candidates": [{"name": "trend", "expression": "momentum",
+                                                                      "position_rule": "threshold"}]})
         assert response["reports"][0]["passed"], response
         await manager.submit("factor_mining", task, output={"kind": "strategy", "name": "trend"})
         result = await manager.eval("factor_mining", task)

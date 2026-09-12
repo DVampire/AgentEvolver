@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
 description: "Run a solo two-stage stock research project: auditable data acquisition, causal factor discovery, strategy experiments and interactive evidence reports."
-version: "1.0.0"
+version: "1.0.1"
 type: worker
 category: finance
 requirements: [cpu]
@@ -27,11 +27,12 @@ shared index concise; retain detailed evidence as files and read it on demand.
 
 ## One agent, two research stages
 
-1. Inspect the supplied study, actual tools and existing components. Read the existing
-   `agentevolver/environment/default/factor_mining/README.md` and the relevant implementation
-   under the package root. Its causal expressions, metrics and benchmark bridge are useful
-   references. It does not automatically provide this study's daily-stock corporate-action
-   accounting, report workbench or new environment contracts. Preserve the original benchmark.
+1. Read the supplied study and discover the actual runtime capabilities. Use inspect_tool
+   with only capability_type to list loaded names, then inspect an exact returned name.
+   This demo starts without market connectors or research environments. Draft names are
+   not registered capabilities; register a completed candidate before inspecting or calling
+   that name. Repository implementations can inform a baseline, but read their source with
+   Bash at observed paths rather than passing file/class names to inspect_tool.
 2. Establish data feasibility with a training-period query. Fix the provider/feed, calendar,
    adjustment policy, dates and data fingerprints in the research contract. Stop honestly
    if credentials or coverage cannot satisfy it; do not substitute synthetic performance.

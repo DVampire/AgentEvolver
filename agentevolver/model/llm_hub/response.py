@@ -710,7 +710,8 @@ class ResponseLLMHub(BaseModel):
                 cache_write_tokens=sum(usage.cache_write_tokens for usage in usages),
                 cache_read_tokens=sum(usage.cache_read_tokens for usage in usages),
                 provider_reported_total=(
-                    sum(usage.provider_reported_total or usage.total for usage in usages)
+                    sum(usage.provider_reported_total if usage.provider_reported_total is not None
+                        else usage.total for usage in usages)
                 ),
                 cost=sum(costs) if costs else None,
                 cost_status=(
@@ -931,7 +932,7 @@ class ResponseLLMHub(BaseModel):
                 combined_usage.cache_read_tokens += usage.cache_read_tokens
                 combined_usage.provider_reported_total = (
                     (combined_usage.provider_reported_total or 0)
-                    + (usage.provider_reported_total or usage.total)
+                    + (usage.provider_reported_total if usage.provider_reported_total is not None else usage.total)
                 )
                 if usage.cost is not None:
                     combined_usage.cost = (combined_usage.cost or 0.0) + usage.cost

@@ -18,7 +18,7 @@ Relative experiment paths are resolved from the repository root.
 Examples:
   scripts/run.sh website_evolution_demo --scenario-dir examples/tasks/website_evolution/orbital_simulator
   scripts/run.sh run_swebench_pro.py --help
-  scripts/run.sh examples/run_factor_mining.py --help
+  scripts/run.sh examples/run_factor_strategy_mining_demo.py --help
   scripts/run.sh --python /path/to/env/bin/python meta_agent --task 'Build a website'
 
 Python: --python / AGENTEVOLVER_PYTHON, then the active virtualenv or non-base conda env,

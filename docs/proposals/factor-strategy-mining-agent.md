@@ -17,7 +17,7 @@
 
 长期架构保留多种候选和一个账户控制器。同族简单组合是优先比较的扩展，市场状态服务于适用性和风险，跨家族自动切换后置。首版交付优先围绕明确的交易产品和实际损益展开；最终可以只上线一条策略。
 
-现有实现见 [factor_mining README](../../agentevolver/environment/default/factor_mining/README.md)。本文的状态门控、决策控制器、事件回放及实盘交付均为目标设计。本轮检索和代码阅读没有证明任何候选能在 BTC 上盈利，也没有验证交易框架的目标场所适配。
+现有实现见 [factor_mining README](../../agentevolver/benchmark/default/factor_mining/README.md)。本文的状态门控、决策控制器、事件回放及实盘交付均为目标设计。本轮检索和代码阅读没有证明任何候选能在 BTC 上盈利，也没有验证交易框架的目标场所适配。
 
 ## 0. 调研结论与方案比较
 
@@ -770,7 +770,7 @@ AgentEvolver 输出 `FactorSpec/StrategySpec/ControllerSpec` 与冻结参数，�
 
 ## 10. 与当前实现的差距：后续改代码时的清单
 
-以下结论来自现有 [research.py](../../agentevolver/environment/default/factor_mining/research.py)、[配置](../../configs/factor_mining.py) 与实现 README 的检查，本次未修改这些文件。
+以下是旧版研究实现的差距分析。数值代码现保留在 [research.py](../../agentevolver/benchmark/default/factor_mining/research.py)；原固定环境与双 Agent 入口已移除，当前实验使用 [单 Agent demo 配置](../../configs/factor_strategy_mining_demo.py)。
 
 | 当前能力/行为 | 对单资产实盘目标的影响 | 后续设计调整 |
 | --- | --- | --- |

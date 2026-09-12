@@ -9,10 +9,8 @@ from .ssh_agent import SSHAgent
 from .website_builder_agent import WebsiteBuilderAgent
 from .game_builder_agent import GameBuilderAgent
 from .website_user_agent import WebsiteUserAgent
-from .factor_mining_agent import FactorMiningAgent
-from .strategy_mining_agent import StrategyMiningAgent
 from .factor_strategy_mining_agent import FactorStrategyMiningAgent
 
 __all__ = ["GeneralAgent", "CodeAgent", "MetaAgent", "WebsiteBuilderAgent", "GameBuilderAgent", "MonitorAgent", "BrowserAgent",
            "ComputerAgent", "ReviewerAgent", "SSHAgent",
-                      "WebsiteUserAgent", "FactorMiningAgent", "StrategyMiningAgent", "FactorStrategyMiningAgent"]
+           "WebsiteUserAgent", "FactorStrategyMiningAgent"]

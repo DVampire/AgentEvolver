@@ -168,7 +168,7 @@ finally:
 | `swebench_verified` | Resolve a real GitHub issue (Python) | 500 | `SWE-bench/SWE-bench_Verified` | hidden `fail_to_pass`/`pass_to_pass`, graded on the host | `examples/run_swebench_verified.py` |
 | `swebench_pro` | Resolve a real issue (Python/Go/JS/TS) | 731 | `ScaleAI/SWE-bench_Pro` | same, via the official Pro grader | `examples/run_swebench_pro.py` |
 | `exact_match` | Nothing of its own — scores answers it is handed | — | none | numeric-tolerant exact match | in-process |
-| `factor_mining` | Causal factor discovery and multi-asset strategy research | 1 study per bundle | OHLCV via `data.FactorMarketDataset` | independent validation/admission, then frozen final test | `examples/run_factor_mining.py` |
+| `factor_mining` | Causal factor discovery and multi-asset strategy research | 1 study per bundle | OHLCV via `data.FactorMarketDataset` | independent validation/admission, then frozen final test | [Benchmark guide](default/factor_mining/README.md) |
 | *(any Harbor task set)* | e.g. `deep-swe`, `terminal-bench` | varies | Harbor's own | **Harbor's verifier, in Harbor's container** | `harbor/` — see below |
 
 "in-process" means the benchmark yields tasks and the framework's own runtime answers

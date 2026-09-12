@@ -1,4 +1,4 @@
-"""File-only validation client; held-out data and grading stay in BenchmarkManager."""
+"""Benchmark validation client; held-out data and grading stay in BenchmarkManager."""
 
 import asyncio
 import json

@@ -29,6 +29,18 @@ def test_one_researcher_keeps_shared_plan_and_dynamic_environment_scope():
     assert agent.compact_input_tokens == 100_000
 
 
+def test_obsolete_factor_environment_and_worker_assembly_are_removed():
+    import agentevolver.environment  # noqa: F401
+    from agentevolver.registry import AGENT, ENVIRONMENT
+
+    assert "FactorMiningEnvironment" not in ENVIRONMENT.module_dict
+    assert "FactorMiningAgent" not in AGENT.module_dict
+    assert "StrategyMiningAgent" not in AGENT.module_dict
+    assert not (ROOT / "agentevolver/environment/default/factor_mining/environment.py").exists()
+    assert not (ROOT / "configs/factor_mining.py").exists()
+    assert not (ROOT / "examples/run_factor_mining.py").exists()
+
+
 def test_task_and_study_are_staged_with_runtime_policy_from_config(tmp_path):
     inputs = task_inputs(DEFAULT_TASK_DIR)
     cfg = Config.fromfile(str(DEFAULT_CONFIG))

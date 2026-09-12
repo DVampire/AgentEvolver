@@ -1,4 +1,4 @@
-"""Bounded, causal expression interpreter shared by training and held-out grading."""
+"""Bounded, causal expression interpreter for the factor research benchmark."""
 
 from __future__ import annotations
 

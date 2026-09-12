@@ -16,7 +16,7 @@ scripts/run.sh website_evolution_demo \
 
 # 任意 example 的参数帮助
 scripts/run.sh swebench_pro --help
-scripts/run.sh examples/run_factor_mining.py --help
+scripts/run.sh examples/run_factor_strategy_mining_demo.py --help
 
 # 显式选择 Python
 scripts/run.sh --python /path/to/env/bin/python meta_agent --task 'Build a website'

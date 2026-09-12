@@ -1518,7 +1518,8 @@ async def test_background_create_retrieve_and_cancel_are_explicit_lifecycle_call
 
 
 @pytest.mark.asyncio
-async def test_native_responses_stream_emits_incremental_canonical_events():
+@pytest.mark.parametrize("provider_total", [None, 0, 6])
+async def test_native_responses_stream_emits_incremental_canonical_events(provider_total):
     from agentevolver.model.types import (
         ProviderState,
         StreamDone,
@@ -1555,7 +1556,7 @@ async def test_native_responses_stream_emits_incremental_canonical_events():
                         "arguments": '{"path":"a.py"}',
                     },
                 ],
-                "usage": {"input_tokens": 4, "output_tokens": 2},
+                "usage": {"input_tokens": 4, "output_tokens": 2, "total_tokens": provider_total},
             },
         },
     ]
@@ -1592,6 +1593,7 @@ async def test_native_responses_stream_emits_incremental_canonical_events():
     assert state.data["responses"]["output_items"][1]["call_id"] == "c1"
     done = next(event for event in events if isinstance(event, StreamDone))
     assert done.stop_reason == "tool_use" and done.usage["input_tokens"] == 4
+    assert done.usage["provider_reported_total"] == (6 if provider_total is None else provider_total)
     assert not any(isinstance(event, TextDelta) for event in events)
 
 

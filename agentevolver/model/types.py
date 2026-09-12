@@ -305,6 +305,11 @@ class TokenUsage(BaseModel):
             raw_input if inclusive_input
             else raw_input + int(cache_read) + int(cache_write)
         )
+        # Zero is an explicit provider value, not a missing field. Boolean
+        # fallback would replace total_tokens=0 with an absent alias and int(None).
+        provider_total = raw.get("total_tokens")
+        if provider_total is None:
+            provider_total = raw.get("total_token_count")
         return cls(
             input_tokens=uncached_input,
             context_input_tokens=context_input,
@@ -321,10 +326,7 @@ class TokenUsage(BaseModel):
             cache_write_tokens=cache_write,
             cache_read_tokens=cache_read,
             provider_reported_total=(
-                int(raw.get("total_tokens") or raw.get("total_token_count"))
-                if raw.get("total_tokens") is not None
-                or raw.get("total_token_count") is not None
-                else None
+                int(provider_total) if provider_total is not None else None
             ),
             cost=cost,
             cost_status="reported" if cost is not None else "unknown",

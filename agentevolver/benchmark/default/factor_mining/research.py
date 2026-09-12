@@ -13,7 +13,7 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentevolver.data.factor_mining import FIELDS, MarketPanel
-from agentevolver.environment.default.factor_mining.expressions import Expression
+from .expressions import Expression
 from agentevolver.utils.file_utils import atomic_write_text
 
 

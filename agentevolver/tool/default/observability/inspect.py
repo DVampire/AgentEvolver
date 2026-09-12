@@ -32,22 +32,28 @@ from agentevolver.utils import get_extension_root
 _TYPES = ", ".join(COMPONENT_TYPE_NAMES)
 
 _DESCRIPTION = (
-    "Fetch one component's full contract (instruction, call schema) plus its live registry "
-    f"facts — version, evolvability/enable_evolving, source paths. Types: {_TYPES}."
+    "List loaded components of a type when name is omitted, or fetch an exact loaded "
+    "component's contract, schema, version, evolvability and source paths. "
+    f"Types: {_TYPES}. Does not load components or search repository files."
 )
 
 _GUIDANCE = """
-Fetch one capability's full contract and live registry facts by type and name.
+Discover loaded names, then fetch a capability's full contract and live registry facts.
 
 - The capability rosters in your context are for discovery. Before calling something whose
   arguments or rules you are unsure of, inspect it.
 - When optimizing or evaluating a capability: the facts give you its source path (to read
   or edit) and its `enable_evolving` — optimization requires enable_evolving=True, and a
   frozen capability (enable_evolving=False) must NOT be edited.
-- Pass the exact name as shown in the roster.
+- Omit name (or pass an empty string) to list the currently loaded names of capability_type.
+- Pass an exact loaded name to inspect its contract. A source directory, class name or
+  proposed candidate name is not necessarily a loaded component. Read reference source
+  through the workspace tools; register a new candidate before inspecting its returned name.
+- Discovery and inspection never initialize a service, grant access or register a component.
 """
 
 _EXAMPLES = [
+    '{{"name": "inspect_tool", "args": {{"capability_type": "environment"}}}}',
     '{{"name": "inspect_tool", "args": {{"capability_type": "tool", "name": "bash_tool"}}}}',
     '{{"name": "inspect_tool", "args": {{"capability_type": "skill", "name": "hello_world_skill"}}}}',
 ]
@@ -184,26 +190,36 @@ class InspectTool(Tool):
         super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, capability_type: str = "", name: str = "", **kwargs) -> Response:
-        """Return one capability's contract and live registry facts.
+        """List loaded names or return one loaded capability's contract and facts.
 
         Args:
             capability_type: Which kind of component to inspect — one of
                 tool, skill, connector, agent, environment, workflow, plugin, memory.
-            name: The exact registered name, as shown in the roster.
+            name: Exact loaded name from the roster; omit to list loaded names of the type.
         """
         entry = component_type_entry(capability_type)
         if entry is None:
             return self._fail(f"Unknown capability_type {capability_type!r}. One of: {_TYPES}.")
-        if not name:
-            return self._fail(f"'name' is required — the exact registered {entry.type} name.")
-
         manager = entry.manager()
+        if not name:
+            available = await _maybe_await(manager.list())
+            return Response(
+                type=ResponseType.TOOL, success=True,
+                message=(f"Loaded {entry.mount_type}: {available}. "
+                         "Inspect an exact listed name. This is the runtime registry, not a source-file catalog; "
+                         "inspection does not load components or grant access."),
+                data={"type": entry.type, "scope": "loaded", "available": available},
+            )
         info = await _maybe_await(manager.get_info(name))
         if info is None:
             available = await _maybe_await(manager.list())
-            return self._fail(f"{entry.type.capitalize()} {name!r} not found. "
-                              f"Available {entry.mount_type}: {available}",
-                              data={"type": entry.type, "name": name, "registered": False})
+            return self._fail(f"{entry.type.capitalize()} {name!r} is not loaded in this runtime. "
+                              f"Loaded {entry.mount_type}: {available}. "
+                              "Use an exact loaded name. Read repository source through workspace tools; "
+                              "for a new candidate, register it first and use the returned name. "
+                              "No component was loaded or registered by this lookup.",
+                              data={"type": entry.type, "name": name, "registered": False,
+                                    "error_code": "not_loaded", "scope": "loaded", "available": available})
 
         instruction = await self._full_instruction(manager, name)
         lines = [_fact(f"{entry.type.capitalize()} Name", f"`{name}`"),

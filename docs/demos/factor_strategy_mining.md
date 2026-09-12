@@ -39,7 +39,8 @@ Runs register on the usual gateway at port 9876; deploy_tool publishes the repor
 | Runtime policy | `task_manifest_defaults` in the demo config: deployment, self-review, evolution evidence and declared holdout control |
 
 No market connector or factor/strategy environment is preloaded in this demo. The agent
-inspects existing capabilities, establishes concrete limitations and develops or improves
+lists currently loaded capabilities with `inspect_tool(capability_type=...)`, inspects
+exact returned names, establishes concrete limitations and develops or improves
 an appropriate Connector and **two distinct Environment components**. Environments can
 share verified numerical utilities. The router makes registered environments callable via
 `accepts_evolved`; connector and skill discovery remain open, while child agents stay disabled.
@@ -100,10 +101,13 @@ under that directory without imposing a fixed framework schema. Large results an
 in the workspace. Both report pages include chart interactions, traceable candidate/strategy
 versions, split comparisons, failed trials, definitions, uncertainty and downloadable evidence.
 
-## Relationship to the existing benchmark
+## Relationship to the numerical benchmark
 
-`configs/factor_mining.py` and `examples/run_factor_mining.py` retain the original two
-restricted workers and independent Benchmark/validation bridge. Their fixed pipeline is
-useful for deterministic research-engine checks and isolation, but is not this self-evolving
-single-agent demo. Its data, expressions and research code are references to reuse where
-correct, not evidence that a newly written capability already passes this stock study.
+The former built-in factor environment and its dependent two-agent launcher, configuration
+and specialized workers have been removed. Signal Foundry is the research demo entry point.
+The independent [factor benchmark](../../agentevolver/benchmark/default/factor_mining/README.md)
+retains expression evaluation, numerical checks, validation accounting and frozen final-test
+grading under `agentevolver/benchmark/default/factor_mining/`. These are benchmark utilities,
+not preloaded research environments or proof that a new capability passes this stock study.
+Inspect lists runtime components only; read repository references through workspace tools
+and inspect a newly created component only after successful registration.

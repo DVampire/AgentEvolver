@@ -145,6 +145,21 @@ def test_normalising_canonical_usage_is_idempotent():
     assert twice == once
 
 
+@pytest.mark.parametrize("totals,expected", [
+    ({"total_tokens": 0}, 0),
+    ({"total_tokens": 0, "total_token_count": 99}, 0),
+    ({"total_tokens": None, "total_token_count": 0}, 0),
+    ({"total_token_count": 7}, 7),
+    ({"total_tokens": None, "total_token_count": None}, None),
+    ({}, None),
+])
+def test_provider_total_preserves_zero_and_distinguishes_missing(totals, expected):
+    usage = TokenUsage.from_raw({"input_tokens": 4, "output_tokens": 2, **totals})
+    assert usage.provider_reported_total == expected
+    assert usage.total == 6
+    assert TokenUsage.from_raw(usage.model_dump()) == usage
+
+
 def test_reasoning_and_provider_total_are_preserved_without_double_counting():
     usage = TokenUsage.from_raw(
         {

@@ -41,8 +41,11 @@ Expand the product brief into plan.md, including detailed hypotheses, experiment
 two environment contracts, report design, progress and acceptance evidence. Link detailed
 records from index.md and read them on demand; do not copy reports or market arrays into live context.
 
-Inspect existing capabilities and relevant factor_mining code before designing replacements.
-The legacy factor/strategy agents are restricted benchmark workers, not child roles in this run.
+Discover currently loaded capabilities before inspecting an exact name. inspect_tool with
+only capability_type lists that type's loaded names; it does not search source files or load
+components. Repository code is reference material, not evidence of a callable capability.
+Read source through Bash only at an observed path. A proposed connector or environment name
+does not exist until registration succeeds; inspect the exact name returned by registration.
 Use job for bounded background computation, Bash for authoring and browser_environment for
 actual report interaction. Newly adopted environments are native callable capabilities;
 inspect their schemas and call them directly. A Python import or shell script alone is not

@@ -5,8 +5,8 @@ import pandas as pd
 import pytest
 
 from agentevolver.data.factor_mining import FactorMarketDataset, MarketPanel
-from agentevolver.environment.default.factor_mining.expressions import Expression
-from agentevolver.environment.default.factor_mining.research import (
+from agentevolver.benchmark.default.factor_mining.expressions import Expression
+from agentevolver.benchmark.default.factor_mining.research import (
     FactorSpec,
     ResearchProtocol,
     StrategySpec,
@@ -113,7 +113,7 @@ def test_stateful_stop_is_observed_at_close_and_exits_next_open():
 
 
 def test_initial_loss_is_part_of_drawdown():
-    from agentevolver.environment.default.factor_mining.research import _performance
+    from agentevolver.benchmark.default.factor_mining.research import _performance
 
     metrics = _performance(pd.Series([-.2, .1]), 2)
     assert metrics["max_drawdown"] == pytest.approx(.2)

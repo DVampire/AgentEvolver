@@ -20,4 +20,4 @@ outputs should not be stored in this package directory.
 imports CSV/Parquet directly, or existing HF/local datasets through `DataManager`,
 aligns timestamp × asset panels without filling missing bars, and writes disjoint
 train/valid/test Parquet bundles with a content fingerprint. See
-[the factor research guide](../environment/default/factor_mining/README.md).
+[the factor benchmark guide](../benchmark/default/factor_mining/README.md).
