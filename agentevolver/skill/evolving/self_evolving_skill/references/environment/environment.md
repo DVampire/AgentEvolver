@@ -126,8 +126,11 @@ Read `environment.py`, `ENVIRONMENT.md` and relevant initialization/state code. 
 `@ENVIRONMENT.register_module`, the registered name and compatible action signatures. Keep
 Actions, State and Vision documentation aligned with actual behavior and effects. Reproduce
 the failing state transition in isolated state, then use the common repair loop. Registration
-does not update an existing environment instance; inspect binding/version and use a supported
-fresh instance or handoff before attributing results to the candidate.
+creates a fresh instance for subsequent native calls, with package imports isolated by admitted
+revision. It does not migrate live state or rewrite references held by other consumers. Inspect
+the active binding/version, initialize resources when needed, and execute the repaired behavior
+through native calls before attributing results to the candidate. Persist or explicitly hand off
+required state; do not mistake successful registration for a verified upgrade.
 
 ## Evaluating one
 

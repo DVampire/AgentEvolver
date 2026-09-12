@@ -241,3 +241,79 @@ def test_a_single_file_component_is_loaded_as_a_plain_module(tmp_path, capture_l
         assert _package_dir_for(module, source) is None, (
             f"{module} is a single file; a package root would be invented for it"
         )
+
+
+@pytest.mark.asyncio
+async def test_environment_upgrade_isolates_helpers_and_rollback(tmp_path, monkeypatch):
+    """A helper-only change must reach native calls without changing retained v1 objects."""
+    from unittest.mock import AsyncMock
+    from agentevolver.environment.context import EnvironmentContextManager
+    from agentevolver.environment.server import EnvironmentManagerServer
+    import agentevolver.environment.server as environment_server
+    from agentevolver.extension.server import ExtensionManagerServer
+    from agentevolver.permission import permission_manager
+    from agentevolver.version import version_manager
+
+    versions = iter(("1.0.0", "1.0.1"))
+    monkeypatch.setattr(version_manager, "get_version", AsyncMock(
+        side_effect=lambda module, name: next(versions) if module == "environment" else "1.0.0",
+    ))
+    monkeypatch.setattr(version_manager, "register_version", AsyncMock())
+    monkeypatch.setattr(version_manager, "get_version_history", AsyncMock(return_value=None))
+    monkeypatch.setattr(type(permission_manager), "register", lambda self, **kwargs: None)
+    context = EnvironmentContextManager(base_dir=str(tmp_path / "env-log"))
+    server = EnvironmentManagerServer()
+    server.environment_context_manager = context
+    monkeypatch.setattr(environment_server, "environment_manager", server)
+    extensions = ExtensionManagerServer(base_dir=str(tmp_path / "extensions"))
+    entry = textwrap.dedent('''
+        from agentevolver.environment.types import Environment
+        from agentevolver.environment.server import environment_manager
+        from .core import VALUE
+
+        class RevisionProbe(Environment):
+            name: str = "revision_probe"
+            description: str = "Probe the active package revision."
+            metadata: dict = {}
+            enable_evolving: bool = True
+
+            @environment_manager.action(name="read", read_only=True)
+            async def read(self, ctx=None):
+                from .late import VALUE as late_value
+                return {"eager": VALUE, "late": late_value}
+    ''')
+    initial_modules = set(sys.modules)
+    try:
+        old_instance = None
+        for revision in ("1.0.0", "1.0.1"):
+            # Mirrors immutable admission: same artifact name and unchanged entry file,
+            # different source root even when version is not allocated until registration.
+            root = tmp_path / revision / "revision_probe"
+            root.mkdir(parents=True)
+            (root / "environment.py").write_text(entry)
+            for helper in ("core.py", "late.py"):
+                (root / helper).write_text(f"VALUE = {revision!r}\n")
+            await extensions._load_class_component(
+                "environment", str(root), version=None, config={}, return_version=False,
+            )
+            current = context._environment_configs["revision_probe"]
+            assert current.version == revision
+            if old_instance is None:
+                old_instance = current.instance
+            else:
+                assert type(old_instance).__module__ != current.cls.__module__
+                assert await context("revision_probe", "read", {}) == {
+                    "eager": revision, "late": revision,
+                }
+                # Its first late import happens AFTER v2 has been loaded and called.
+                assert await old_instance.read() == {"eager": "1.0.0", "late": "1.0.0"}
+        await context.restore("revision_probe", "1.0.0", auto_initialize=False)
+        assert await context("revision_probe", "read", {}) == {"eager": "1.0.0", "late": "1.0.0"}
+        restored = context._environment_configs["revision_probe"]
+        historical = context._environment_history_versions["revision_probe"]["1.0.0"]
+        assert restored is not historical
+        assert historical.instance is old_instance
+    finally:
+        for name in set(sys.modules) - initial_modules:
+            if name.startswith("ext."):
+                dynamic_manager.unload_module(name)

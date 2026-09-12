@@ -898,8 +898,10 @@ class EnvironmentContextManager(BaseModel):
             logger.warning(f"| ⚠️ Version {version} not found for environment {env_name}")
             return None
         
-        # Create a copy to avoid modifying the history
-        restored_config = EnvironmentConfig(**version_config.model_dump())
+        # Keep live classes, callables and argument schemas. model_dump() uses the
+        # display serializers and cannot be round-tripped into a runtime config.
+        # Restore operates on this copy, leaving the history config intact.
+        restored_config = version_config.model_copy()
         
         # Set as current active config
         self._environment_configs[env_name] = restored_config

@@ -1074,6 +1074,13 @@ class ExtensionManagerServer(BaseModel):
             class_file = abspath
             stem = os.path.splitext(os.path.basename(abspath))[0]
         module_name = f"ext.{module}.{stem}"
+        if package_dir:
+            # Admission returns an immutable, content-addressed source directory.
+            # Reloading just the entry module under a stable name leaves its imported
+            # helpers cached in sys.modules. Give each admitted revision its own
+            # package, including late relative imports on retained/rollback objects.
+            identity = f"{os.path.realpath(package_dir)}\0{version or ''}"
+            module_name += "_" + hashlib.sha256(identity.encode()).hexdigest()
         cls = dynamic_manager.load_class_from_path(
             class_file, base_class=base_cls, context=module, module_name=module_name,
             package_dir=package_dir,
