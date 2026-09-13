@@ -5,6 +5,7 @@ from pydantic import Field, ConfigDict, PrivateAttr
 
 from agentevolver.benchmark.types import Benchmark, Task, Stats
 from agentevolver.registry import BENCHMARK
+from agentevolver.data.deepweb import DeepWebDataset
 from agentevolver.utils import dedent, is_same
 
 SYSTEM_PROMPT = dedent("""
@@ -27,8 +28,8 @@ class DeepWebBenchmark(Benchmark):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = Field(default="deepweb", description="The name of the benchmark")
-    path: str = Field(default="datasets/deepweb-bench", description="The path to the benchmark dataset")
-    hf_repo_id: str = Field(default="deepweb-bench-anon/deepweb-bench", description="HuggingFace repo to download the dataset from when it is missing locally.")
+    path: str = Field(default=DeepWebDataset.default_path, description="The path to the benchmark dataset")
+    hf_repo_id: str = Field(default=DeepWebDataset.hf_repo_id, description="HuggingFace repo to download the dataset from when it is missing locally.")
 
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
 
@@ -42,10 +43,7 @@ class DeepWebBenchmark(Benchmark):
         # benchmark at startup, before any session is bound, so doing it in
         # __init__ scaffolded empty directories under the unbound root.
         os.makedirs(self.base_dir, exist_ok=True)
-        from agentevolver.benchmark.utils import ensure_dataset
-        from agentevolver.data.deepweb import DeepWebDataset
-        local_dir = ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
-        dataset = DeepWebDataset(path=local_dir)
+        dataset = DeepWebDataset(path=self.path, hf_repo_id=self.hf_repo_id)
         self._data_records = self._apply_slice(dataset.data)
 
 

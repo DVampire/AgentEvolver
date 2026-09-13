@@ -6,6 +6,7 @@ from pydantic import Field, ConfigDict, PrivateAttr
 
 from agentevolver.benchmark.types import Benchmark, Task, Stats
 from agentevolver.registry import BENCHMARK
+from agentevolver.data.hle import HLEDataset
 from agentevolver.paths import path_manager
 from agentevolver.utils import dedent
 from agentevolver.utils import is_same
@@ -39,8 +40,8 @@ class HLEBenchmark(Benchmark):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = Field(default="hle", description="The name of the benchmark")
-    path: str = Field(default="datasets/hle", description="The path to the benchmark dataset")
-    hf_repo_id: str = Field(default="cais/hle", description="HuggingFace repo to download the dataset from when it is missing locally.")
+    path: str = Field(default=HLEDataset.default_path, description="The path to the benchmark dataset")
+    hf_repo_id: str = Field(default=HLEDataset.hf_repo_id, description="HuggingFace repo to download the dataset from when it is missing locally.")
 
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
     _tags: Dict[str, List[str]] = PrivateAttr(default_factory=dict)
@@ -51,28 +52,11 @@ class HLEBenchmark(Benchmark):
         super().__init__(base_dir=base_dir, start=start, end=end, **kwargs)
 
     async def _initialize(self):
-        # Created on first use, not at construction: the registry builds every
-        # benchmark at startup, before any session is bound, so doing it in
-        # __init__ scaffolded empty directories under the unbound root.
-        # Deferred because `datasets` is heavy and only this method needs it. `os` is
-        # NOT re-imported: it is a module-level import, and importing it here again made
-        # it a *local* for the whole function, so `os.makedirs` below raised
-        # UnboundLocalError and this benchmark could never initialize at all.
-        import pathlib
-
-        from datasets import load_dataset
-
-        from agentevolver.benchmark.utils import ensure_dataset
-
         os.makedirs(self.base_dir, exist_ok=True)
-        local_path = pathlib.Path(ensure_dataset(os.path.basename(self.path), self.hf_repo_id))
-        dataset = load_dataset(str(local_path), split=self.split)
-        self._data_records = self._apply_slice(list(dataset))
-        tags_path = local_path / "data" / "tags.json"
-        if tags_path.exists():
-            import json
-            with open(tags_path) as f:
-                self._tags = json.load(f)
+        dataset = HLEDataset(path=self.path, split=self.split,
+                             hf_repo_id=self.hf_repo_id)
+        self._data_records = self._apply_slice(dataset.records)
+        self._tags = dataset.tags
 
 
     async def _step(self) -> Optional[Task]:

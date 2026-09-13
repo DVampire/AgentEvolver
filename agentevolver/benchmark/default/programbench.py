@@ -17,6 +17,7 @@ from pydantic import Field, ConfigDict, PrivateAttr
 from agentevolver.benchmark.types import Benchmark, Task, Stats, EvaluationResult
 from agentevolver.logger import logger
 from agentevolver.registry import BENCHMARK
+from agentevolver.data.programbench import ProgramBenchDataset
 from agentevolver.paths import P, path_manager
 from agentevolver.utils import dedent
 
@@ -49,11 +50,11 @@ class ProgramBenchmark(Benchmark):
     # `path`/`hf_repo_id` govern the per-branch TEST BLOBS, read locally first and
     # downloaded from HuggingFace on demand by the official evaluator.
     path: str = Field(
-        default="datasets/ProgramBench-Tests",
+        default=ProgramBenchDataset.default_path,
         description="Local directory holding the per-branch test blobs.",
     )
     hf_repo_id: str = Field(
-        default="programbench/ProgramBench-Tests",
+        default=ProgramBenchDataset.hf_repo_id,
         description="HuggingFace repo to download the test blobs from when missing locally.",
     )
 
@@ -460,16 +461,9 @@ class ProgramBenchmark(Benchmark):
         # benchmark at startup, before any session is bound, so doing it in
         # __init__ scaffolded empty directories under the unbound root.
         os.makedirs(self.base_dir, exist_ok=True)
-        # Ensure the test blobs exist locally (download from HF on first use), then
-        # point the official evaluator at them so it runs fully offline.
-        from agentevolver.benchmark.utils import ensure_dataset
-
-        blob_dir = ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
-        os.environ["PROGRAMBENCH_BLOB_DIR"] = blob_dir
-
-        from agentevolver.data.programbench import ProgramBenchDataset
-
-        dataset = ProgramBenchDataset()
+        dataset = ProgramBenchDataset(path=self.path, hf_repo_id=self.hf_repo_id)
+        # The official evaluator reads the blobs prepared by the dataset class.
+        os.environ["PROGRAMBENCH_BLOB_DIR"] = dataset.path
         self._instances = dataset.instances
         self._data_records = self._apply_slice(dataset.data)
 

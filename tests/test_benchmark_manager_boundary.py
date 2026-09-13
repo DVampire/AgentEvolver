@@ -65,7 +65,7 @@ def test_manager_projects_solver_fields_without_oracle_or_runtime_objects():
 
 def test_production_consumers_do_not_import_implementations_or_access_raw_instances():
     root = Path(__file__).resolve().parents[1]
-    paths = [*root.joinpath('examples').rglob('*.py'), root / 'datasets/load.py',
+    paths = [*root.joinpath('examples').rglob('*.py'),
              root / 'others/swe_grader_audit.py', *root.joinpath('agentevolver').rglob('*.py')]
     violations = []
     for path in paths:

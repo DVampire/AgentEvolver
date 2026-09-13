@@ -2,31 +2,24 @@ import random
 import pandas as pd
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_workspace_path
+from .types import Dataset
 
 
 @DATASET.register_module(force=True)
-class GPQADataset:
-    def __init__(self, path, name="gpqa_diamond", split="test"):
-        """
-        Initialize GPQA Dataset (HuggingFace `Idavidrein/gpqa` format — gated).
+class GPQADataset(Dataset):
+    dataset_name = 'gpqa'
+    default_path = 'datasets/GPQA'
+    hf_repo_id = 'Idavidrein/gpqa'
+    default_name = 'gpqa_diamond'
+    default_split = 'train'
+    expected_counts = {('gpqa_main', 'train'): 448}
+    note = 'Gated: requires HF_TOKEN and granted access. Expected sizes are subset-specific.'
 
-        Reads from a local snapshot directory (downloaded by `ensure_dataset`).
-        Configs: gpqa_main / gpqa_diamond / gpqa_extended / gpqa_experts. Columns:
-        Question, Correct Answer, Incorrect Answer 1/2/3, Record ID, Subdomain.
-
-        Args:
-            path: Local dataset directory (the HF snapshot).
-            name: "all" or a specific config (e.g. "gpqa_diamond").
-            split: Preferred split; falls back to whatever split exists.
-        """
+    def _load(self):
+        path, name, split = self.path, self.name, self.split
         from datasets import load_dataset, get_dataset_config_names
 
-        self.path = path
-        self.name = name
-        self.split = split
-
-        local_dir = assemble_workspace_path(path)
+        local_dir = path
         try:
             all_configs = get_dataset_config_names(local_dir)
         except Exception:
@@ -83,11 +76,7 @@ class GPQADataset:
 
         self.data = pd.DataFrame(data_rows)
 
-    def __len__(self):
-        return len(self.data)
 
-    def __getitem__(self, index):
-        return self.data.iloc[index]
 
     def get_task_description(self):
         return """

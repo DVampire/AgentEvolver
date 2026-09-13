@@ -16,7 +16,7 @@ Versioned benchmark definitions and the manager that loads and runs them.
 | `types.py` | `Benchmark`, `Task`, `Stats` contracts |
 | `context.py` | Benchmark registry and lifecycle state |
 | `server.py` | Public `benchmark_manager` facade |
-| `utils.py` | `ensure_dataset` and shared helpers |
+| `utils.py` | Shared answer normalization helpers |
 | `default/` | Built-in adapters, registered with `BENCHMARK` |
 | `harbor/` | Runs our agents on Harbor task sets, scored by Harbor |
 
@@ -121,7 +121,7 @@ evaluator statistics, distinct from the monitor's completed-attempt pass rate.
 The manager's former `get()` is removed. `get_info`, `configure`, `register`, `update`
 and `restore` return `BenchmarkInfo`, which has no `cls`, `instance` or executable code.
 Registration/version APIs are for defining extensions, not acquiring runtime instances.
-The package no longer re-exports built-in classes. `datasets/load.py` uses `catalog()`.
+The package no longer re-exports built-in classes. Dataset discovery belongs to the data registry.
 
 SWE Pro computes its grader fingerprint internally. A launcher requests evaluation
 metadata from `get_info`; on resume it passes the saved identity back to the same API.
@@ -227,7 +227,7 @@ because it is registered alongside the rest.
 
 | Name | Reason |
 |---|---|
-| `frontiercode` | Cognition does not release the tasks — they evaluate submitted models instead. No dataset, no harness, no schema to load. Listed in `datasets/load.py` so that looking for it finds this reason. |
+| `frontiercode` | Cognition does not release the tasks — they evaluate submitted models instead. No dataset, no harness, no schema to load. It has no registered data class. |
 
 ## Harbor benchmarks
 
@@ -245,25 +245,23 @@ One adapter reaches every Harbor task set, so a new Harbor benchmark needs no wo
 
 ## Data comes from `datasets/` first
 
-Every benchmark stores its data under `datasets/<name>/`. Declare an `hf_repo_id` field and
-call `ensure_dataset(<name>, self.hf_repo_id)` (in `utils.py`) from `_initialize()` before
-loading: a missing or empty `datasets/<name>/` is snapshot-downloaded from HuggingFace, and
-otherwise the local copy is used untouched. Both `hf_repo_id` and `path` stay
-config-overridable, and `HF_ENDPOINT` selects a mirror.
+Data acquisition and parsing belong to each dataset's class in the
+[`data` module](../data/README.md). A benchmark references the class's default
+path and source, then constructs it with `path=self.path`,
+`hf_repo_id=self.hf_repo_id`. Existing snapshots are read
+offline; missing files are downloaded by the data class. Absolute and
+project-relative path overrides are respected. Benchmarks do not call the Hub or
+parse snapshot files directly.
 
-Downloading first and caching after would work on a connected machine and fail on the
-cluster this runs on, which is why the order is fixed rather than a preference.
+```python
+from agentevolver.data import SWEBenchVerifiedDataset
 
-`datasets/load.py` reaches the same store directly — fetch before a run rather than
-during one, and see what is on disk:
-
-```bash
-python datasets/load.py --list
-python datasets/load.py swebench_verified
+dataset = SWEBenchVerifiedDataset(path="custom/swe")
 ```
 
-It reads each dataset's location through `benchmark_manager.catalog()`. Stating those in two
-places is how that index once named three HuggingFace repos no benchmark had ever used.
+Source, subset/split and expected-count metadata stay on the data class. Benchmark
+configuration may override source/path and evaluation selection, while grading
+policy and solver-visible task projection remain here.
 
 ## Scoring caveats worth carrying
 

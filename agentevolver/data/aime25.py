@@ -1,31 +1,24 @@
 import pandas as pd
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_workspace_path
+from .types import Dataset
 
 
 @DATASET.register_module(force=True)
-class AIME25Dataset:
-    def __init__(self, path, name="all", split="test", **kwargs):
-        """
-        Initialize AIME 2025 Dataset (HuggingFace `opencompass/AIME2025` format).
+class AIME25Dataset(Dataset):
+    dataset_name = 'aime25'
+    default_path = 'datasets/AIME25'
+    hf_repo_id = 'opencompass/AIME2025'
+    default_name = 'all'
+    default_split = 'test'
+    expected_counts = {('all', 'test'): 30}
+    note = ''
 
-        Reads from a local snapshot directory (downloaded by `ensure_dataset`).
-        The source has two configs (AIME2025-I, AIME2025-II), each with a `test`
-        split and columns: question, answer.
-
-        Args:
-            path: Local dataset directory (the HF snapshot).
-            name: "all" to load both parts, or a specific config name.
-            split: Preferred split; falls back to whatever split exists.
-        """
+    def _load(self):
+        path, name, split = self.path, self.name, self.split
         from datasets import load_dataset, get_dataset_config_names
 
-        self.path = path
-        self.name = name
-        self.split = split
-
-        local_dir = assemble_workspace_path(path)
+        local_dir = path
         try:
             all_configs = get_dataset_config_names(local_dir)
         except Exception:
@@ -57,9 +50,3 @@ class AIME25Dataset:
                 })
 
         self.data = pd.DataFrame(data_rows)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, index):
-        return self.data.iloc[index]

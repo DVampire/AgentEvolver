@@ -5,6 +5,7 @@ from pydantic import Field, ConfigDict, PrivateAttr
 
 from agentevolver.benchmark.types import Benchmark, Task, Stats
 from agentevolver.registry import BENCHMARK
+from agentevolver.data.gsm8k import GSM8kDataset
 from agentevolver.benchmark.utils import clean_text
 from agentevolver.utils import dedent
 
@@ -30,8 +31,8 @@ class GSM8kBenchmark(Benchmark):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="gsm8k", description="The name of the benchmark")
-    path: str = Field(default="datasets/gsm8k", description="The path to the benchmark dataset")
-    hf_repo_id: str = Field(default="openai/gsm8k", description="HuggingFace repo to download the dataset from when it is missing locally.")
+    path: str = Field(default=GSM8kDataset.default_path, description="The path to the benchmark dataset")
+    hf_repo_id: str = Field(default=GSM8kDataset.hf_repo_id, description="HuggingFace repo to download the dataset from when it is missing locally.")
 
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
     
@@ -41,12 +42,9 @@ class GSM8kBenchmark(Benchmark):
         super().__init__(base_dir=base_dir, start=start, end=end, **kwargs)
 
     async def _initialize(self):
-        from agentevolver.benchmark.utils import ensure_dataset
-        import os
-        ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
-        from agentevolver.data.gsm8k import GSM8kDataset
         dataset = GSM8kDataset(
             path=self.path,
+            hf_repo_id=self.hf_repo_id,
             name=self.subset if self.subset else "main",
             split=self.split
         )

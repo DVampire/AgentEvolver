@@ -1,30 +1,24 @@
 import pandas as pd
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_workspace_path
+from .types import Dataset
 
 
 @DATASET.register_module(force=True)
-class AIME24Dataset:
-    def __init__(self, path, name=None, split="test"):
-        """
-        Initialize AIME 2024 Dataset (HuggingFace `Maxwell-Jia/AIME_2024` format).
+class AIME24Dataset(Dataset):
+    dataset_name = 'aime24'
+    default_path = 'datasets/AIME24'
+    hf_repo_id = 'Maxwell-Jia/AIME_2024'
+    default_name = None
+    default_split = 'train'
+    expected_counts = {(None, 'train'): 30}
+    note = ''
 
-        Reads from a local snapshot directory (downloaded by `ensure_dataset`).
-        Columns in the source: ID, Problem, Solution, Answer (single split: train).
-
-        Args:
-            path: Local dataset directory (the HF snapshot).
-            name: Unused (single config); kept for signature compatibility.
-            split: Preferred split; falls back to whatever split exists.
-        """
+    def _load(self):
+        path, name, split = self.path, self.name, self.split
         from datasets import load_dataset
 
-        self.path = path
-        self.name = name
-        self.split = split
-
-        local_dir = assemble_workspace_path(path)
+        local_dir = path
         ds = load_dataset(local_dir)
 
         # AIME_2024 ships a single split ("train"); use the requested split if present.
@@ -49,9 +43,3 @@ class AIME24Dataset:
             })
 
         self.data = pd.DataFrame(data_rows)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, index):
-        return self.data.iloc[index]

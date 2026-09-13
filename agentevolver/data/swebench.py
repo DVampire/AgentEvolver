@@ -1,8 +1,8 @@
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_workspace_path
+from .types import Dataset
 
 
-class _SWEBenchDataset:
+class _SWEBenchDataset(Dataset):
     """Rows of a SWE-bench split, read from a local snapshot directory.
 
     Every other benchmark's data parsing lives in this module; these two were the
@@ -20,27 +20,13 @@ class _SWEBenchDataset:
     #: Set by subclasses; the split loaded when a caller names none.
     default_split = "test"
 
-    def __init__(self, path, name=None, split=None):
-        """
-        Args:
-            path: Local dataset directory (the HF snapshot under `datasets/`).
-            name: Unused; kept for signature compatibility with the other datasets.
-            split: Dataset split; defaults to the only split these publish.
-        """
+    def _load(self):
         from datasets import load_dataset
 
-        self.path = path
-        self.name = name
-        self.split = split or self.default_split
-
-        local_dir = assemble_workspace_path(path)
-        self.data = list(load_dataset(local_dir, split=self.split))
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, index):
-        return self.data[index]
+        if self.path.endswith(".parquet"):
+            self.data = list(load_dataset("parquet", data_files={self.split: self.path}, split=self.split))
+        else:
+            self.data = list(load_dataset(self.path, split=self.split))
 
 
 @DATASET.register_module(force=True)
@@ -52,6 +38,11 @@ class SWEBenchVerifiedDataset(_SWEBenchDataset):
     plus the `image` the official harness runs the instance in.
     """
 
+    dataset_name = "swebench_verified"
+    default_path = "datasets/SWE-bench_Verified"
+    hf_repo_id = "SWE-bench/SWE-bench_Verified"
+    expected_counts = {(None, "test"): 500}
+
 
 @DATASET.register_module(force=True)
 class SWEBenchProDataset(_SWEBenchDataset):
@@ -60,3 +51,8 @@ class SWEBenchProDataset(_SWEBenchDataset):
     Adds `requirements` and `interface` to the issue text, and states the hidden suite as
     explicit `fail_to_pass` / `pass_to_pass` name lists rather than an eval script.
     """
+
+    dataset_name = "swebench_pro"
+    default_path = "datasets/SWE-bench_Pro"
+    hf_repo_id = "ScaleAI/SWE-bench_Pro"
+    expected_counts = {(None, "test"): 731}

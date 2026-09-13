@@ -16,6 +16,7 @@ from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
 from agentevolver.benchmark.types import Benchmark, Task, Stats, EvaluationResult
 from agentevolver.registry import BENCHMARK
+from agentevolver.data.leetcode import LeetCodeDataset
 from agentevolver.utils import file_lock
 
 # 创建提交锁，确保浏览器操作串行化
@@ -729,7 +730,7 @@ class LeetCodeBenchmark(Benchmark):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="leetcode", description="The name of the benchmark")
-    path: str = Field(default="datasets/leetcode", description="The path to the benchmark dataset")
+    path: str = Field(default=LeetCodeDataset.default_path, description="The path to the benchmark dataset")
     hf_repo_id: Optional[str] = Field(default=None, description="HuggingFace repo to download the dataset from when missing locally. None: LeetCode data is sourced live via the browser, not HF.")
     language: str = Field(default="python3", description="Programming language for LeetCode (e.g., python3, cpp, java)")
     batch_size: int = Field(default=5, ge=1, description="Maximum concurrent evaluations grouped in one GitHub push")
@@ -778,13 +779,10 @@ class LeetCodeBenchmark(Benchmark):
         try:
             self._submitter = CodeSubmitter(headless=False, base_dir=self.base_dir)
 
-            if self.hf_repo_id:
-                from agentevolver.benchmark.utils import ensure_dataset
-                ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
-            from agentevolver.data.leetcode import LeetCodeDataset
             # 1. 加载数据集
             dataset = LeetCodeDataset(
                 path=self.path,
+                hf_repo_id=self.hf_repo_id,
                 split=self.split,
                 name=self.subset if self.subset else None
             )

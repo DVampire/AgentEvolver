@@ -9,6 +9,7 @@ from .programbench import ProgramBenchDataset
 from .swebench import SWEBenchProDataset, SWEBenchVerifiedDataset
 from .server import DataManager, data_manager
 from .factor_mining import FactorMarketDataset, MarketPanel
+from .types import Dataset, DatasetInspection
 
 __all__ = [
     'AIME24Dataset',
@@ -25,4 +26,6 @@ __all__ = [
     'data_manager',
     'FactorMarketDataset',
     'MarketPanel',
+    'Dataset',
+    'DatasetInspection',
 ]

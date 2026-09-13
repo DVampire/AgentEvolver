@@ -3,29 +3,27 @@ import json
 import pandas as pd
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_workspace_path
+from .types import Dataset
 
 
 @DATASET.register_module(force=True)
-class LeetCodeDataset:
-    def __init__(self, path, name, split, lang="python3"):
-        """
-        Initialize LeetCode Dataset.
-        
-        Args:
-            path: Base path to the dataset directory
-            name: Dataset mode (e.g., "all", or "easy", "hard" if folders are split)
-            split: Dataset split ("test", "validation", "train")
-            lang: The target programming language for the code template (default: "python3")
-                  Supported: "cpp", "java", "python3", "golang", "rust", etc.
-        """
-        self.path = path
-        self.name = name
-        self.split = split
-        self.lang = lang
+class LeetCodeDataset(Dataset):
+    dataset_name = 'leetcode'
+    default_path = 'datasets/leetcode'
+    hf_repo_id = ''
+    default_name = None
+    default_split = 'test'
+    expected_counts = {}
+    note = 'Supplied locally; no Hub source.'
 
+    def __init__(self, path=None, name=None, split=None, lang="python3", **kwargs):
+        self.lang = lang
+        super().__init__(path, name, split, **kwargs)
+
+    def _load(self):
+        path, name, split = self.path, self.name, self.split
         # 1. Path normalization
-        path = assemble_workspace_path(path)
+        path = path
         
         # 2. Load metadata file
         # Expected path structure: /data/leetcode/test/metadata.jsonl
@@ -86,9 +84,3 @@ class LeetCodeDataset:
         
         # 4. Convert to DataFrame
         self.data = pd.DataFrame(data_rows)
-    
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, index):
-        return self.data.iloc[index]

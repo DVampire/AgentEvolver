@@ -14,13 +14,14 @@ import random
 import signal
 import shutil
 import subprocess
-from typing import Dict, List, Optional, Tuple
+from typing import ClassVar, Dict, List, Optional, Tuple
 
 from pydantic import ConfigDict, Field, PrivateAttr
 
 from agentevolver.benchmark.types import Benchmark, Task, Stats, EvaluationResult
 from agentevolver.paths import P, path_manager
 from agentevolver.logger import logger
+from agentevolver.data.swebench import SWEBenchVerifiedDataset, SWEBenchProDataset
 from agentevolver.registry import BENCHMARK
 from agentevolver.utils import dedent
 from agentevolver.utils.file_utils import atomic_write_text
@@ -366,24 +367,11 @@ class SWEBenchBenchmark(Benchmark):
         super().__init__(base_dir=base_dir, start=start, end=end, **kwargs)
 
     async def _initialize(self):
-        # Built on first use rather than at construction: the registry instantiates every
-        # benchmark at startup, before a session is bound, so doing this in __init__
-        # scaffolded empty directories under the unbound root.
-        from agentevolver.benchmark.utils import ensure_dataset, _dir_has_content
-        from datasets import load_dataset
-
         os.makedirs(self.base_dir, exist_ok=True)
-        local = (
-            self.path
-            if os.path.isfile(self.path) or _dir_has_content(self.path)
-            else ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
-        )
-        if os.path.isfile(local) and local.endswith(".parquet"):
-            dataset = load_dataset("parquet", data_files={self.split: local}, split=self.split)
-        else:
-            dataset = load_dataset(local, split=self.split)
-        self._data_records = self._apply_slice(list(dataset))
-        logger.info(f"| 📚 {self.name}: {len(self._data_records)} instance(s) from {local}")
+        dataset = self._dataset_type(path=self.path, split=self.split,
+                                    hf_repo_id=self.hf_repo_id)
+        self._data_records = self._apply_slice(dataset.data)
+        logger.info(f"| 📚 {self.name}: {len(self._data_records)} instance(s) from {dataset.path}")
 
     def _task_payload(self, row: Dict) -> Dict:
         """The subset of a row a container may see — never the gold patch or the tests."""
@@ -446,8 +434,9 @@ class SWEBenchVerifiedBenchmark(SWEBenchBenchmark):
     image_workspace: str = "/testbed"
     container_workspace: str = "/testbed"
     name: str = Field(default="swebench_verified")
-    path: str = Field(default="datasets/SWE-bench_Verified")
-    hf_repo_id: str = Field(default="SWE-bench/SWE-bench_Verified")
+    _dataset_type: ClassVar[type] = SWEBenchVerifiedDataset
+    path: str = Field(default=SWEBenchVerifiedDataset.default_path)
+    hf_repo_id: str = Field(default=SWEBenchVerifiedDataset.hf_repo_id)
     # Verified carries no requirements/interface: the issue text is the whole spec.
     safe_fields: Tuple[str, ...] = Field(
         default=("instance_id", "repo", "base_commit", "problem_statement")
@@ -535,8 +524,9 @@ class SWEBenchProBenchmark(SWEBenchBenchmark):
     """SWE-bench Pro — 731 issues across Python, Go, JS and TS, with longer patches."""
 
     name: str = Field(default="swebench_pro")
-    path: str = Field(default="datasets/SWE-bench_Pro")
-    hf_repo_id: str = Field(default="ScaleAI/SWE-bench_Pro")
+    _dataset_type: ClassVar[type] = SWEBenchProDataset
+    path: str = Field(default=SWEBenchProDataset.default_path)
+    hf_repo_id: str = Field(default=SWEBenchProDataset.hf_repo_id)
 
     def _image_ref(self, row: Dict) -> str:
         return pro_image_ref(row)

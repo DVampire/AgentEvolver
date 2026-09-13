@@ -1,63 +1,44 @@
-import os
+import json
+from pathlib import Path
+
 import pandas as pd
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_workspace_path
+from .types import Dataset
 
 
 @DATASET.register_module(force=True)
-class HLEDataset:
-    def __init__(self, path, name, split):
-        """
-        Initialize Humanity's Last Exam (HLE) Dataset.
+class HLEDataset(Dataset):
+    """HLE rows and category tags, including images decoded by the HF adapter."""
 
-        Args:
-            path: Base path to the dataset directory
-            name: Dataset name / config ("default" or "all")
-            split: Dataset split ("test")
-        """
-        self.path = path
-        self.name = name
-        self.split = split
+    dataset_name = "hle"
+    default_path = "datasets/hle"
+    hf_repo_id = "cais/hle"
+    default_split = "test"
+    expected_counts = {(None, "test"): 2500}
+    note = "Gated: requires HF_TOKEN and granted access."
 
-        path = assemble_workspace_path(path)
+    def _load(self):
+        from datasets import load_dataset
 
-        parquet_dir = os.path.join(path, "data")
-        parquet_files = [
-            os.path.join(parquet_dir, f)
-            for f in os.listdir(parquet_dir)
-            if f.endswith(".parquet")
-        ]
-        if not parquet_files:
-            raise FileNotFoundError(f"No parquet files found in: {parquet_dir}")
-
-        raw_df = pd.concat([pd.read_parquet(f) for f in sorted(parquet_files)], ignore_index=True)
-
+        # The evaluator consumes raw rows so question IDs, images and answer types
+        # retain their source representation. Data consumers also get normalized rows.
+        self.records = list(load_dataset(self.path, split=self.split))
+        tags_path = Path(self.path) / "data" / "tags.json"
+        self.tags = json.loads(tags_path.read_text()) if tags_path.exists() else {}
         data_rows = []
-        for _, row in raw_df.iterrows():
+        for row in self.records:
             question = str(row.get("question", "")).strip()
             if not question:
                 continue
-
-            image_data = row.get("image")
-            has_image = isinstance(image_data, str) and image_data.strip() != ""
-
-            data_row = {
+            data_rows.append({
                 "task_id": str(row.get("id", "")),
                 "question": question,
                 "true_answer": str(row.get("answer", "")),
                 "answer_type": str(row.get("answer_type", "exactMatch")),
-                "image": image_data if has_image else None,
+                "image": row.get("image"),
                 "category": str(row.get("category", "")),
                 "raw_subject": str(row.get("raw_subject", "")),
                 "task": "HLE",
-            }
-            data_rows.append(data_row)
-
+            })
         self.data = pd.DataFrame(data_rows)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, index):
-        return self.data.iloc[index]

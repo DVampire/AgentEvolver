@@ -5,6 +5,7 @@ from pydantic import Field, ConfigDict, PrivateAttr
 
 from agentevolver.benchmark.types import Benchmark, Task, Stats
 from agentevolver.registry import BENCHMARK
+from agentevolver.data.aime24 import AIME24Dataset
 from agentevolver.benchmark.utils import clean_text
 from agentevolver.utils import dedent
 
@@ -31,8 +32,8 @@ class AIME24Benchmark(Benchmark):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="aime24", description="The name of the benchmark")
-    path: str = Field(default="datasets/AIME24", description="The path to the benchmark dataset")
-    hf_repo_id: str = Field(default="Maxwell-Jia/AIME_2024", description="HuggingFace repo to download the dataset from when it is missing locally.")
+    path: str = Field(default=AIME24Dataset.default_path, description="The path to the benchmark dataset")
+    hf_repo_id: str = Field(default=AIME24Dataset.hf_repo_id, description="HuggingFace repo to download the dataset from when it is missing locally.")
 
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
     
@@ -42,12 +43,9 @@ class AIME24Benchmark(Benchmark):
         super().__init__(base_dir=base_dir, start=start, end=end, **kwargs)
 
     async def _initialize(self):
-        from agentevolver.benchmark.utils import ensure_dataset
-        import os
-        ensure_dataset(os.path.basename(self.path), self.hf_repo_id)
-        from agentevolver.data.aime24 import AIME24Dataset
         dataset = AIME24Dataset(
             path=self.path,
+            hf_repo_id=self.hf_repo_id,
             name="all",
             split=self.split
         )

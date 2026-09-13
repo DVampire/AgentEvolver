@@ -37,19 +37,25 @@ def stub_sources(monkeypatch, tmp_path):
                  image=None, dockerhub_tag='tag',
                  patch='SECRET', test_patch='SECRET', fail_to_pass=['SECRET'])
             for i in (1, 2)]
+    from agentevolver.data import (AIME24Dataset, AIME25Dataset, GPQADataset, GSM8kDataset,
+                                   LeetCodeDataset, DeepWebDataset, ProgramBenchDataset,
+                                   HLEDataset, SWEBenchVerifiedDataset, SWEBenchProDataset, Dataset)
     frame = SimpleNamespace(to_dict=lambda **kwargs: rows)
-    for module, name in [('aime24', 'AIME24Dataset'), ('aime25', 'AIME25Dataset'),
-                         ('GPQA', 'GPQADataset'), ('gsm8k', 'GSM8kDataset'),
-                         ('leetcode', 'LeetCodeDataset')]:
-        monkeypatch.setitem(sys.modules, 'agentevolver.data.' + module,
-                            SimpleNamespace(**{name: lambda **kwargs: SimpleNamespace(data=frame)}))
-    monkeypatch.setitem(sys.modules, 'agentevolver.data.deepweb',
-                        SimpleNamespace(DeepWebDataset=lambda **kwargs: SimpleNamespace(data=rows)))
-    monkeypatch.setitem(sys.modules, 'agentevolver.data.programbench',
-                        SimpleNamespace(ProgramBenchDataset=lambda: SimpleNamespace(
-                            data=rows, instances={r['instance_id']: r for r in rows})))
-    monkeypatch.setitem(sys.modules, 'datasets', SimpleNamespace(load_dataset=lambda *a, **k: rows))
-    monkeypatch.setattr('agentevolver.benchmark.utils.ensure_dataset', lambda *a, **k: str(tmp_path))
+
+    def load_frame(self):
+        self.data = frame
+
+    def load_rows(self):
+        self.data = rows
+        self.records = rows
+        self.tags = {}
+        self.instances = {r['instance_id']: r for r in rows}
+
+    for cls in (AIME24Dataset, AIME25Dataset, GPQADataset, GSM8kDataset, LeetCodeDataset):
+        monkeypatch.setattr(cls, '_load', load_frame)
+    for cls in (DeepWebDataset, ProgramBenchDataset, HLEDataset, SWEBenchVerifiedDataset, SWEBenchProDataset):
+        monkeypatch.setattr(cls, '_load', load_rows)
+    monkeypatch.setattr(Dataset, 'download', classmethod(lambda cls, *a, **k: str(tmp_path)))
     from agentevolver.benchmark.default import leetcode
     monkeypatch.setattr(leetcode, 'CodeSubmitter', lambda **kwargs: SimpleNamespace(
         output_file=str(tmp_path / 'unused.jsonl'), initialize=AsyncMock(), close=AsyncMock(), save_result=AsyncMock()))

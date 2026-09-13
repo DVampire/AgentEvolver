@@ -1,57 +1,58 @@
 # Datasets
 
-Where the benchmarks in `agentevolver/benchmark/default/` read their data.
+Local dataset files used by benchmarks. Downloading, checking, parsing and repair
+belong to [`agentevolver/data`](../agentevolver/data/README.md); this directory
+contains no Python entry point. Data-backed benchmarks construct
+their dataset class: existing local files are reused; missing snapshots are
+downloaded into the same directory before loading:
 
-Each one resolves through `ensure_dataset`, which downloads into `datasets/<name>/` on
-first use. That makes a run self-healing, but it also means the data is invisible until
-something runs. `load.py` is the direct way to the same store:
+```python
+from agentevolver.data import SWEBenchVerifiedDataset
 
-```bash
-python datasets/load.py --list                      # what is on disk, and how much
-python datasets/load.py swebench_verified           # fetch one, before a run needs it
-python datasets/load.py --all                       # fetch everything fetchable
+dataset = SWEBenchVerifiedDataset()
+check = SWEBenchVerifiedDataset.inspect()
 ```
 
 Downloads are idempotent — a populated dataset is reported and left alone. That skip is
 deliberate (fetching first and caching after fails on the cluster this runs on), but it
 means a download interrupted partway never heals itself: the directory reads as present
-forever. `--repair` re-checks one against its source and fills in what is missing. It is
+forever. The class's `download(repair=True)` re-checks its source and fills in missing files. It is
 idempotent in result but not in transfer: files are skipped only when the cache metadata
 beside them can vouch for them, so a directory populated by other means is fetched again.
 
-```bash
-python datasets/load.py deepweb --repair
+```python
+from agentevolver.data import DeepWebDataset
+
+DeepWebDataset.download(repair=True)
 ```
 
 ## What is here
 
 | Benchmark | Directory | Instances | Source |
 |---|---|---|---|
-| `aime24` | `AIME24/` | 30 | `HuggingFaceH4/aime_2024` |
-| `aime25` | `AIME25/` | 30 | `yentinglin/aime_2025` |
-| `gpqa` | `GPQA/` | 448 | `Idavidrein/gpqa` — gated, needs `HF_TOKEN` |
+| `aime24` | `AIME24/` | 30 | `Maxwell-Jia/AIME_2024` |
+| `aime25` | `AIME25/` | 30 | `opencompass/AIME2025` |
+| `gpqa` | `GPQA/` | 448 (main subset) | `Idavidrein/gpqa` — gated, needs `HF_TOKEN` |
 | `gsm8k` | `gsm8k/` | 1319 | `openai/gsm8k` (config `main`) |
 | `hle` | `hle/` | 2500 | `cais/hle` — gated, needs `HF_TOKEN` |
-| `deepweb` | `deepweb-bench/` | 100 | ships with the repository |
+| `deepweb` | `deepweb-bench/` | 100 | `deepweb-bench-anon/deepweb-bench` |
 | `programbench` | `ProgramBench-Tests/` | 201 | `programbench/ProgramBench-Tests` (~8 GB) |
 | `swebench_verified` | `SWE-bench_Verified/` | 500 | `SWE-bench/SWE-bench_Verified` |
 | `swebench_pro` | `SWE-bench_Pro/` | 731 | `ScaleAI/SWE-bench_Pro` |
 
-`load.py --list` compares what it finds against these counts and says so when they
-disagree, because a short split is what a partial download looks like — and it would
-otherwise surface much later as a benchmark quietly scoring fewer instances than the
-number it is being compared against.
+Each class's `inspect()` returns local presence, parsed count, expected count for
+the selected subset/split, and parsing errors. Callers can compare these before
+running a benchmark so a partial dataset is not silently treated as complete.
 
 ## FrontierCode
 
 Not here, and not fetchable. Cognition states they "don't currently plan to release the
 tasks publicly to avoid contamination", and evaluate submitted models themselves; Epoch
 AI's page sources its numbers from Cognition's leaderboard rather than running the set.
-There is no dataset, no harness, and no schema to write a loader against. It is listed in
-`load.py` so that looking for it finds this reason rather than nothing.
+There is no dataset, no harness, and no schema to write a loader against. It has no registered data class.
 
 ## Gated datasets
 
 `gpqa` and `hle` are gated on HuggingFace: both need `HF_TOKEN` in `.env` **and** access
-granted to that token's account on the dataset page. Without it the download fails and
-`load.py` reports the dataset as missing, which is what it is.
+granted to that token's account on the dataset page. Without it the download fails;
+the data class's `inspect()` still reports the local state without downloading.

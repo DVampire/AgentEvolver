@@ -1,31 +1,24 @@
 import pandas as pd
 
 from agentevolver.registry import DATASET
-from agentevolver.utils import assemble_workspace_path
+from .types import Dataset
 
 
 @DATASET.register_module(force=True)
-class GSM8kDataset:
-    def __init__(self, path, name="main", split="test"):
-        """
-        Initialize GSM8k Dataset (HuggingFace `openai/gsm8k` format).
+class GSM8kDataset(Dataset):
+    dataset_name = 'gsm8k'
+    default_path = 'datasets/gsm8k'
+    hf_repo_id = 'openai/gsm8k'
+    default_name = 'main'
+    default_split = 'test'
+    expected_counts = {('main', 'test'): 1319}
+    note = ''
 
-        Reads from a local snapshot directory (downloaded by `ensure_dataset`).
-        Configs: "main" / "socratic"; splits: train / test. Columns: question, answer
-        (answer ends with a "#### <final>" line).
-
-        Args:
-            path: Local dataset directory (the HF snapshot).
-            name: "all", "main", or "socratic".
-            split: Dataset split ("test" / "train").
-        """
+    def _load(self):
+        path, name, split = self.path, self.name, self.split
         from datasets import load_dataset, get_dataset_config_names
 
-        self.path = path
-        self.name = name
-        self.split = split
-
-        local_dir = assemble_workspace_path(path)
+        local_dir = path
         all_subsets = ["main", "socratic"]
         if name == "all":
             target_subsets = all_subsets
@@ -67,11 +60,7 @@ class GSM8kDataset:
 
         self.data = pd.DataFrame(data_rows)
 
-    def __len__(self):
-        return len(self.data)
 
-    def __getitem__(self, index):
-        return self.data.iloc[index]
 
     def get_task_description(self):
         return "You will answer a mathemetical reasoning question. Think step by step. The last line of your response should be of the following format: 'Answer: $VALUE' where VALUE is a numerical value."
