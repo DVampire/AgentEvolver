@@ -62,6 +62,7 @@ def test_task_and_study_are_staged_with_runtime_policy_from_config(tmp_path):
     assert manifest["subscribers"] == []
     assert manifest["research"]["holdout_control"] == "protocol_only"
     assert manifest["run_policy"]["require_completion_outcome"] is True
+    assert manifest["run_policy"]["self_review"] is False
     # Configuration is applied to runtime input, never written into the product document/view.
     assert "runtime-input-manifest" not in Path(metadata["task_view"]).read_text()
     staged = [f"/session/inputs/{i}_{path.name}" for i, path in enumerate(inputs)]
@@ -97,6 +98,64 @@ def test_prompt_modules_and_domain_skill_can_be_loaded(tmp_path):
         for link in re.findall(r"\]\(([^)]+)\)", source.read_text()):
             if "://" not in link and not link.startswith("#"):
                 assert (source.parent / link.split("#", 1)[0]).is_file(), (source, link)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("browser_review", [False, True])
+async def test_research_release_without_browser_preserves_preview_and_explicit_review_gates(monkeypatch, browser_review):
+    from agentevolver.deploy import deployment_manager
+    from agentevolver.deploy.types import SiteRecord, SiteStatus
+    from agentevolver.runtime import kernel
+    from agentevolver.task import self_review
+    from agentevolver.tool.default.deployment.deploy import DeployTool
+
+    cfg = Config.fromfile(str(DEFAULT_CONFIG))
+    manifest = cfg.task_manifest_defaults.to_dict()
+    if browser_review:
+        # An explicit browser requirement still needs real interaction receipts.
+        manifest["run_policy"]["self_review"] = True
+    ctx = SimpleNamespace(id="research-release", extra={"task_manifest": manifest, "task_state": {}})
+    revision = "results-1"
+    deployed = []
+
+    async def deploy(request):
+        deployed.append(request)
+        return SiteRecord(site_id=request.site_id, runtime="static", status=SiteStatus.RUNNING,
+                          url=f"http://site.test/s/{request.site_id}/", source_revision=revision,
+                          release_number=1)
+
+    async def stop(site_id):
+        pass
+
+    async def publish(*args, **kwargs):
+        return 0, "research-release::deployment.ready", SimpleNamespace(id="release-event")
+
+    monkeypatch.setattr(deployment_manager, "deploy", deploy)
+    monkeypatch.setattr(deployment_manager, "source_revision", lambda req: revision)
+    monkeypatch.setattr(deployment_manager, "stop_site", stop)
+    monkeypatch.setattr(kernel, "publish_scoped", publish)
+    tool = DeployTool()
+    args = dict(site_id="research", content="<main>Research report</main>", ctx=ctx)
+    missing = await tool(action="deploy", **args)
+    assert not missing.success and "preview" in missing.message
+    assert not deployed
+    preview = await tool(action="preview", **args)
+    assert preview.success, preview.message
+    revision = "results-2"
+    changed = await tool(action="deploy", **args)
+    assert not changed.success and "changed after preview" in changed.message
+    assert len(deployed) == 1
+    revision = "results-1"
+    release = await tool(action="deploy", **args)
+    if browser_review:
+        assert not release.success and "native browser" in release.message
+        assert len(deployed) == 1
+    else:
+        assert release.success, release.message
+        status = deployment_manager.release_status(ctx)
+        assert status["ready"] and status["completed_releases"] == 1
+        assert self_review.status(ctx) == {"required": False, "ready": True}
+        assert len(deployed) == 2
 
 
 @pytest.mark.asyncio

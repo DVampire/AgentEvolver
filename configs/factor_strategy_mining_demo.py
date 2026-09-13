@@ -28,7 +28,9 @@ benchmark_names = []
 task_manifest_defaults = dict(
     subscribers=[],
     deployment=dict(required_releases=1, topic="deployment.ready"),
-    run_policy=dict(self_review=True, require_completion_outcome=True),
+    # self_review gates publication on native browser receipts. This researcher
+    # verifies saved JSON and HTTP delivery; it has no browser environment.
+    run_policy=dict(self_review=False, require_completion_outcome=True),
     evolution=dict(require_verified_improvement=True,
                    required_module_counts=dict(connector=1, environment=2)),
     research=dict(holdout_control="protocol_only"),

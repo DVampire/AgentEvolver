@@ -63,6 +63,11 @@ A report correction needs a new report version, not a repeat of unchanged numeri
 Keep mutable drafting separate from published versions. An archived unimplemented proposal
 also needs a new version when implementation is added.
 
+The live index, catalog and resource counters are navigation/status records, not immutable
+evidence. Reviews and reports bind completed results and definitions directly; if a catalog
+is needed as evidence, first save and hash an immutable snapshot. Publish the report, then
+update the live catalog. A later index or cost update does not invalidate numerical evidence.
+
 Lookup: index → catalog/current round → compact JSON summary → selected evaluation/spec.
 Read returned paths and selected fields rather than guessing filenames or dumping all curves.
 HTML/JS visualize these same results for people; the Agent analyzes JSON without a browser.
@@ -315,10 +320,16 @@ prove exhaustive search. One failed tweak alone is weak evidence, but unused bud
 merely conceivable idea is not an obligation to continue. Explain deviations from exploration
 guidance and remaining limitations; do not generate filler to meet counts.
 
-Stopping research does not relax numerical qualification, conceal failed tests or turn a
-broken pipeline into a negative market result. Finish the report and preserve available
-results before a planned completion. Keep research completeness, strategy support, strict
+After deciding to close research, record that decision once and finish the bounded
+[report delivery](reports.md#artifact-and-numerical-acceptance). Reopen research only when
+new evidence undermines the conclusion or a useful new experiment is justified. Report
+styling, live cost updates and a deployment prerequisite do not require another evaluation
+round or repeated whole-project audits. Diagnose an unchanged publication blocker once;
+repair its actual cause, or record the unavailable prerequisite and the usable preview.
+
+Stopping does not relax numerical qualification, conceal failed tests or turn a broken
+pipeline into a negative market result. Keep research completeness, strategy support, strict
 source qualification, delivery and capability evolution separate. Use done_tool's required
-outcome: a justified negative conclusion can be completed; unfinished work is resource_limited
-or blocked only with its actual cause. A report release or context compaction is not a stop
-condition, and tests must not be reused until a winner appears.
+outcome: a justified negative conclusion can be completed; unfinished delivery remains
+blocked with its actual cause. Use resource_limited only for an actual resource limit.
+Neither a report release nor context compaction determines whether research should stop.

@@ -58,8 +58,10 @@ Examples illustrate syntax, not a required factor inventory. Each new mechanism 
 a hypothesis, role, falsification condition and a counted evaluation. Expressions may use
 numeric literals, declared field names, listed function calls, parentheses, `+ - * / **`,
 unary `+ -`, and single comparisons `< <= == != >= >`. Calls accept the documented positional
-or keyword arguments. Use `and_op`, `or_op`, `not_op`, `if_else` for vector logic. Attributes,
-subscripts, imports, comprehensions, arbitrary calls and Python `and/or` are rejected.
+or keyword arguments. Use `and_op`, `or_op`, `not_op`, `if_else` for vector logic, e.g.
+`or_op(close > delay(close, 1), volume > ts_mean(volume, 20))`. Python `and/or/not` and
+bitwise `& | ~` are unsupported. Attributes, subscripts, imports, comprehensions and
+arbitrary calls are rejected. Check the whole proposed spec before archiving versions.
 Windows/lags are literal integers; negative lags are forbidden. There is no implicit eval.
 
 Compilation writes the requested Python module and a sibling `_factor_ops_<hash>.py`.

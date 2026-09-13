@@ -347,43 +347,48 @@ and compact comparison tables. Keep factor/strategy identity and train/validatio
 semantics consistent throughout. Color is supplemented by names, line styles and signs.
 Avoid decorative plots, tiny axes, giant empty cards and repeated tiles without analysis.
 
-The page must work with keyboard focus, anchor links, chart tooltips, reset controls and
-responsive layouts. Tables may scroll horizontally within a labelled region on narrow
-screens; headings, conclusions and primary controls must not clip. Printable/exportable
-HTML contains both stages and definitions without visiting hidden tabs. Preserve already
-visible findings while loading secondary artifacts; show useful retry/error states.
+Reuse the supplied responsive renderer, keyboard controls, chart tooltips and inline
+details. Keep both stages in one document, with local assets and readable tables. Modify
+the renderer when a concrete presentation requirement or defect warrants it, then check
+that change; building a new frontend validation framework is not a research deliverable.
 
-Publish via deploy_tool and use the returned gateway URL. Serve the HTML shell, CSS, JS
-and its matching JSON snapshot together. Publish when a useful joint research milestone
-or final report is available, not once per numerical evaluation. If data access fails before research begins, preserve a concise
-status/evidence view and the specific missing prerequisite, with research acceptance unmet.
-Do useful engine work; do not spend the remaining budget decorating a synthetic substitute.
+Publish useful milestones and the final report via deploy_tool using its returned gateway
+URL. Serve the shell, assets and matching JSON together. If acquisition fails, preserve
+the specific missing prerequisite and any real progress; an elaborate synthetic dashboard
+does not resolve missing research data.
 
 ## Artifact and numerical acceptance
 
-Use Bash/file access and HTTP checks. No browser environment, frontend-testing skill or
-screenshots are required. These checks establish data integrity and delivery, not visual
-or interactive browser validation.
+Use Bash/file access and HTTP checks; no browser environment, frontend-testing skill or
+screenshots are required. Numerical verification remains necessary. These checks establish
+data integrity and delivery, not visual or interactive browser validation.
 
-1. Reopen the saved JSON and reconcile candidate counts, IDs, roles, bindings and statuses
-   with the round catalog. Inspect evaluated/rejected candidates when present and verify
-   failed or unexecuted items are not presented as passing numerical results.
-2. Reconcile factor metrics, policy metrics, comparison deltas and representative chart
-   points with hash-bound environment outputs under the same scope, units and versions.
-   Run the report adapter check; undefined values retain their reasons and zero stays zero.
-3. Check saved HTML references local CSS/JS and that JS loads the matching analysis.json.
-   Keep both stage containers in one document. Numerical data never needs to appear in the
-   HTML source; conclusions, tables and charts are rendered from the same JSON values.
-4. Verify test-labelled metrics/series are absent before reveal and the frozen test's
-   failures/nulls remain after reveal. Inspect source scope as well as labels; the adapter
-   does not independently enforce the author's access to holdout data.
-5. Verify required output files and permitted links, then request the deployed HTML, JS,
-   CSS and JSON over HTTP at the exact returned URL. Compare served JSON with the intended
-   saved snapshot; HTTP 200 for an empty shell alone does not verify report delivery.
-6. Save the check receipt and report ID/path in the round index. A correction creates a new
-   report version; unchanged numerical results do not need another backtest. Apply relevant
-   checks after changes and reuse still-valid evidence. No mandatory visual-polish loop.
+1. **Adapt real results.** Reuse a reader for the actual versioned engine schema. Reconcile
+   IDs, counts, roles, bindings and statuses with the completed round. Run the adapter check;
+   compare metrics, deltas and representative chart points to hash-bound outputs in the same
+   scope and units. Preserve null reasons and zero values. Invalid/unexecuted results must
+   remain explicit; an all-null series need not produce a chart. Check source scope as well
+   as labels: sealed test data stays absent, and revealed failures remain visible.
+2. **Freeze a report snapshot.** Finish the adapter in a staging directory, then archive the
+   report ID with its inputs, source hashes and assets. Bind immutable results or catalog
+   snapshots, never the live catalog/index. Mark resource totals with their observation time;
+   subsequent cost changes do not require rebuilding the report. Keep report receipts and
+   the live catalog outside the frozen source directory.
+3. **Check local delivery.** Verify shell/JS references resolve to the matching local JSON
+   and assets. Reuse the supplied renderer's valid checks. If renderer code changes, check
+   JS syntax and the affected behavior on representative records; do not invent an exhaustive
+   per-candidate DOM audit or require numeric data in the HTML shell.
+4. **Preview and release.** Call deploy_tool action=preview first. Request the returned HTML,
+   JS, CSS and JSON over HTTP, comparing served JSON with the saved snapshot. HTTP 200 for
+   an empty shell alone is insufficient. Keep source files unchanged, then action=deploy;
+   verify the release URL and matching snapshot. A changed source needs a new preview.
+   If an unchanged runtime gate requires an unavailable browser, diagnose the configuration
+   conflict; do not fabricate receipts, keep retrying or create report versions to evade it.
+5. **Record and finish.** Save the delivery receipt and report ID/path in the index. Correct
+   an archived report with a new version only when its content must change. Reuse valid
+   numerical/renderer evidence and check only affected dependencies. Once delivery passes,
+   return to the recorded completion decision instead of another presentation review.
 
-The rendered page remains attractive through the canonical theme, legible charts and a
-consistent template. Keep numerical correctness, file/delivery checks, unverified browser
-behavior and strategy support separate. A successful render cannot make a strategy pass.
+Keep numerical correctness, delivery, unverified browser behavior and strategy support
+separate. Report an unresolved release prerequisite honestly; a preview is not a release,
+and a successful render cannot make a strategy pass.

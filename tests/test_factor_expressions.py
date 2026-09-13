@@ -116,6 +116,34 @@ def test_invalid_or_lookahead_expressions_fail_before_emission(expression, tmp_p
     assert not (tmp_path / "bad.py").exists()
 
 
+@pytest.mark.parametrize("expression, replacement", [
+    ("(close > 2) | (volume > 25)", "or_op(close > 2, volume > 25)"),
+    ("(close > 2) & (volume > 25)", "and_op(close > 2, volume > 25)"),
+    ("~(close > 2)", "not_op(close > 2)"),
+    ("close > 2 or volume > 25", "or_op(close > 2, volume > 25)"),
+    ("close > 2 and volume > 25", "and_op(close > 2, volume > 25)"),
+    ("not (close > 2)", "not_op(close > 2)"),
+])
+def test_batch_logic_error_identifies_factor_and_recovers_without_partial_files(tmp_path, bars, expression, replacement):
+    path = tmp_path / "compiled" / "library.py"
+    definitions = {"F_valid@1": "close", "F_logic@2": expression}
+    with pytest.raises(ValueError) as failed:
+        compiler.compile_factors(definitions, path)
+    assert "F_logic@2" in str(failed.value)
+    assert replacement.split("(")[0] in str(failed.value)
+    assert not path.parent.exists()
+    definitions["F_logic@2"] = replacement
+    compiler.compile_factors(definitions, path)
+    actual = load(path).compute_factors(bars)["F_logic@2"]
+    if replacement.startswith("or_op"):
+        expected = (bars.close > 2) | (bars.volume > 25)
+    elif replacement.startswith("and_op"):
+        expected = (bars.close > 2) & (bars.volume > 25)
+    else:
+        expected = ~(bars.close > 2)
+    np.testing.assert_array_equal(actual, expected.astype(float))
+
+
 def test_every_registered_operator_is_causal_and_matches_generated_code(bars, tmp_path):
     # This traverses the supported surface using real calculations, not mocked dispatch.
     expressions = {}

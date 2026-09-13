@@ -306,8 +306,13 @@ input IDs and contribution-check result IDs; fail candidate eligibility if these
 Each result exposes schema version, candidate/version/parents, exact factor bindings, data,
 engine/metric/fitted identities, fold scope, measured metrics, failed criteria and series
 paths. Export common summary fields for every candidate so the Agent can compare a batch
-from JSON without guessing field names. Keep selection/pool membership separate from
-numerical evaluation: diagnostic consumers can be measured before qualification.
+from JSON without guessing field names. At the pilot, verify the actual saved JSON against
+the declared schema, including list/object shapes, nulls and invalid/empty results. Build one
+reader/adapter for that schema and reuse it for batch summaries and reports; a report-schema
+field name is not proof that the numerical engine uses the same name. Contract violations
+need an explicit error with its artifact path, not an empty-dictionary or zero-score fallback.
+Keep selection/pool membership separate from numerical evaluation: diagnostic consumers
+can be measured before qualification.
 
 Before scaling, exercise both native interfaces with independent jobs and record worker start/end
 times proving actual computation overlaps, not just queued submissions. Compare the same uncached

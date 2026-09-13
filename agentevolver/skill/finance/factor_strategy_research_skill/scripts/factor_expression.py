@@ -23,6 +23,11 @@ ops = load_runtime(RUNTIME_PATH)
 ALIASES = {"ts_delay": "delay", "ts_delta": "delta", "ts_std_dev": "ts_stddev", "ts_arg_min": "ts_argmin"}
 BINARY = {ast.Add: "add", ast.Sub: "subtract", ast.Mult: "multiply", ast.Div: "divide", ast.Pow: "power"}
 COMPARE = {ast.Lt: "lt", ast.LtE: "le", ast.Gt: "gt", ast.GtE: "ge", ast.Eq: "eq", ast.NotEq: "ne"}
+LOGIC_HINTS = {
+    ast.BitAnd: "and_op(left, right)", ast.And: "and_op(left, right)",
+    ast.BitOr: "or_op(left, right)", ast.Or: "or_op(left, right)",
+    ast.Invert: "not_op(value)", ast.Not: "not_op(value)",
+}
 
 
 def expression_ir(expression, fields):
@@ -97,6 +102,8 @@ def expression_ir(expression, fields):
             return {"literal": node.value, "fields": set(), "lookback": 0}
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
             return operator("reverse", [node.operand], [], depth) if isinstance(node.op, ast.USub) else parse(node.operand, depth + 1)
+        if type(getattr(node, "op", None)) in LOGIC_HINTS:
+            raise ValueError(f"Use {LOGIC_HINTS[type(node.op)]} for vector logic; Python boolean/bitwise syntax is unsupported")
         if isinstance(node, ast.BinOp) and type(node.op) in BINARY:
             return operator(BINARY[type(node.op)], [node.left, node.right], [], depth)
         if isinstance(node, ast.Compare) and len(node.ops) == 1 and type(node.ops[0]) in COMPARE:
@@ -128,7 +135,12 @@ def prepare(expressions, fields=ops.DEFAULT_FIELDS):
             or any(not isinstance(f, str) or not f.isidentifier() or keyword.iskeyword(f)
                    or f.startswith("_") or f in ops.OPERATORS for f in fields)):
         raise ValueError("fields must be unique public identifiers, separate from operator names")
-    trees = {name: expression_ir(expression, fields) for name, expression in expressions.items()}
+    trees = {}
+    for name, expression in expressions.items():
+        try:
+            trees[name] = expression_ir(expression, fields)
+        except ValueError as error:
+            raise ValueError(f"Factor {name!r}: {error}") from error
     metadata = {"schema": 1, "operator_version": ops.VERSION,
                 "runtime_sha256": hashlib.sha256(RUNTIME_PATH.read_bytes()).hexdigest(),
                 "required_fields": sorted(set().union(*(ir["fields"] for ir in trees.values()))),

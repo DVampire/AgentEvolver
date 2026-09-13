@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
 description: "Research stocks with one agent: acquire auditable data, jointly discover and refine diverse factors and multi-factor strategies, and publish one continuous evidence report."
-version: "1.8.1"
+version: "1.8.2"
 type: worker
 category: finance
 requirements: [cpu]
@@ -49,7 +49,8 @@ paths from the skill loader; keep detailed records on disk, not duplicated in li
    objective is supported, or repeated ineffective improvements and low expected value
    justify a negative/inconclusive conclusion. No universal patience/count/return gate or
    proof of exhaustive search is required. Use the workflow's final-test and completion
-   rules; publish the saved results as one continuous HTML/JS report.
+   rules; publish the saved results as one continuous HTML/JS report. Delivery uses file
+   and HTTP checks, without browser acceptance or an open-ended presentation review.
 
 Formal candidates combine at least two distinct, actually used factors. The Agent chooses
 how many and how they interact; unused inputs and duplicate formulas do not establish a
