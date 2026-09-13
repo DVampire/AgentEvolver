@@ -14,6 +14,9 @@ sub-agents) / `orchestrator` (a capability coordination method). Add optional
 subdirectories only when needed: scripts/ (Python run via bash_tool), references/
 (docs the agent reads), resources/ (runtime data), examples/ (examples.md; only if
 scripts/ exists). Keep this body under ~500 lines; push detail into references/.
+Skill loading is concurrent already; do not add scheduling flags to this manifest.
+When this method runs parallel scripts, document the executing Tool/Environment's
+worker bound, independent output paths, dependency ordering and cancellation contract.
 -->
 
 # Skill Title

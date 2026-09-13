@@ -29,4 +29,11 @@ Returns: a screenshot (base64 PNG), the viewport, and any detected CSP violation
 Input format: a JSON string with action-specific parameters.
 Example: {"name": "render_artifact", "args": {"html": "<!doctype html><html><head><style>body{font-family:sans-serif}</style></head><body><h1>Hello</h1></body></html>"}}
 
+## Concurrent use
+
+Different Agents render in separate browser contexts/pages (and private sandbox bindings
+when enabled). One owner's render, interaction and screenshot operations serialize to keep
+the observed image consistent. Initialization is guarded and failed acquisition releases
+partial resources. Owner cleanup leaves other owners' pages available.
+
 </environment_artifact_renderer>

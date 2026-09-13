@@ -19,8 +19,8 @@ An environment is a stateful Python class over the shared base `Environment` tha
 
 The Manager adapts calls to the shared runtime. The default is one stateful instance per
 runtime owner; initialization is lazy and owner exit releases its binding. Keep application
-state on the instance. For parallel evaluation inside one owner, declare resource claims
-and a bounded `max_concurrency` as described in [conventions](../conventions.md).
+state on the instance. For independent evaluations, choose call-scoped state and a bounded `max_concurrency`
+as described below.
 Do not add an environment-specific runtime or assume separate connections isolate shared files.
 
 ## Layout
@@ -38,55 +38,68 @@ An environment is a directory: `{extension_root}/environment/{name}/`
 
 ## Writing a new one
 
-### The Python class
+### Business methods and state
+
+Adapt [template.py](template.py). Implement `@environment_manager.action` methods, optional
+`initialize`/`cleanup`, and compact `get_state(ctx=None, **kwargs)`. Declare accurate effects
+(`read_only`, `destructive`, `idempotent`, `open_world`) and file permissions using
+`permission_op`/`permission_target` when relevant. Return failure for failed operations.
+
+Keep mutable state on `self`. The default `state_scope="owner"` creates one instance per
+Agent and orders its actions; different Agents can overlap. No manual owner map or lock is
+needed. Initialize resources lazily and clean them up in the lifecycle methods. Images belong
+in the action result and the manifest's Vision section.
+
+### Independent evaluations
+
+Use `state_scope="call"` when every request can reconstruct its inputs from arguments and
+immutable artifacts. The Manager creates a fresh instance, runs the operation and cleans it
+before releasing its worker slot and file claims, including on failure/cancellation. Nothing
+on `self` persists to the next call; status and results must come from durable artifacts.
 
 ```python
-from typing import Any, Dict
-from pydantic import ConfigDict, Field
-from agentevolver.environment.server import environment_manager
-from agentevolver.environment.types import Environment
-from agentevolver.registry import ENVIRONMENT
+# Fields on your Environment subclass:
+state_scope: str = "call"
+max_concurrency: int = 4
+concurrency_group: str = "study-evaluation"  # same capacity across cooperating engines
 
-@ENVIRONMENT.register_module(force=True)
-class MyEnvironment(Environment):
-    """One-line purpose."""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-
-    name: str = Field(default="my_environment")
-    description: str = Field(default="Echo input for a bounded interface example.")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    enable_evolving: bool = Field(default=True)
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    async def initialize(self) -> None:
-        """Set up resources (called once before first use)."""
-
-    async def cleanup(self) -> None:
-        """Tear down resources."""
-
-    async def get_state(self, ctx=None, **kwargs):
-        return {"success": True, "state": "Ready"}
-
-    @environment_manager.action(
-        name="do_thing",
-        description="What this action does and when to use it.",
-        read_only=True, destructive=False, idempotent=True, open_world=False,
-    )
-    async def do_thing(self, ctx, some_arg: str, **kwargs):
-        """Echo without changing state; adjust declarations when adapting this example."""
-        return {"success": True, "message": some_arg}
+@environment_manager.action(
+    name="evaluate", read_only=False, destructive=False, open_world=False,
+    read_paths=("input_path",), write_paths=("output_dir",),
+    permission_op="write", permission_target="output_dir",
+)
+def evaluate(self, input_path: str, output_dir: str, ctx=None):
+    # Implement one trial here; the Manager handles execution and lifecycle.
+    # Paths arrive absolute. Read pinned inputs and write this trial's results.
+    ...
 ```
 
-- Each callable is an **action** declared with `@environment_manager.action(name=..., description=...)`.
-- Declare actual `read_only`, `destructive`, `idempotent` and `open_world` effects on each
-  action. Missing declarations can block execution under the permission policy; registration alone does not make an action
-  executable. Local state mutation is not read-only. For file operations, also declare
-  `permission_op` and `permission_target` naming the target path argument. Keep external writes
-  and destructive behavior accurately declared rather than changing flags to bypass a refusal.
-- State lives on the instance (that's what makes an environment stateful, unlike a stateless tool). Key per-session state by `ctx` when the environment serves concurrent sessions.
-- If the environment returns images (screenshots), it's a **vision** environment — say so in ENVIRONMENT.md so the agent knows to inspect the image.
+`read_paths`/`write_paths` name path arguments, not literal paths. Manager normalizes them
+against the workspace before permissions, then admits shared readers and exclusive writers.
+Different output directories overlap; identical or ancestor/descendant paths serialize across
+entities. These declarations coordinate access, not permission grants or a security sandbox.
+Use absolute external paths or the configured workspace, not process-wide `chdir`.
+
+One trial is one native action. Submit independent calls through the Manager; Agent batch
+admission derives from `state_scope`/`concurrent`, with no duplicate `parallel_safe` flag.
+The shared limit covers active native actions including initialization and cleanup. Do not
+create a full worker pool inside every action or hold a permit while waiting for child calls
+in the same group. Short status actions may declare `capacity_exempt=True`; never exempt
+computation. Observations for call-scoped environments must stay cheap and read artifacts.
+
+Use async methods for async I/O. A synchronous `def` runs in a framework thread and
+cancellation joins it before releasing resources. This prevents event-loop blocking, but
+GIL-bound calculations need a process backend for CPU speedup; hard cancellation likewise
+requires an owned process, not a Python thread. Background work uses existing job facilities,
+not fire-and-forget tasks. Keep restart/status behavior and per-trial error receipts explicit.
+
+Advanced shared backends can declare `concurrent=True` and optional `resource_claims`.
+Multiplexed adapters may retain `managed_sessions=True` and `close_session(owner_id)`;
+ordinary environments do not need these. Shared remote state still requires its own
+transaction/isolation contract. Do not infer isolation from separate connections alone.
+
+Verify through the Manager: two owners, independent same-owner evaluations, conflicting
+outputs, cancellation/cleanup, partial failure and uncached serial/concurrent parity.
 
 ### The ENVIRONMENT.md manifest
 
@@ -157,7 +170,7 @@ required state; do not mistake successful registration for a verified upgrade.
 
 Call `inspect_tool` (`capability_type="environment"`) on the target for its registry facts (registered / enable_evolving / version / file paths). Check the type-specific requirements:
 1. **Interface Compliance** — `@ENVIRONMENT.register_module`, subclass `Environment`, actions declared with `@environment_manager.action`, `initialize`/`cleanup` present where resources are used.
-2. **Code Quality** — valid, clean, proper resource handling and error handling; per-session state correctly keyed by `ctx`.
+2. **Code Quality** — valid, clean, proper resource handling and error handling; owner-bound state or correctly keyed multiplexed sessions.
 3. **Manifest Quality** — ENVIRONMENT.md has the required frontmatter and a body documenting State / (Vision) / every Action.
 4. **Integration** — `inspect_tool` (`capability_type="environment"`) shows it registered.
 5. **Execution** — initialize the candidate, run representative native actions and inspect

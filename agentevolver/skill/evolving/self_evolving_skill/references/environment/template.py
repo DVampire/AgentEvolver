@@ -5,19 +5,10 @@ implement the actions. Pair it with an `ENVIRONMENT.md` manifest (see
 `template-manifest.md`) in the same directory, plus an `__init__.py` that
 imports the class so it registers on load.
 
-Key points:
-- Each callable is an action declared with `@environment_manager.action(name=..., description=...)`.
-- Runtime creates an owner-scoped instance by default. State lives on that instance;
-  do not add a second owner map or a private scheduler. Shared backends require explicit
-  resource claims and a tested isolation contract; see ../conventions.md.
-- For independent evaluations, override resource_claims(ctx, arguments, operation),
-  declare immutable input/shared and trial output/exclusive ResourceClaims, and bound
-  max_concurrency. Set parallel_safe=True on the action only after verifying overlap.
-  The default below deliberately serializes one owner's mutable key/value state.
-- Start heavy resources (servers, browsers) in `initialize()`, not `__init__`; release
-  them in `cleanup()`.
-- If an action returns an image (e.g. a base64 screenshot), it's a *vision* environment —
-  say so in ENVIRONMENT.md.
+The Manager gives each Agent its own instance and orders that Agent's actions.
+Write business methods and keep state on self; no owner maps, locks or runtime calls.
+Start resources in initialize and release them in cleanup. For independent evaluations,
+see environment.md: state_scope="call" gives each invocation a fresh instance.
 """
 
 from typing import Any, Dict, Optional
@@ -38,7 +29,7 @@ class MyEnvironment(Environment):
 
     name: str = Field(default="my_environment")
     description: str = Field(default="What the environment is and when to use it.")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default={})
     enable_evolving: bool = Field(default=True)
 
     def __init__(self, base_dir: Optional[str] = None, **kwargs):

@@ -83,4 +83,12 @@ gives one answer to "what is still outstanding".
 | `close` | End it, and everything it started. |
 | `list` | Every terminal you opened, with its label and whether it is alive. |
 
+## Concurrent use
+
+Terminals are owned by the Agent that opened them. Independent terminal IDs can run in
+parallel, including within one Agent; foreground sends to the same PTY serialize. A background
+send retains its backend waiter until it settles or is cancelled. `signal` and `close`
+can interrupt a waiting send. Foreign terminal IDs are refused, and owner exit closes its
+PTYs. Commands that share files must still coordinate their writes.
+
 </environment_terminal>

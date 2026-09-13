@@ -69,4 +69,12 @@ finished stops collecting.
 | `wait` | Hold one tool call until jobs finish or continuable agents become idle after a requested turn; returns early on failure/timeout |
 | `kill` | Stop it. Output printed before the kill is kept |
 
+## Concurrent use
+
+Jobs are owned by their creating Agent. Waiting for one job does not lock its status or
+stop controls. Stopping a job joins its termination and leaves unrelated jobs running.
+An Agent may access its own jobs and child Agent processes, plus explicitly granted process
+handles; a shared root session alone does not grant sibling access. Background numerical
+workers still need a shared runtime capacity limit; the job registry itself is not a CPU pool.
+
 </environment_job>

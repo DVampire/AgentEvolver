@@ -245,6 +245,12 @@ async def _make_api_request(endpoint: str, method: str = "GET", **kwargs) -> dic
 
 ## Async/Await Best Practices
 
+AgentEvolver admission is configured in CONNECTOR.md; follow
+[Concurrent requests](connector.md#concurrent-requests) when adapting these examples.
+Keep request data local, cancel/join owned work, and use cross-process coordination for
+shared files: separate stdio invocations can run separate server processes. An async
+signature alone does not make blocking SDK calls or mutable global clients reentrant.
+
 Always use async/await for network requests and I/O operations:
 
 ```python

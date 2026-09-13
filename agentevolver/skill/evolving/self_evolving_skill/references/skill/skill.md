@@ -15,6 +15,11 @@ triggered at all.
 
 ## Layout
 
+Skill loading already permits concurrent instruction reads. A generated SKILL.md needs no
+`concurrent` flag or private scheduler. When its method fans out work, describe dependencies,
+output ownership and the executing Tool/Environment's worker limit; scripts must obey that
+backend's cancellation and state contract. Independent skill calls alone do not run their scripts.
+
 - Skills live in `{extension_root}/skill/{skill_name}/` (generated skills) or `agentevolver/skill/default/{skill_name}/` (defaults). Use `snake_case` names ending in `_skill`.
 - A skill directory:
   ```

@@ -4,7 +4,7 @@ Copy to `{extension_root}/agent/{name}.py`, rename the class, and implement the 
 A procedural agent has NO HTML prompt: it does not reason step by step. Use it when the
 task is a fixed pipeline — read → process → report — that you can express in code and
 that calls capabilities directly. If the task needs step-by-step reasoning or a dynamic
-choice of tool, use `tool_calling_agent_template.py` instead.
+choice of tool, use `template.py` instead.
 
 There is no separate procedural *type*. The kernel never looks inside `__call__`, so an
 agent whose main function is code just overrides that one method, and is dispatched,
@@ -15,6 +15,12 @@ Do NOT write an `__init__` that forwards defaults. The base takes `base_dir` and
 keyword arguments to pydantic; an earlier version of this template defaulted every field
 to `None` and passed those through, and pydantic rejects `None` for a `str`, so every
 agent generated from it failed to construct.
+
+Dispatch through the Agent Manager/Kernel, which owns child instances, budgets and
+cancellation. Independent capability calls may be awaited together through their Managers
+with the current ctx; ordered dependencies below remain sequential. Sharing ctx preserves
+one interactive environment session, so its conflicting operations still serialize.
+Do not bypass dispatch by gathering calls on a shared Agent object or inventing owner IDs.
 """
 
 from typing import Any, Dict, List, Optional

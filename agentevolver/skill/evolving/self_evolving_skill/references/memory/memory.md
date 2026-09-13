@@ -47,6 +47,7 @@ class MyMemory(TieredMemory):
 
     def _render(self, state: _SessionState) -> str:
         """Return the text injected into the agent's next prompt."""
+        # Pure projection of this session; do not mutate state or save it on self.
         return "\n".join(r.as_line() for r in state.recent)
 ```
 
@@ -54,6 +55,17 @@ class MyMemory(TieredMemory):
 - `enable_evolving: bool = Field(default=True)` — required, or the component cannot be optimized later.
 - Keep `_render` **bounded**: an unbounded transcript defeats the purpose and will blow the context window. Prefer selecting/summarizing over dumping.
 - `prompt_readable = False` only if `get()` returns markup rather than prompt-ready text.
+
+### Concurrency and retained state
+
+A rendering-only TieredMemory subclass inherits its session locks and revision-checked
+compaction. Keep `_render(state)` synchronous and free of side effects. Do not override
+ingestion/compaction just to add `gather`, or retain a global `current_session`/`current_state`.
+If replacing storage or transactions, re-evaluate the inherited `concurrent=True`: either
+preserve equivalent atomic updates or set it false until isolation is established. Use
+framework-supplied session IDs and paths; do not merge parallel Agent histories by root ID.
+Exercise native ingestion/retrieval for two sessions and ingest new events while compaction
+is pending; the final state must retain those events without leaking between sessions.
 
 ### Verify and register
 

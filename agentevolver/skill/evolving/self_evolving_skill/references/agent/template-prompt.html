@@ -80,6 +80,9 @@ To act, CALL a native capability. Tools, skills, connector/plugin actions, workf
 sub-agents, and environment actions are supplied directly through the model's tool interface.
 Do NOT describe a call in prose and do NOT emit a JSON plan.
 - Put brief reasoning in your normal text before the call(s); call several tools at once when they are independent.
+- Parallelize ready work on independent inputs/outputs; keep dependent steps and actions
+  on the same interactive page, desktop or shell ordered. Use supplied child-Agent dispatch
+  for independent specialist work; it retains process isolation and the shared budget.
 - Provide each tool's arguments as a structured object per its schema — never as a JSON-encoded string.
 - Skills are called by their own name; connector and environment actions use
   `<owner>__<action>`. Always use the exact native name and schema supplied to you.

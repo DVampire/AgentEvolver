@@ -84,4 +84,12 @@ Input format: a JSON string with action-specific parameters.
 Example: {"name": "goto", "args": {"url": "https://example.com"}}
 Example: {"name": "click", "args": {"x": 480, "y": 320, "button": "left"}}
 
+## Concurrent use
+
+Each Agent owns its pages, cookies, storage and command variables. Separate owners can
+work concurrently; actions and observations of one owner's interactive browser serialize.
+VNC mode additionally uses a separate browser/container per owner so live desktop views
+do not mix. Headless mode shares the browser process with private BrowserContexts.
+Use the environment Manager; direct service calls bypass this admission contract.
+
 </environment_browser>

@@ -19,6 +19,11 @@ of one contract, and the prose is the copy that goes stale. Document each argume
 
 `__call__` must return a `Response` — return `success=False` on expected failures rather
 than raising, and do heavyweight imports inside `__call__` to avoid cycles.
+
+This pure example is reentrant and read-only. Reassess both declarations when replacing
+it: `concurrent` controls instance admission; `mutates` describes effects to the Agent.
+Keep call-local data and ctx in local variables. For shared outputs or clients, keep the
+base exclusion or implement resource_claims(ctx, arguments); see ../conventions.md.
 """
 
 from typing import Any, Dict, List
@@ -49,12 +54,11 @@ class MyTool(Tool):
     description: str = _DESCRIPTION
     guidance: str = _GUIDANCE
     examples: List[str] = _EXAMPLES
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    metadata: Dict[str, Any] = Field(default={})
+    concurrent: bool = True
+    mutates: bool = False
     # enable_evolving=True marks the tool as evolvable (the current agent may optimize it through self_evolving_skill).
     enable_evolving: bool = Field(default=True, description="Whether the tool may be evolved (self-optimized)")
-
-    def __init__(self, enable_evolving: bool = True, **kwargs):
-        super().__init__(enable_evolving=enable_evolving, **kwargs)
 
     async def __call__(self, arg_name: str, **kwargs) -> Response:
         """Do the work.

@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
 description: Generate, optimize, repair and evaluate reusable framework capabilities across tool, skill, agent/prompt, connector, environment, memory, workflow and plugin. Use after a concrete improvement opportunity, component failure, first correction or discovery, expected reuse, or an explicit component request. Owns the shared inspect → author → register → evaluate → repair or adopt → use loop. Repeated failure is not required. NOT for ordinary edits to the user's deliverable.
-version: 2.7.1
+version: 2.9.0
 license: N/A
 type: [orchestrator]
 category: meta
@@ -27,6 +27,8 @@ Read [conventions.md](references/conventions.md) before authoring or evaluating 
 It defines staging, registration, failure recovery and the evidence/decision contract for
 every family. Then read only the selected type's reference and relevant template. Those
 references add artifact and execution requirements; they do not replace the common loop.
+The conventions' concurrency table specifies each family's admission and state ownership;
+adapt the selected template to it instead of adding a private scheduler or enabling every flag.
 
 | Family | Useful form | Type contract |
 |---|---|---|

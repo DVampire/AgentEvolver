@@ -206,7 +206,7 @@ class SSHEnvironment(Environment):
                     connect_timeout=target.connect_timeout,
                     known_hosts_strict=target.known_hosts_strict,
                 ),
-                f"{key[0]}:{key[1]}",
+                f"{self.backend_key(key[0])}:{key[1]}",
             )
             try:
                 await service.start()
@@ -216,8 +216,12 @@ class SSHEnvironment(Environment):
             self._services[key] = service
         return service
 
+    def _owner_prefix(self, owner: str) -> str:
+        suffix = self.backend_key(owner)[:24]
+        return f"{_JOB_PREFIX}-{suffix}-"
+
     def _job_prefix(self, ctx) -> str:
-        return f"{_JOB_PREFIX}-{self._session_id(ctx)[:8]}-"
+        return self._owner_prefix(self._session_id(ctx))
 
     async def initialize(self) -> None:
         names = self._hosts.names()
@@ -242,6 +246,7 @@ class SSHEnvironment(Environment):
         if errors:
             raise ExceptionGroup("SSH session cleanup failed", errors)
         self._active.pop(session_id, None)
+        self._last.pop(session_id, None)
 
     async def close_host(self, name: str) -> None:
         """Drop every session's connection to one machine, and any view it was serving.
@@ -250,36 +255,41 @@ class SSHEnvironment(Environment):
         reachable that the user has just said they are done with, and the next action
         naming it would quietly succeed against a host no longer in the list.
         """
+        errors = []
         for key in [k for k in self._services if k[1] == name]:
-            service = self._services.pop(key)
+            service = self._services[key]
             try:
                 await self._stop_view(service, key)
-            except Exception as exc:  # noqa: BLE001 — teardown must not raise
-                logger.warning(f"| ⚠️ SSH view teardown: {exc}")
-            try:
                 await service.stop()
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(f"| ⚠️ SSH teardown: {exc}")
+                self._services.pop(key, None)
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise ExceptionGroup("SSH host cleanup failed", errors)
         for sid, active in list(self._active.items()):
             if active == name:
                 del self._active[sid]
 
     async def _stop_view(self, service: SSHService, key: tuple) -> None:
-        """Take the view's server down with the session that asked for it.
+        """Close only this owner's cached view/shell servers; retain failed cleanup."""
+        from agentevolver.port import port_manager
+        keys = set(self._view_ports) | set(self._view_remote_ports) | set(self._view_urls)
+        for view_key in keys:
+            if view_key[:2] != key:
+                continue
+            name = f"{self._owner_prefix(key[0])}{view_key[2]}"
+            result = await service.run_raw(
+                f"tmux kill-session -t {shlex.quote(name + '-srv')} 2>/dev/null; "
+                f"tmux kill-session -t {shlex.quote(name)} 2>/dev/null; true", timeout=20)
+            if not result.ok:
+                raise RuntimeError(f"Could not stop SSH view {name}: {result.stderr}")
+            port_manager.unregister(self._view_port_name(view_key))
+            self._view_remote_ports.pop(view_key, None)
+            self._view_urls.pop(view_key, None)
+            self._view_ports.pop(view_key, None)
 
-        Launched jobs deliberately outlive the conversation — that is what `launch` is for.
-        The view is not work, it is plumbing, and leaving it behind would accumulate an
-        idle ttyd and two tmux sessions on the far host for every run ever started.
-        """
-        self._view_remote_ports.pop(key, None)
-        self._view_urls.pop(key, None)
-        self._view_ports.pop(key, None)
-        view = f"{_JOB_PREFIX}-{key[0][:8]}-view"
-        await service.run_raw(
-            f"tmux kill-session -t {shlex.quote(view + '-srv')} 2>/dev/null; "
-            f"tmux kill-session -t {shlex.quote(view)} 2>/dev/null; true",
-            timeout=20,
-        )
+    def _view_port_name(self, key: tuple) -> str:
+        return f"ssh-{key[2]}:{key[0]}:{key[1]}:{self.backend_key(key[0])}"
 
     def _record(self, ctx, command: str, result: SSHResult) -> None:
         self._last[self._session_id(ctx)] = {
@@ -1091,7 +1101,7 @@ tmux list-sessions -F '#{{session_name}}' 2>/dev/null | grep {shlex.quote(self._
 
         local_port = self._view_ports.get(key)
         if local_port is None:
-            record = port_manager.register(f"ssh-{type}:{key[0]}:{key[1]}", type="host")
+            record = port_manager.register(self._view_port_name(key), type="host")
             local_port = record["port"]
             self._view_ports[key] = local_port
 

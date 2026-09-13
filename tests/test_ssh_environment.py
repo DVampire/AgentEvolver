@@ -365,15 +365,16 @@ class TestActions:
         """
         env, fake = env_and_service
         ctx = _Ctx("sess1234abcd")
+        prefix = env._job_prefix(ctx)
         fake.default = SSHResult(
             exit_code=0,
-            stdout=("ae-sess1234-train\t0\nae-other999-train\t0\nclaude\t1\neval\t0\n__LOGS__\n"),
+            stdout=(f"{prefix}train\t0\nae-other999-train\t0\nclaude\t1\neval\t0\n__LOGS__\n"),
         )
         result = await env.jobs(ctx=ctx)
         listed = {job["job"] for job in result["jobs"]}
         assert listed == {"train"}
         sessions = {job.get("session") for job in result["jobs"]}
-        assert sessions == {"ae-sess1234-train"}
+        assert sessions == {f"{prefix}train"}
 
     @pytest.mark.asyncio
     async def test_two_sessions_get_different_job_prefixes(self, env_and_service) -> None:
@@ -864,7 +865,8 @@ class TestConfig:
 
         prompt = Path("agentevolver/prompt/default/ssh_agent.html").read_text()
         assert "{{ workspace_root }}" in prompt
-        assert "remote_host__download" in prompt
+        assert "Download requested remote deliverables into the local workspace" in prompt
+        assert 'src="../module/environment_context.html"' in prompt
 
     def test_the_task_document_ships_with_the_runner(self) -> None:
         """The runner's default task must exist, or a bare `run_ssh_agent.py` fails."""
@@ -1005,7 +1007,7 @@ class TestEnvironmentInstruction:
 
         full = await environment_manager.get_instruction(level="full")
         assert rule in full  # a sentence only the md has
-        assert "upload" in full and "download" in full
+        assert "remote_host__upload" in full and "remote_host__download" in full
 
         brief = await environment_manager.get_instruction(level="brief")
         assert "ENVIRONMENT.md" in brief  # where the rest is

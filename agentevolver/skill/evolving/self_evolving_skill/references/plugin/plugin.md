@@ -8,7 +8,7 @@ staging, registration, failure repair, evaluation, adoption and actual consumer 
 
 A plugin is a Python package, `{extension_root}/plugin/{name}/`, that groups related
 operations against one external service behind a single roster entry. The framework's own
-live under `agentevolver/plugins/default/{name}/` — 88 of them, which is where to look for
+live under `agentevolver/plugins/default/{name}/`, which is where to look for
 a worked example rather than guessing.
 
 ```
@@ -57,6 +57,22 @@ plugin.
 read includes — put what an operator must set there, not in the body prose.
 
 ## Writing a new one
+
+### Concurrency and client state
+
+Declare concurrency on the `Plugin` class, not on a `PluginTool` or as invented manifest
+fields. Defaults are `concurrent: bool = False` and `state_scope: str = "shared"`.
+For a mutable per-caller client, select `state_scope="owner"` and implement
+`initialize()`/`cleanup()`; the Manager creates and closes each owner's binding.
+For a verified reentrant client, `concurrent=True` allows its bound tools to overlap.
+The same `concurrent` declaration permits Agent batches; no second flag is needed.
+Override `resource_claims(ctx, arguments)` when only some resources may overlap.
+
+Use `self.owner.context` inside a bound PluginTool for the trusted current invocation context;
+never assign `self.ctx` or `self.owner.ctx` on shared objects. Keep responses, request
+arguments and mutable client options local. Copied builtins may use blocking SDKs: adapt
+that I/O before claiming concurrency. Verify two owners, initialization once per binding,
+and cleanup of one without closing the other's client.
 
 Copy the closest available built-in rather than starting from an empty directory: pick one
 with the same shape (a search plugin for a search plugin, a vector store for a vector store)

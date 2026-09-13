@@ -35,7 +35,9 @@ paths from the skill loader; keep detailed records on disk, not duplicated in li
    Maintain concise `index.md` progress and links; put detailed designs and reviews on disk.
 2. Download train/validation data through a native Connector, reopen and verify the local
    snapshot. Disclose authorized public-data limitations; defer final-test acquisition.
-3. Build both numerical Environments with configurable bounded concurrency. Before scaling,
+3. Build both numerical Environments with configurable bounded concurrency and one shared
+   worker allowance. Prefer call-scoped trial instances with declared input/output paths;
+   let Manager/Runtime handle admission and lifecycle. Before scaling,
    verify actual overlapping execution and serial/concurrent result parity through their native
    interfaces, alongside causality/accounting fixtures and a representative real-data pilot.
    Add finalization checks before final-test access; render reports at research milestones.

@@ -36,9 +36,27 @@ The [shared runtime contract](../../docs/proposals/runtime-concurrency.md) cover
 component families. Environment Managers adapt actions, state and live views to `Kernel.calls`.
 A new Environment gets one instance per owner; same-owner actions serialize and independent
 owners may overlap. Keep state on the instance and implement `initialize()` / `cleanup()`.
-Only backends that already multiplex sessions use `managed_sessions=True` and
-`close_session(owner_id)`. Resource claims coordinate shared files or services; tested
-reentrant evaluators may declare `concurrent=True` and a bounded `max_concurrency`.
+For independent evaluations within one Agent, set `state_scope="call"`: Manager creates a
+fresh instance per invocation and cleans it before releasing admission. Declare input/output
+argument names with `@action(read_paths=("input_path",), write_paths=("output_dir",))`;
+the framework normalizes paths before permission checks and orders conflicting access.
+Use a shared `concurrency_group` and the same `max_concurrency` across cooperating engines.
+Agent batch admission derives from these fields; a second `parallel_safe` flag is unnecessary.
+
+Business methods may be async (I/O) or synchronous (framework thread offload). Cancelling a
+synchronous call joins its thread before releasing resources. Threads do not accelerate
+GIL-bound Python or provide forced termination; use owned processes when required. One trial
+per native action avoids hidden nested pools. Short status operations may declare
+`capacity_exempt=True`; claims and permissions still apply.
+
+Existing multiplexed backends may retain `managed_sessions=True` / `close_session(owner_id)`.
+Advanced shared resources can override `resource_claims`; ordinary templates need neither
+owner maps nor locks nor direct Runtime calls. Legacy `parallel_safe` declarations remain
+supported. Background jobs use the existing job lifecycle, not an entity-local scheduler.
+
+Interactive builtins serialize within their mutable session. Terminal permits different
+PTYs to overlap, and Job keeps wait separate from stop controls. Browser VNC uses the
+default owner-instance binding because an entire desktop cannot be isolated by cookies.
 
 Use an explicit context for a persistent interactive session. Manager execution derives
 ownership from its Agent process or that context's ID. Bare instance methods are internal

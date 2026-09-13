@@ -86,4 +86,11 @@ The only way to let the screen catch up. GUI applications animate, load and repa
 acting on a half-drawn window is how a correct sequence of actions produces a wrong
 result.
 
+## Concurrent use
+
+Each Agent and configured environment instance gets a private desktop container. Different
+owners may act concurrently; inputs and screenshots on one desktop serialize. Do not
+parallelize gestures against the same desktop. Owner exit releases only its own container;
+shared mounted files still require coordinated writes.
+
 </environment_computer>

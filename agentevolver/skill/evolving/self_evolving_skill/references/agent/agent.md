@@ -40,6 +40,16 @@ Start from the bundled templates instead of writing from scratch:
 
 Read the relevant template(s) first, copy, then adapt. They already encode the current architecture and the template-variable contract.
 
+### Concurrency and ownership
+
+The Agent Manager dispatches through the existing Kernel: independent children get fresh
+instances/processes/contexts and share the parent's budget. Resident turns stay sequential.
+Keep mutable state on the dispatched instance, use supplied capability grants and
+`max_concurrent_subagents`, and leave scheduling/cancellation to the runtime. Procedural
+agents may await independent Manager calls together with their current `ctx`; the runtime
+still orders conflicting environment operations. Never call one Agent object's loop twice
+concurrently or rewrite `process_pid` to obtain another session.
+
 ### Choosing the agent type
 
 - **Tool-calling agent** (default): reasons and acts step by step, choosing tools/skills dynamically each step. Use it for open-ended or multi-step tasks. It has a Python class + an HTML prompt, and it **inherits** the base loop. → `template.py` + `template-prompt.html`.

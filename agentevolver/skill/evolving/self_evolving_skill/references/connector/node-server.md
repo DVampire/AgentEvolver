@@ -8,6 +8,12 @@ This document provides Node/TypeScript-specific best practices and examples for 
 
 ## Quick Reference
 
+When used through AgentEvolver, apply the CONNECTOR.md
+[concurrency contract](connector.md#concurrent-requests) to these examples. Keep request
+and response state local; an async handler must not block the event loop with CPU work or
+synchronous I/O. Isolate shared outputs across server processes and join cancelled work.
+Changing transport or adding a Promise does not establish reentrancy.
+
 ### Key Imports
 ```typescript
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

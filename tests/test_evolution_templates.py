@@ -13,8 +13,12 @@ errors before it ever ran a step. Nothing caught it because no test had ever imp
 template; they were treated as prose.
 """
 
+import asyncio
 import importlib.util
+import runpy
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -118,3 +122,106 @@ async def test_environment_template_state_actions_and_effects():
     finally:
         await env.cleanup()
     assert (await env.get_state(ctx=None))["state"]["keys"] == []
+
+
+@pytest.mark.asyncio
+async def test_pure_tool_template_runs_through_manager_without_instance_exclusion(tmp_path, monkeypatch):
+    from agentevolver.permission import permission_manager
+    from agentevolver.registry import TOOL
+    from agentevolver.runtime.invocation import CURRENT_RUNTIME, InvocationRuntime, ResourceClaim
+    from agentevolver.tool.context import ToolContextManager
+    from agentevolver.tool.types import ToolContext
+
+    monkeypatch.setattr(TOOL, "_module_dict", dict(TOOL._module_dict))
+    tool = _load(TEMPLATE_ROOT / "self_evolving_skill/references/tool/template.py").MyTool()
+    manager = ToolContextManager(base_dir=str(tmp_path), default_timeout=2)
+    monkeypatch.setattr(manager, "get_info", AsyncMock(return_value=SimpleNamespace(version="1", instance=tool)))
+    runtime = InvocationRuntime()
+    token = CURRENT_RUNTIME.set(runtime)
+    entered, finish = asyncio.Event(), asyncio.Event()
+    context = ToolContext(id="template-reader", workspace_root=str(tmp_path))
+    async def hold_instance():
+        entered.set()
+        await finish.wait()
+    held = asyncio.create_task(runtime.invoke("tool", "held", hold_instance, ctx=context,
+        claims=(ResourceClaim(f"tool:{tool.name}"),)))
+    await entered.wait()
+    try:
+        # The real pipeline verifies the example's read effects and runtime admission.
+        with permission_manager.scope("read_only", workspace=str(tmp_path)):
+            results = await asyncio.wait_for(asyncio.gather(*(
+                manager(tool.name, {"arg_name": value}, ctx=context) for value in ("alpha", "beta"))), 1)
+        assert all(result.success for result in results), [r.message for r in results]
+        assert [r.data["arg_name"] for r in results] == ["alpha", "beta"]
+        assert not held.done()
+    finally:
+        finish.set()
+        await held
+        await runtime.release()
+        CURRENT_RUNTIME.reset(token)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("concurrent", [False, True])
+async def test_connector_template_validation_and_native_admission_agree(tmp_path, monkeypatch, concurrent):
+    from agentevolver.connector.context import ConnectorContextManager
+    from agentevolver.response.types import Response
+    from agentevolver.runtime.invocation import CURRENT_RUNTIME, InvocationRuntime
+
+    root = TEMPLATE_ROOT / "self_evolving_skill"
+    manifest = (root / "references/connector/template-manifest.md").read_text()
+    if concurrent:
+        manifest = manifest.replace("concurrent: false", "concurrent: true")
+    directory = tmp_path / "my"
+    directory.mkdir()
+    (directory / "CONNECTOR.md").write_text(manifest)
+    validate = runpy.run_path(str(root / "scripts/connector/validate.py"))["validate_connector"]
+    valid, message = validate(directory)
+    assert valid, message
+    manager = ConnectorContextManager(base_dir=str(tmp_path), extension_connectors_dir=str(tmp_path / "extensions"))
+    cfg = manager._parse_connector_dir(directory)
+    assert cfg.metadata["concurrent"] is concurrent
+    from agentevolver.runtime.invocation import allows_parallel
+    assert allows_parallel("connector", cfg) is concurrent
+    # A local read-only transport fixture replaces the external example server.
+    cfg.action_annotations = {name: {"readOnlyHint": True} for name in cfg.actions}
+    manager._connector_configs[cfg.name] = cfg
+    active = peak = 0
+    async def request(config, action, arguments):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        try:
+            await asyncio.sleep(.02)
+            return Response(type="tool", success=True, message=arguments["query"])
+        finally:
+            active -= 1
+    monkeypatch.setattr(manager, "_invoke_mcp", request)
+    runtime = InvocationRuntime()
+    token = CURRENT_RUNTIME.set(runtime)
+    try:
+        results = await asyncio.gather(*(manager(cfg.name, "search_items", {"query": value},
+            ctx=SimpleNamespace(id="template-study", extra={"process_pid": value})) for value in ("a", "b")))
+        assert all(r.success for r in results), [r.message for r in results]
+        assert [r.message for r in results] == ["a", "b"]
+        assert peak == (2 if concurrent else 1)
+    finally:
+        await runtime.release()
+        CURRENT_RUNTIME.reset(token)
+
+
+@pytest.mark.parametrize("replacement", [
+    'concurrent: "true"', 'concurrent: 1', 'parallel_safe: "false"',
+    'metadata:\n  concurrent: true', 'metadata:\n  parallel_safe: true',
+])
+def test_connector_validator_rejects_inoperative_concurrency_settings(tmp_path, replacement):
+    root = TEMPLATE_ROOT / "self_evolving_skill"
+    text = (root / "references/connector/template-manifest.md").read_text()
+    # Remove the inline comment, which is not valid inside a replaced nested mapping.
+    lines = text.splitlines()
+    key = "concurrent:"
+    text = "\n".join(replacement if line.startswith(key) else line for line in lines)
+    (tmp_path / "CONNECTOR.md").write_text(text)
+    validate = runpy.run_path(str(root / "scripts/connector/validate.py"))["validate_connector"]
+    valid, message = validate(tmp_path)
+    assert not valid and ("YAML boolean" in message or "top level" in message)

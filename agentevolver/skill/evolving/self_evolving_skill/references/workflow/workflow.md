@@ -37,6 +37,17 @@ program, not an Agent subtype and not a substitute for a Skill's domain instruct
 - Set node `timeout` and retry/backoff policy where an external capability can stall.
 - Compile the file, then register it with `adoption_tool` (`action="register"`, `module="workflow"`, `artifact_path` = its absolute path).
 
+### Concurrent graph execution
+
+Set root `max-concurrency` and bounded `concurrency` on `parallel`/`map` nodes to match
+available resources. Fan out only after inputs are ready, and join before dependent steps.
+Workflow scheduling limits ready graph work; it does not make an environment reentrant or
+increase its worker allowance. Direct Environment nodes retain the workflow's caller context,
+so the same shell/page still serializes. Agent nodes dispatch separate child processes with
+their own context and budget lineage; do not duplicate that dispatch in embedded code.
+Give independent outputs distinct paths and test overlapping branches plus a cancelled or
+failed branch. Check that successful sibling outputs survive and cancellation joins work.
+
 ## Improving an existing one
 
 Locate the Workflow-owned defect in the run trace before changing orchestration. Preserve

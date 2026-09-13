@@ -101,15 +101,19 @@ class ComputerEnvironment(Environment):
                 if self.persist_profile:
                     # Backend volume support required; carried as a hint for the sandbox.
                     acquire_kwargs["env"] = {"AGENTEVOLVER_PROFILE": self.persist_profile}
-                sandbox = await sandbox_manager.acquire("computer", reuse_key=sid, **acquire_kwargs)
-                await sandbox.start_desktop(width=self.width, height=self.height)
+                sandbox = await sandbox_manager.acquire("computer", reuse_key=self.backend_key(sid), **acquire_kwargs)
+                try:
+                    await sandbox.start_desktop(width=self.width, height=self.height)
+                except BaseException:
+                    await sandbox_manager.release("computer", reuse_key=self.backend_key(sid))
+                    raise
                 self._sandboxes[sid] = sandbox
             return sandbox
 
     async def close_session(self, session_id: str) -> None:
         """Release this session's desktop container."""
         from agentevolver.sandbox import sandbox_manager
-        await sandbox_manager.release("computer", reuse_key=session_id)
+        await sandbox_manager.release("computer", reuse_key=self.backend_key(session_id))
         self._sandboxes.pop(session_id, None)
 
     async def _xdotool(self, ctx, args: str) -> None:

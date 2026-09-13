@@ -180,7 +180,8 @@ These are interface requirements, not a fixed action-name list. Follow the real 
 base class and action decorator. Inspect the current transport contract and return compact
 results as a Response or mapping with explicit success/message/data. A JSON string containing
 an error does not mark the native call failed. Include manifests,
-session-scoped state keyed by context and cleanup. Do not assume a registered environment is
+owner-bound instance state and cleanup (or explicitly multiplexed state keyed by
+`owner_id(ctx)`, never just the root session). Do not assume a registered environment is
 in env_names: the demo permits evolved Environment actions through the shared capability router.
 
 Bind immutable snapshot, protocol and engine versions before evaluating. For deferred test
@@ -226,20 +227,43 @@ factor scores or admission receipts. Wait only for actual inputs, including trai
 directions/transforms when a policy uses them. A pending diagnostic is not a missing feature.
 
 Schedule ready strategies and independent factor computations concurrently with bounded workers;
-do not impose a whole-batch barrier when only a strategy's own inputs are needed. The current
-action executor admits known independent batches, including actions marked parallel_safe;
-runtime resource claims and max_concurrency still apply. max_actions is not a worker count.
-Evaluation writes artifacts, so keep its write annotation truthful. Give each Environment a
-nonblocking submission operation returning a durable job ID/status path, with status/result
-operations: sequential submissions can start overlapping workers for both responsibilities.
-Use the job facility or an explicitly owned worker lifecycle with cancellation/cleanup, bounded
-resources, trial receipts and restart detection. Status calls must not repeat submission.
-Within a batch, use a bounded execution backend suited to the workload; CPU work must not block
-the async dispatcher. Keep shared inputs read-only and fitted state/results isolated per evaluation.
-Expose worker limits and size a shared research concurrency budget to available CPU/memory;
-account for both environments and nested numerical-library threads to avoid oversubscription.
-Join completed diagnostics, backtests and contribution comparisons for qualification, pool
-selection and report export. Missing evidence remains pending, never implicitly passed.
+do not impose a whole-batch barrier when only a strategy's own inputs are needed. Join completed
+diagnostics, backtests and contribution comparisons for qualification, pool selection and
+report export. Missing evidence remains pending, never implicitly passed.
+
+Use the framework's independent-evaluation contract from the self-evolving Environment
+reference. Prefer **one native action per trial**, `state_scope="call"`, and the same
+study-scoped `concurrency_group`/`max_concurrency` across both engines. Each call reconstructs
+its binding from a saved immutable study/snapshot specification. Manager/Runtime supplies a
+fresh instance, admission, cancellation and cleanup; generated business code needs no runtime
+imports, owner maps, semaphores or worker registration. Agent batch admission follows the
+same declaration, without a duplicate `parallel_safe` flag. Submit ready independent Manager
+calls together; `max_actions` is not a worker limit.
+
+Declare `read_paths` for input artifact arguments and `write_paths` for the trial output
+directory. Inputs may be shared; every simulation owns its fitted state, arrays, positions,
+cash, RNG and output directory. Avoid global seeds, mutable cached DataFrames, process-wide
+`chdir` and a shared `current_trial`. Publish fitted/features artifacts atomically before
+consumers run. Keep status/receipts durable because call-scoped instances do not persist.
+
+Write async methods for async I/O, or synchronous evaluation methods for Manager thread
+offload. Threads keep the dispatcher responsive but do not speed up GIL-bound Python or
+support forced termination. Use owned processes for those workloads, with explicit join and
+cleanup; do not hide a new full-size pool inside each trial. Account for numerical-library
+threads in the shared CPU/memory allowance. For unusually long work, use existing job
+facilities and return status/result paths; status must not resubmit a completed trial.
+
+Final-test access/exposure still requires a single durable atomic ledger across both engines.
+Use a database transaction or declare the shared ledger argument in `write_paths` for all
+access-changing operations. Call isolation is not a substitute for this protocol. Unchanged
+submissions can return a cached result; changed submissions cannot acquire extra attempts.
+Exploratory calls must not write that ledger. Short status operations may use
+`capacity_exempt=True`, with independent control paths, so full capacity does not block them.
+
+Verify within-engine and cross-engine overlap against uncached serial results, including
+partial failure, duplicate identities, cancellation and owner exit. Cancelling one trial
+must preserve unrelated successful results. Performance claims require measured worker
+intervals; declaring async methods alone is not evidence.
 
 Persist each trial start before execution, then its terminal status, semantic cache key,
 result ID/path/hash and actionable error. Successful candidates survive a partially failing

@@ -28,6 +28,12 @@ The seams that exist for a reason, when a declaration truly is not enough:
     on_step()             advice for this step — prefer middleware in `loop/guards.py`
     finalize()            shape the final Response
     on_start/on_land/on_exit/on_suspend/on_resume    runtime phases
+
+Concurrency comes from Agent Manager -> Kernel dispatch: every child gets its own
+instance/process/context; turns of a resident process remain ordered. Do not add a
+`concurrent` flag or a scheduler here, or call a shared Agent instance concurrently.
+Use granted child dispatch and the inherited max_concurrent_subagents budget when needed.
+Keep mutable run state on the instance, not in class/global variables.
 """
 
 from typing import Any, Dict

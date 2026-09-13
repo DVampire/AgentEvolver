@@ -7,35 +7,35 @@ No family has a separate generation, optimization, evaluation or failure-complet
 
 ## Concurrent execution
 
-Call through the component Manager. The existing runtime owns admission, resource claims,
-call ownership and cancellation; do not implement another scheduler in a generated entity.
-Agent creation stays with kernel dispatch, and Workflow retains its dependency graph.
+Implement business methods and call capabilities through their Managers. Manager/Runtime
+owns admission, instance binding, cancellation and cleanup. Ordinary generated code needs no
+runtime imports, owner maps, semaphores or private scheduler. Declare effects honestly;
+concurrent writes are still writes. Keep request data local rather than on shared objects.
 
-- Stateless Tool/Plugin implementations may declare `concurrent = True` after checking
-  reentrancy. Tools default to exclusive instance access; known filesystem effects also
-  claim the workspace. Override `resource_claims(ctx, arguments)` for finer verified scopes.
-- Environment defaults to a separate instance per runtime owner. Keep state on that instance;
-  `initialize`/`cleanup` run with its binding. Existing multiplexed backends alone use
-  `managed_sessions = True` and implement `close_session(owner_id)`.
-- Independent Environment evaluations may set `max_concurrency` and override
-  `resource_claims(ctx, arguments, operation)` using `ResourceClaim` from
-  `agentevolver.runtime.invocation`. Use shared claims for immutable inputs and exclusive
-  claims for each trial's outputs. `concurrent = True` removes the default instance claim
-  only when the implementation is actually reentrant.
-- Mark an action `parallel_safe=True` only when sibling calls can be independent. This
-  enables Agent batch admission; resource claims still apply. `read_only` describes effects
-  and must remain truthful. Connector/Plugin metadata can declare the same independence;
-  Connector metadata `concurrent: true` permits reentrant requests to its remote service.
-- Memory defaults to exclusive backend calls. A backend such as `TieredMemory` declares
-  `concurrent=True` because it owns namespace transactions and compaction revision checks.
-  Its framework projection path is internal: emitting ordinary trace events for each projected event would recurse.
-- CPU work needs an owned worker/job backend, not merely `async def`. Register background
-  jobs through the framework, retain distinct trial outputs and confirm actual cancellation.
+| Family | Author's contract; framework behavior |
+| --- | --- |
+| Tool | `concurrent=True` for reentrant methods; otherwise the base serializes the instance. |
+| Skill | No flag; instruction loading already overlaps. Scripts use their executing Tool/Environment. |
+| Agent | No flag; Manager/Kernel dispatches fresh children with shared budgets and ordered resident turns. |
+| Connector | Top-level `concurrent: true` for independent requests. One declaration covers runtime and Agent batches; remote service state must permit overlap. |
+| Environment | Default: private instance per Agent, ordered actions. `state_scope="call"` for fresh independent evaluations; Manager initializes and cleans each call. See [the environment contract](environment/environment.md). |
+| Memory | Inherit the backend's session transactions and revision checks; unknown backends serialize. |
+| Workflow | Declare graph dependencies and bounded `parallel`/`map`; existing graph/Kernel execution handles them. |
+| Plugin | `concurrent=True` for reentrant clients, `state_scope="owner"` for private mutable clients. Tools read context through their owner; no scheduler code. |
 
-Evaluate two simultaneous owners, same-resource serialization, independent-resource overlap,
-failed acquisition, owner exit and serial/concurrent result parity. Do not count `gather`
-alone as evidence of isolation or speedup. Skill calls return instructions; their scripts
-inherit the execution contract of the Tool/Environment that runs them.
+For independent environment trials, declare input/output path argument names and a worker
+limit. The framework orders conflicting paths across entities. Separate instances do not
+isolate a remote database or shared files by themselves: preserve transactions, immutable
+inputs and distinct outputs. Advanced adapters may override `resource_claims` or multiplex
+sessions; ordinary templates do not need those hooks. Legacy `parallel_safe` overrides remain
+supported but are unnecessary for new reentrant/call-scoped components.
+
+Environment async methods must yield during I/O. Synchronous methods run in framework
+threads, which keeps the event loop responsive but does not accelerate GIL-bound Python or
+allow forced thread termination. Use an owned process backend when those properties matter.
+Do not launch untracked background tasks; use existing job facilities for detached work.
+Verify real overlap, isolation, same-resource ordering, failure/cancellation cleanup and
+serial/concurrent result parity through the Manager. Keep memory trace projection internal.
 
 ## Author and register
 

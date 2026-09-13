@@ -13,6 +13,7 @@ ALLOWED_PROPERTIES = {
     'requirements', 'metadata', 'enable_evolving', 'permission_mode',
     'featured', 'connection', 'actions', 'action_schemas',
     'action_descriptions', 'action_annotations', 'result_mode',
+    'concurrent', 'parallel_safe',
 }
 
 
@@ -55,6 +56,13 @@ def validate_connector(connector_path):
     for key in ('action_schemas', 'action_descriptions', 'action_annotations'):
         if key in fm and not isinstance(fm[key], dict):
             return False, f"'{key}' must be a mapping keyed by action name"
+
+    for key in ('concurrent', 'parallel_safe'):
+        if key in fm and type(fm[key]) is not bool:
+            return False, f"'{key}' must be a YAML boolean, not a quoted string or number"
+    metadata = fm.get('metadata', {})
+    if isinstance(metadata, dict) and {'concurrent', 'parallel_safe'} & metadata.keys():
+        return False, "'concurrent' and 'parallel_safe' belong at the top level, not under metadata"
 
     name = str(fm.get('name', '')).strip()
     if not re.match(r'^[a-z0-9_]+$', name):

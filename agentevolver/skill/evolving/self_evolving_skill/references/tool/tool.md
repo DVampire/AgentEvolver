@@ -45,52 +45,25 @@ becomes the schema's per-argument description.
 
 **Do not write a `## Function` block** either. That was the description again.
 
-```python
-from typing import Any, Dict, List
-from pydantic import Field
-from agentevolver.tool.types import Tool
-from agentevolver.response.types import Response, ResponseType
-from agentevolver.registry import TOOL
-
-_DESCRIPTION = "One line: what the tool does."
-
-_GUIDANCE = """
-When and how to use it; caveats; when NOT to use it. What the call schema cannot say.
-"""
-
-_EXAMPLES = [
-    '{"name": "my_tool", "args": {"arg_name": "value"}}',
-]
-
-@TOOL.register_module(force=True)
-class MyTool(Tool):
-    """One-line purpose."""
-    name: str = "my_tool"
-    description: str = _DESCRIPTION
-    guidance: str = _GUIDANCE
-    examples: List[str] = _EXAMPLES
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    enable_evolving: bool = Field(default=True, description="Whether the tool may be evolved (self-optimized)")
-
-    def __init__(self, enable_evolving: bool = True, **kwargs):
-        super().__init__(enable_evolving=enable_evolving, **kwargs)
-
-    async def __call__(self, arg_name: str, **kwargs) -> Response:
-        """Do the work.
-
-        Args:
-            arg_name: Value to process.
-        """
-        # ... perform the operation ...
-        return Response(type=ResponseType.TOOL, success=True, message="result",
-                        data={"arg_name": arg_name})
-```
+The executable [template.py](template.py) is the only code scaffold; keep its example,
+argument schema and runtime declarations together when adapting it.
 
 Design principles:
 - `__call__` must return a `Response` (`success`, `message`, optional `data`); catch expected failures and return `success=False` with an actionable message rather than raising.
 - Keep args explicit and JSON-friendly. Document every arg in `__call__`'s Google-style
   `Args:` docstring — that is what becomes the schema's per-argument description.
 - If the tool needs the current session, accept `ctx` via `**kwargs`. Do heavyweight imports **inside** `__call__` to avoid circular imports at module load.
+
+### Concurrency and effects
+
+The template's pure operation sets class `concurrent=True` and `mutates=False`.
+`concurrent` allows simultaneous calls on one instance; `mutates`/`will_mutate(arguments)`
+tells the Agent whether calls are reads. Reassess both when adding I/O or mutation. Tools
+do not use the Environment action decorator or an invented `parallel_safe` class field.
+Keep ctx, arguments and intermediate results local. For shared clients/output files,
+retain base exclusion or override `resource_claims(ctx, arguments)` with verified scopes;
+workspace writes still need coordination even when instances are reentrant. Call through
+the Tool Manager and verify both independence and same-resource ordering.
 
 ### Verify and register
 

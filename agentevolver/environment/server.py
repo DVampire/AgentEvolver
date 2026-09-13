@@ -79,6 +79,10 @@ class EnvironmentManagerServer(BaseModel):
                destructive: Optional[bool] = None,
                idempotent: Optional[bool] = None,
                open_world: Optional[bool] = None,
+               parallel_safe: Optional[bool] = None,
+               capacity_exempt: Optional[bool] = None,
+               read_paths: tuple[str, ...] = (),
+               write_paths: tuple[str, ...] = (),
                permission_op: Optional[str] = None,
                permission_target: Optional[str] = None):
         """Decorator to register an action (tool) for an environment
@@ -89,6 +93,10 @@ class EnvironmentManagerServer(BaseModel):
             name: Action name (defaults to function name)
             description: Action description
             metadata: Action metadata
+            parallel_safe: Allow independent batch dispatch; resource claims still apply.
+            capacity_exempt: Short control/observation call bypasses worker capacity only.
+            read_paths: Argument names containing input paths (shared access).
+            write_paths: Argument names containing output paths (exclusive access).
         """
         def decorator(func: Callable):
             action_name = name or func.__name__
@@ -105,6 +113,15 @@ class EnvironmentManagerServer(BaseModel):
                 effect.setdefault("open_world", open_world)
             if idempotent is not None:
                 effect.setdefault("idempotent", idempotent)
+            if parallel_safe is not None:
+                effect.setdefault("parallel_safe", parallel_safe)
+            if capacity_exempt is not None:
+                effect.setdefault("capacity_exempt", capacity_exempt)
+            for key, paths in (("read_paths", read_paths), ("write_paths", write_paths)):
+                if isinstance(paths, str) or any(not isinstance(p, str) or not p for p in paths):
+                    raise ValueError(f"{key} must contain argument names")
+                if paths:
+                    effect[key] = tuple(paths)
             if permission_op:
                 effect["permission_op"] = permission_op
             if permission_target:

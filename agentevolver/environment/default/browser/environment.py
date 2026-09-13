@@ -57,6 +57,9 @@ class BrowserEnvironment(Environment):
         self.vnc = vnc
         if vnc:
             headless = False
+            # BrowserContext isolates web state, but VNC exposes the whole desktop.
+            # Let the common manager bind a separate browser/container per owner.
+            self.managed_sessions = False
         self.headless = headless
         self.viewport = viewport or {"width": 1024, "height": 768}
         # State options: use_som draws numbered boxes on the state screenshot matching

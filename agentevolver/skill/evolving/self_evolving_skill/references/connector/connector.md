@@ -64,6 +64,20 @@ a downloader that writes snapshot files has a write effect even if its HTTP requ
 Use the appropriate permitted workspace scope and accurate declarations, not false read-only
 hints or broader permissions to silence an error.
 
+### Concurrent requests
+
+Use top-level `concurrent: true` in CONNECTOR.md only after checking server reentrancy.
+The same declaration permits Agent batch submission; no second flag is needed.
+The default is false; legacy `parallel_safe` overrides are still accepted.
+This is a connector-wide setting, not an action annotation or nested `metadata` entry.
+MCP read-only hints remain a separate effects contract; do not mark a write as a read to
+obtain concurrency. The manager opens an MCP transport session per call, and stdio calls
+may start separate server processes: process-local session variables are not durable state.
+Keep requests independent and bound upstream load. Shared caches/output paths need atomic
+publication and cross-process coordination or distinct paths, not only an asyncio lock.
+Validate the manifest, then exercise overlapping native calls and a failed/cancelled request
+without losing the other result. Server templates must follow this contract too.
+
 ### Large read results saved locally
 
 For a read-only remote query that returns a dataset, set `result_mode: artifact` in

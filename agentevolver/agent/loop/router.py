@@ -147,23 +147,20 @@ class CapabilityRouter(ToolRouter):
         # remain separate. Runtime still enforces resource conflicts for every call.
         self._parallel_operations = set()
         from agentevolver.capability import COMPONENT_TYPES
+        from agentevolver.runtime.invocation import allows_parallel
         import inspect
         families = {item.type: item for item in COMPONENT_TYPES}
         for label, route in routing.items():
             if route[0] in ("skill", "agent", "capability_search"):
                 self._parallel_operations.add(label)
                 continue
-            if route[0] not in ("environment", "connector", "plugin"):
+            if route[0] not in ("tool", "environment", "connector", "plugin", "workflow"):
                 continue
             info = families[route[0]].manager().get_info(route[1])
             info = await info if inspect.isawaitable(info) else info
             if info is None:
                 continue
-            metadata = dict(getattr(info, "metadata", {}) or {})
-            if route[0] == "environment" and len(route) > 2:
-                action = info.actions.get(route[2])
-                metadata = dict(getattr(action, "metadata", {}) or {})
-            if metadata.get("parallel_safe") is True:
+            if allows_parallel(route[0], info, route[2] if len(route) > 2 else None):
                 self._parallel_operations.add(label)
         return list(tools), dict(routing)
 

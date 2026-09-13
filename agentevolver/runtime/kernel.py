@@ -876,9 +876,10 @@ class Kernel:
         reason = ""
         graceful = True
         proc._started = True
-        from agentevolver.runtime.invocation import CURRENT_RUNTIME, _CURRENT
+        from agentevolver.runtime.invocation import CURRENT_OWNER_CONTEXT, CURRENT_RUNTIME, _CURRENT
         invocation_token = _CURRENT.set(None)
         runtime_token = CURRENT_RUNTIME.set(self.calls)
+        owner_token = CURRENT_OWNER_CONTEXT.set(proc.ctx)
         budget_scope = proc.budget.scope()
         budget_scope.__enter__()
         try:
@@ -935,6 +936,7 @@ class Kernel:
             finally:
                 budget_scope.__exit__(None, None, None)
                 CURRENT_RUNTIME.reset(runtime_token)
+                CURRENT_OWNER_CONTEXT.reset(owner_token)
                 _CURRENT.reset(invocation_token)
 
     async def _turn(self, proc: Process, envelope: Envelope) -> Any:

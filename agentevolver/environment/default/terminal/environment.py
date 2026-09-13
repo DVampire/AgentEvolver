@@ -82,6 +82,16 @@ class TerminalEnvironment(Environment):
     def __init__(self, startup_timeout: float = 10.0, **kwargs: Any):
         super().__init__(startup_timeout=startup_timeout, **kwargs)
 
+    def resource_claims(self, ctx, arguments, operation=""):
+        from agentevolver.runtime.invocation import ResourceClaim
+        terminal_id = arguments.get("terminal_id")
+        if terminal_id:
+            control = ":control" if operation in {"signal", "close"} else ""
+            return (ResourceClaim(f"terminal:{terminal_id}{control}"),)
+        # Open creates a fresh PTY; observations are snapshots. Signal/close must be
+        # able to interrupt an in-flight send; the terminal backend owns process exit.
+        return ()
+
     # ------------------------------------------------------------------ helpers
     @staticmethod
     def _session(ctx) -> str:
@@ -93,7 +103,8 @@ class TerminalEnvironment(Environment):
         if not session:
             return []
         return [value for value in terminal_manager.list(session)
-                if not getattr(value, "owner_id", "") or value.owner_id == owner_id(ctx)]
+                if getattr(value, "owner_id", "") == owner_id(ctx) or (not getattr(value, "owner_id", "")
+                    and not (getattr(ctx, "extra", {}) or {}).get("process_pid"))]
 
     def _resolve(self, terminal_id: str, ctx):
         """The terminal, or a failure naming the ids that do exist.
@@ -104,7 +115,9 @@ class TerminalEnvironment(Environment):
         terminal = terminal_manager.get(terminal_id)
         from agentevolver.runtime.invocation import owner_id
         if terminal is not None and self._session(ctx) and terminal.session_id == self._session(ctx):
-            if not getattr(terminal, "owner_id", "") or terminal.owner_id == owner_id(ctx):
+            if getattr(terminal, "owner_id", "") == owner_id(ctx) or (
+                    not getattr(terminal, "owner_id", "")
+                    and not (getattr(ctx, "extra", {}) or {}).get("process_pid")):
                 return terminal, None
         known = [t.id for t in self._owned(ctx)]
         return None, _fail(
@@ -125,6 +138,7 @@ class TerminalEnvironment(Environment):
     # ------------------------------------------------------------------ actions
     @environment_manager.action(
         name="open",
+        parallel_safe=True,
         permission_op="bash",
         permission_target="command",
         description=(
@@ -154,9 +168,9 @@ class TerminalEnvironment(Environment):
 
         from agentevolver.runtime.invocation import owner_id
         terminal.owner_id = owner_id(ctx)
-        from agentevolver.runtime.invocation import runtime
+        from agentevolver.runtime.invocation import runtime, run_blocking
         runtime().own("terminal", terminal.id, terminal.owner_id, terminal,
-                      lambda value: terminal_manager.close(value.id))
+                      lambda value: run_blocking(terminal_manager.close, value.id))
 
         # An empty send: type nothing, wait for the shell to settle, take what it printed
         # while starting up.
@@ -171,6 +185,7 @@ class TerminalEnvironment(Environment):
 
     @environment_manager.action(
         name="send",
+        parallel_safe=True,
         permission_op="bash",
         permission_target="text",
         description=(
@@ -267,6 +282,7 @@ class TerminalEnvironment(Environment):
 
     @environment_manager.action(
         name="read",
+        parallel_safe=True,
         read_only=True,
         description=(
             "Show what a terminal holds — the screen and the lines that have scrolled off "
@@ -330,12 +346,14 @@ class TerminalEnvironment(Environment):
         terminal, failure = self._resolve(terminal_id, ctx)
         if failure:
             return failure
-        closed = terminal_manager.close(terminal_id)
+        from agentevolver.runtime.invocation import run_blocking
+        closed = await run_blocking(terminal_manager.close, terminal_id)
         return _ok(f"Closed {terminal_id}." if closed
                    else f"{terminal_id} had already ended.", terminal_id=terminal_id)
 
     @environment_manager.action(
         name="list",
+        parallel_safe=True,
         read_only=True,
         description=(
             "Every terminal you opened, oldest first, with its label, whether it is still "

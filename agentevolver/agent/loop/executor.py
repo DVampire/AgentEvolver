@@ -106,7 +106,7 @@ class ActionExecutor:
         if any(call.id in prepared and prepared[call.id].call != call for call in calls):
             raise ValueError("Prepared result does not match the completed tool call")
         if self._parallel_safe(calls, routing):
-            logger.info(f"| ⚡ {len(calls)} read-only action(s) in parallel")
+            logger.info(f"| ⚡ {len(calls)} independent action(s) admitted to runtime")
             return list(
                 await asyncio.gather(
                     *[

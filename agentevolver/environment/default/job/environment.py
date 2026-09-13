@@ -51,6 +51,7 @@ class JobEnvironment(Environment):
 
     """Everything this session started in the background, and the actions that control it."""
     managed_sessions: bool = True
+    concurrent: bool = True  # Wait/observation must not reserve the controls needed to stop a job.
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -64,6 +65,12 @@ class JobEnvironment(Environment):
     metadata: Dict[str, Any] = Field(default={"has_vision": False})
     enable_evolving: bool = Field(default=False)
 
+    def resource_claims(self, ctx, arguments, operation=""):
+        from agentevolver.runtime.invocation import ResourceClaim
+        if operation == "kill":
+            return (ResourceClaim(f"job:{arguments.get('job_id', '')}:control"),)
+        return ()
+
     @staticmethod
     def _session(ctx) -> str:
         return str(getattr(ctx, "id", "") or "")
@@ -74,7 +81,8 @@ class JobEnvironment(Environment):
         if not session:
             return []
         return [value for value in job_manager.list(session)
-                if not getattr(value, "owner_id", "") or value.owner_id == owner_id(ctx)]
+                if getattr(value, "owner_id", "") == owner_id(ctx) or (not getattr(value, "owner_id", "")
+                    and not (getattr(ctx, "extra", {}) or {}).get("process_pid"))]
 
     def _resolve(self, job_id: str, ctx):
         """The job, or a failure naming the ids that exist.
@@ -96,7 +104,9 @@ class JobEnvironment(Environment):
         job = job_manager.get(job_id)
         if job is not None and owner and job.session_id == owner:
             from agentevolver.runtime.invocation import owner_id
-            if not getattr(job, "owner_id", "") or job.owner_id == owner_id(ctx):
+            if getattr(job, "owner_id", "") == owner_id(ctx) or (
+                    not getattr(job, "owner_id", "")
+                    and not (getattr(ctx, "extra", {}) or {}).get("process_pid")):
                 return job, None
 
         process = self._as_job(job_id, owner, ctx)
@@ -130,14 +140,17 @@ class JobEnvironment(Environment):
         if process is None or not owner:
             return None
         from agentevolver.runtime.invocation import owner_id
+        explicit_owner = (getattr(ctx, "extra", {}) or {}).get("process_pid")
         caller = kernel.get(owner_id(ctx)) if ctx is not None else None
-        if caller is None:
+        if caller is None and not explicit_owner:
             candidates = [p for p in kernel.list() if p.session_id == owner]
             caller = candidates[0] if len(candidates) == 1 else None
         grants = (getattr(ctx, "extra", {}) or {}).get("deployment_contract", {})
         explicitly_granted = str(job_id) in grants.get("subscriber_job_ids", ())
-        if process.session_id != owner and not explicitly_granted and not (
-                caller is not None and getattr(process, "parent_pid", "") == caller.pid):
+        accessible = (not explicit_owner and process.session_id == owner) or (
+            caller is not None and (process.pid == caller.pid or
+                                    getattr(process, "parent_pid", "") == caller.pid))
+        if not accessible and not explicitly_granted:
             return None
         ended = process.ended_at or time.time()
         return SimpleNamespace(
@@ -426,8 +439,16 @@ class JobEnvironment(Environment):
                 status=job.status.value,
             )
 
+        from agentevolver.runtime import kernel
+        process = kernel.get(str(job_id))
+        if process is not None:
+            await kernel.stop(process, force=True, reason="job__kill")
+            await kernel.wait(process)
+            return _ok(f"Stopped Agent process {job_id}.", job_id=job_id, status=process.state.value)
         was_reminder = job.is_reminder and not job.deliveries
-        killed = job_manager.kill(job_id)
+        killed = await job_manager.kill_async(job_id)
+        if not killed:
+            return _fail(f"Could not stop {job_id}; inspect its state before retrying.", job_id=job_id)
         logger.info(f"| 🧵 job__kill stopped {job_id}: {killed}")
         if was_reminder:
             # A reminder printed nothing, so "output before the kill is kept" would be an

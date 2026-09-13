@@ -99,7 +99,7 @@ class ArtifactRendererEnvironment(Environment):
         if page is not None:
             await page.context.close()
         if self.use_sandbox:
-            await sandbox_manager.release("playwright", reuse_key=sid)
+            await sandbox_manager.release("playwright", reuse_key=self.backend_key(sid))
         self._sessions.pop(sid, None)
 
     async def _page_for(self, sid: str):
@@ -111,27 +111,28 @@ class ArtifactRendererEnvironment(Environment):
         if sid in self._sessions:
             return self._sessions[sid]
 
-        if self.use_sandbox:
-            sandbox = await sandbox_manager.acquire(
-                "playwright", reuse_key=sid, image=self.sandbox_image
-            )
-            ws_url = await sandbox.cdp_ws_url()
-            browser = await self._playwright.chromium.connect_over_cdp(ws_url)
-            context = await browser.new_context(viewport=self.viewport)
-        else:
-            if self._browser is None:
-                self._browser = await self._playwright.chromium.launch(headless=True)
-            context = await self._browser.new_context(viewport=self.viewport)
-
+        context = None
         try:
+            if self.use_sandbox:
+                sandbox = await sandbox_manager.acquire(
+                    "playwright", reuse_key=self.backend_key(sid), image=self.sandbox_image
+                )
+                ws_url = await sandbox.cdp_ws_url()
+                browser = await self._playwright.chromium.connect_over_cdp(ws_url)
+                context = await browser.new_context(viewport=self.viewport)
+            else:
+                if self._browser is None:
+                    self._browser = await self._playwright.chromium.launch(headless=True)
+                context = await self._browser.new_context(viewport=self.viewport)
             page = await context.new_page()
             await page.set_viewport_size(self.viewport)
             self._sessions[sid] = page
             return page
         except BaseException:
-            await context.close()
+            if context is not None:
+                await context.close()
             if self.use_sandbox:
-                await sandbox_manager.release("playwright", reuse_key=sid)
+                await sandbox_manager.release("playwright", reuse_key=self.backend_key(sid))
             raise
 
     @staticmethod

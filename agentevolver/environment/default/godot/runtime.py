@@ -50,6 +50,8 @@ class DockerRuntime:
     def __init__(self, workspace: Path, image: str, base_image: str, mounts: list[Path],
                  read_only_mounts: list[Path] | None = None, base_network: str = "bridge"):
         self.workspace = workspace
+        from agentevolver.runtime.invocation import current_owner
+        self.owner = current_owner()
         self.image, self.base_image = image, base_image
         self.base_network = base_network
         suffix = uuid.uuid4().hex[:16]
@@ -103,7 +105,7 @@ class DockerRuntime:
                 "--workdir", str(self.workspace),
                 self.base_image, "sleep", "infinity",
             )
-            bind_container(self.workspace, self.base_name)
+            bind_container(self.workspace, self.base_name, owner=self.owner)
             self.base_ready = True
         except BaseException:
             await self.remove(self.base_name)
@@ -234,7 +236,7 @@ class DockerRuntime:
     async def close(self, remove_base=True):
         self.game_running = False
         if remove_base:
-            unbind_container(self.workspace, self.base_name)
+            unbind_container(self.workspace, self.base_name, owner=self.owner)
         if self.task is not None:
             if not self.task.done():
                 await self.queue.put(None)

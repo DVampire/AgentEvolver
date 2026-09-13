@@ -18,6 +18,7 @@ from typing import Any, Awaitable, Callable
 
 
 CURRENT_RUNTIME = ContextVar("component_runtime", default=None)
+CURRENT_OWNER_CONTEXT = ContextVar("component_owner_context", default=None)
 _CURRENT = ContextVar("component_invocation", default=None)
 
 
@@ -36,12 +37,75 @@ def owner_id(ctx) -> str:
 
 def current_owner():
     call = _CURRENT.get()
-    return call.owner if call else ""
+    return call.owner if call else owner_id(CURRENT_OWNER_CONTEXT.get())
 
 
 def current_context():
     call = _CURRENT.get()
-    return getattr(call, "ctx", None)
+    return getattr(call, "ctx", None) if call else CURRENT_OWNER_CONTEXT.get()
+
+
+async def run_blocking(function, *args, **kwargs):
+    """Offload a blocking backend operation, joining it even if its caller is cancelled."""
+    task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
+    return await _join(task)
+
+
+async def _join(task):
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+        except Exception:
+            break
+    if cancelled:
+        # Retrieve an error too, so cancellation never leaves an unobserved task.
+        if not task.cancelled():
+            task.exception()
+        raise asyncio.CancelledError
+    return task.result()
+
+
+async def call_function(function, *args, **kwargs):
+    """Run an entity method without making synchronous implementations block the loop.
+
+    Threads cannot be forcibly stopped: cancellation joins them before releasing claims.
+    CPU-bound Python requiring speedup or hard cancellation needs a process backend.
+    """
+    if inspect.iscoroutinefunction(function):
+        return await function(*args, **kwargs)
+    result = await run_blocking(function, *args, **kwargs)
+    return await result if inspect.isawaitable(result) else result
+
+
+def allows_parallel(module, info, operation=None):
+    """Project the Manager's execution declaration into Agent batch admission.
+
+    Effects remain a separate permission contract. Legacy action overrides are honoured.
+    """
+    if module in {"skill", "agent", "capability_search"}:
+        return True
+    instance = getattr(info, "instance", None)
+    def declaration(key, default=None):
+        if instance is not None:
+            return getattr(instance, key, default)
+        configured = getattr(info, "config", {}) or {}
+        if key in configured:
+            return configured[key]
+        field = getattr(getattr(info, "cls", None), "model_fields", {}).get(key)
+        return field.default if field is not None else default
+    metadata = dict(getattr(info, "metadata", {}) or {})
+    if module == "environment":
+        action = (getattr(info, "actions", {}) or {}).get(operation)
+        metadata = dict(getattr(action, "metadata", {}) or {})
+    if isinstance(metadata.get("parallel_safe"), bool):
+        return metadata["parallel_safe"]
+    if module == "connector":
+        return metadata.get("concurrent") is True
+    return declaration("concurrent", False) is True or (
+        module == "environment" and declaration("state_scope") == "call")
 
 
 @dataclass(frozen=True)
@@ -79,6 +143,7 @@ class Invocation:
     finished_at: float | None = None
     task: Any = None
     internal: bool = False
+    bindings: list = field(default_factory=list)
 
     def public(self):
         return {key: getattr(self, key) for key in (
@@ -123,12 +188,17 @@ class InvocationRuntime:
 
     async def invoke(self, module: str, name: str, body: Callable[[], Awaitable[Any]],
                      *, ctx=None, version="", claims=(), timeout=None, call_id=None,
-                     max_concurrency=None, limit_key=None, internal=False):
+                     max_concurrency=None, limit_key=None, internal=False, owner_scoped=False):
         state = self._state()
         if state.closing and not internal:
             raise RuntimeError("Component runtime is shutting down")
-        parent = _CURRENT.get()
-        owner = owner_id(ctx) or (parent.owner if parent else "")
+        # Explicit background jobs belong to the Agent, not the short submit action.
+        # Their producer must register the task before returning its job handle.
+        parent = None if owner_scoped else _CURRENT.get()
+        ctx = ctx if ctx is not None else current_context()
+        owner = owner_id(ctx) or current_owner()
+        if owner_scoped and not owner:
+            raise ValueError("Owner-scoped work requires an explicit execution owner")
         if owner and owner in state.closed and not internal:
             raise RuntimeError(f"Execution owner {owner!r} is closing")
         claims = tuple(claims)
@@ -146,6 +216,11 @@ class InvocationRuntime:
         if max_concurrency is not None and max_concurrency < 1:
             raise ValueError("max_concurrency must be positive")
         bucket = limit_key or (module, name)
+        if max_concurrency is not None and any(
+                getattr(entry, "bucket", None) == bucket and entry.limit is not None
+                and entry.limit != max_concurrency
+                for entry in state.active.values()):
+            raise ValueError("Active calls in a concurrency group must use the same capacity")
         record.bucket = bucket
         record.limit = max_concurrency
         state.active[record.id] = record
@@ -154,7 +229,8 @@ class InvocationRuntime:
             earlier = state.waiting[:state.waiting.index(entry)]
             blocked = [other for other in (*state.running.values(), *earlier)
                        if any(a.conflicts(b) for a in entry.claims for b in other.claims)]
-            peers = [other for other in state.running.values() if other.bucket == entry.bucket]
+            peers = [other for other in state.running.values()
+                     if other.bucket == entry.bucket and other.limit is not None]
             if entry.limit is not None and len(peers) >= entry.limit:
                 blocked.extend(peers)
             return blocked
@@ -214,16 +290,37 @@ class InvocationRuntime:
                         child.cancel()
                 if children:
                     await asyncio.gather(*children, return_exceptions=True)
-                async with state.condition:
-                    if record in state.waiting:
-                        state.waiting.remove(record)
-                    state.running.pop(record.id, None)
-                    state.active.pop(record.id, None)
-                    record.finished_at = time.monotonic()
-                    state.history.append(record.public())
-                    state.condition.notify_all()
-                CURRENT_RUNTIME.reset(rt_token)
-                _CURRENT.reset(token)
+                try:
+                    errors = []
+                    cancelled = False
+                    for key in reversed(record.bindings):
+                        try:
+                            await self._close_binding(key, join=True)
+                        except asyncio.CancelledError:
+                            cancelled = True
+                        except Exception as error:
+                            errors.append(error)
+                    if errors:
+                        raise ExceptionGroup("Call resource cleanup failed", errors)
+                    if cancelled:
+                        raise asyncio.CancelledError
+                except asyncio.CancelledError:
+                    record.state = "cancelled"
+                    raise
+                except BaseException:
+                    record.state = "failed"
+                    raise
+                finally:
+                    async with state.condition:
+                        if record in state.waiting:
+                            state.waiting.remove(record)
+                        state.running.pop(record.id, None)
+                        state.active.pop(record.id, None)
+                        record.finished_at = time.monotonic()
+                        state.history.append(record.public())
+                        state.condition.notify_all()
+                    CURRENT_RUNTIME.reset(rt_token)
+                    _CURRENT.reset(token)
 
         record.task = asyncio.create_task(run(), name=f"{module}:{name}:{record.id}")
         try:
@@ -233,22 +330,58 @@ class InvocationRuntime:
             if record.task.done() and record.id in state.active:
                 state.active.pop(record.id, None)
 
-    async def bind(self, module, name, version, owner, factory, close):
+    async def bind(self, module, name, version, owner, factory, close, *, scope="owner"):
         """Publish one ready binding; existing backends may return an opaque session."""
         if not owner:
             raise ValueError("Stateful resources require an explicit owner context")
+        invocation = _CURRENT.get()
+        if scope == "call":
+            if invocation is None:
+                raise ValueError("Call-scoped resources must be accessed through a Manager invocation")
+            name = f"{name}:call:{invocation.id}"
+        elif scope != "owner":
+            raise ValueError(f"Unknown binding scope: {scope!r}")
         key = (module, name, str(version), owner)
         state = self._state()
         async def create():
             if key not in state.bindings:
                 value = await factory()
                 state.bindings[key] = (value, close)
+                if scope == "call":
+                    invocation.bindings.append(key)
             return state.bindings[key][0]
         from types import SimpleNamespace
         return await self.invoke(module, name + ":bind", create,
                                  ctx=SimpleNamespace(id=owner, extra={}),
                                  version=version,
                                  claims=(ResourceClaim("binding:" + repr(key)),))
+
+    async def _close_binding(self, key, *, join=False):
+        """Close once; retain failed or unfinished resources for a later owner cleanup."""
+        state = self._state()
+        if key not in state.bindings:
+            return
+        value, close = state.bindings[key]
+        if key not in state.cleanups:
+            async def cleanup():
+                result = close(value)
+                if inspect.isawaitable(result):
+                    await result
+            state.cleanups[key] = asyncio.create_task(cleanup())
+        task = state.cleanups[key]
+        try:
+            if join:
+                await _join(task)
+            else:
+                await asyncio.wait_for(asyncio.shield(task), 10)
+        except BaseException:
+            if task.done():
+                state.cleanups.pop(key, None)
+                if not task.cancelled() and task.exception() is None:
+                    state.bindings.pop(key, None)
+            raise
+        state.cleanups.pop(key, None)
+        state.bindings.pop(key, None)
 
     async def release(self, *, owner=None, module=None):
         state = self._state()
@@ -268,22 +401,8 @@ class InvocationRuntime:
         for key, (value, close) in tuple(state.bindings.items()):
             if (owner is None or key[3] == owner) and (module is None or key[0] == module):
                 try:
-                    if key not in state.cleanups:
-                        async def cleanup(value=value, close=close):
-                            result = close(value)
-                            if inspect.isawaitable(result):
-                                await result
-                        state.cleanups[key] = asyncio.create_task(cleanup())
-                    task = state.cleanups[key]
-                    # A timeout leaves the tracked cleanup and binding intact for a
-                    # later join; cancellation is not proof of external resource exit.
-                    await asyncio.wait_for(asyncio.shield(task), 10)
-                    state.cleanups.pop(key, None)
-                    state.bindings.pop(key, None)
+                    await self._close_binding(key)
                 except Exception as error:
-                    task = state.cleanups.get(key)
-                    if task is not None and task.done():
-                        state.cleanups.pop(key, None)
                     errors.append(error)
         if errors:
             raise ExceptionGroup("Component resource cleanup failed", errors)

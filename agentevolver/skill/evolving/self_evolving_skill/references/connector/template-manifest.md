@@ -5,6 +5,9 @@ description: One line — what this MCP server provides and when to use it (this
 version: 1.0.0
 type: worker
 permission_mode: read_only
+# Admission flags are TOP-LEVEL fields, not nested under metadata.
+# Enable both only after checking independent calls across all exposed actions.
+concurrent: false                  # independent requests may overlap
 # Optional: artifact saves the full response in session logs and returns a path/hash.
 # The MCP method itself must still be genuinely read-only (no cache/output_dir writes).
 result_mode: inline                 # inline (default) | artifact
@@ -35,6 +38,14 @@ List only the actions you actually expose in `actions:` above.
 
 One paragraph: what this server is, what data/capability it exposes, and the kinds
 of tasks it helps with.
+
+## Concurrency
+
+This template defaults to serialized calls. For a verified reentrant server, set both
+top-level flags to true and document its rate limits and any shared-write restrictions.
+Read-only MCP annotations describe effects, not concurrency. Keep request state local;
+stdio servers may run in separate processes, so shared files need atomic publication or
+cross-process coordination, not just an asyncio lock. See the Connector type reference.
 
 ## Actions
 

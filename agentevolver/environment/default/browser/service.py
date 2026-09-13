@@ -162,7 +162,7 @@ class BrowserService:
                 await self._start_local()
 
             logger.info("| 🌐 BrowserService started")
-        except Exception as e:
+        except BaseException as e:
             logger.error(f"| ❌ Failed to start browser: {e}")
             # A failed start must not leak partial state: the acquired peer
             # container especially (an orphaned chrome sandbox breaks every

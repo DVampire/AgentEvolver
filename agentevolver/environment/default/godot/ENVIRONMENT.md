@@ -59,6 +59,15 @@ Honor user execution constraints. Base Bash uses foreground commands; Godot owns
 processes. Engine transport failures remove the Godot container while preserving base
 file authoring. Session close removes both owned containers and the Bash route.
 
+## Concurrent use
+
+Each Agent owns its game process, display, input state and Docker authoring route. Different
+owners can operate independent projects concurrently; one running game's inputs and captures
+serialize. Project import/check/run/export and other project mutations coordinate with Bash
+through workspace claims. Sharing a workspace therefore intentionally serializes conflicting
+project operations; use separate projects/output paths for independent trials. Closing one
+owner's runtime removes its own container route and leaves other owners' games intact.
+
 ## Actual play
 
 `check_script` and `run_headless` resolve script/scene paths inside the project

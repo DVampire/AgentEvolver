@@ -271,6 +271,20 @@ class JobManagerServer(metaclass=Singleton):
         logger.info(f"| 🧵 Job {job_id} killed after {job.elapsed:.1f}s")
         return True
 
+    async def kill_async(self, job_id: str) -> bool:
+        """Stop and join without blocking unrelated coroutine work on process.wait()."""
+        from agentevolver.runtime.invocation import run_blocking
+        job = self.get(job_id)
+        if job is None:
+            return False
+        if getattr(job.handle, "pid", None):
+            result = await run_blocking(self.kill, job_id)
+        else:
+            result = self.kill(job_id)  # asyncio.Task.cancel belongs on the event loop.
+        if isinstance(job.handle, asyncio.Task):
+            await asyncio.gather(job.handle, return_exceptions=True)
+        return result
+
     @staticmethod
     def _stop_process(job_id: str, handle) -> None:
         """Signal the group and wait for it to actually stop.
@@ -320,7 +334,7 @@ class JobManagerServer(metaclass=Singleton):
 
     async def _release_owned(self, job):
         if not job.status.is_final:
-            self.kill(job.id)
+            await self.kill_async(job.id)
         if isinstance(job.handle, asyncio.Task) and not job.handle.done():
             await asyncio.gather(job.handle, return_exceptions=True)
         if not job.status.is_final:

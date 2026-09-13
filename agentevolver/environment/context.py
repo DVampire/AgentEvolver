@@ -561,8 +561,9 @@ class EnvironmentContextManager(BaseModel):
         if info is None:
             raise ValueError(f"Environment {env_name!r} not found")
         async def observe():
+            from agentevolver.runtime.invocation import call_function
             value = await self.bound(info, ctx)
-            return await value.get_state(ctx=ctx, **kwargs)
+            return await call_function(value.get_state, ctx=ctx, **kwargs)
         return await runtime().invoke("environment", env_name + ":state", observe,
             ctx=ctx, version=info.version, claims=info.instance.resource_claims(ctx, {}, "get_state"))
 
@@ -991,10 +992,18 @@ class EnvironmentContextManager(BaseModel):
                 success=False,
                 message=f"Action {action!r} not found in environment {name!r}.",
             )
+        call_input = dict(input or {})
+        preflight_error = None
+        try:
+            artifact_claims = self._artifact_claims(env_info, ctx, call_input, action)
+        except (TypeError, ValueError) as error:
+            from agentevolver.tool.execution import ToolErrorCode
+            preflight_error = (ToolErrorCode.INVALID_ARGUMENTS, str(error))
+            artifact_claims = ()
         execution = ToolExecution.create(
             name=f"{name}__{action}",
             version=env_info.version,
-            arguments=input or {},
+            arguments=call_input,
             ctx=ctx,
         )
         call_input = execution.arguments
@@ -1047,13 +1056,19 @@ class EnvironmentContextManager(BaseModel):
             result = await self._invoke_config(env_info, action, call_input, ctx, **kwargs)
             return self._normalize_response(name, action, result)
 
-        from agentevolver.runtime.invocation import runtime
         return await self._execution_pipeline.execute(
             execution,
             invoke,
             timeout=None,
-            runtime_options={"ctx": ctx, "claims": lambda: env_info.instance.resource_claims(ctx, call_input, action), "max_concurrency": env_info.instance.max_concurrency, "limit_key": ("environment", name)},
+            runtime_options={
+                "ctx": ctx,
+                "claims": lambda: (*env_info.instance.resource_claims(ctx, call_input, action), *artifact_claims),
+                "max_concurrency": (None if metadata.get("capacity_exempt") is True
+                                    else env_info.instance.max_concurrency),
+                "limit_key": ("environment", env_info.instance.concurrency_group or name),
+            },
             call_guards=[effect_guard],
+            preflight_error=preflight_error,
             before_invoke=checkpoint_effect,
         )
 
@@ -1062,42 +1077,80 @@ class EnvironmentContextManager(BaseModel):
         from agentevolver.environment.server import EnvironmentManagerServer
         return EnvironmentManagerServer._normalize_response(name, action, result)
 
+    @staticmethod
+    def _artifact_claims(info, ctx, arguments, action):
+        """Normalize declared paths before permission checks and runtime admission."""
+        from agentevolver.runtime.invocation import ResourceClaim
+        from agentevolver.session import resolve_workspace_root
+        claims = []
+        metadata = dict(info.actions[action].metadata or {})
+        for key, shared in (("read_paths", True), ("write_paths", False)):
+            for argument in metadata.get(key, ()):
+                value = arguments.get(argument)
+                if not isinstance(value, (str, os.PathLike)) or not str(value).strip():
+                    raise ValueError(f"{action} requires a nonempty path in {argument!r}")
+                path = Path(value).expanduser()
+                if not path.is_absolute():
+                    root = resolve_workspace_root(ctx)
+                    if not root:
+                        raise ValueError(f"Relative path {value!r} requires a workspace context")
+                    path = Path(root) / path
+                # The method and the scheduler must refer to exactly the same file.
+                arguments[argument] = str(path.resolve())
+                claims.append(ResourceClaim.path(path, shared=shared))
+        return tuple(claims)
+
     async def live_view(self, name, ctx):
         from agentevolver.runtime.invocation import runtime
         info = await self.get_info(name)
         if info is None:
             return None
+        if getattr(info.cls, "live_view", None) is Environment.live_view:
+            # Public dispatch probes views after every action. A numerical evaluator
+            # with no view must not initialize a second, immediately discarded trial.
+            return None
         async def observe():
+            from agentevolver.runtime.invocation import call_function
             value = await self.bound(info, ctx)
-            return await value.live_view(ctx)
+            return await call_function(value.live_view, ctx)
         return await runtime().invoke("environment", name + ":view", observe,
             ctx=ctx, version=info.version, claims=info.instance.resource_claims(ctx, {}, "live_view"))
 
     async def bound(self, info, ctx):
-        from agentevolver.runtime.invocation import runtime, owner_id
+        from agentevolver.runtime.invocation import runtime, owner_id, call_function
         prototype = info.instance
         owner = owner_id(ctx)
         async def create():
             if prototype.managed_sessions or prototype.state_scope == "shared":
                 return prototype
             value = info.cls(**(info.config or {}))
+            value.name = info.name
             try:
                 if hasattr(value, "initialize"):
-                    await value.initialize()
+                    await call_function(value.initialize)
             except BaseException:
                 if hasattr(value, "cleanup"):
-                    await value.cleanup()
+                    try:
+                        await call_function(value.cleanup)
+                    except BaseException:
+                        # Failed initialization never becomes a usable binding, but its
+                        # partially acquired backend must remain available for cleanup.
+                        runtime().own("environment", f"{info.name}:initialization:{id(value)}",
+                                      owner, value, close)
+                        raise
                 raise
             return value
         async def close(value):
             if value.managed_sessions:
                 if hasattr(value, "close_session"):
-                    await value.close_session(owner)
+                    await call_function(value.close_session, owner)
             elif value.state_scope != "shared" and hasattr(value, "cleanup"):
-                await value.cleanup()
-        return await runtime().bind("environment", info.name, info.version, owner, create, close)
+                await call_function(value.cleanup)
+        return await runtime().bind("environment", info.name, info.version, owner, create, close,
+                                    scope="call" if prototype.state_scope == "call" else "owner")
 
     async def _invoke_config(self, info, action, input, ctx, **kwargs):
+        from agentevolver.runtime.invocation import call_function
         value = await self.bound(info, ctx)
         call = value.actions.get(action)
         if call is None:
@@ -1105,4 +1158,5 @@ class EnvironmentContextManager(BaseModel):
         args = dict(input or {})
         args.pop("ctx", None)
         function = call.function
-        return await function(**args, ctx=ctx) if hasattr(function, "__self__") else await function(value, **args, ctx=ctx)
+        positional = () if hasattr(function, "__self__") else (value,)
+        return await call_function(function, *positional, **args, ctx=ctx)

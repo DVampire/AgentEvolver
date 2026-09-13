@@ -5,7 +5,7 @@ Core type definitions for the Environment Context Protocol.
 
 import uuid
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Type, Union
+from typing import Any, Callable, Dict, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -57,15 +57,25 @@ class Environment(BaseModel):
     enable_evolving: bool = Field(default=False, description="Whether the environment may be evolved (self-optimized)")
     concurrent: bool = Field(default=False, description="Independent actions are reentrant; shared mutable resources must still be declared")
     max_concurrency: Optional[int] = Field(default=None, ge=1)
-    state_scope: str = Field(default="owner", description="owner or shared state binding")
+    concurrency_group: str = Field(default="", description="Optional shared runtime capacity group across environments")
+    state_scope: Literal["owner", "call", "shared"] = Field(default="owner", description="Instance lifetime: owner session, independent call, or shared backend")
     managed_sessions: bool = Field(default=False, description="Implementation already maintains owner-indexed sessions")
 
     def resource_claims(self, ctx, arguments, operation=""):
         from agentevolver.runtime.invocation import ResourceClaim, owner_id
-        if self.concurrent:
+        if self.concurrent or self.state_scope == "call":
             return ()
         scope = owner_id(ctx) if self.state_scope == "owner" else "shared"
         return (ResourceClaim(f"environment:{self.name}:{scope}"),)
+
+    def backend_key(self, owner: str) -> str:
+        """Private external resource identity for this definition and owner.
+
+        Multiplexed backends use it for container reuse, not as a durable artifact ID.
+        Two configured instances must not silently attach to the same desktop.
+        """
+        from hashlib import sha256
+        return sha256(f"{self.name}:{id(self)}:{owner}".encode()).hexdigest()
 
     permission_mode: str = Field(
         default="workspace_write",
@@ -84,6 +94,8 @@ class Environment(BaseModel):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        if self.state_scope == "call" and self.managed_sessions:
+            raise ValueError("Call-scoped environments cannot manage persistent sessions")
         # Initialize actions dictionary for this instance
         self.actions: Dict[str, ActionConfig] = {}
         

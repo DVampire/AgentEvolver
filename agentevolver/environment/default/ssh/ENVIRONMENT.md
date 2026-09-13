@@ -129,4 +129,13 @@ Report GPU model, memory use and utilisation. Empty when the host has none.
 ### get_state
 Return the state snapshot described above.
 
+## Concurrent use
+
+Connections, persistent shells, selected hosts, view servers and job namespaces belong to
+the calling Agent and environment instance. Different owners may run concurrently; one
+owner's interactive operations serialize. Use separate jobs/output directories for independent
+remote work: separate SSH connections do not isolate files or remote hardware. Closing one
+owner's environment disconnects its shell/view without closing other owners' connections.
+Launched remote jobs persist by design; inspect and stop them explicitly when no longer needed.
+
 </environment_remote_host>
