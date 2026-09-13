@@ -69,6 +69,12 @@ module import or importlib and call `compute_factors(frame)`. Keep the exact cod
 hashes in the environment's candidate/cache identity. Existing differing artifacts are not
 overwritten: use a new version path. Repeating an identical compilation is idempotent.
 
+Revise the expression/specification and recompile, including synthetic fixtures. Do not
+modify generated Python with string replacement: numeric text can also occur in runtime
+filenames, hashes and metadata. Use `FACTOR_SPEC["factors"][versioned_name]["expression"]`
+or its compile receipt for the canonical formula. Report adapters must inspect the actual
+result schema instead of assuming an `expression` key on an environment's custom spec.
+
 `FACTOR_SPEC` records canonical expressions, required fields, operator version/runtime hash
 and conservative `lookback_rows` (past context beyond the current row). Stateful operators
 report null lookback and require the same complete past prefix/state policy on every replay.

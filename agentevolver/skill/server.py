@@ -236,8 +236,14 @@ class SkillManagerServer(BaseModel):
         parameters = getattr(info, "input_schema", None) or {
             "type": "object", "properties": {}, "additionalProperties": False,
         }
+        description = getattr(info, "description", "") or name
+        skill_dir = getattr(info, "skill_dir", None)
+        if skill_dir:
+            # Native schemas survive history compaction. Retain the source locator,
+            # not the full procedure or reference inventory, for cheap rediscovery.
+            description += f"\nInstructions: {os.path.join(skill_dir, 'SKILL.md')}. Invoke to load the method and resource paths."
         return CapabilitySchema(
-            name=name, description=getattr(info, "description", "") or name,
+            name=name, description=description,
             parameters=parameters,
             strict=parameters.get("additionalProperties") is False,
             source=SchemaSource.DECLARED,

@@ -50,6 +50,33 @@ def test_there_are_skills_and_documents_to_check():
     assert len(DOCS) >= 18
 
 
+@pytest.mark.asyncio
+async def test_environment_template_exposes_and_recovers_missing_state(monkeypatch):
+    import runpy
+    from agentevolver.registry import ENVIRONMENT
+
+    # Instantiate the actual shipped template without installing an example in the
+    # shared test registry. Action decorators and the Environment base remain real.
+    monkeypatch.setattr(ENVIRONMENT, "register_module", lambda **kwargs: lambda cls: cls)
+    path = SKILLS_ROOT / "self_evolving_skill/references/environment/template.py"
+    cls = runpy.run_path(str(path))["MyEnvironment"]
+    env = cls()
+    await env.initialize()
+    try:
+        before = await env.get_state()
+        assert "set_value" in before["state"]["available_actions"]
+        assert "set_value" in before["state"]["prerequisites"]["get_value"]
+        refused = await env.get_value(key="missing")
+        assert refused["success"] is False and refused["data"]["code"] == "missing_key"
+        assert refused["data"]["next_action"] == "set_value"
+        assert await env.get_state() == before  # failed prerequisite never mutates state
+        assert (await env.set_value(key="missing", value=""))["success"]
+        recovered = await env.get_value(key="missing")
+        assert recovered["success"] and recovered["data"]["value"] == ""
+    finally:
+        await env.cleanup()
+
+
 @pytest.mark.parametrize("doc", DOCS, ids=lambda p: str(p.relative_to(SKILLS_ROOT)))
 def test_every_bundled_resource_a_document_cites_exists(doc):
     """`scripts/…` and `references/…` are paths the agent is told to run or read."""

@@ -1,7 +1,7 @@
 ---
 name: self_evolving_skill
 description: Generate, optimize, repair and evaluate reusable framework capabilities across tool, skill, agent/prompt, connector, environment, memory, workflow and plugin. Use after a concrete improvement opportunity, component failure, first correction or discovery, expected reuse, or an explicit component request. Owns the shared inspect → author → register → evaluate → repair or adopt → use loop. Repeated failure is not required. NOT for ordinary edits to the user's deliverable.
-version: 2.7.0
+version: 2.7.1
 license: N/A
 type: [orchestrator]
 category: meta

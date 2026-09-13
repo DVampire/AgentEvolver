@@ -49,9 +49,13 @@ class ConstraintStatus(BaseModel):
         return f"{self.name}: {self.used:,.0f} / {self.limit:,.0f} ({self.remaining:,.0f} {self.unit} remaining)"
 
 
+TIGHT_RATIO = 0.6
+CRITICAL_RATIO = 0.85
+
+
 def render_status_text(statuses: List[Union[ConstraintStatus, Dict[str, Any]]],
-                       tight_ratio: float = 0.6,
-                       critical_ratio: float = 0.85) -> str:
+                       tight_ratio: float = TIGHT_RATIO,
+                       critical_ratio: float = CRITICAL_RATIO) -> str:
     """Render constraint statuses (collected from check Responses) as a prompt-ready text block.
 
     Includes per-constraint budget lines plus an overall urgency tier
@@ -66,7 +70,7 @@ def render_status_text(statuses: List[Union[ConstraintStatus, Dict[str, Any]]],
     worst = max(s.ratio for s in parsed)
     if worst >= critical_ratio:
         tier = "CRITICAL"
-        hint = "Wrap up NOW — consolidate what you have and finish with the best available partial result."
+        hint = "Consolidate verified work; if the remainder cannot finish required work, hand off with outcome=resource_limited and explicit unmet requirements."
     elif worst >= tight_ratio:
         tier = "TIGHT"
         hint = "Stop broadening scope; prioritize the critical path and prepare to conclude."
@@ -75,7 +79,7 @@ def render_status_text(statuses: List[Union[ConstraintStatus, Dict[str, Any]]],
         hint = "Proceed as planned."
 
     lines = [
-        "You operate under hard resource limits. When any limit is hit the task is force-stopped immediately — an unfinished answer is lost. Budget accordingly.",
+        "You operate under hard resource limits. Hitting a limit stops execution; save durable progress as you work.",
         "",
         "Current budget (used / limit, remaining):",
     ]

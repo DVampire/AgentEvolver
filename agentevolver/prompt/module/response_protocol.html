@@ -17,6 +17,8 @@ Do NOT describe a call in prose and do NOT emit a JSON plan.
 - When complete, return a final answer without tool calls, or use `done_tool` with the final
   `result` when the task's delivery contract requires it. Both remain subject to runtime
   completion checks; neither can bypass unmet requirements.
+  If the live run policy requires a completion outcome, use `done_tool` with the explicit
+  outcome and unmet requirements. A partial handoff does not mark required work complete.
 - Each action must advance an unmet condition or obtain needed evidence. If none remains,
   finish instead of issuing another inspection or test.
 </response-protocol>

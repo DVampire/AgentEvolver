@@ -11,6 +11,7 @@ type: worker
 Describe what the environment holds/simulates and how it behaves across calls
 (e.g. an in-memory key-value store; a running browser page; a game board). This is
 what an agent needs to understand before acting.
+Include required prior actions and their returned artifact paths for stateful operations.
 
 ## Vision
 (Include this section ONLY if some action returns an image.) Say what the visual
@@ -24,5 +25,5 @@ Store a value under a key. Args: `key` (str), `value` (str). Use when you need t
 remember something for a later step.
 
 ### get_value
-Read the value stored under a key. Args: `key` (str). Returns the value or null if
-unset.
+Read a previously stored key. Args: `key` (str). Missing keys return `success=False`,
+`code=missing_key` and `next_action=set_value`; no state changes occur on rejection.

@@ -110,6 +110,21 @@ What it does, its arguments, and when to call it.
 
 The body documents the environment's state, (optional) vision, and each action — this is what an agent reads before acting. Keep action docs concrete.
 
+### State and input contracts
+
+Validate and normalize configuration once when binding it. Persist effective defaults in
+the versioned binding and use that same representation for every action, cache identity and
+replay. Optional fields must not become required through direct dictionary access in a later
+operation. Reject invalid required fields with their names before modifying state.
+
+Stateful action descriptions must name prerequisites. Return current phase, relevant paths
+and available next actions in compact state/results. Validate the phase and input files before
+opening them or advancing counters; a missing authorization is a failed precondition with the
+required next action, not an unexplained FileNotFoundError. Keep rejections unsuccessful and
+leave state unchanged. These checks must never create missing approval/exposure records or
+reset an already consumed attempt. Exercise the full valid transition sequence, omitted defaults,
+an out-of-order action, identical replay and changed-input rejection in isolated state.
+
 #### Verify and register
 
 After writing, compile and instantiate the class with its intended configuration. Check

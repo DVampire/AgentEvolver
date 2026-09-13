@@ -17,6 +17,7 @@ dead. Two mechanisms for one job is how one of them goes quiet without anyone no
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, List, Optional, Sequence
 
 from agentevolver.agent.loop.events import events
@@ -29,6 +30,27 @@ DEFAULT_RESERVE_STEPS = 3
 
 #: Consecutive read-only turns before the agent is told it is circling.
 DEFAULT_IDLE_TURNS = 6
+
+
+def resource_status(agent: Any, *, completed_step: bool = False) -> list:
+    """Read the limits enforced by the loop, without optional hooks or counter changes."""
+    from agentevolver.constraint.types import ConstraintStatus
+
+    statuses = [ConstraintStatus(name="task_steps", used=agent.step + int(completed_step),
+                                 limit=agent.max_step, unit="steps")]
+    if agent.max_token is not None:
+        statuses.append(ConstraintStatus(name="task_tokens", used=agent._used_tokens,
+                                         limit=agent.max_token, unit="tokens"))
+    shared = getattr(getattr(agent, "proc", None), "budget", None)
+    if shared is not None and shared.limit is not None:
+        consumed = shared.tokens + shared.reserved
+        if not any(s.unit == "tokens" and s.limit == shared.limit and s.used == consumed for s in statuses):
+            statuses.append(ConstraintStatus(name="session_tokens (spent + reserved)",
+                                             used=consumed, limit=shared.limit, unit="tokens"))
+    if agent.timeout is not None:
+        statuses.append(ConstraintStatus(name="task_time", unit="seconds", limit=agent.timeout,
+                                         used=max(0, time.time() - agent._started_at) if agent._started_at else 0))
+    return statuses
 
 
 class LandingWindow:

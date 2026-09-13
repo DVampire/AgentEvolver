@@ -12,6 +12,12 @@ Use the actual paths supplied in the current context. Write candidates under the
 by the type. Do not overwrite package source, a shared installed component or a candidate
 still being consumed. Temporary checks and fixtures belong in the authorized workspace.
 
+Skill source locators remain in native descriptions after compaction. Invoke the skill again
+for resource paths rather than guessing a category directory or an old reference filename.
+Use paths returned by actions for their outputs. Resolve a reference's relative links from
+that reference's directory, not the workspace. Check an unfamiliar shell utility with
+`command -v`; if absent, use an available equivalent instead of repeating the failed command.
+
 Inspect before writing: read the target's source, related files, current version and
 `enable_evolving`. Missing means generate; frozen means create an alternative under a new
 name when needed; evolvable means optimize the existing name. Preserve the prior good version
@@ -83,6 +89,12 @@ Supporting scripts may construct fixtures, calculate reference outputs or check 
 Their success alone does not prove that the native Tool, Connector, Environment, Agent,
 Memory, Workflow or Plugin consumer works. A Skill must be invoked and its method executed;
 loading instructions is not outcome evidence.
+
+Run an expected rejection separately from actions that must execute: the serial executor
+stops a batch at its first failed call. Record the expected reason before the check, retain
+the failed receipt, verify that state did not advance, and then execute the valid recovery.
+Do not call a missing-file crash a passing negative test when the intended phase/contract
+rejection was never reached. Keep such defects distinct from successful rejection tests.
 
 Use a representative baseline/candidate comparison and an independent reuse or regression
 case for a small change. Expand for affected operations, state transitions, permissions,

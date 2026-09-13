@@ -113,8 +113,8 @@ def test_a_critical_budget_is_told_to_finish_with_what_it_has():
     consolidates, where one that only sees "CRITICAL" often starts a new subtask.
     """
     text = render_status_text([ConstraintStatus(name="c", used=95, limit=100)])
-    assert "Wrap up NOW" in text
-    assert "partial result" in text
+    assert "Consolidate verified work" in text
+    assert "outcome=resource_limited" in text and "unmet requirements" in text
 
 
 def test_a_tight_budget_is_told_to_stop_broadening():
@@ -125,15 +125,15 @@ def test_a_tight_budget_is_told_to_stop_broadening():
     )
 
 
-def test_the_model_is_told_that_hitting_a_limit_loses_the_answer():
+def test_the_model_is_told_to_persist_before_a_hard_stop():
     """Stated at NORMAL, before any budget is tight.
 
     Without the consequence spelled out, remaining budget reads as information rather
     than a deadline, and the model spends it as if running out were merely the end.
     """
     text = render_status_text([ConstraintStatus(name="c", used=1, limit=100)])
-    assert "force-stopped" in text
-    assert "unfinished answer is lost" in text
+    assert "Hitting a limit stops execution" in text
+    assert "save durable progress" in text
 
 
 def test_every_budget_gets_its_own_line():

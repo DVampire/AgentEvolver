@@ -86,6 +86,15 @@ must include interaction and a later observation. Both explicit done and text-on
 report unmet requirements as unsuccessful. Ordinary tasks retain their existing completion
 behavior. These provenance checks do not provide an independent semantic quality judgment.
 
+`run_policy.require_completion_outcome` requires an explicit `done_tool` outcome instead of
+a text-only ending. `completed` cannot list unfinished requirements; `blocked` and
+`resource_limited` preserve partial results with unsuccessful task status. A resource-limited
+handoff must be justified by the live runtime budget reaching CRITICAL or the last three
+steps. Unsupported endings receive repair feedback; repeated unsupported endings fail rather
+than becoming successful. Domain completion criteria stay in the task and skills, not in the
+loop. Without this opt-in, legacy text/tool endings remain supported. Core step, token and
+time limits are always visible in live context, independently of optional constraint hooks.
+
 `evolution.required_modules` requires at least one verified component per named type.
 `evolution.required_module_counts` optionally sets higher counts, for example
 `{"connector": 1, "environment": 2}`. Counts are positive integers and measure distinct

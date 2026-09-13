@@ -29,7 +29,7 @@ benchmark_names = []
 task_manifest_defaults = dict(
     subscribers=[],
     deployment=dict(required_releases=2, topic="deployment.ready"),
-    run_policy=dict(self_review=True),
+    run_policy=dict(self_review=True, require_completion_outcome=True),
     evolution=dict(require_verified_improvement=True,
                    required_module_counts=dict(connector=1, environment=2)),
     research=dict(holdout_control="protocol_only"),

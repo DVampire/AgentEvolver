@@ -186,6 +186,12 @@ in env_names: the demo permits evolved Environment actions through the shared ca
 Bind immutable snapshot, protocol and engine versions before evaluating. For deferred test
 acquisition, freeze the query contract first and bind the downloaded hash in a one-time receipt
 after submission freeze, before computing metrics; never fabricate an unavailable hash.
+Normalize the effective warm-up, horizon, gap and cost settings at binding; later research,
+freeze and finalization must use those same values. A missing optional warm-up key must not
+crash only at freeze, and a fallback must not silently change the scored interval. Expose the
+legal next action and its input artifact paths. Finalization without its required access
+receipt must fail before reading data or changing exposure; it must name the prerequisite
+operation instead of returning only a missing internal filename.
 Finalization accepts
 one frozen bundle covering BOTH environments and the factor library. The factor environment
 must not have an independent early test-reveal action. Store trial IDs, validation counts and

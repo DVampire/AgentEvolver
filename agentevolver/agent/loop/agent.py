@@ -273,6 +273,10 @@ class Agent(BaseModel):
         # mutability is independent of whether this agent can run an evolution loop.
         self._evolution_policy_enabled = False
         self._notes: List[str] = []
+        self._review_completion_attempts = 0
+        self._review_completion_signature = ()
+        self._completion_result = None
+        self._completion_error = ""
         self._model_failures = 0
         self._truncated_turns = 0
         #: Folds attempted this run, for the fold number the compaction events report.
@@ -421,6 +425,8 @@ class Agent(BaseModel):
         self._notes = []
         self._review_completion_attempts = 0
         self._review_completion_signature = ()
+        self._completion_result = None
+        self._completion_error = ""
         self._model_failures = 0
         self._truncated_turns = 0
         self._folds = 0
@@ -524,7 +530,7 @@ class Agent(BaseModel):
 
             finished = next((result for result in results if result.final), None)
             if finished is not None:
-                if not await self._review_completion():
+                if not await self._review_completion(finished):
                     continue
                 return self._finish(finished.output)
 
@@ -1340,6 +1346,16 @@ class Agent(BaseModel):
 
         blocks = list(self._notes)
         self._notes = []
+        from agentevolver.agent.loop.guards import render_status, resource_status
+
+        # Core limits must be visible even with no optional constraint middleware.
+        # This stays in live context and is rebuilt after history compaction.
+        blocks.append(render_status(resource_status(self)))
+        policy = (getattr(self.ctx, "extra", None) or {}).get("task_manifest", {}).get("run_policy", {})
+        if policy.get("require_completion_outcome") is True:
+            blocks.append("Completion requires done_tool with an explicit outcome and unmet_requirements. "
+                          "A text-only ending is not a completion receipt. Use the current runtime budget, "
+                          "not a self-imposed research batch limit, to justify resource_limited.")
         evolution = live_notice(self.ctx)
         if evolution:
             blocks.append(evolution)
@@ -1747,20 +1763,48 @@ class Agent(BaseModel):
         listed = "\n".join(f"- {path}" for path in files)
         return f"{task}\n\n<files>\n{listed}\n</files>"
 
-    async def _review_completion(self) -> bool:
-        """Refresh browser evidence and return repairable omissions to the loop."""
+    async def _review_completion(self, finished: Optional[ActionResult] = None) -> bool:
+        """Check an explicit outcome and return repairable omissions to the loop."""
+        from agentevolver.agent.loop.guards import DEFAULT_RESERVE_STEPS, resource_status
+        from agentevolver.constraint.types import CRITICAL_RATIO
         from agentevolver.task.self_review import enabled, observe_state, status
 
-        if not enabled(self.ctx):
-            return True
+        policy = (getattr(self.ctx, "extra", None) or {}).get("task_manifest", {}).get("run_policy", {})
+        self._completion_result = (finished.extra or {}).get("completion") if finished is not None else None
+        self._completion_error = ""
+        reasons = []
+        receipt = self._completion_result
+        if policy.get("require_completion_outcome") is True and not receipt:
+            reasons.append("Use done_tool with outcome and unmet_requirements after the task's completion review")
+        if receipt is not None:
+            if not isinstance(receipt, dict) or receipt.get("outcome") not in {
+                    "completed", "blocked", "resource_limited"}:
+                reasons.append("Invalid completion outcome")
+            else:
+                unmet = receipt.get("unmet_requirements")
+                if not isinstance(unmet, list) or any(not isinstance(item, str) or not item.strip() for item in unmet):
+                    reasons.append("unmet_requirements must list the actual unfinished requirements")
+                elif receipt["outcome"] == "completed" and unmet:
+                    reasons.append("Required work remains; execute the next feasible plan step before claiming completion")
+                elif receipt["outcome"] != "completed" and not unmet:
+                    reasons.append("A partial outcome must identify its unmet requirements")
+                if receipt["outcome"] == "resource_limited":
+                    resources = resource_status(self, completed_step=True)
+                    if not (any(s.ratio >= CRITICAL_RATIO for s in resources)
+                            or self.max_step - self.step - 1 <= DEFAULT_RESERVE_STEPS):
+                        reasons.append("Runtime resources are available; no resource boundary justifies stopping. "
+                                       "Continue the remaining work using the live budget")
+        self._completion_error = "; ".join(reasons)
         try:
             # Also covers browser interaction and done_tool in the same turn.
-            await self.environment_state(self.ctx)
-            observe_state(self.ctx, self._environment_observations.get("browser_environment"))
-            check = status(self.ctx)
-            reasons = check.get("reasons", []) if not check["ready"] else []
+            if enabled(self.ctx):
+                await self.environment_state(self.ctx)
+                observe_state(self.ctx, self._environment_observations.get("browser_environment"))
+                check = status(self.ctx)
+                if not check["ready"]:
+                    reasons.extend(check.get("reasons", []))
         except (OSError, ValueError, KeyError, TypeError) as error:
-            reasons = [f"Could not verify browser review: {error}"]
+            reasons.append(f"Could not verify browser review: {error}")
         if not reasons:
             return True
         signature = tuple(sorted(reasons))
@@ -1773,17 +1817,20 @@ class Agent(BaseModel):
             return True
         self._review_completion_attempts += 1
         self._notes.append("Completion deferred: " + "; ".join(reasons)
-                           + ". Repair the missing review before ending; "
+                           + ". Resolve the unmet work or review before ending; "
                            + "preserve the task's execution constraints.")
         # A text ending has no tool result separating it from the next assistant
         # turn. Persist a runtime notice to keep provider reasoning replay valid.
-        self.conversation.note("Runtime notice: completion was deferred for missing browser "
-                               "review evidence. Follow the pending review instructions. "
+        self.conversation.note("Runtime notice: completion was deferred. Follow the pending "
+                               "completion instructions and current runtime budget. "
                                "This is not a new user message or approval.")
         return False
 
     def _finish(self, result: str) -> Response:
-        response = self._respond(True, result or "")
+        if self._completion_error:
+            return self._failed("Unsupported completion: " + self._completion_error + "\n\n" + (result or ""))
+        outcome = (self._completion_result or {}).get("outcome", "completed")
+        response = self._respond(outcome == "completed", result or "", completion=self._completion_result)
         if response.success:
             logger.info(f"| ✅ [{self.name}] finished in {self.step + 1} step(s)")
         else:
@@ -1794,7 +1841,7 @@ class Agent(BaseModel):
         logger.error(f"| ❌ [{self.name}] {reason}")
         return self._respond(False, reason)
 
-    def _respond(self, success: bool, message: str) -> Response:
+    def _respond(self, success: bool, message: str, *, completion: Optional[Dict[str, Any]] = None) -> Response:
         """Build the run's Response and tell observers it ended.
 
         One exit for every ending — finished, failed, out of budget, out of steps — so
@@ -1807,7 +1854,8 @@ class Agent(BaseModel):
         response = Response(
             type=ResponseType.AGENT, success=success, message=message,
             data={"steps": self.step + 1, "elapsed": time.time() - self._started_at,
-                  "usage": dict(self._total_usage)},
+                  "usage": dict(self._total_usage),
+                  **({"completion": completion} if completion is not None else {})},
         )
         # Audit before notifying observers as well as at the final return boundary:
         # a failed task requirement must not emit a successful ON_STOP event.

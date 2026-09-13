@@ -55,6 +55,7 @@ def test_task_and_study_are_staged_with_runtime_policy_from_config(tmp_path):
     assert manifest["evolution"]["required_module_counts"] == {"connector": 1, "environment": 2}
     assert manifest["subscribers"] == []
     assert manifest["research"]["holdout_control"] == "protocol_only"
+    assert manifest["run_policy"]["require_completion_outcome"] is True
     # Configuration is applied to runtime input, never written into the product document/view.
     assert "runtime-input-manifest" not in Path(metadata["task_view"]).read_text()
     staged = [f"/session/inputs/{i}_{path.name}" for i, path in enumerate(inputs)]

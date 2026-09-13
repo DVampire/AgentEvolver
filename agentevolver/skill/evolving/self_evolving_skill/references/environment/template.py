@@ -55,7 +55,9 @@ class MyEnvironment(Environment):
 
     async def get_state(self, ctx=None, **kwargs) -> Dict[str, Any]:
         """Return compact current state for the environment context."""
-        return {"success": True, "state": {"keys": sorted(self._state)}}
+        return {"success": True, "state": {"keys": sorted(self._state),
+                "available_actions": ["set_value", "get_value"],
+                "prerequisites": {"get_value": "key must have been stored by set_value"}}}
 
     # ---------------------------------------------------------------- actions
     @environment_manager.action(
@@ -69,9 +71,12 @@ class MyEnvironment(Environment):
 
     @environment_manager.action(
         name="get_value",
-        description="Read the value stored under a key. Args: key (str).",
+        description="Read a previously stored key; call set_value first for a missing key. Args: key (str).",
         read_only=True, destructive=False, idempotent=True, open_world=False,
     )
     async def get_value(self, key: str, **kwargs) -> Dict[str, Any]:
-        value = self._state.get(key)
-        return {"success": value is not None, "message": f"{key}={value}", "data": {"key": key, "value": value}}
+        if key not in self._state:
+            return {"success": False, "message": f"Unknown key {key!r}; call set_value before get_value.",
+                    "data": {"code": "missing_key", "key": key, "next_action": "set_value"}}
+        value = self._state[key]
+        return {"success": True, "message": f"{key}={value}", "data": {"key": key, "value": value}}

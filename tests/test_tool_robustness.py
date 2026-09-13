@@ -122,6 +122,30 @@ async def test_a_well_formed_call_still_reaches_the_tool(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_done_preserves_partial_outcome_separately_from_invocation_success(tmp_path):
+    manager = _manager_for(tmp_path, DoneTool())
+    resp = await manager(name="done_tool", input={
+        "reasoning": "The owner must supply a credential; all authorized sources were tried.",
+        "result": "Saved progress to plan/index.md; data acquisition remains blocked.",
+        "outcome": "blocked", "unmet_requirements": ["Acquire the required data"],
+    })
+    assert resp.success
+    assert resp.data["completion"]["outcome"] == "blocked"
+    assert resp.data["completion"]["unmet_requirements"] == ["Acquire the required data"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fields", [
+    {"outcome": "maybe"}, {"outcome": "blocked", "unmet_requirements": "data"},
+    {"outcome": "blocked", "unmet_requirements": [""]}, {"unmet_requirements": []},
+])
+async def test_invalid_completion_receipt_returns_repairable_tool_error(tmp_path, fields):
+    resp = await _manager_for(tmp_path, DoneTool())(
+        name="done_tool", input={"reasoning": "review", "result": "handoff", **fields})
+    assert not resp.success
+
+
+@pytest.mark.asyncio
 async def test_a_failure_inside_the_tool_is_not_reported_as_a_bad_call(tmp_path):
     """The bind check must catch argument errors and nothing else.
 

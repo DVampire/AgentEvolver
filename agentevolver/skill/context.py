@@ -153,6 +153,7 @@ class SkillContextManager(BaseModel):
 
     def _parse_skill_dir(self, skill_dir: Path) -> SkillConfig:
         """Parse a single skill directory into a SkillConfig."""
+        skill_dir = skill_dir.expanduser().resolve()
         skill_md = skill_dir / "SKILL.md"
         raw = skill_md.read_text(encoding="utf-8")
 
@@ -169,7 +170,9 @@ class SkillContextManager(BaseModel):
         metadata = {k: v for k, v in frontmatter.items() if k not in ("name", "description", "version", "type", "enable_evolving", "input_schema")}
 
         def _scan_dir(d: Path) -> List[str]:
-            return [str(p) for p in sorted(d.rglob("*")) if p.is_file()] if d.is_dir() else []
+            return [str(p) for p in sorted(d.rglob("*"))
+                    if p.is_file() and "__pycache__" not in p.relative_to(d).parts
+                    and p.suffix not in {".pyc", ".pyo"}] if d.is_dir() else []
 
         scripts = _scan_dir(skill_dir / "scripts")
         resources = _scan_dir(skill_dir / "resources")
@@ -546,8 +549,12 @@ class SkillContextManager(BaseModel):
         logger.info(f"| 🎯 Executing skill '{name}' v{skill_config.version} with input: {input}")
 
         skill_dir = skill_config.skill_dir
-        content = skill_config.content.replace("python scripts/", f"python {skill_dir}/scripts/")
-        parts = [content]
+        content = skill_config.content.replace("{skill_dir}", skill_dir)
+        content = content.replace("python scripts/", f"python {skill_dir}/scripts/")
+        manifest_path = str(Path(skill_dir) / "SKILL.md")
+        parts = [f"Skill source: {manifest_path} (v{skill_config.version})\n"
+                 "Resolve links relative to the document containing them; use the exact listed paths.\n",
+                 content]
 
         if skill_config.resources:
             parts.append(f"\nAvailable resources: {', '.join(skill_config.resources)}")
@@ -570,6 +577,7 @@ class SkillContextManager(BaseModel):
                 "version": skill_config.version,
                 "input": input,
                 "skill_dir": skill_dir,
+                "manifest_path": manifest_path,
             },
         )
 

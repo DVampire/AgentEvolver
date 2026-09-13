@@ -52,6 +52,29 @@ class _Ctx:
     id = "test_session"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["foreground", "tty", "background"])
+async def test_owned_shell_can_redirect_to_null_in_every_execution_mode(workspace, mode):
+    from agentevolver.tool.default.workspace.bash import BashTool
+
+    response = await BashTool()(
+        command="printf discarded >/dev/null && cat </dev/null && "
+                "(printf hidden >&2) 2>/dev/null && printf device-ok",
+        tty=mode == "tty", run_in_background=mode == "background", ctx=_Ctx(),
+    )
+    assert response.success, response.message
+    if mode == "background":
+        job = job_manager.get(response.data["job_id"])
+        assert await _wait_until(lambda: job.status.is_final, timeout=5)
+        assert job.status is JobStatus.EXITED and job.exit_code == 0
+        assert "device-ok" in job.output and "hidden" not in job.output
+    else:
+        assert response.data["exit_code"] == 0, response.message
+        assert "device-ok" in response.message
+        assert "hidden" not in response.message
+    assert "Permission denied" not in response.message
+
+
 @pytest.fixture
 def workspace(tmp_path):
     from agentevolver.config import config

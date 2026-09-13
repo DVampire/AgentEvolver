@@ -36,8 +36,12 @@ def owned_command(argv):
     helper = shutil.which("bwrap")
     if helper is None:
         raise RuntimeError("Owned host execution requires bubblewrap (bwrap); use a container backend")
+    # Ordinary bind mounts are nodev in bubblewrap. Binding the root alone makes
+    # even `2>/dev/null` fail with EACCES despite the host node being writable.
+    # This helper owns process lifetime, not device/filesystem access: preserve
+    # host devices explicitly. isolated_command has its own private /dev policy.
     return [helper, "--die-with-parent", "--unshare-pid", "--bind", "/", "/",
-            "--proc", "/proc", "--", *argv]
+            "--dev-bind", "/dev", "/dev", "--proc", "/proc", "--", *argv]
 
 
 def _host_repo_root() -> str:

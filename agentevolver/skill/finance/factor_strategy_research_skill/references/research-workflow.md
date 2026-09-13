@@ -260,6 +260,13 @@ remaining investigations and their dispositions. Link it from index.md. Choose:
   prevents useful progress. Save partial results, unmet requirements and the next hypothesis;
   resource exhaustion is not research completion.
 
+For interruption, cite the current runtime used/limit/remaining values or the concrete
+external prerequisite. A research batch, release milestone or context compaction is not a
+resource boundary. If material questions remain and resources permit, execute the next
+investigation instead of publishing an interrupted conclusion. Use done_tool's completion
+outcome when required: a completed research conclusion may be negative; unfinished research
+is `resource_limited` or `blocked` only with its actual stopping cause and unmet requirements.
+
 Separate research completeness, strategy support, strict data qualification, product delivery
 and capability evolution. The Agent must justify closure from evidence; counters, fixed
 returns, lowered criteria and report-renderer success cannot establish research quality.

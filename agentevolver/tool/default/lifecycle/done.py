@@ -1,5 +1,5 @@
 """Done tool for indicating that the task has been completed."""
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import Field
 from agentevolver.tool.types import Tool
 from agentevolver.response.types import Response, ResponseType
@@ -20,10 +20,17 @@ _GUIDANCE = """
   in `reasoning`; put what was produced and its current state in `result`.
 - Be honest about partial work: an accurate account of what is and is not done is worth far
   more to the caller than a result that reads as complete when it is not.
+- Declare `outcome` when the task requires a completion receipt: `completed` only after
+  required work is satisfied; `blocked` for a concrete external prerequisite or user stop;
+  `resource_limited` when the current runtime budget requires handing off. List unfinished
+  requirements in `unmet_requirements` for either partial outcome. A failed hypothesis,
+  repairable tool error or self-imposed batch limit is a reason to continue useful work.
+- Read the live budget before citing resource limits. Context compaction, an individual
+  response limit and a research milestone do not exhaust the task's resource budget.
 """
 
 _EXAMPLES = [
-    '{"name": "done_tool", "args": {"reasoning": "All acceptance checks pass.", "result": "Implemented the CLI in src/main.rs and src/cmd/*.rs; compile.sh builds ./executable offline. Verified: --help, --version and the add/query/remove subcommands match the reference byte-for-byte (check.sh: 14/14 pass). Unfinished: the import subcommand rejects one exotic flag combination the reference accepts."}}',
+    '{"name": "done_tool", "args": {"reasoning": "All acceptance checks pass.", "result": "Implemented the CLI in src/main.rs; check.sh passes all 14 required cases, including import.", "outcome": "completed", "unmet_requirements": []}}',
     '{"name": "done_tool", "args": {"reasoning": "Answered from the file already in context.", "result": "The timeout is set in config/server.yaml:12 (30s)."}}',
 ]
 
@@ -46,6 +53,8 @@ class DoneTool(Tool):
     async def __call__(self, 
                        reasoning: str,
                        result: str,
+                       outcome: Optional[Literal["completed", "blocked", "resource_limited"]] = None,
+                       unmet_requirements: Optional[List[str]] = None,
                        **kwargs) -> Response:
         """
         Indicate that the task has been completed.
@@ -56,7 +65,19 @@ class DoneTool(Tool):
             result (str): The deliverable handoff — what was produced and where, what was
                 verified and how, and what remains. For a sub-agent this is all the caller
                 sees of your work, so make it self-contained. Must be provided.
+            outcome: Task completion status, required when requested by the task's run
+                policy. Tool invocation success does not imply task completion.
+            unmet_requirements: Concrete unfinished requirements; empty for completed work.
         """
+        if outcome not in (None, "completed", "blocked", "resource_limited"):
+            return Response(type=ResponseType.TOOL, success=False, message="Invalid completion outcome")
+        if unmet_requirements is not None and (not isinstance(unmet_requirements, list)
+                or any(not isinstance(item, str) or not item.strip() for item in unmet_requirements)):
+            return Response(type=ResponseType.TOOL, success=False,
+                            message="unmet_requirements must be a list of nonempty strings")
+        if outcome is None and unmet_requirements is not None:
+            return Response(type=ResponseType.TOOL, success=False,
+                            message="Provide outcome with unmet_requirements")
         # Convert to string in case LLM returns non-string types
         if reasoning is None or reasoning == "":
             reasoning = "No reasoning provided"
@@ -66,4 +87,8 @@ class DoneTool(Tool):
             result = "No result provided"
         else:
             result = str(result)
-        return Response(type=ResponseType.TOOL, success=True, message=result, data={"reasoning": reasoning, "result": result})
+        data = {"reasoning": reasoning, "result": result}
+        if outcome is not None:
+            data["completion"] = {"outcome": outcome,
+                                  "unmet_requirements": unmet_requirements or [], "reason": reasoning}
+        return Response(type=ResponseType.TOOL, success=True, message=result, data=data)

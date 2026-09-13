@@ -406,7 +406,8 @@ async def test_the_landing_window_fires_only_near_the_end():
     agent = make([calls(("read", {"path": str(i)})) for i in range(6)], max_step=6)
     agent.middleware = [LandingWindow(reserve=2)]
     await agent("keep looking")
-    fired = ["<budget>" in "\n".join(blocks) for blocks in agent.seen_live]
+    # Core budgets are always visible; this guard adds a last-steps warning.
+    fired = ["step(s) remain before a hard stop" in "\n".join(blocks) for blocks in agent.seen_live]
     assert fired[:4] == [False] * 4
     assert fired[4:] == [True] * 2
 
