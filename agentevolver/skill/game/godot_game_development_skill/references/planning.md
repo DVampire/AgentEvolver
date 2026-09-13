@@ -29,7 +29,7 @@ plan/
 
 These extra paths are suggestions, not required files. Rename, combine, omit or add
 records to fit the actual task. Do not create empty folders or documents merely to
-match the example. On continuation, reuse a useful existing organization. Relative
+match the example. Choose an organization for this experiment's needs. Relative
 links in index.md locate records without repeating their bodies in the prompt.
 
 ## Turn the outline into an implementable design
@@ -75,6 +75,6 @@ before recording their outcome. Do not append a narrative after every movement/b
 press or rewrite the plan merely because a few steps passed.
 
 Keep the index focused on current work and important records. Leave detailed historical
-results on disk. Before handoff, reconcile completed and pending requirements. On resume,
-compare recorded state with the actual artifacts; copied evaluations retain their original
-build and evidence identity and do not certify the resumed run.
+results on disk. Before handoff, reconcile completed and pending requirements with the
+actual artifacts. Each experiment creates new records; evaluations identify the build
+and evidence from this experiment.

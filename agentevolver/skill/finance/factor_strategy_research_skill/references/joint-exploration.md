@@ -99,4 +99,5 @@ Before final freeze reconcile coverage, every shortlisted route's disposition, f
 strategy revision evidence, binding-specific admission and robustness with saved results.
 Apply the protocol's eligibility/readiness/test rules. Coverage measures work, not a
 guarantee of diverse profitable survivors. After test exposure, further work is explicitly
-exploratory; previous counts and exposure persist across versions and sessions.
+exploratory within this experiment; its counts and exposure persist across candidate versions
+and turns. A separate experiment creates its own records without inheriting this portfolio.

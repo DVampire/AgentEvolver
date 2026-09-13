@@ -40,9 +40,10 @@ criteria are authoritative in [study.json](signal_foundry/study.json).
 
 The v4 specification adds prospective joint exploration and supporting-role qualification.
 It retains the dates, execution assumptions, total trial ceilings and final performance
-targets. Its predecessor is v3: continuing the same research carries forward trial counts,
-patience activation and known holdout exposure. A version label does not authorize a fresh
-test of already seen history or replenish an exhausted search budget.
+targets. Each launch is an independent experiment with new records and the supplied trial
+ceilings; it imports no earlier experiment's plan, candidates, results or counters. Final
+test is held out within that experiment. Repeating historical data is not independent
+confirmation on new market observations.
 
 Documented public historical data may support the research under the study's data policy.
 Keep adjustment conventions and limitations explicit. Strict as-traded prices, consolidated

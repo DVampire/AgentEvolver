@@ -1,7 +1,7 @@
 # Representative visual sample
 
 This is a production dependency, not a quota of assets, screenshots or helper tools.
-On a fresh run or continuation, inspect the actual project before expanding content.
+Inspect this experiment's actual project before expanding content.
 If the game cannot render or accept input, repair that prerequisite first. Respect
 explicit source-only/testing restrictions and leave visual evidence pending.
 
@@ -53,7 +53,7 @@ judge them against the task's intended experience, then improve the relevant gam
 scene or UI. Do not treat a helper score, model count or completed checklist as a substitute
 for looking at the result. Describe concrete evidence rather than simply declaring it pretty.
 
-On continuation or after a relevant change, inspect the current game again. Earlier
+After a relevant change, inspect the current game again. Earlier
 screenshots and recorded opinions are historical until you confirm they still apply.
 Finish a coherent implementation batch and replay affected views; do not restart every
 art step after each small code edit. Preserve unaffected work and prioritize visible defects.

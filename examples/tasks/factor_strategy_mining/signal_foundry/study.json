@@ -1,11 +1,6 @@
 {
   "schema": 1,
   "study_id": "signal-foundry-nvda-daily-v4",
-  "research_lineage": {
-    "predecessor_study_id": "signal-foundry-nvda-daily-v3",
-    "carry_forward_trials_and_holdout_exposure": true,
-    "revision_scope": "prospective joint exploration and role-scoped factor qualification; existing frozen attempts remain unchanged"
-  },
   "market": {
     "symbol": "NVDA",
     "exchange_calendar": "XNAS",

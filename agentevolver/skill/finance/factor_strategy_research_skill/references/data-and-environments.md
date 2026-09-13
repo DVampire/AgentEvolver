@@ -78,7 +78,7 @@ factor/strategy trials against the same missing snapshot: record proposals as pe
 representative prerequisite check. Research budgets count evaluations, not renamed blocked
 proposals; retain all attempted calls in the operational record. Failed numerical evaluations
 still consume their trial allowance. Preserve any attempts already charged by the existing
-ledger rather than reclaiming budget on resume.
+ledger rather than reclaiming budget on retries within this experiment.
 
 Implement the source-independent numerical engines while data access is being resolved,
 within the remaining budget. Their missing implementation is not an external prerequisite.
@@ -89,10 +89,11 @@ handoff and any existing usable report. Release counts and evolution coverage ma
 unmet. An elaborate substitute dashboard, dummy trials or additional failure-only components
 do not resolve an access prerequisite.
 
-On resume, inspect the prior plan, source configuration and generated implementations before
-launching another full run. A new credential does not complete missing engine operations.
-Repeat the bounded acquisition check after the prerequisite changes, then implement and
-verify the remaining successful paths without resetting exposure or experiment history.
+When a prerequisite changes during this experiment, inspect its current plan, source
+configuration and implementations. A new credential does not complete missing engine
+operations. Repeat the bounded acquisition check, then implement and verify the remaining
+successful paths without resetting this experiment's exposure or history. A separate
+experiment starts from its supplied task and creates its own records and implementations.
 
 ## Connector contract
 

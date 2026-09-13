@@ -91,8 +91,8 @@ Keep visual acceptance pending when rendering is deferred. No automatic user app
 gate is added: perform this self-review within the authorized development work.
 
 Use [the presentation review procedure](references/presentation-review.md) to turn this
-into an actual work sequence and persist current visual evidence. This applies to inherited
-projects too. A visible placeholder/sparse-scene blocker selects the next art batch; do not
+into an actual work sequence and persist current visual evidence. A visible
+placeholder/sparse-scene blocker selects the next art batch; do not
 merely append another criticism while adding quests or packaging another release. Complete
 the arrival/player/companion/dialogue/battle sample before expanding content. Necessary
 engine or input repairs remain allowed; user-deferred execution remains deferred. Maintain
@@ -105,8 +105,8 @@ or writing a report is insufficient. No extra runtime gate or structured review 
 Before multi-step implementation, read [the game planning guide](references/planning.md).
 Use the shared index.md/plan.md contract at the exact plan-context paths. This skill guides
 what a game needs to record; you choose the additional documents and directory structure.
-Start small, split records only when useful, and adapt an inherited layout rather than
-creating duplicate records to match an example. Respect explicit planning-mode overrides.
+Start each experiment with a new project and plan. Split records only when useful;
+do not create duplicate records to match an example. Respect explicit planning-mode overrides.
 The runtime reads only index.md, never updates it automatically and never requires a
 rewrite every few steps. Update affected records and the index after meaningful progress.
 

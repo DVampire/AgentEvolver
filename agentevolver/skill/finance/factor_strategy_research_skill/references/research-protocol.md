@@ -13,9 +13,10 @@ submission readiness, final acceptance, experiment budgets and insufficient-evid
 Read [joint-exploration.md](joint-exploration.md). Freeze role-specific qualification,
 diversity coverage, route-review criteria and budget reservations alongside the metric
 contract. Factor formulas, strategy mechanisms and route names remain open to discovery.
-Protocol immutability does not mean an immutable candidate library. Apply revised study
-rules prospectively, preserving prior frozen attempts, trial counts and known test exposure;
-a new study version cannot restart exhausted budgets or make the same test unseen.
+Protocol immutability does not mean an immutable candidate library. Each experiment initializes
+its own protocol and budgets from the supplied study; it imports no prior experiment state.
+Within this experiment, preserve every trial and any exposed final result across turns,
+retries and candidate revisions. A failed frozen attempt cannot be overwritten by later work.
 Compute additional diagnostics freely on research splits; freeze any extra selection criterion before using it.
 Do not weaken the task's supplied thresholds. Apply the study's explicit data_policy when
 classifying incompatibility: an authorized adjusted/public-data research mode may proceed
@@ -57,7 +58,7 @@ validation selection attempts. Never shuffle time-series samples.
 Validation is a tuning resource, not fresh independent evidence after each look. Count every
 distinct candidate/parameter trial and every validation submission durably before execution.
 Bound a batch, count rejected/error candidates, deduplicate identical replays and never reset
-counts on restart. Choose the final strategy using the frozen validation ranking (eligibility
+counts during the same experiment. Choose the final strategy using the frozen validation ranking (eligibility
 first, then net Sharpe, then lower drawdown/complexity with a deterministic tie break).
 Report search breadth and uncertainty, not only the winning row.
 
@@ -127,8 +128,8 @@ test. Preserve the old result and label corrected same-test calculations diagnos
 A failed or inconclusive test closes that frozen attempt with an unsuccessful outcome;
 apply the lifecycle below to decide the next research action. Never overwrite its selected
 strategy, engine, source snapshots or results. New research versions use separate artifacts.
-Do not select a replacement winner on the consumed test. Renaming a study, resplitting seen
-history, changing the seed or choosing a different endpoint does not restore independence.
+Do not select a replacement winner on this experiment's consumed test. Resplitting seen
+history or changing the seed inside the experiment does not restore independence.
 
 ### Research lifecycle and evidence for ending a run
 
@@ -151,15 +152,17 @@ Research after test exposure is exploratory even when calculations use only trai
 the researcher has seen the failure. It must not silently retune on test, rerank test candidates,
 or call that period unseen again. A future confirmatory attempt needs genuinely unused data,
 an explicit new protocol and appropriate sample support. Do not automatically extend dates,
-change instruments or reset counters to obtain it. A new version/session of the same study
-must carry forward prior trials and known exposure; a version label cannot reset independence.
+change instruments or reset this experiment's counters to obtain it. A separate experiment
+starts independently with new records and budgets, without importing this run's state.
+Repeated historical studies remain experimental replications, not independent confirmation
+on genuinely new market observations. Describe final test as held out within the experiment.
 
 Use the joint-exploration reference's bounded round and initial diversity-review semantics.
 When the supplied study explicitly defers patience until that initial review, activate it
-once and preserve that activation on resume; round/trial ceilings always apply. Otherwise
+once and preserve that activation across turns; round/trial ceilings always apply. Otherwise
 patience applies from the first round. Keep total trial/submission counts and consecutive non-improvement rounds against the frozen
-validation objective. A new factor name, stage switch, cosmetic edit or restart does not reset
-patience. Document the measured improvement that resets it. Maximum budgets are ceilings,
+validation objective. A new factor name, stage switch, cosmetic edit or tool retry does not reset
+patience within this experiment. Document the measured improvement that resets it. Maximum budgets are ceilings,
 not quotas; use readiness, measured convergence or a concrete blocker to justify stopping
 search, rather than an arbitrary small batch count. Missing fresh test data alone is not a
 reason to skip remaining useful research, and failed final performance alone is not a reason

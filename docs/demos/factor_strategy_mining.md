@@ -25,6 +25,9 @@ Only executing the launcher starts a model experiment. Default model:
 1,000,000,000 tokens and 8 hours, with input compaction at 100,000 tokens. These ceilings
 do not mandate spending the budget. The study separately bounds research trials and validation.
 Runs register on the usual gateway at port 9876; deploy_tool publishes the report links.
+Every launch starts a new experiment. The shared example launcher isolates its adopted
+capability library under a new session namespace, alongside fresh workspace, plan and memory
+state. It does not load an earlier experiment's components, candidates, plans or counters.
 
 ## Assembly and responsibilities
 
@@ -85,8 +88,8 @@ submission readiness: all final numerical targets must also pass on pooled valid
 predeclared robustness evidence and documented search closure. Final thresholds remain unchanged.
 A first eligible candidate, completed batch or published report does not end the search.
 The v4 revision also requires diversity and joint-refinement review and supplies supporting-role
-qualification. It preserves the previous study's dates, budgets and final performance targets;
-continuations carry forward prior trial counts and holdout exposure.
+qualification. It preserves the study's dates, budgets and final performance targets. Those
+budgets apply independently to each new experiment; counts persist across turns and retries inside it.
 
 Keep frozen-attempt outcome, research activity and overall acceptance separate. A failed test
 can be followed by useful exploratory train/validation work on separate candidate versions;
@@ -94,7 +97,8 @@ its failure and exposure remain immutable. Confirmation requires genuinely unuse
 a new protocol fixed before access. If an applicable budget/patience limit is exhausted, the
 user stops, or a prerequisite leaves no useful in-scope work, end unsuccessfully with the exact
 stop reason and resume dependency. Do not poll unavailable future data or run meaningless trials.
-A new study version or directory does not reset prior exposure or the remaining research budget.
+Repeated historical studies are experimental replications; they do not supply independent
+confirmation on new market observations. New experiments do not inherit previous run state.
 
 The runtime config declares a **protocol-only** access boundary. The agent can author code and acquire
 data, so its self-written environment/ledger cannot enforce independence against itself.

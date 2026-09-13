@@ -17,7 +17,7 @@ Keep the index short: current stage/status, last verified result, next experimen
 budget, holdout state and links to the authoritative records. Include a concise active-route
 summary and links to factor/strategy lineage and latest route reviews. Full plan text, reports, price
 arrays and experiment ledgers do not belong in the live summary. Update after a meaningful
-implementation, evaluation, decision, stage transition or blocker; reconcile with disk on resume.
+implementation, evaluation, decision, stage transition or blocker; reconcile with this run's files between turns.
 Distinguish the last frozen attempt's outcome, whether research is active/awaiting a prerequisite,
 and the overall objective. For example, a failed attempt can coexist with active exploratory
 research. Keep eligibility, submission readiness and final acceptance separately linked. On a
@@ -46,7 +46,7 @@ Track source access, engine implementation, engineering verification, real-data 
 report delivery separately. For an engine, name which successful operations run and which
 remain missing; an adopted version is not automatically research-ready. On an access blocker,
 the index names the external prerequisite and any independent work still worth doing. Pending
-hypotheses stay distinct from executed research trials. On resume, read these records before
+hypotheses stay distinct from executed research trials. During this experiment, read these records before
 repeating probes or assuming that credentials alone unblock the generated implementation.
 
 Choose extra files based on the work. A useful starting layout under the same plan directory:
@@ -78,13 +78,13 @@ or credentials in a public page.
 
 Use stable candidate, dataset, fold, engine and result IDs across both stages. Record all
 parameter trials, including crashes and rejected results, before evaluation begins. A
-resumed run uses the same remaining validation budget and holdout-exposure ledger. Before
+later turn uses this experiment's remaining validation budget and holdout-exposure ledger. Before
 claiming completion, reconcile each acceptance criterion with its result ID and unresolved
 items. A missing report or unexecuted check is pending, not implicitly passed.
 Preserve failed frozen bundles and results; place later exploratory candidates in separate
-versions. On continuation, carry forward exposure even across study-version or session-name
-changes. Record which counters caused a budget/patience stop, or what fresh data confirmation
-needs and why other useful research is finished. A new folder does not create a new holdout.
+versions within this experiment. Separate experiments start with new index/plan/trial records
+and do not read earlier sessions' plans, results or counters. Record which counters caused
+this experiment's budget/patience stop, or what genuinely new data confirmation would need.
 
 Each research decision names the actual result IDs, metric values and gate failures that
 motivated it, one bounded next hypothesis and its falsification condition. After execution,

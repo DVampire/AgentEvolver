@@ -15,6 +15,13 @@ market data. It supplies research and reporting methods; the reusable data Conne
 and two research Environments are developed or improved during the task. Do not confuse
 having these instructions with having implemented or verified those capabilities.
 
+Each experiment starts independently from its supplied task, study and built-in capabilities.
+Create a new plan, local dataset, trial ledger and factor/strategy implementations. Do not
+import previous experiments' plans, memories, components, candidates, results or exhausted
+budgets. The study ceilings and one final evaluation apply within this experiment. Preserve
+its own history across turns and retries; starting a different experiment does not resume it.
+Repeated use of the same historical market period is not independent market confirmation.
+
 ## Read at the relevant decision
 
 - Before implementation: [planning and work records](references/planning.md).
