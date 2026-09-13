@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "study_id": "signal-foundry-nvda-daily-v5",
+  "study_id": "signal-foundry-nvda-daily-v7",
   "market": {
     "symbol": "NVDA",
     "exchange_calendar": "XNAS",
@@ -19,15 +19,28 @@
     "allow_unverified_consolidated_volume_for_research": true,
     "require_explicit_basis_and_limitations": true,
     "strict_data_required_for_research_completion": false,
-    "strict_reference_requirements": ["as_traded_execution_prices", "consolidated_US_equities_volume", "verified_corporate_action_accounting"],
+    "strict_reference_requirements": [
+      "as_traded_execution_prices",
+      "consolidated_US_equities_volume",
+      "verified_corporate_action_accounting"
+    ],
     "strict_data_status_separate_from_statistical_gates": true,
     "adjusted_proxy_accounting": "Apply the documented adjusted-close/close ratio consistently to provider OHLC; simulate fractional units on that total-return-adjusted proxy without additional split or dividend cash flows. Retain original fields and action metadata. This is a research proxy, not as-traded fills.",
     "no_automatic_change_to_dates_costs_or_statistical_thresholds": true
   },
   "splits": {
-    "train": ["2016-01-01", "2020-12-31"],
-    "validation": ["2021-01-01", "2023-12-31"],
-    "test": ["2024-01-01", "2026-09-11"],
+    "train": [
+      "2016-01-01",
+      "2020-12-31"
+    ],
+    "validation": [
+      "2021-01-01",
+      "2023-12-31"
+    ],
+    "test": [
+      "2024-01-01",
+      "2026-09-11"
+    ],
     "walk_forward": "annual validation folds with expanding past-only fitting",
     "minimum_boundary_gap_sessions": 21,
     "maximum_label_horizon_sessions": 20,
@@ -36,7 +49,10 @@
   "execution": {
     "signal_at": "completed regular-session close",
     "earliest_fill": "next tradable regular-session open",
-    "position_range": [0.0, 1.0],
+    "position_range": [
+      0.0,
+      1.0
+    ],
     "initial_capital_usd": 100000,
     "commission_bps_per_side": 5,
     "slippage_bps_per_side": 5,
@@ -46,7 +62,10 @@
     "annualization_sessions": 252,
     "accounting": "verified raw execution with explicit actions when available; otherwise the explicitly qualified adjusted-price research proxy defined in data_policy",
     "terminal_liquidation": true,
-    "benchmarks": ["cash", "same_stock_buy_and_hold_total_return"]
+    "benchmarks": [
+      "cash",
+      "same_stock_buy_and_hold_total_return"
+    ]
   },
   "research_policy": {
     "completion_basis": "evidence_based_researcher_judgment",
@@ -54,17 +73,29 @@
     "fixed_candidate_or_round_ceiling": false,
     "fixed_nonimprovement_patience": false,
     "track_all_trials_and_validation_looks": true,
-    "continue_while_material_testable_questions_remain": true,
+    "continuation_basis": "Researcher judgment of the next experiment's expected information, improvement potential and cost.",
+    "completion_reasons": [
+      "research_objective_supported_by_required_evidence",
+      "repeated_ineffective_improvements_and_low_expected_value_of_further_research"
+    ],
+    "exhaustive_search_required": false,
     "resource_limit_outcome": "interrupted_not_research_complete"
   },
   "exploration": {
-    "minimum_distinct_factor_hypotheses": 3,
-    "minimum_distinct_strategy_hypotheses": 3,
+    "scope": "single_stock_joint_strategy_and_factor_candidates",
+    "initial_strategy_batch_guidance": 10,
+    "cumulative_factor_candidate_target": 100,
+    "cumulative_strategy_hypothesis_target_range": [
+      20,
+      30
+    ],
+    "target_semantics": "Cumulative exploration guidance, not candidate minimums, first-round prerequisites, passing quotas or search ceilings. Adapt to evidence and explain material shortfalls at completion.",
+    "counting": "Count nonduplicate evaluated factor definitions, distinct strategy hypotheses and all revisions separately. Benchmarks, aliases, affine copies and parameter-only revisions do not increase hypothesis coverage.",
     "parameter_variants_count_as_distinct_hypotheses": false,
     "review_every_shortlisted_route": true,
-    "require_factor_revision_and_consumer_review": true,
-    "require_strategy_refinement_review": true,
-    "balance_breadth_refinement_and_robustness": true
+    "joint_refinement_policy": "Review factor and policy limitations for promising routes. Test useful revisions with matched consumer evidence; explain deferral or rejection without forcing ineffective changes.",
+    "new_hypothesis_policy": "Keep exploration open during refinement and allocate new mechanisms by expected information and cost; no fixed per-round quota.",
+    "shortlist_policy": "Evidence, diagnostic improvement potential and behavioral diversity determine membership. No fixed survivor quota; exploratory candidates remain separate from eligible submissions."
   },
   "acceptance": {
     "kind": "research_quality_and_supported_conclusions_not_a_return_promise",
@@ -95,18 +126,18 @@
       "require_role_qualified_factor_bindings": true,
       "require_predeclared_comparison_and_evidence_standard": true,
       "require_predeclared_robustness_evidence": true,
-      "require_documented_search_closure": true,
+      "require_documented_readiness_and_selection_reason": true,
       "require_diversity_and_joint_refinement_review": true
     },
     "research_quality": {
       "economic_explanation": "Falsifiable factor mechanisms and executable, strategy-specific uses.",
-      "diversity_and_joint_refinement": "Distinct evaluated mechanisms, individual shortlist reviews, factor revisions with consumer evidence and strategy refinements.",
+      "diversity_and_joint_refinement": "Distinct evaluated mechanisms and individual shortlist reviews. Preserve factor/policy revision evidence and reasons for deferring low-value changes; explain exploration coverage against guidance.",
       "incremental_value": "Matched baseline and ablation evidence for the claimed return, risk or execution benefit; disclose all tradeoffs.",
       "robustness": "Fold/regime and parameter-neighborhood evidence supports the claim without unexplained dependence on one interval, parameter or exceptional trade.",
       "costs_and_feasibility": "Net effects, stressed costs, turnover, exposure and execution assumptions support the stated use.",
       "uncertainty_and_selection": "Dependence-aware uncertainty, adequate sample/trade support and full search history constrain the strength of the conclusion.",
       "final_evidence": "Interpret the frozen test with the predeclared evidence standard, including degradation and contradictions; never select or retune using test results.",
-      "closure": "Explain why remaining concrete investigations would not materially change the conclusion; a count, first passing metric, report release or unsupported opinion is insufficient.",
+      "closure": "Researcher judges completion from supported objectives or repeated ineffective improvements and low expected value of further work. Cite results, counterevidence and scope limitations without requiring exhaustive search or budget exhaustion. Completion does not imply a supported strategy.",
       "reproducibility": "Data, code, versions, calculations and the continuous report reconcile and can be replayed."
     }
   }

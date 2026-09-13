@@ -18,8 +18,7 @@ agent_model_policy = "per_agent"
 agent_names = ["factor_strategy_mining_agent"]
 memory_names = ["file_system_memory"]
 tool_names = ["bash_tool", "apply_patch_tool", "inspect_tool", "deploy_tool", "done_tool", "adoption_tool"]
-skill_names = ["factor_strategy_research_skill", "frontend_ui_engineering_skill",
-               "webapp_testing_skill", "self_evolving_skill"]
+skill_names = ["factor_strategy_research_skill", "self_evolving_skill"]
 connector_names = []
 plugin_names = []
 workflow_names = []
@@ -28,18 +27,13 @@ benchmark_names = []
 # The shared launcher applies these defaults after loading the task document.
 task_manifest_defaults = dict(
     subscribers=[],
-    deployment=dict(required_releases=2, topic="deployment.ready"),
+    deployment=dict(required_releases=1, topic="deployment.ready"),
     run_policy=dict(self_review=True, require_completion_outcome=True),
     evolution=dict(require_verified_improvement=True,
                    required_module_counts=dict(connector=1, environment=2)),
     research=dict(holdout_control="protocol_only"),
 )
-env_names = ["job", "browser_environment"]
-browser_environment = dict(
-    base_dir="environment/browser", headless=True, use_sandbox=False, use_som=False,
-    viewport=dict(width=1440, height=1000), state_detail="elements",
-    max_state_elements=140, command_timeout=30.0,
-)
+env_names = ["job"]
 
 bash_tool.update(enable_evolving=False)
 apply_patch_tool.update(enable_evolving=False)
@@ -57,7 +51,7 @@ factor_strategy_mining_agent = dict(
     capability_allowlists={"environment": env_names, "agent": []},
     accepts_evolved=["environment"],
     max_step=10_000, max_token=1_000_000_000, timeout=28800,
-    max_actions=3, max_screenshots=1, allow_token_budget_override=False,
+    max_actions=3, allow_token_budget_override=False,
     compact_strategy="text", compact_after_steps=0, compact_body_tokens=0,
     compact_input_tokens=100_000, retain_recent_steps=4, fold_at_pressure=0.85,
 )

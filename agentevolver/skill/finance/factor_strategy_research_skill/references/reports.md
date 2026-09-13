@@ -1,20 +1,20 @@
 # One continuous factor and strategy report
 
-Read frontend_ui_engineering_skill and its planning reference before implementation, and
-[metrics-and-evaluation.md](metrics-and-evaluation.md) before binding any numbers to the UI.
-Task HTML is the product brief; the agent designs and implements the actual application.
+Read [metrics-and-evaluation.md](metrics-and-evaluation.md) before exporting numerical results.
+The Agent analyzes JSON; HTML, local CSS and JS provide the human visualization at the
+deployment URL. Reuse the bundled renderer and canonical visual theme. Browser operation
+and a separate frontend implementation workflow are not required for this research demo.
 
 Sections: [page contract](#page-contract), [information hierarchy](#visible-information-hierarchy),
 [chart specifications](#chart-specifications), [result artifacts](#shared-result-artifacts-and-agent-analysis),
 [report adapter and schema](#report-adapter), [visual delivery](#visual-design-and-delivery),
-[browser acceptance](#browser-and-numerical-acceptance).
+[artifact acceptance](#artifact-and-numerical-acceptance).
 
 ## Page contract
 
 Deliver **one continuous document at one report URL**. Overview, Factor Observatory,
 Strategy Atelier, research history and definitions all occupy the normal page flow and
-remain present together. Readers and the researching agent must be able to inspect the
-whole investigation by scrolling. Do not put factors and strategies on separate routes,
+remain present together. Readers can inspect the visualization by scrolling; the Agent reads its JSON artifacts. Do not put factors and strategies on separate routes,
 tabs, page switches, modal-only views or collapsed sections. Train, validation and test
 are labelled adjacent columns or consecutive sections, not mutually exclusive tabs.
 
@@ -28,10 +28,11 @@ factors/strategies were evaluated and how they performed. Long trade ledgers may
 a labelled table region with an explicit total, local filters and a complete permitted
 export. Reset clears local investigation filters without replacing any report section.
 
-Stage one publishes an early version of this same page: measured factors, strategy progress
-and explicit pending areas. Stage two fills out and improves that page. Two research-bearing
-releases mean two versions over time, not two report pages. Preserve older immutable release
-links for audit, while the main product link opens the latest integrated document.
+Save both responsibilities in each round's versioned JSON results. Generate the continuous
+page from a selected completed snapshot; unfinished sections remain explicitly pending.
+Publish a useful milestone/final report without a mandatory two-stage release sequence.
+Keep previous round/report versions intact while the main deployed URL shows the selected
+latest result. Report iteration does not require a new browser session or deployment.
 Publication is a progress milestone, not a research stopping rule. Show preliminary eligibility,
 submission readiness and final acceptance separately. Keep the frozen attempt's failure visible
 when research continues, alongside current exploratory activity and unsupported strategy claims.
@@ -82,7 +83,7 @@ Display uncertainty method/support where applicable, not unexplained error bars.
 | Quantile response bars: are higher scores followed by higher returns? | x = training-fitted low-to-high factor bins; y = mean gross h-session forward return (%); counts and dependence-aware intervals in tooltips/table. | Zero baseline; medians and top-minus-bottom difference alongside. Empty/tied bins visible. This is conditional label response, not a compounded tradable long-short curve. |
 | Coverage bars and redundancy matrix: is evidence usable/complementary? | x = factor/fold, y = available/paired/eligible counts or explicitly labelled coverage %; matrix axes = exact factor versions, cells = Spearman factor correlation. | Show missingness and denominator; label signed coefficients and the absolute cutoff. Pair counts accompany correlations; undefined cells remain undefined. |
 | Equity lines: does the strategy add value after costs? | x = actual scored sessions; y = growth of common starting capital (default indexed to 100); lines = net strategy, zero-cost replay, matched net buy-and-hold and cash. | Separate aligned train, validation and test plots with the same series colors and labelled scales. Show initial value, costs and terminal liquidation; never concatenate all splits into a claimed unseen curve. Label validation fold resets/composite gaps. |
-| Drawdown lines/areas: how deep and long are losses? | x = same sessions as equity; y = drawdown %, at or below zero, for net strategy and benchmark. | Include initial capital in peaks; shared time brush and peak/trough/recovery markers. Gate/table maximum drawdown uses positive loss magnitude. Mark ongoing episodes unrecovered. |
+| Drawdown lines/areas: how deep and long are losses? | x = same sessions as equity; y = drawdown %, at or below zero, for net strategy and benchmark. | Include initial capital in peaks; aligned time axes and peak/trough/recovery markers; optional shared brush. Gate/table maximum drawdown uses positive loss magnitude. Mark ongoing episodes unrecovered. |
 | Return bars: which periods contribute? | x = calendar month/year, y = compounded net period return %, grouped strategy/benchmark. | Zero baseline, partial-period and split/fold labels; never sum daily returns. Optional heatmap supplements rather than replaces the readable period table. |
 | Exposure and cost attribution: what caused the drag? | x = session for actual/target exposure (%); separate period bars for commission/slippage (currency or explicitly labelled bps of initial capital). | Do not overlay currency and percentages on an unlabelled axis. Show actual weights versus prior-close targets, turnover definition and fill count; gross/net replay difference is not automatically sum of fees. |
 | Cost stress bars: does it survive the declared scenarios? | x = frozen cost scenario; y = net total return %; adjacent labelled table for net Sharpe, drawdown and costs. | Default/stress scenario boundaries and zero baseline; rerun the frozen policy without tuning. No sliders that launch new test experiments. |
@@ -108,7 +109,7 @@ Field names can follow the implemented schema, but it must contain:
   split/fold definitions and holdout state.
 - All candidate definitions, execution/selection states, parent IDs and consumer links.
 - Route/family identities, scoped factor roles, every shortlist review, and paired revision
-  results. Use schema 2 of the report adapter so these records survive into analysis.json
+  results. Use schema 3 of the report adapter so these records survive into analysis.json
   and the same continuous page, rather than existing only in an unlinked research notebook.
 - Per-result metric values/status/reasons, counts, criterion records and uncertainty method.
 - Chart series with explicit timestamps/bins, units, metric IDs, scope/scenario and result IDs;
@@ -117,8 +118,9 @@ Field names can follow the implemented schema, but it must contain:
 
 Use relative downloadable artifact URLs, not host paths or credentials. Provide both a
 compact analysis JSON (candidate metrics, gates and next-decision evidence) and complete
-permitted CSV/JSON details. The agent should read these for numerical comparison and use
-the browser for rendered verification; screenshots are not the primary numeric data source.
+permitted CSV/JSON details. The Agent reads these files directly for numerical comparison. It does not need to read
+HTML, execute page scripts or operate a browser. The HTML shell may fetch analysis.json;
+all scoring and selection evidence must already exist in the saved JSON.
 Link detailed research judgments and artifact paths from the plan index rather than
 copying large arrays/reports into prompt context.
 
@@ -127,6 +129,28 @@ Never hand-author market performance values. Include a visible build/result iden
 update manifest and assets atomically so a refresh cannot mix old metrics with a new curve.
 Distinguish old immutable releases from current results. A fixture demonstration stays in
 engineering evidence and cannot populate real factor/strategy tables or final gates.
+
+### Round records and direct analysis
+
+Follow the workflow's [directory/version conventions](research-workflow.md#directory-and-version-conventions).
+Use catalog.json for discovery, rounds/<round>/results.json for candidate/evaluation bindings
+and rounds/<round>/pool.json for selection, diagnoses and next hypotheses. Exact engine JSON
+records own numerical values; analysis.json is a source-bound visualization export, not a
+second calculator. Read selected candidate metrics and decisions first, detailed series only
+when needed. Never dump every historical report or all curves into prompt context.
+
+The report manifest may include `record` with nonempty `round_id`, `report_id`, `phase` and
+optional `parent_report_id`. This identity survives into analysis.json and the visible report.
+Keep exact evaluation IDs/paths/hashes in the private round catalog and permitted source
+hashes in the public report. An immutable round snapshot binds results and pool decisions;
+a catalog pointer can advance without rewriting older records. New numerical evidence
+gets a new evaluation; presentation-only corrections get a new report version.
+
+Render to e.g. rounds/R001/reports/v001. Repeating identical output is idempotent; different
+content at the same output directory is refused. Use v002 for a changed report, then update
+the catalog and optional live deployment after output succeeds. The HTML shell, JS, JSON
+and exports are one versioned package. Preserve source JSON files alongside private numerical
+records so public source hashes can be traced to actual results.
 
 ## Report adapter
 
@@ -141,7 +165,7 @@ calculations. The adapter is neither a backtester nor a statistical judge.
 
 ```bash
 python {skill_dir}/scripts/report.py check /absolute/report-manifest.json --stage factors
-python {skill_dir}/scripts/report.py render /absolute/report-manifest.json --stage factors --output /absolute/workspace/public
+python {skill_dir}/scripts/report.py render /absolute/report-manifest.json --stage factors --output /absolute/workspace/research/rounds/R001/reports/v001
 python {skill_dir}/scripts/report.py check /absolute/report-manifest.json --stage integrated
 ```
 
@@ -160,7 +184,7 @@ use the same saved values. Extend this layout for the full inventory, gates, unc
 drawdown, costs and research-history requirements, preserving source-bound calculations.
 Do not stop at the minimal charts just because the integration check passes. A custom UI
 should consume the validated data rather than implement a second financial calculator.
-Render to a staging directory, run browser acceptance, then deploy atomically using deploy_tool.
+Render to a new version directory, run artifact acceptance, then publish that directory using deploy_tool.
 
 ### Report data contract
 
@@ -168,14 +192,15 @@ Root fields:
 
 | Field | Contract |
 | --- | --- |
-| schema, study_id, title, summary | Schema 2 for joint research, exact study identity and truthful research summary. Schema 1 remains readable for legacy artifacts. |
+| schema, study_id, title, summary | Schema 3 for new research with archived strategy definitions. Schemas 1/2 remain readable for existing artifacts. |
+| record | Optional round_id, report_id, phase and parent_report_id identifying a saved round/report version; included in analysis.json and visualization. |
 | scope, data_basis | research/synthetic; explicit source, price/volume basis, costs and limitations. |
 | strict_data | status met/unmet and a list of reasons; public research can proceed with unmet strict qualification when authorized. |
 | test_state | sealed/evaluated. The latter requires the real frozen finalization receipt; setting this field does not authorize access. |
 | sources | Map of stable result IDs to path and SHA-256. Paths resolve relative to this manifest; each result JSON has the same scope as the manifest. |
 | factors, strategies | Arrays of all proposed and executed candidates, preserving rejections/errors. |
 | charts | Measured line/bar series referencing source JSON; never fake coordinates or all-null arrays. |
-| routes, comparisons | Schema 2 research routes and measured parent/candidate comparisons, described below. |
+| routes, comparisons | Schemas 2/3 research routes and measured parent/candidate comparisons, described below. |
 
 Each candidate needs unique `id`, `name`, `status` and its exact `formula` (factor) or
 `rules` (strategy). Include `reason` for a diagnosis/decision and `factor_ids` for a strategy.
@@ -187,13 +212,32 @@ Only executed candidates carry measured metrics. An evaluated training factor ca
 an exploratory training strategy, but validation eligibility still requires actual admission.
 A failed factor cannot be silently consumed as an admitted factor.
 
-### Joint research records (schema 2)
+### Joint research records (schemas 2/3)
 
-Use schema 2 for new work so lineage, roles and reviews survive compilation, display and
-the analysis.json download. Candidate IDs identify exact versions. Each candidate adds
+Use schema 3 for new work so complete strategy definitions, lineage, roles and reviews
+survive compilation, display and the analysis.json download. Schema 2 retains its earlier
+metadata contract for existing artifacts. Candidate IDs identify exact versions. Each candidate adds
 `family`, `hypothesis` and `parent_ids` (empty for an original); parents must exist in the
 same factor/strategy inventory, with no cycles. Family labels are researcher-defined;
 the adapter does not infer economic diversity from different strings.
+
+In schema 3, each strategy supplies `strategy_spec: {source, pointer}` referencing the complete
+[validated strategy definition](research-workflow.md#strategy-definition-archive) embedded in
+an evaluation/source JSON already covered by `sources` and its hash. The exporter resolves
+that definition and derives id, name, family, hypothesis, parents, factor IDs/roles and readable
+rules. These need not be manually copied into the report manifest; if supplied, conflicting
+values are rejected. The row still supplies status, metrics, reason and research_only as
+appropriate. Pending proposals may reference an unimplemented definition; measured strategies
+must have a pinned implementation record. File/entrypoint verification occurs in the engine,
+not by opening implementation paths from a public report.
+
+analysis.json preserves the full `strategy_spec`, canonical `spec_sha256`, `definition_source`
+reference, and directly queryable strategy_id, version, description and created_round. This
+includes assumptions, failure conditions, fitting policy, pseudocode, parameters and change
+motivation; the JS displays key design and version information. New-schema factor rows also
+require explicit display names. Report checks validate structure and consistency, not whether
+an economic explanation is correct. Private spec/evaluation paths stay in the catalog;
+implementation file paths inside archived specs are relative to their version directory.
 
 Factors add `role`, using `return_prediction` for that role and open names for supporting
 uses. `qualified_strategy_ids` restricts qualification to exact consumers. An admitted
@@ -233,7 +277,7 @@ Do not use comparison records to rerank post-reveal test candidates.
 
 Source hashes and references apply to all comparison values; sealed test labels are rejected
 in comparisons as in charts/metrics. Verify that a source does not disguise test data under
-another label. Neither this structural adapter nor schema 2 independently enforces holdout
+another label. Neither this structural adapter nor report schemas independently enforce holdout
 isolation, mechanism coverage, trial budgets or statistical admission. Those are the native
 environments' research contracts and the agent's evidence-based review responsibilities.
 
@@ -294,36 +338,37 @@ screens; headings, conclusions and primary controls must not clip. Printable/exp
 HTML contains both stages and definitions without visiting hidden tabs. Preserve already
 visible findings while loading secondary artifacts; show useful retry/error states.
 
-Publish via deploy_tool and use the returned gateway URL. First publish measured factor
-research on the continuous report; later publish the integrated strategy evidence as a new
-version of the same product. If data access fails before research begins, preserve a concise
+Publish via deploy_tool and use the returned gateway URL. Serve the HTML shell, CSS, JS
+and its matching JSON snapshot together. Publish when a useful joint research milestone
+or final report is available, not once per numerical evaluation. If data access fails before research begins, preserve a concise
 status/evidence view and the specific missing prerequisite, with research acceptance unmet.
 Do useful engine work; do not spend the remaining budget decorating a synthetic substitute.
 
-## Browser and numerical acceptance
+## Artifact and numerical acceptance
 
-Use webapp_testing_skill and browser_environment on the deployed URL; HTTP 200 alone is
-insufficient. Read the compact exported analysis before each research decision, then check:
+Use Bash/file access and HTTP checks. No browser environment, frontend-testing skill or
+screenshots are required. These checks establish data integrity and delivery, not visual
+or interactive browser validation.
 
-1. Load the page once. Locate both factor and strategy inventories, definitions, results and
-   all split headings in the same document. Scroll/anchor from a factor to its consumer and
-   back; verify neither route navigation nor a tab/page replacement occurs.
-2. Match candidate counts/states and exact formulas to saved results. Inspect an admitted
-   and a rejected factor, when present, and trace an exact version into its strategy rules.
-   If either state is absent, show that honestly rather than inventing an example.
-3. Compare fold bars, horizon lines and quantile counts with factor artifacts; explain one
-   admission/rejection from the actual gate values and uncertainty.
-4. Brush a validation drawdown and inspect its fills, exposure and costs. Reset; official
-   full-scope metrics/gates must remain unchanged. Reconcile one daily equity return, a
-   drawdown, a cost total and a completed-trip count with the same result's ledger/export.
-5. Compare only precomputed cost scenarios, read one ablation and its decision rationale.
-   Verify metric units and train/validation/test identities in tooltip, table and export.
-6. Confirm test is absent from payloads before reveal, including downloadable artifacts;
-   afterward, all supplied final gates remain visible, including failures/nulls.
-7. Repeat scrolling, anchor navigation and controls at desktop/narrow widths with keyboard.
-   Inspect screenshots from overview, factor and strategy sections, not just the hero.
+1. Reopen the saved JSON and reconcile candidate counts, IDs, roles, bindings and statuses
+   with the round catalog. Inspect evaluated/rejected candidates when present and verify
+   failed or unexecuted items are not presented as passing numerical results.
+2. Reconcile factor metrics, policy metrics, comparison deltas and representative chart
+   points with hash-bound environment outputs under the same scope, units and versions.
+   Run the report adapter check; undefined values retain their reasons and zero stays zero.
+3. Check saved HTML references local CSS/JS and that JS loads the matching analysis.json.
+   Keep both stage containers in one document. Numerical data never needs to appear in the
+   HTML source; conclusions, tables and charts are rendered from the same JSON values.
+4. Verify test-labelled metrics/series are absent before reveal and the frozen test's
+   failures/nulls remain after reveal. Inspect source scope as well as labels; the adapter
+   does not independently enforce the author's access to holdout data.
+5. Verify required output files and permitted links, then request the deployed HTML, JS,
+   CSS and JSON over HTTP at the exact returned URL. Compare served JSON with the intended
+   saved snapshot; HTTP 200 for an empty shell alone does not verify report delivery.
+6. Save the check receipt and report ID/path in the round index. A correction creates a new
+   report version; unchanged numerical results do not need another backtest. Apply relevant
+   checks after changes and reuse still-valid evidence. No mandatory visual-polish loop.
 
-Record a concrete presentation defect, implement a purposeful improvement and compare
-equivalent before/after views. Record this as self-review, not independent user approval.
-Keep numerical correctness, usability, engine readiness and research success as separate
-acceptance outcomes. Passing browser checks cannot turn a failed final test into success.
+The rendered page remains attractive through the canonical theme, legible charts and a
+consistent template. Keep numerical correctness, file/delivery checks, unverified browser
+behavior and strategy support separate. A successful render cannot make a strategy pass.

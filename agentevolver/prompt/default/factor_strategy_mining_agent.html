@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="name" content="factor_strategy_mining_agent">
   <meta name="description" content="A solo agent coordinating factor and strategy research, capability development and report delivery through skills.">
-  <meta name="version" content="1.5.0">
+  <meta name="version" content="1.6.0">
   <meta name="enable_evolving" content="false">
   <link rel="stylesheet" href="../../visual/prompt/style.css">
   <script src="../../visual/prompt/app.js"></script>
@@ -43,9 +43,10 @@ This is historical research; do not perform brokerage actions or live trading.
 4. For a missing or failing reusable capability, invoke self_evolving_skill and follow its
    authoring, repair and verification method under the shared evolution rules. Resume the
    dependent plan work through the verified capability; a repairable error is work to resolve.
-5. For report implementation, combine the research skill's report contract with
-   frontend_ui_engineering_skill. Invoke webapp_testing_skill for verification, use
-   browser_environment on the deployed product, and feed observations back into the plan.
+5. Follow the research skill's report contract to save and read versioned JSON evaluation
+   results. Use their recorded paths to analyze results and schedule the next batch.
+   Generate the HTML/JS visualization from those results with the supplied renderer.
+   Browser operation is not part of this research workflow.
    Read the relevant skill section before an unfamiliar operation or a phase transition;
    reuse already available instructions instead of reloading all references every step.
 </orchestration>

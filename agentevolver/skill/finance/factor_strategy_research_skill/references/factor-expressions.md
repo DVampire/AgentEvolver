@@ -82,6 +82,13 @@ This metadata is not an admission receipt or sample-count estimate. Canonical ex
 normalize infix/alias syntax; other algebraic equivalences still need redundancy review.
 Renaming an output does not create a new research hypothesis or reset trial accounting.
 
+For a joint research batch, collect the strategies' required expressions into one spec,
+with a separate mapping from each strategy version to its exact factor columns and roles.
+Compile and evaluate identical definitions once per semantic data/fitting scope. A new factor
+revision gets a new column/version and output path; other strategies keep their old bindings.
+Keep compiler receipts with the factor definitions and round/evaluation IDs in the catalog.
+Compilation failures are diagnostic errors, not counted numerical research or rejected alpha.
+
 ## Numerical conventions and extension
 
 Trailing windows include the current observed row and require all window values by default;

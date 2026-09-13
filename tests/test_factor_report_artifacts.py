@@ -19,6 +19,7 @@ def module(name):
 
 report = module("report")
 snapshot = module("check_snapshot")
+strategy_spec = module("strategy_spec")
 
 
 def save(path, value):
@@ -60,6 +61,167 @@ def test_measured_zero_survives_and_exports_match_sources(manifest, tmp_path):
     assert ",-0.01,percent," in (output / "metrics.csv").read_text()
     assert "2020-01-04,99" in (output / "series.csv").read_text()
     assert json.loads((output / "analysis.json").read_text())["charts"][1]["series"][0]["points"][-1]["y"] == 99
+
+
+@pytest.fixture
+def strategy_definition(tmp_path):
+    # The checker hashes files without importing or executing a policy.
+    code = b'raise RuntimeError("archive validation must not execute policy code")\n'
+    (tmp_path / "policy.py").write_bytes(code)
+    return {
+        "schema": 1, "strategy_id": "S001", "version": "v001", "id": "S001@v001",
+        "name": "回撤修复 / Pullback recovery", "description": "A fixture strategy with a complete archived design.",
+        "family": "event recovery", "hypothesis": "The declared fixture response supports a bounded event policy.",
+        "falsification": "No incremental utility versus the fixed reference.",
+        "created_round": "R001", "parent_ids": [],
+        "change": {"kind": "initial", "summary": "Initial hypothesis", "reason": "Cover an untested mechanism", "evidence_ids": []},
+        "factor_bindings": [{"factor_id": "F001@v001", "role": "return_prediction", "purpose": "Trigger a candidate entry"}],
+        "design": {
+            "objective": "Test incremental response under unchanged costs",
+            "mechanism": "A declared event selects exposure rather than a full-history fitted direction.",
+            "combination": "Use the single entry factor", "fit_policy": "Fit only on the permitted past fold",
+            "pseudocode": "Observe completed close; form target; fill at next open.",
+            "assumptions": ["Fixture units are not market prices"], "failure_modes": ["No sample support"],
+            "rules": {"entry": "Positive signal", "exit": "Nonpositive signal", "sizing": "One unit",
+                      "rebalance": "Daily", "neutral": "Cash", "risk": "No leverage", "execution": "Next open"}},
+        "parameters": {"threshold": 0},
+        "implementation": {"path": "policy.py", "sha256": hashlib.sha256(code).hexdigest(), "entrypoint": "target"},
+        "extensions": {"design_notes": "Open additional design metadata is retained"},
+    }
+
+
+@pytest.fixture
+def archived_manifest(manifest, strategy_definition):
+    spec = json.loads(manifest.read_text())
+    spec["schema"] = 3
+    spec["factors"][0].update(id="F001@v001", name="Fixture response", family="response",
+                               hypothesis="Fixture response", parent_ids=[], role="return_prediction")
+    strategy = spec["strategies"][0]
+    for key in ("id", "rules", "factor_ids"):
+        del strategy[key]
+    strategy.update(strategy_spec={"source": "engine", "pointer": "/strategy_spec"}, research_only=True)
+    spec["routes"] = [{"id": "recovery", "hypothesis": "Fixture recovery", "status": "active",
+                       "factor_ids": ["F001@v001"], "strategy_ids": ["S001@v001"],
+                       "diagnosis": "Need more evidence", "next_step": "Review contribution"}]
+    engine = manifest.parent / "engine.json"
+    data = json.loads(engine.read_text())
+    data["strategy_spec"] = strategy_definition
+    spec["sources"]["engine"]["sha256"] = save(engine, data)
+    save(manifest, spec)
+    return manifest
+
+
+def test_strategy_definition_and_source_identity_survive_report_export(archived_manifest, tmp_path):
+    result = report.compile_report(archived_manifest, allow_synthetic=True)
+    row = result["strategies"][0]
+    original = json.loads((archived_manifest.parent / "engine.json").read_text())["strategy_spec"]
+    assert row["strategy_spec"] == original
+    assert row["name"] == original["name"]
+    assert row["description"] == original["description"]
+    assert row["version"] == "v001" and row["created_round"] == "R001"
+    assert row["factor_ids"] == ["F001@v001"]
+    assert row["spec_sha256"] == strategy_spec.digest(original)
+    assert row["definition_source"] == {"source": "engine", "pointer": "/strategy_spec"}
+    assert row["metrics"][0]["value"] == -0.01
+    output = tmp_path / "archived-report"
+    report.render(result, output)
+    assert json.loads((output / "analysis.json").read_text())["strategies"][0] == row
+
+
+@pytest.mark.parametrize("key,value", [("name", "Wrong display name"), ("id", "S002@v001"),
+                                      ("factor_ids", ["OTHER@v001"]), ("rules", "Different execution")])
+def test_report_rejects_metadata_diverging_from_archived_strategy(archived_manifest, key, value):
+    spec = json.loads(archived_manifest.read_text())
+    spec["strategies"][0][key] = value
+    save(archived_manifest, spec)
+    with pytest.raises(ValueError, match="archive conflicts"):
+        report.compile_report(archived_manifest, allow_synthetic=True)
+
+
+@pytest.mark.parametrize("defect", ["name", "description", "design", "pseudocode", "latest", "id",
+                                  "self_parent", "change", "parameters", "implementation", "nonfinite"])
+def test_incomplete_strategy_archives_fail_before_report_export(archived_manifest, defect):
+    spec = json.loads(archived_manifest.read_text())
+    engine = archived_manifest.parent / "engine.json"
+    data = json.loads(engine.read_text())
+    definition = data["strategy_spec"]
+    if defect in ("name", "description", "design"):
+        del definition[defect]
+    elif defect == "pseudocode": definition["design"]["pseudocode"] = " "
+    elif defect == "latest": definition["factor_bindings"][0]["factor_id"] = "F001@latest"
+    elif defect == "id": definition["id"] = "S001"
+    elif defect == "self_parent": definition["parent_ids"] = [definition["id"]]
+    elif defect == "change": definition["change"]["kind"] = "policy_revision"
+    elif defect == "parameters": definition["parameters"] = []
+    elif defect == "implementation": definition["implementation"] = None
+    else: definition["parameters"]["threshold"] = float("nan")
+    spec["sources"]["engine"]["sha256"] = save(engine, data)
+    save(archived_manifest, spec)
+    with pytest.raises(ValueError):
+        report.compile_report(archived_manifest, allow_synthetic=True)
+
+
+def test_archive_checker_checks_hashes_and_distinguishes_proposals(strategy_definition, tmp_path):
+    path = tmp_path / "spec.json"
+    dependency = tmp_path / "helper.py"
+    dependency.write_text("# fixture dependency\n")
+    strategy_definition["implementation"]["dependencies"] = [
+        {"path": dependency.name, "sha256": hashlib.sha256(dependency.read_bytes()).hexdigest()}]
+    save(path, strategy_definition)
+    receipt = strategy_spec.check_file(path, require_implementation=True)
+    assert receipt["implementation_hashes_verified"] and receipt["spec_sha256"] == strategy_spec.digest(strategy_definition)
+    path.write_text(json.dumps(strategy_definition, indent=2, ensure_ascii=False))
+    assert strategy_spec.check_file(path) == receipt  # Formatting does not change the definition identity.
+    dependency.write_text("# changed dependency\n")
+    with pytest.raises(ValueError, match="hash mismatch"):
+        strategy_spec.check_file(path)
+    strategy_definition["implementation"] = None
+    save(path, strategy_definition)
+    assert not strategy_spec.check_file(path)["implementation_hashes_verified"]
+    with pytest.raises(ValueError, match="pinned implementation"):
+        strategy_spec.check_file(path, require_implementation=True)
+
+
+def test_strategy_archive_cli_returns_queryable_receipt_and_actionable_error(strategy_definition, tmp_path):
+    import subprocess
+    import sys
+
+    path = tmp_path / "spec.json"
+    save(path, strategy_definition)
+    command = [sys.executable, str(SCRIPTS / "strategy_spec.py"), str(path), "--require-implementation"]
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    assert completed.returncode == 0, completed.stderr
+    receipt = json.loads(completed.stdout)
+    assert receipt["id"] == "S001@v001" and receipt["spec_path"] == str(path)
+    assert receipt["implementation_hashes_verified"]
+    del strategy_definition["description"]
+    save(path, strategy_definition)
+    failed = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    assert failed.returncode == 1 and "description" in failed.stderr and not failed.stdout
+
+
+def test_strategy_revision_retains_both_designs_and_parent_bindings(archived_manifest):
+    from copy import deepcopy
+    spec = json.loads(archived_manifest.read_text())
+    engine = archived_manifest.parent / "engine.json"
+    data = json.loads(engine.read_text())
+    child = deepcopy(data["strategy_spec"])
+    child.update(version="v002", id="S001@v002", created_round="R002", parent_ids=["S001@v001"])
+    child["change"] = {"kind": "policy_revision", "summary": "Bound event holding", "reason": "Diagnosed stale exposure",
+                       "evidence_ids": ["E001"]}
+    child["design"]["rules"]["exit"] = "Nonpositive signal or holding limit"
+    data["revised_spec"] = child
+    row = deepcopy(spec["strategies"][0])
+    row["strategy_spec"]["pointer"] = "/revised_spec"
+    spec["strategies"].append(row)
+    spec["routes"][0]["strategy_ids"].append("S001@v002")
+    spec["sources"]["engine"]["sha256"] = save(engine, data)
+    save(archived_manifest, spec)
+    rows = report.compile_report(archived_manifest, allow_synthetic=True)["strategies"]
+    assert rows[0]["strategy_spec"]["design"]["rules"]["exit"] == "Nonpositive signal"
+    assert rows[1]["parent_ids"] == [rows[0]["id"]]
+    assert rows[1]["strategy_spec"] == child
+    assert rows[0]["spec_sha256"] != rows[1]["spec_sha256"]
 
 
 @pytest.mark.parametrize("failure", ["hash", "nulls", "empty_chart", "scope", "sealed_test", "bad_binding", "missing_definition"])
@@ -143,6 +305,100 @@ def test_joint_research_survives_compilation_rendering_and_download(joint_manife
     assert exported["routes"] == result["routes"]
     assert exported["comparisons"] == result["comparisons"]
     assert "revision,response,F,F@2,RankIC,train,0.0,0.2,0.2,ratio" in (output / "comparisons.csv").read_text()
+
+
+def test_round_report_is_queryable_json_and_versions_cannot_be_overwritten(joint_manifest, tmp_path):
+    spec = json.loads(joint_manifest.read_text())
+    spec["record"] = {"round_id": "R002", "report_id": "R002-v001", "phase": "joint_refinement",
+                      "parent_report_id": "R001-v001"}
+    save(joint_manifest, spec)
+    result = report.compile_report(joint_manifest, allow_synthetic=True)
+    folder = tmp_path / "rounds" / "R002" / "reports" / "v001"
+    receipt = report.render(result, folder)
+    path = Path(receipt["analysis_path"])
+    original = path.read_bytes()
+    modified = path.stat().st_mtime_ns
+    exported = json.loads(original)
+    assert exported["record"] == spec["record"]
+    assert exported["strategies"][1]["factor_ids"] == ["F@2"]
+    assert exported["comparisons"][0]["metrics"][0]["delta"] == pytest.approx(0.2)
+    assert hashlib.sha256(original).hexdigest() == receipt["analysis_sha256"]
+    assert report.render(result, folder) == receipt
+    assert path.stat().st_mtime_ns == modified
+    result["summary"] = "Corrected interpretation; numerical results unchanged"
+    result["record"] = dict(result["record"], report_id="R002-v002", parent_report_id="R002-v001")
+    with pytest.raises(ValueError, match="use a new version directory"):
+        report.render(result, folder)
+    assert path.read_bytes() == original
+    corrected = report.render(result, folder.parent / "v002")
+    assert json.loads(Path(corrected["analysis_path"]).read_text())["record"]["report_id"] == "R002-v002"
+    assert not list(folder.parent.glob(".v00*-*"))
+
+
+def test_report_failure_does_not_publish_partial_version(manifest, tmp_path, monkeypatch):
+    result = report.compile_report(manifest, allow_synthetic=True)
+    folder = tmp_path / "rounds" / "R001" / "reports" / "v001"
+    copy = report.shutil.copyfile
+
+    def fail_copy(source, dest):
+        if Path(dest).name == "report.js":
+            raise OSError("interrupted asset copy")
+        return copy(source, dest)
+
+    monkeypatch.setattr(report.shutil, "copyfile", fail_copy)
+    with pytest.raises(OSError, match="interrupted"):
+        report.render(result, folder)
+    assert not folder.exists()
+    assert list(folder.parent.iterdir()) == []
+    monkeypatch.setattr(report.shutil, "copyfile", copy)
+    assert Path(report.render(result, folder)["analysis_path"]).is_file()
+
+
+@pytest.mark.parametrize("record", [None, [], {}, {"round_id": "R001", "report_id": " ", "phase": "screening"}])
+def test_report_rejects_incomplete_round_identity(manifest, record):
+    spec = json.loads(manifest.read_text())
+    spec["record"] = record
+    save(manifest, spec)
+    with pytest.raises(ValueError):
+        report.compile_report(manifest, allow_synthetic=True)
+
+
+def test_large_joint_inventory_survives_json_and_csv_without_a_browser(joint_manifest, tmp_path):
+    # Scale the artifact boundary with fixtures; this is not evidence of market diversity.
+    from copy import deepcopy
+    import csv
+
+    spec = json.loads(joint_manifest.read_text())
+    factor, strategy = deepcopy(spec["factors"][0]), deepcopy(spec["strategies"][0])
+    spec["factors"] = []
+    spec["strategies"] = []
+    spec["comparisons"] = []
+    for i in range(100):
+        spec["factors"].append(dict(deepcopy(factor), id=f"F{i:03d}@1"))
+    for i in range(25):
+        ids = [f"F{j:03d}@1" for j in range(i * 4, i * 4 + 4)]
+        spec["strategies"].append(dict(deepcopy(strategy), id=f"S{i:03d}@1", factor_ids=ids,
+                                       factor_roles={fid: "return_prediction" for fid in ids}))
+    spec["routes"][0].update(factor_ids=[c["id"] for c in spec["factors"]],
+                             strategy_ids=[c["id"] for c in spec["strategies"]])
+    save(joint_manifest, spec)
+    result = report.compile_report(joint_manifest, allow_synthetic=True)
+    folder = tmp_path / "large-report"
+    report.render(result, folder)
+    data = json.loads((folder / "analysis.json").read_text())
+    assert len(data["factors"]) == 100 and len(data["strategies"]) == 25
+    assert data["strategies"][-1]["factor_ids"][-1] == "F099@1"
+    with (folder / "metrics.csv").open() as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 125
+    assert {r["candidate"] for r in rows} == {c["id"] for c in data["factors"] + data["strategies"]}
+    # Human visualization still loads the very same JSON via the existing shell/script.
+    from bs4 import BeautifulSoup
+    page = BeautifulSoup((folder / "index.html").read_text(), "html.parser")
+    assert page.select_one('script[src="report.js"]')
+    assert page.select_one("#factors") and page.select_one("#strategies")
+    for tag in page.select("script[src], link[href]"):
+        assert (folder / (tag.get("src") or tag["href"])).is_file()
 
 
 @pytest.mark.parametrize("failure", ["cycle", "parent", "route", "role", "sealed", "unrelated_metric", "unexecuted"])

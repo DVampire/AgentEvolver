@@ -206,6 +206,47 @@ Use chronological slices and bounded batches; do not download data or rebuild th
 runtime for every formula. Results must carry schema/version information so a later engine
 change cannot silently reuse stale metrics. Test this invalidation explicitly.
 
+### Batch execution and result summaries
+
+Implement bounded native batch evaluation for the joint-candidate workflow. Accept a saved
+batch manifest with round ID, snapshot/protocol identities, strategy definitions and their
+exact factor dependencies. Action names remain chosen by the generated environments. Factor
+calculation and strategy simulation stay separate responsibilities within one round; the
+strategy environment consumes the factor environment's pinned artifacts. Reuse the compiler's
+multi-factor DataFrame output and identical fold/features/benchmark calculations rather than
+one download, compilation or model exchange per formula. Respect memory/time limits; chunk
+large batches and return progress paths through job when needed.
+
+Persist each trial start before execution, then its terminal status, semantic cache key,
+result ID/path/hash and actionable error. Successful candidates survive a partially failing
+batch; return counts and per-item statuses, explicitly marking partial failure. Never turn
+an error into a zero score, abort unrelated candidates or replay the entire successful batch
+after one failure. A factor failure blocks its dependent strategies, not other routes.
+Concurrent writers must serialize ledger/catalog changes and claim the same evaluation key
+once; incomplete results are not cache hits. A dependent consumer runs after its input is
+complete. Retries preserve both the original attempt and its recovery.
+
+Return compact summary metadata plus catalog, batch-results and per-evaluation paths, not
+all price arrays or full tables into context. Use the workflow's
+[directory/version conventions](research-workflow.md#directory-and-version-conventions).
+Before strategy evaluation, apply the workflow's [strategy definition archive](research-workflow.md#strategy-definition-archive)
+and run its checker with --require-implementation. Package/pin that validator with the
+generated environment if imported as a helper. Recheck code hashes before use, verify parent
+IDs against the catalog and factor IDs/roles against actual factor artifacts, then execute
+the named entrypoint through the native interface. Embed the unchanged strategy_spec and
+its canonical spec_sha256 in the result; the checker alone does not execute the policy.
+Each result exposes schema version, candidate/version/parents, exact factor bindings, data,
+engine/metric/fitted identities, fold scope, measured metrics, failed criteria and series
+paths. Export common summary fields for every candidate so the Agent can compare a batch
+from JSON without guessing field names. Keep selection/pool membership separate from
+numerical evaluation: diagnostic consumers can be measured before qualification.
+
+Verify batch/single-result parity, mixed valid/invalid dependencies, exact-retry cache hits,
+changed-definition invalidation and partial-batch recovery on fixtures before scaling. Use
+small bounded batches initially, then scale from measured execution cost. This interface is
+a reusable capability to author and verify through self_evolving_skill, not a built-in
+financial engine or a fixed menu of strategies.
+
 ### Open definitions and joint research
 
 Implement a versioned callable/specification boundary for factors and policies. The agent
@@ -228,10 +269,9 @@ replacement alternatives and all historical results available.
 Export route/family identities, attempted mechanism coverage, role and consumer admission,
 paired factor/strategy revisions and route-review evidence for submission readiness. Share
 complete trial and validation-look records across both responsibilities. Support adjustable
-batch sizes, changed factor/policy versions and repeated research rounds. No implicit trial,
-round or patience ceiling may be copied from earlier demos. Engines execute calculations and
-export evidence; the Agent applies the [completion decision](research-workflow.md#completion-decision).
-Neither a fixed performance check nor a report renderer certifies research completion.
+batches, changed definitions and repeated rounds. Engines calculate and export evidence;
+they do not decide whether research must continue. The Agent applies the workflow's
+[completion decision](research-workflow.md#completion-decision), including reasoned stagnation.
 
 ## Engineering evidence before financial claims
 

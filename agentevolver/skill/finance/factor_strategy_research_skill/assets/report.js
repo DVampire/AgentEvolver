@@ -77,10 +77,12 @@ async function main(){
   const notice=document.getElementById("notice");notice.textContent=data.scope==="synthetic"?"Engineering fixture — synthetic observations, no market-performance claim.":"Measured research results · saved numerical artifacts · self-evaluation";
   if(data.scope==="synthetic")notice.className="warning";
   const basis=document.getElementById("basis");basis.append(node("p",data.data_basis),node("p",`Strict data qualification: ${data.strict_data.status}`,data.strict_data.status==="met"?"pass":"warning"),node("p",data.strict_data.reasons.join(" · ")),node("p",`Final test: ${data.test_state}`));
+  if(data.record){const r=data.record;basis.append(node("p",`Round: ${r.round_id} · Report: ${r.report_id} · Phase: ${r.phase}`));if(r.parent_report_id)basis.append(node("p",`Previous report: ${r.parent_report_id}`));}
   for(const kind of ["factors","strategies"]){const section=document.getElementById(kind), inventory=section.querySelector(".inventory");
     if(!data[kind].length)inventory.append(node("p","Pending — no results for this stage yet."));
     data[kind].forEach(c=>{const article=node("article",null,"candidate");article.id=`candidate-${c.id}`;article.append(node("h3",`${c.id} · ${c.name}`),node("p",c.status,"status"),node("p",c.definition,kind==="factors"?"formula":"rules"));
       if(c.family)article.append(node("p",`Hypothesis family: ${c.family}`),node("p",c.hypothesis));
+      if(c.strategy_spec){const s=c.strategy_spec,d=s.design;article.append(node("p",s.description),node("p",`Strategy ${s.strategy_id} · ${s.version} · Created in ${s.created_round}`),node("p",`Objective: ${d.objective}`),node("p",`Design: ${d.mechanism}`),node("p",`Combination: ${d.combination}`),node("p",`Fitting: ${d.fit_policy}`),node("p",`Change (${s.change.kind}): ${s.change.summary}`),node("p",`Reason: ${s.change.reason}`),node("p",`Falsification: ${s.falsification}`),node("pre",d.pseudocode,"formula"));article.append(table(["Factor version","Role","Purpose"],s.factor_bindings.map(b=>[b.factor_id,b.role,b.purpose])));}
       if(c.parent_ids?.length)article.append(candidateLinks("Parents: ",c.parent_ids));
       if(c.role)article.append(node("p",`Role: ${c.role}`));
       if(c.qualified_strategy_ids?.length)article.append(candidateLinks("Qualified consumers: ",c.qualified_strategy_ids));

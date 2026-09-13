@@ -1,272 +1,297 @@
 # Research workflow
 
-Use this reference to plan the investigation, allocate experiments and judge readiness or
-completion. Numerical definitions belong to [metrics and evaluation](metrics-and-evaluation.md);
-source acquisition and engine interfaces belong to [data and environments](data-and-environments.md).
+Plan and run joint factor/strategy research, then decide whether further work is worthwhile.
+The Agent chooses hypotheses, allocation and completion; the study supplies domain constraints.
+[Metrics](metrics-and-evaluation.md), [data/interfaces](data-and-environments.md),
+[expressions](factor-expressions.md) and [reports](reports.md) own their detailed contracts.
 
-Sections: [planning and records](#planning-and-records),
-[protocol and chronology](#protocol-and-chronology),
-[joint exploration](#joint-exploration), [readiness review](#readiness-review),
-[final evaluation](#final-evaluation), [completion decision](#completion-decision).
+Sections: [records](#planning-and-records), [chronology](#protocol-and-chronology),
+[joint exploration](#joint-exploration), [readiness](#readiness-review),
+[final evaluation](#final-evaluation), [completion](#completion-decision).
 
 ## Planning and records
 
-Use the shared plan module's supplied `index.md` and `plan.md` paths. The task HTML describes
-the research product; the study specifies market assumptions and domain constraints. Keep
-their staged paths in the index so they survive compaction. Framework components, storage,
-adoption and deployment belong to prompts/skills; runtime evidence requirements come from
-the configured input manifest. The Agent designs the implementation in the detailed plan.
+Use the shared plan module's `index.md` and `plan.md`. Design supporting files as useful;
+only those two are framework defaults. Each experiment starts from supplied inputs and
+built-in capabilities, without importing previous experiments' plans, generated components,
+data, candidates or results. Preserve this experiment's history across turns and retries.
 
-Each experiment starts from its supplied inputs and built-in capabilities, with new plans,
-local data, implementations and trial/exposure records. Do not import earlier experiments'
-plans, memories, generated components, candidates, results or exhausted budgets. Within
-this experiment, preserve its complete history across turns, retries and revisions.
+Keep the index brief: task/study paths, current round and pool, last verified result, next
+operation, resources, test-exposure state and exact lookup paths. Update at meaningful result,
+decision or blocker boundaries. The detailed plan links the protocol, data receipts/checks,
+implementation status, trial history, candidate reviews, final bundle and delivery/capability
+evidence. Large arrays and tables stay in files read on demand.
 
-Keep the index concise: current status, last verified result, next experiment, remaining
-resources, holdout state, active-route summary and links to authoritative records. Update
-at meaningful implementation, evaluation, decision or blocker boundaries; reconcile with
-this run's files before repeating probes. Large tables, arrays and full reviews stay in
-files read on demand. Distinguish the last frozen attempt's outcome from current exploratory
-work, and track eligibility, submission readiness and final support separately.
+### Directory and version conventions
 
-The detailed plan covers the following responsibilities. Choose additional filenames and
-subdirectories under the plan directory as useful; only index.md and plan.md are defaults.
+Choose a layout in plan.md and record its actual absolute roots in index.md. Recommended:
 
-| Record responsibility | What to preserve |
+```text
+plan/
+  index.md                         # status and exact lookup paths
+  plan.md                          # implementation and research allocation
+  research/protocol.md             # prospective claims, criteria and chronology
+  research/rounds/R001.md           # diagnosis and next hypotheses
+  research/reviews/                # readiness, completion and capability evidence
+workspace/research/
+  catalog.json                     # ID/version -> definitions, results and reports
+  trials.jsonl                     # append-only attempts and validation exposure
+  data/<snapshot-id>/              # source receipt, data and checks
+  factors/F001/v001/               # spec, generated code and compile receipt
+  strategies/S001/v001/            # spec.json, policy code and bindings
+  evaluations/<evaluation-id>/     # request, status, metrics, series and hashes
+  rounds/R001/
+    batch.json                     # joint candidates and dependencies
+    results.json                   # candidate -> factor/strategy evaluation IDs
+    pool.json                      # membership, reasons and next experiments
+    reports/v001/                  # HTML shell, analysis.json, CSVs and assets
+  final/<submission-id>/           # freeze, exposure marker, results and report
+```
+
+Use stable IDs and exact versions, independent of display names. A materially new hypothesis
+gets a new ID; a revision retains lineage. An evaluation binds candidate versions, snapshot,
+folds, fitted policy, engine, metric contract and costs. Changing those creates a new
+assessment, not necessarily a new candidate definition. Never bind to `latest`.
+
+Record trial starts before execution and terminal status/result paths afterward, including
+errors and rejections. Reuse successful calculations with identical bindings; retries remain
+visible but do not count as discoveries or reset exposure. Retry only failed dependencies.
+
+Archived specs, completed results, pool snapshots and reports are immutable. Write new
+artifacts atomically, then update the catalog/index; preserve round manifests and trial history.
+A report correction needs a new report version, not a repeat of unchanged numerical trials.
+Keep mutable drafting separate from published versions. An archived unimplemented proposal
+also needs a new version when implementation is added.
+
+Lookup: index → catalog/current round → compact JSON summary → selected evaluation/spec.
+Read returned paths and selected fields rather than guessing filenames or dumping all curves.
+HTML/JS visualize these same results for people; the Agent analyzes JSON without a browser.
+Public artifact links must not expose credentials or internal filesystem paths.
+
+### Strategy definition archive
+
+Archive a complete `spec.json` before evaluating a strategy version. Schema 1 describes the
+strategy without restricting its family, algorithm or parameter structure; extensions are
+allowed. Names/descriptions are required, not inferred from IDs or filenames.
+
+| Field | Contract |
 | --- | --- |
-| Data and implementation | First native download receipt, accepted file/hash, OHLCV/calendar checks, source semantics and strict qualification; connector and two environment interfaces, shared utilities, successful operations and missing implementation. |
-| Research contracts | Frozen chronology, source identities, metric contract, role-specific qualification, comparison/evidence standards, resource allocation and actual holdout boundary. |
-| Trials and research routes | Stable candidate/version, parent, factor binding/role, hypothesis, falsification, fold, engine and result IDs; every parameter trial and validation look, including errors/rejections, exposure and cost. |
-| Decisions and readiness | Baseline/candidate values and gate failures, diagnosis, next bounded hypothesis, measured improvement/regression, keep/revise/park/reject rationale, every shortlist review and remaining investigations. |
-| Final evaluation | Exact frozen submission, readiness evidence, pre-access exposure marker, retrieved snapshot identity, results and failed attempts; subsequent exploratory revisions remain separately versioned. |
-| Product and capabilities | One-page report design, data exports, visual reviews and browser evidence; capability baselines, exact-version evaluations, adoption decisions and real consumer receipts. |
-| Completion review | Evidence and counterevidence by quality dimension, remaining work, claims/support and the reasoned continue/complete/interrupted decision. |
+| `schema` | Integer 1; separate from the report format version. |
+| `strategy_id`, `version`, `id` | Stable ID, exact version and `strategy_id@version`. |
+| `name`, `description` | Display name and standalone explanation of what it does, when and why. |
+| `family`, `hypothesis`, `falsification` | Open mechanism label, testable hypothesis and contradicting evidence. |
+| `created_round`, `parent_ids` | Origin round and exact parent versions; no parents for an initial proposal. |
+| `change` | `kind`, `summary`, `reason`, `evidence_ids`; initial proposals use kind=initial, revisions cite parents and motivating evidence. Other kind labels remain open. |
+| `factor_bindings` | `{factor_id, role, purpose}` entries using exact factor versions; empty only for explicitly marked baselines. |
+| `design` | `objective`, `mechanism`, `combination`, `fit_policy`, `pseudocode`; nonempty `assumptions` and `failure_modes` arrays; `rules` for entry, exit, sizing, rebalance, neutral, risk and execution. |
+| `parameters` | Open JSON object, possibly empty; explain parameter meaning in the design. |
+| `implementation` | Null for a proposal; otherwise version-relative `path`, `entrypoint`, `sha256` and optional `dependencies` with relative paths/hashes. |
+| `baseline` | Optional boolean, default false; controls remain described but are not discoveries. |
 
-Record trials and validation requests before execution; identical replays are not new
-search trials and never reset exposure or usage. Pending hypotheses are not executed research.
-Keep large snapshots, numerical results, source and website assets in the workspace, linked
-by absolute paths and hashes from plan records. Public downloads use permitted relative
-artifact URLs without internal paths or credentials. A missing check remains pending.
+Describe signal timing, factor interactions, past-only fitting and signal-to-position rules.
+State explicit absence where a rule is unused. Long notes may supplement the structured
+design. A new independent hypothesis may lack prior numerical evidence; never fabricate it.
 
-Track source access, engineering verification, real-data research and report delivery
-separately. An adopted environment is not automatically research-ready. On a blocker record
-the actual dependency, useful independent work and next action; "test failed" is not a plan.
+```bash
+python {skill_dir}/scripts/strategy_spec.py /absolute/strategies/S001/v001/spec.json
+python {skill_dir}/scripts/strategy_spec.py /absolute/strategies/S001/v001/spec.json --require-implementation
+```
+
+The checker validates structure and implementation/dependency file hashes without executing
+code. Its `spec_sha256` hashes UTF-8 JSON with sorted keys, compact separators, unescaped
+Unicode and no NaN. The engine still checks executable behavior, causality and referenced
+factor/parent versions; pin package/runtime versions in the engine identity.
+
+Embed the validated definition unchanged as `strategy_spec`, with `spec_sha256`, in each
+strategy result. Keep fitted state, numerical scores, qualification and pool decisions in
+evaluation/round records, not overwritten into the definition. Catalog entries link exact
+IDs, name/description, spec path/hash, round/parents, evaluations and reports. Report schema 3
+preserves the archived definition from the hash-bound source in analysis.json.
 
 ## Protocol and chronology
 
-Before performance search, write a content-hashed contract fixing data identity,
-market/calendar/frequency, dates, fit/score boundaries, horizons, execution timing,
-adjustments, costs, metric definitions, role-specific factor qualification, diversity and
-route-review requirements, comparison policy, evidence standards and resource allocation.
-Bind the metric-contract version to both engines and the report. Honor supplied constraints
-and the explicit public-data research policy; do not weaken them after seeing results.
-Unsupported changes of task scope require user input.
+Before scoring, fix a versioned, hashed contract for source/adjustment basis, calendar/dates,
+fit/score boundaries, labels, execution/costs, metric definitions, factor-role qualification,
+comparison policy and evidence standards. Bind both engines and results to it. Honor study
+constraints; additional roles or criteria must be prospective new versions, not changes that
+rescue a failed claim. There is no universal return target or automatic search-count gate.
 
-Candidate formulas, mechanisms and route names remain open to discovery. Freeze any new
-role or additional selection criterion before its first scored use, preserving parent
-criteria and failures. Define the claim, matched baseline, scope, decision method, sample
-and uncertainty support, and falsification condition prospectively. Tolerances can encode
-data validity, risk assumptions or statistical support; they are not a universal return
-target. Signal Foundry has no default CAGR/Sharpe target, candidate/round ceiling or
-non-improvement patience limit. Missing ceilings do not authorize inventing one.
+Use inclusive exchange-local session boundaries, translating provider range semantics.
+Verify required completed sessions through the fixed cutoff; missing bars are acquisition
+gaps, not permission to shorten the study. Hash accepted train/validation snapshots. For
+deferred test acquisition, fix source identity/revision policy now and bind the actual file
+hash after retrieval; never fabricate a hash or silently replace data.
 
-Interpret date boundaries as inclusive exchange-local session dates, translating provider
-range semantics explicitly. Exclude unfinished sessions when required; verify every required
-completed session through the declared cutoff. Missing final bars are incomplete acquisition,
-not permission to shorten the study. Never automatically extend its cutoff during a run.
-Hash train/validation snapshots on acquisition. For deferred test data freeze provider,
-symbol, interval, feed, session, adjustment and source-revision policy; bind the actual file
-hash only after the permitted retrieval, never fabricate it or silently replace a snapshot.
-
-Use chronological train, validation and test ranges with the study's expanding folds.
-Fit each fold on strictly earlier observations; purge labels crossing the evaluation
-boundary and apply the declared trading-session gap, covering the actual label/execution
-horizon. Record actual fit/score timestamps after exclusions and warm-up. Past bars may
-warm up features without being scored twice or used to fit later-data transformations.
-
-Fit direction, primary horizon, quantile cutpoints, scaling, clipping, imputation, feature
-selection, regime classifiers and strategy weights inside the permitted training fold.
-Never preprocess the full dataset before splitting or shuffle time-series samples. A
-predeclared expanding refit may use earlier validation years; disclose that policy and
-retain all selection attempts. Validation is a repeatedly used tuning resource, not fresh
-independent evidence after every look. Preserve all trials and search uncertainty, not only
-the winning row. The supplied calendar/gap needs explicit label-aware purging beyond a
-generic [TimeSeriesSplit](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html).
+Fit on strictly earlier observations. Purge labels crossing fold boundaries and apply the
+study's session gap for the actual label/execution horizon. Record fit/score timestamps after
+exclusions and warm-up. Past bars can warm features without being scored twice. Fit direction,
+horizon, cutpoints, scaling, imputation, feature selection and policy weights only within the
+allowed training prefix; never preprocess the full dataset or shuffle time-series samples.
+Predeclared expanding refits may use earlier validation years, with that policy disclosed.
+Validation is reused tuning data: retain all trials/looks and account for selection effects.
 
 ## Joint exploration
 
 ### Establish the executable research path
 
-Make a native Connector download to a verified local file the first executable milestone;
-follow [data acquisition and recovery](data-and-environments.md). Then implement the frozen
-numerical contract in the factor and strategy Environments, with deterministic fixtures and
-real successful native operations. Reopen the accepted snapshot rather than downloading
-prices for each candidate. Fixtures establish engineering behavior, not market performance.
+First download through the native Connector and verify a nonempty local OHLCV snapshot.
+Implement both numerical Environments under the frozen contract and check deterministic
+fixtures through their actual interfaces. Reuse local data for research; fixtures demonstrate
+engineering behavior, not market performance.
 
-Compile factors through the [expression interface](factor-expressions.md), evaluate real
-definitions and publish measured factor evidence on the continuous report. Start strategy
-work with cash, matched buy-and-hold and executable single-factor baselines, then evaluate
-distinct policy hypotheses and add their results to that same page. Before scaling search,
-complete one real factor evaluation and one strategy baseline, export actual metrics/series
-and pass the [report adapter check](reports.md#report-adapter). This integration milestone
-does not admit a failed factor, reveal test or replace fold admission and finalization checks.
+Compile factor expressions and implement cash, matched buy-and-hold and a single-factor
+policy baseline. Complete one real factor/strategy evaluation with actual metrics/series and
+pass the [report adapter check](reports.md#report-adapter) before scaling search. Use the
+bundled renderer; custom UI engineering is not a prerequisite for numerical exploration.
 
-### Maintain a portfolio of mechanisms
+### Batch screening and candidate pools
 
-A research route links a falsifiable mechanism, exact factor versions, an executable
-strategy hypothesis, expected failure conditions and a bounded next experiment. It is a
-work record, not a child agent. Invent routes within lawful inputs and the execution model;
-task examples are invitations, not a catalog. Draw proposals from unexplored mechanisms,
-diagnosed weaknesses and transfers/combinations with testable incremental value.
+The research unit is a **strategy hypothesis + its required factor versions/roles + executable
+policy**. Design them together; compute factor diagnostics, then policy and contribution
+results in the same research round. A global marginal-IC leaderboard is not a prerequisite:
+apply [role-specific qualification](metrics-and-evaluation.md#roles-and-qualification-scope).
+Exploratory consumer tests can establish that evidence, but do not imply eligibility.
 
-Evaluate the study's minimum distinct factor and strategy mechanisms before concentrating
-search. Baselines and parameter variants consume trials but do not establish coverage;
-count a mechanism only after valid numerical evaluation. Report unmet coverage if an actual
-limit prevents it. Keep promising representatives with different net-return, risk, robustness,
-cost and behavioral tradeoffs. This frontier guides exploration; final selection still uses
-the predeclared comparison policy rather than silently choosing highest Sharpe.
+For Signal Foundry, roughly ten initial strategies, about 100 cumulative factor definitions
+and 20–30 distinct strategy hypotheses guide exploration. Adapt the schedule and size to
+findings; these are neither minimum passing counts nor ceilings. Different strategies can
+use different factor sets or share exact versions. Count economic mechanisms, evaluated
+versions, parameter variants, baselines and execution failures separately. Explain scope
+shortfalls without creating filler trials.
 
-Review every shortlisted route, including those below the leader. Give each a diagnosis and
-a bounded refinement or evidenced park/reject decision. Weak routes need neither equal
-resources nor permanent retention. An initial admitted library does not close factor discovery.
+| Step | Work and decision |
+| --- | --- |
+| Propose | Choose falsifiable mechanisms, factors/roles and policy rules. Set benefit claims, baselines, qualification and guardrails before scoring. |
+| Evaluate | Batch factor diagnostics and complete gross/net strategies on matched folds. Save all results/errors. Missing dependencies block only their consumers. |
+| Select | Compare benefit, risk, costs, support, robustness, complexity, behavioral diversity and specific improvement potential. Pool membership means worth investigating, not qualified for final test. No survivor quota. |
+| Refine | Review each shortlisted route; change factors, policy or both with an attributable comparison, or park/reject with evidence. Routes need not receive equal resources. |
+| Replenish/review | Consider new mechanisms alongside revisions. Decide from expected information and cost whether another batch, final evaluation or completion is worthwhile. |
+
+Use inexpensive common coverage, fold and net-performance diagnostics first. Concentrate
+costly uncertainty checks, ablations and parameter neighborhoods on plausible candidates;
+complete required evidence before final eligibility. Missing diagnostics remain pending.
+Allow distinct return, risk-reduction or efficiency claims with prospective utilities and
+tradeoff guardrails; never relabel an unsuccessful claim after seeing its results.
+
+Examples for exploration include persistence/acceleration, recovery, failed breakout,
+compression/expansion, gap/intraday behavior and risk or participation interactions. Invent
+other justified mechanisms; daily OHLCV does not establish order-book or institutional activity.
 
 ### Refine factors and their consumers
 
-Inspect the factor → target → order → return chain and choose a falsifiable change:
+Trace factor → target → order → return before choosing a change. Revise a factor when its
+information, normalization, availability or conditional use is weak; revise policy when the
+mapping, holding, sizing or costs lose useful information. Joint changes and cross-route
+factor transfers are welcome when their incremental contribution can be tested.
 
-- Revise/invent a factor when its mechanism, normalization, availability, horizon or
-  conditional usefulness is inadequate; version expressions and fitted policies.
-- Revise the strategy when entry/exit, holding, sizing, combination or costs lose useful
-  information. Different strategies can use different factors and signal-to-position rules.
-- Revise both when a mechanism needs another consumer; explain the dependency and test
-  compatible components separately when that comparison can resolve attribution.
-- Transfer a factor to another route against the recipient's baseline. Shared factors are
-  allowed; a global top-k library is not every strategy's required input.
+Compare exact parent/candidate versions on matched dates, folds, costs and fitting policies.
+Hold the consumer fixed for compatible factor comparisons and factors fixed for policy
+comparisons; use small crossed comparisons when needed for interactions. Preserve gains,
+regressions and rejected/incompatible revisions. A shared-factor revision cannot silently
+change other strategies' historical bindings.
 
-Compare parent/candidate on matched research dates, folds, costs and fitting policy.
-Where compatible, hold the consumer fixed for a factor revision and factors fixed for a
-policy revision; a small crossed comparison can resolve interactions without a full
-Cartesian search. Train fitted components only on allowed past data. Log gains and
-regressions; joint changes contribute to both factor and strategy trial histories.
+Keep factor discovery open throughout refinement. For promising routes investigate both
+factor and policy limitations, rather than only permuting one leader's thresholds. Choose
+changes with a falsifiable benefit; do not force a pointless revision to satisfy a counter.
+Record why a proposed change was tested, deferred or rejected, including consumer evidence
+when the change is compatible. The [diagnostic table](metrics-and-evaluation.md#evaluation-drives-the-next-experiment)
+helps choose the next investigation.
 
-Pin each strategy's exact factor versions, roles, qualification scope, implementation and
-fitted-state hashes. Never resolve historical bindings against `latest` or silently update
-other consumers of a shared factor. Rejected factors stay rejected; a new role/hypothesis
-needs a prospectively defined new version/trial and scoped evidence under the
-[qualification contract](metrics-and-evaluation.md#roles-and-qualification-scope).
+### Diversity and efficient allocation
 
-Joint refinement requires an executed factor revision motivated by evidence and its
-downstream strategy comparison, plus a strategy-refinement comparison. They may belong to
-different routes and may fail. If a factor revision is rejected/incompatible, preserve its
-numerical rejection and explain why consumer testing is invalid. An initial library followed
-only by strategy parameter permutations is unfinished joint exploration.
+Assess mechanism diversity alongside measured behavior: aligned factor correlations,
+strategy net-return/exposure correlations, active/entry overlap and fold/regime losses.
+Use the metric contract's definitions; undefined correlation is not evidence of independence.
+Renamed, affine or parameter-only copies do not establish a new hypothesis. Low correlation
+alone cannot justify noisy formulas; a better IC alone cannot prove a better strategy.
 
-### Measure diversity and allocate work
+Allocate batches between unexplored mechanisms, promising revisions and robustness checks.
+Read compact summaries, then only the detailed JSON/CSV needed for decisions. Reuse completed
+calculations with identical bindings and successful engineering checks until relevant changes
+invalidate them. Avoid one conversation or report dump per factor and repeated low-information
+tuning. Record time/cost alongside progress so presentation work cannot displace research.
 
-| Level | Evidence |
-| --- | --- |
-| Hypotheses | Mechanism, inputs, role, expected response and failure regime. Affine renaming, lookback changes and resized copies remain variants of the parent. |
-| Factors | Aligned correlations, sample support, training-defined conditional behavior and role-specific diagnostics; distinguish within-role redundancy from complementary roles. |
-| Strategies | Aligned net-return/target-exposure correlations, active-session and entry overlap, holding behavior and fold/regime losses. Constant exposure gives undefined correlation, not diversity evidence. |
-
-Use the metric contract's definitions. Low correlation alone is not an economic explanation;
-do not manufacture noisy formulas to pass diversity checks. An IC gain alone does not prove
-better strategy quality; no new global Sharpe record does not disprove useful risk research.
-
-Allocate work across breadth, factor/strategy refinements and paired/robustness checks.
-A round is a bounded set of questions followed by a portfolio review, not a stopping quota.
-Choose the next batch by expected information, unresolved requirements and cost; adapt its
-size and allocation as evidence changes. An unproductive round calls for diagnosis or a new
-mechanism. Repeatedly tuning one leader cannot substitute for reviewing the shortlist, and
-low-value filler trials are not exploration. Use the
-[evaluation decision table](metrics-and-evaluation.md#evaluation-drives-the-next-experiment)
-to record result IDs, changed values, diagnosis, next hypothesis and falsification condition.
+Render local reports at meaningful research reviews and publish useful milestones/final
+results, not every candidate. Check files, hashes, links and HTTP delivery directly; no browser
+or screenshot review is needed. A changed training interval can check capability reuse;
+additional stocks and a stock-search application are outside this single-stock brief.
 
 ## Readiness review
 
-Before final freeze, reconcile coverage, every route's disposition, joint revisions, exact
-role-qualified bindings, robustness and outstanding questions with saved results. Separate
-mechanical checks from the Agent's judgment. For each dimension below record scope, exact
-candidate/result IDs, evidence, counterevidence, limitations and conclusion; unknown is not met.
+Before final test, review the exact candidate against the prospective evidence standard.
+Use saved result IDs and include counterevidence; unknown is not passed.
 
-| Dimension | Evidence required |
+| Dimension | Review |
 | --- | --- |
-| Mechanism and value | Interpretable causal hypothesis, role-qualified bindings, matched baseline and ablation evidence. Risk reduction with a return tradeoff is not proof of superior return. |
-| Diversity and joint refinement | Distinct evaluated mechanisms, every shortlist review, factor-to-consumer revisions and strategy revisions; parameter-only variants do not establish breadth. |
-| Robustness | Fold/regime results, parameter neighborhoods, period/trade concentration, direction stability and dependence-aware uncertainty; investigate isolated optima and conflicts. |
-| Costs and feasibility | Gross/net and cash/order reconciliation, realistic execution, stress costs, turnover/exposure and sample support adequate for the particular claim. |
-| Search effects | Complete trial/validation-look history and justified selection-aware assessment; calibrate claims to uncertainty, not the best point estimate. |
-| Remaining exploration | Strongest concrete remaining hypotheses, expected information/cost and evidence for executing, parking or rejecting each. |
-| Delivery | Reproducible numerical results, a complete continuous report, usable browser journeys and truthful source/capability outcomes. |
+| Mechanism/value | Falsifiable claim, qualified factor roles, baseline/ablation evidence and explicit tradeoffs. |
+| Exploration | Distinct evaluated alternatives, each shortlist disposition, factor/policy revision evidence or reasons to defer, actual coverage versus guidance. |
+| Robustness | Fold/regime consistency, parameter neighborhoods, concentration and uncertainty appropriate to the claim. |
+| Feasibility | Cash/order reconciliation, costs/stress, turnover/exposure and sufficient labels/trades. |
+| Selection effects | Complete trials/validation looks; claims calibrated to search and uncertainty. |
+| Next work | Most useful remaining experiments and their expected information/cost; not an exhaustive inventory. |
+| Delivery | Reproducible results, source-bound JSON/report and truthful data/capability status. |
 
-Continue while material testable questions or repairable implementation gaps remain. First
-eligibility, one passing statistic, a report release or a preplanned batch is insufficient.
-When ready, select using the predeclared policy over benefit, robustness, risk/cost and
-complexity, with a stated tie break. Explain why more research is unlikely to materially
-change the conclusion before accessing test; do not assert convergence without evidence.
+Eligibility and readiness are separate from stopping. A promising candidate can be frozen
+when evidence justifies it without exhausting other ideas. Apply the predeclared selection
+policy and tie break; never select by a newly invented attractive metric. If evidence is
+insufficient, choose a useful next experiment or an honest negative/inconclusive ending.
 
 ## Final evaluation
 
-Freeze selected factors, fitting policy, strategy, engines, costs, comparison policy,
-evidence standard and data identities together, binding readiness to that exact bundle.
-Predeclare any refit on pre-test data and exclude boundary-overlapping labels. Record the
-exposure marker before retrieving test and bind its downloaded snapshot before calculating
-metrics. Evaluate the frozen bundle once for both report sections, with only predeclared
-benchmarks/scenarios. Test factor diagnostics describe that bundle; they cannot admit factors.
+Freeze factors, fitting policy, strategy, engines, costs, comparison standard and data
+identities together. Predeclare any pre-test refit and purge overlapping labels. Write the
+exposure marker before test retrieval and bind the snapshot before scoring. Evaluate the
+frozen bundle once for both factor and strategy report sections, with only predeclared
+benchmarks/scenarios. Test diagnostics cannot select factors or replacements.
 
-Judge the result against the frozen standard, including degradation, uncertainty, regimes
-and practical tradeoffs: supported, not supported or inconclusive. Do not test replacements
-until one looks good. Interrupted calculations may replay only the same frozen bundle with
-known exposure. Identical result replay does not authorize another selection; post-reveal
-corrections retain the original result and are diagnostic, not renewed confirmation.
+Interpret support, degradation, uncertainty and tradeoffs against the frozen claim. Interrupted
+calculations may replay the same bundle with exposure preserved; post-reveal corrections keep
+the original result and are diagnostic, not new confirmation. If no candidate is eligible,
+leave test unexposed and record why final evaluation was not performed. Never submit a weak
+candidate solely to fill the final panel or present missing test evidence as support.
 
-A failed test does not automatically end research. Continue useful train/validation work
-when material questions remain, preserving the failed bundle and labelling later candidates
-exploratory. Their revisions cannot be confirmed on the exposed period. New confirmation
-requires genuinely unused observations under a prospectively fixed protocol; do not silently
-change dates, symbols or labels. Missing new confirmation does not excuse skipping useful work.
+A failed/inconclusive test neither forces further work nor automatically closes research.
+Use the completion judgment. Useful later train/validation revisions remain exploratory;
+new confirmation requires genuinely unused observations under a prospective protocol, not
+repeated selection on the exposed period or silently changed task dates/symbols.
 
 ### Holdout trust boundary
 
-Read `research.holdout_control` from the runtime manifest when supplied, and verify the
-implemented boundary before describing its protections; the declaration is not enforcement.
-The solo demo defaults to `holdout_control=protocol_only`. Deferred downloads, hashes and
-ledgers reduce accidental leakage; an editable ledger or agent-authored environment cannot
-prevent the author from reading/refetching data. Call it audited self-evaluation, not enforced
-isolation. Historical stock selection and pretrained knowledge of market events/returns are
-additional limitations; a single-stock result is not universal market alpha.
+Verify the boundary declared by `research.holdout_control` when supplied. The solo demo uses
+`protocol_only`: deferred downloads, hashes and ledgers reduce accidental leakage, but an
+Agent-authored editable environment cannot prevent its author from refetching data. Describe
+this as audited self-evaluation, not enforced isolation. Historical stock selection and prior
+knowledge also limit claims; restarting a historical study does not create new observations.
 
-Independent isolation requires an evaluator outside the researcher's write/data authority.
-The existing `factor_mining` Benchmark/bridge illustrates that boundary but is not mounted
-automatically here. If enforced isolation is required, establish and test it or report it
-unavailable; a UI lock icon or configuration label is not enforcement. New experiments have
-independent work records, but repeated historical studies are not new market observations.
+Enforced isolation requires an evaluator outside the researcher's write/data authority. The
+`factor_mining` Benchmark/bridge illustrates this but is not mounted automatically. Establish
+and test that boundary if required, or report it unavailable.
 
 ## Completion decision
 
-Read a durable review before done_tool or a text-only ending. Record `decision`, claims and
-support status, evidence/counterevidence by quality dimension, unresolved limitations,
-remaining investigations and their dispositions. Link it from index.md. Choose:
+The Agent decides after meaningful research reviews, using the goal, evidence, recent
+improvement history and expected value of the next experiment. Save a concise review linked
+from index.md: decision/reason, exact result IDs, progress and counterevidence, unresolved
+limitations, candidate support, test state, delivered artifacts and any unmet requirements.
 
-- **Continue:** a material testable question, useful mechanism or repairable capability gap
-  remains. State and execute the next factor/strategy experiment.
-- **Complete with a supported strategy:** quality and delivery are satisfied, frozen final
-  evidence supports the stated use and remaining investigations are not material.
-- **Complete with a negative/inconclusive conclusion:** substantive diverse exploration,
-  joint refinements and counterevidence support why no feasible remaining investigation
-  would change the conclusion. Do not call the strategy successful or use "test failed"
-  alone as that explanation.
-- **Interrupted/blocked:** runtime/user resources, a user stop or an external prerequisite
-  prevents useful progress. Save partial results, unmet requirements and the next hypothesis;
-  resource exhaustion is not research completion.
+| Decision | When justified |
+| --- | --- |
+| Continue | A concrete feasible experiment or repair is likely to resolve an important uncertainty or materially improve the result at reasonable cost. State the next hypothesis. |
+| Complete with a supported strategy | The stated optimization/research objective is supported by required evidence, including the frozen test, and requested deliverables are ready. Other possible ideas need not be exhausted. |
+| Complete with a negative/inconclusive conclusion | Credible exploration and revisions show repeated ineffective improvement, weak support or low expected value from further work. Explain the scope tested and why stopping is reasonable; never claim no possible useful strategy exists. No eligible candidate means final test may remain unperformed. |
+| Interrupted/blocked | A user stop, actual runtime/resource limit or external prerequisite prevents planned useful work. Preserve partial results, the actual cause and a restartable next step. |
 
-For interruption, cite the current runtime used/limit/remaining values or the concrete
-external prerequisite. A research batch, release milestone or context compaction is not a
-resource boundary. If material questions remain and resources permit, execute the next
-investigation instead of publishing an interrupted conclusion. Use done_tool's completion
-outcome when required: a completed research conclusion may be negative; unfinished research
-is `resource_limited` or `blocked` only with its actual stopping cause and unmet requirements.
+For stagnation, compare recent meaningful attempts with their parents and consider whether
+a different mechanism offers a worthwhile alternative. The Agent chooses the review horizon;
+there is no mandatory patience counter, candidate minimum, return threshold or requirement to
+prove exhaustive search. One failed tweak alone is weak evidence, but unused budget or a
+merely conceivable idea is not an obligation to continue. Explain deviations from exploration
+guidance and remaining limitations; do not generate filler to meet counts.
 
-Separate research completeness, strategy support, strict data qualification, product delivery
-and capability evolution. The Agent must justify closure from evidence; counters, fixed
-returns, lowered criteria and report-renderer success cannot establish research quality.
+Stopping research does not relax numerical qualification, conceal failed tests or turn a
+broken pipeline into a negative market result. Finish the report and preserve available
+results before a planned completion. Keep research completeness, strategy support, strict
+source qualification, delivery and capability evolution separate. Use done_tool's required
+outcome: a justified negative conclusion can be completed; unfinished work is resource_limited
+or blocked only with its actual cause. A report release or context compaction is not a stop
+condition, and tests must not be reused until a winner appears.

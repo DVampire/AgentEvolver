@@ -8,10 +8,12 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import importlib.util
 import json
 import math
 from pathlib import Path
 import shutil
+import tempfile
 
 
 def pointer(value, path):
@@ -152,9 +154,15 @@ def compile_research(spec, collections, resolve):
 def compile_report(path, *, allow_synthetic=False, stage="integrated"):
     path = Path(path).resolve()
     spec = json.loads(path.read_text())
-    if type(spec.get("schema")) is not int or spec["schema"] not in (1, 2):
-        raise ValueError("Expected report schema=1 or 2")
-    joint = spec["schema"] == 2
+    if type(spec.get("schema")) is not int or spec["schema"] not in (1, 2, 3):
+        raise ValueError("Expected report schema=1, 2 or 3")
+    joint = spec["schema"] >= 2
+    archived = spec["schema"] == 3
+    if archived:
+        module_spec = importlib.util.spec_from_file_location(
+            "strategy_archive_contract", Path(__file__).with_name("strategy_spec.py"))
+        strategy_contract = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(strategy_contract)
     if not spec.get("study_id") or not spec.get("data_basis"):
         raise ValueError("study_id and an explicit data_basis are required")
     if spec.get("scope") not in ("research", "synthetic"):
@@ -198,6 +206,25 @@ def compile_report(path, *, allow_synthetic=False, stage="integrated"):
     for kind in ("factors", "strategies"):
         rows = []
         for candidate in spec.get(kind, []):
+            definition_spec = None
+            if archived and kind == "strategies":
+                reference = candidate.get("strategy_spec")
+                if not isinstance(reference, dict):
+                    raise ValueError("Schema 3 strategies require a strategy_spec source/pointer reference")
+                definition_spec = strategy_contract.validate(
+                    resolve(reference),
+                    require_implementation=candidate.get("status") in ("evaluated", "admitted", "rejected"))
+                projection = {key: definition_spec[key] for key in
+                              ("id", "name", "family", "hypothesis", "parent_ids")}
+                projection.update(
+                    baseline=definition_spec.get("baseline", False),
+                    factor_ids=[b["factor_id"] for b in definition_spec["factor_bindings"]],
+                    factor_roles={b["factor_id"]: b["role"] for b in definition_spec["factor_bindings"]},
+                    rules="\n".join(f"{k}: {v}" for k, v in definition_spec["design"]["rules"].items()))
+                for key, value in projection.items():
+                    if key in candidate and candidate[key] != value:
+                        raise ValueError(f"Strategy archive conflicts with report {key}: {definition_spec['id']}")
+                candidate = candidate | projection
             cid = required_text(candidate, "id")
             if cid in all_ids:
                 raise ValueError(f"Duplicate candidate ID: {cid}")
@@ -228,10 +255,16 @@ def compile_report(path, *, allow_synthetic=False, stage="integrated"):
                 raise ValueError(f"Evaluated candidate has no measured metrics: {cid}")
             if state in ("proposed", "blocked", "error") and measured:
                 raise ValueError(f"Unexecuted candidate cannot carry measured results: {cid}")
-            rows.append({"id": cid, "name": candidate.get("name", cid), "definition": definition,
+            rows.append({"id": cid, "name": required_text(candidate, "name") if archived else candidate.get("name", cid), "definition": definition,
                          "status": state, "reason": candidate.get("reason", ""),
                          "baseline": candidate.get("baseline") is True,
                          "factor_ids": id_list(candidate, "factor_ids"), "metrics": metrics})
+            if definition_spec is not None:
+                rows[-1].update(strategy_spec=definition_spec,
+                                spec_sha256=strategy_contract.digest(definition_spec),
+                                definition_source={k: reference[k] for k in ("source", "pointer")})
+                rows[-1].update({key: definition_spec[key] for key in
+                                ("strategy_id", "version", "description", "created_round")})
             if joint:
                 row = rows[-1]
                 row.update(family=required_text(candidate, "family"),
@@ -313,15 +346,21 @@ def compile_report(path, *, allow_synthetic=False, stage="integrated"):
     for kind in required:
         if not any(c["section"] == kind for c in charts):
             raise ValueError(f"No measured chart for {kind}")
+    record = {}
+    if "record" in spec:
+        if not isinstance(spec["record"], dict):
+            raise ValueError("record must be an object with round_id, report_id and phase")
+        record = {key: required_text(spec["record"], key) for key in ("round_id", "report_id", "phase")}
+        if "parent_report_id" in spec["record"]:
+            record["parent_report_id"] = required_text(spec["record"], "parent_report_id")
     return {"schema": spec["schema"], "study_id": spec["study_id"], "title": spec.get("title", "Signal Foundry"),
             "scope": spec["scope"], "data_basis": spec["data_basis"], "strict_data": qualification,
             "test_state": spec.get("test_state", "sealed"), "sources": hashes,
-            "summary": spec.get("summary", ""), **collections, **research, "charts": charts}
+            "summary": spec.get("summary", ""), **collections, **research, "charts": charts,
+            **({"record": record} if record else {})}
 
 
-def render(report, output):
-    output = Path(output).resolve()
-    output.mkdir(parents=True, exist_ok=True)
+def _write_report(report, output):
     skill = Path(__file__).resolve().parents[1]
     # Copy canonical visual styles into the deployable product; never link host paths.
     import agentevolver
@@ -355,6 +394,34 @@ def render(report, output):
                                 + [metric[k] for k in ("label", "split", "parent", "candidate", "delta", "unit", "definition")])
 
 
+def render(report, output):
+    """Publish one immutable local package; exact replays leave it unchanged."""
+    output = Path(output).resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{output.name}-", dir=output.parent) as directory:
+        staging = Path(directory)
+        _write_report(report, staging)
+        if output.exists():
+            if not output.is_dir():
+                raise ValueError(f"Report output is not a directory: {output}")
+            existing = {p.name for p in output.iterdir()}
+            expected = {p.name for p in staging.iterdir()}
+            if existing:
+                if existing != expected or any(
+                    not (output / name).is_file()
+                    or (output / name).read_bytes() != (staging / name).read_bytes()
+                    for name in expected
+                ):
+                    raise ValueError(f"Report version already exists with different content: {output}; use a new version directory")
+            else:
+                staging.rename(output)
+        else:
+            staging.rename(output)
+    analysis = output / "analysis.json"
+    return {"output": str(output), "analysis_path": str(analysis),
+            "analysis_sha256": hashlib.sha256(analysis.read_bytes()).hexdigest()}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["check", "render"])
@@ -365,12 +432,14 @@ def main():
     args = parser.parse_args()
     try:
         report = compile_report(args.manifest, allow_synthetic=args.allow_synthetic, stage=args.stage)
+        receipt = {}
         if args.action == "render":
             if args.output is None:
                 parser.error("render requires --output")
-            render(report, args.output)
+            receipt = render(report, args.output)
         print(json.dumps({"ok": True, "scope": report["scope"], "factors": len(report["factors"]),
-                          "strategies": len(report["strategies"]), "charts": len(report["charts"])}))
+                          "strategies": len(report["strategies"]), "charts": len(report["charts"]),
+                          **({"record": report["record"]} if "record" in report else {}), **receipt}))
     except (ValueError, KeyError, TypeError, IndexError, OSError) as error:
         parser.exit(1, f"Report is not ready: {error}\n")
 

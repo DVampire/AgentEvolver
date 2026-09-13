@@ -21,7 +21,13 @@ def test_one_researcher_keeps_shared_plan_and_dynamic_environment_scope():
     assert validate_assembly(cfg) == []
     assert cfg.agent_names == ["factor_strategy_mining_agent"]
     assert cfg.connector_names == []
-    assert cfg.env_names == ["job", "browser_environment"]
+    assert cfg.env_names == ["job"]
+    assert "browser_environment" not in cfg
+    assert cfg.skill_names == ["factor_strategy_research_skill", "self_evolving_skill"]
+    assert cfg.task_manifest_defaults.deployment.required_releases == 1
+    defaults = FactorStrategyMiningAgent()
+    assert defaults.env_names == ["job"]
+    assert defaults.capability_allowlists["environment"] == ["job"]
     agent = FactorStrategyMiningAgent(**cfg.factor_strategy_mining_agent)
     assert agent.use_plan and agent.use_memory and agent.enable_evolving
     assert not agent.include_agents and agent.capability_allowlists["agent"] == []
@@ -116,13 +122,13 @@ async def test_registered_environments_expand_the_researcher_scope_without_child
     router = CapabilityRouter(include_agents=agent.include_agents)
     ctx = SimpleNamespace(extra={})
     await router.schemas(agent, ctx)
-    assert captured[-1] == (["job", "browser_environment"], False)
+    assert captured[-1] == (["job"], False)
     for name in ("factors", "strategies"):
         manifest.components.append(ManifestComponent(
             module="environment", name=name, version="1.0.0", file=f"environment/{name}",
         ))
     await router.schemas(agent, ctx)
-    assert captured[-1] == (["job", "browser_environment", "factors", "strategies"], False)
+    assert captured[-1] == (["job", "factors", "strategies"], False)
     assert ctx.extra["agent_allowlist"] == []
 
 

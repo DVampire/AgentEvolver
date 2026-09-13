@@ -94,6 +94,15 @@ bindings and fitted policy. Record the admission receipt separately from the can
 implementation hash, so issuing a receipt does not change the compared strategy. A new
 consumer needs a new check; a changed factor does not inherit its parent's qualification.
 
+For joint candidates, weak marginal IC does not by itself establish that every conditional
+or multi-factor use is useless. Declare a conditional state, interaction/group construction,
+label and comparison policy before scoring that hypothesis. Fit any states, weights and
+cutpoints on training only; report conditional support, inactive/opportunity costs and
+matched consumer ablations. A composite predictive expression can be a separately versioned
+factor with its own admission tests. Preserve failed constituent claims; do not retroactively
+admit them, change roles, or let a profitable aggregate override missing qualification.
+Keep exploration open through research-only consumers while that evidence is pending.
+
 ### Labels, samples and causality
 
 For a daily factor x_t available after close t, the default h-session label enters at
@@ -171,6 +180,9 @@ size or Deflated Sharpe when the method and its inputs have been numerically ver
 
 ## Strategy identity: what is being traded?
 
+Use the [strategy definition archive](research-workflow.md#strategy-definition-archive) for
+the required name, description, full design, version and change metadata. Validate and pin
+that spec before evaluating; keep numerical results and selection state separately.
 For every strategy/version show hypothesis family, parent IDs, factor IDs/roles and exact
 expressions, qualification receipts, combination/weights, fitted
 parameters, entry and exit conditions, target size, rebalance schedule, missing/neutral
@@ -178,7 +190,9 @@ signal behavior, regime/risk rules, next-open execution and costs. Supply readab
 that explains how a dated factor observation becomes a target, order, fill and realized PnL.
 An opaque strategy name or factor-weight list alone is insufficient.
 
-Include cash, matched buy-and-hold and executable single-factor baselines before combinations.
+Include cash, matched buy-and-hold and suitable single-factor controls alongside joint
+candidates. Controls support attribution; a completed global single-factor screening stage
+is not a prerequisite for exploratory combinations.
 Keep strategy-specific factor sets and compare each shortlisted route with its own parent
 and the shared benchmarks, not only the global leader. Use [joint exploration](research-workflow.md#joint-exploration)
 to allocate factor revisions, strategy revisions and new mechanisms.
@@ -298,6 +312,24 @@ Drawdown reduction therefore has a negative raw delta; show direction explicitly
 combine unlike metrics into an unexplained improvement score. Add the declared role utility
 as a separate metric and record regressions, support and gate changes.
 
+### Working-pool selection
+
+Assess a joint candidate's factor diagnostics, complete policy and contribution evidence
+together. Pool membership means a worthwhile next investigation, not a passed final gate.
+Record the declared benefit (return, risk reduction or trading efficiency), baseline,
+predeclared utility and guardrails alongside net performance, fold/regime consistency,
+sample support, cost sensitivity, complexity and behavioral similarity. A risk objective
+must state the allowed return tradeoff before scoring; it cannot be invented to rescue a
+failed return objective. Preserve uncertainty and all failed criteria.
+
+Use evidence and a concrete, falsifiable improvement hypothesis to retain a route. Avoid
+filling a survivor quota or taking only the highest Sharpe rows. Group near-identical
+behaviors and retain meaningful alternatives; weaker but distinct routes may merit a
+bounded diagnostic. Rejected routes keep their result IDs and reasons. For each retained
+route, save the next useful change, its fixed comparison controls and falsification condition,
+or why to park it. Consider new mechanisms alongside revisions; choose allocation by expected
+information and cost rather than a mandatory batch fraction.
+
 ## Evaluation drives the next experiment
 
 Before each market evaluation write a hypothesis, parent IDs, intended change, expected
@@ -320,10 +352,10 @@ errors separately from low performance; fix invalid accounting before interpreti
 | Risk/state factor has weak directional IC | Evaluate its prospectively declared role and matched consumer ablation. Preserve a failed predictive version; a different-role proposal is a new counted trial, never automatic admission. |
 | Most candidates reuse one mechanism | Review executed coverage and remaining reservations; explore a different evidence-backed mechanism or diagnose why the feasible search is narrower. Renaming formulas or injecting noise is not diversity. |
 | Too few trades or labels | Report inadequate support; reject or change the economic hypothesis on research data. Do not split resizes into fake trades or count overlapping labels as independent. |
-| Eligible strategy misses submission targets or robustness checks | Keep test unexposed. Compare the whole readiness vector and continue a bounded hypothesis; reducing position size alone may not fix return, Sharpe, benchmark advantage or support. |
-| Repeated validation stagnation | Diagnose mechanisms, factor/consumer fit and alternative routes. Review remaining informative experiments; no fixed patience counter ends the default study. Use the completion review if evidence supports closure. |
+| Eligible strategy misses submission targets or robustness checks | Keep test unexposed. Compare the readiness dimensions and choose a useful next experiment or a justified unsupported conclusion; reducing position size alone may not resolve the weaknesses. |
+| Repeated validation stagnation | Compare meaningful attempts and alternative mechanisms. The Agent may stop when further work has low expected value, documenting evidence and scope limitations; no fixed patience counter or exhaustive search is required. |
 | Runtime resource limit | Save partial research, unmet quality items and the next hypothesis as interrupted. An unavailable next trial cannot make an unready candidate ready or certify completion. |
-| Failed or inconclusive final test | Preserve the frozen result and continue useful exploratory research on separate versions. Mark exposure and the need for unused confirmation data. Use the completion review to justify eventual negative/inconclusive closure; test failure alone is insufficient. |
+| Failed or inconclusive final test | Preserve the frozen result. Use the completion review to choose worthwhile exploratory work or a justified negative/inconclusive ending. Later revisions need unused data for confirmation; test failure alone does not decide whether to continue. |
 
 For parameter stability and ablations, predeclare small research-only comparisons, show every
 variant and charge the appropriate trial/validation budget. Refit trainable parts only on

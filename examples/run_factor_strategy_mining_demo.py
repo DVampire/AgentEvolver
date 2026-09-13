@@ -15,7 +15,7 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task-dir", type=Path, default=DEFAULT_TASK_DIR)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--model", help="Override the researcher model; image input is required.")
+    parser.add_argument("--model", help="Override the researcher model.")
     parser.add_argument("--monitor-port", type=int, default=8766)
     parser.add_argument("--cfg-options", nargs="+", default=[], metavar="KEY=VALUE")
     return parser.parse_args(argv)

@@ -16,11 +16,11 @@
 <p>Project brief · Research workbench · From factors to strategies</p>
 <h1>Signal Foundry</h1>
 <p>Turn a stock's price and volume history into explainable factors, testable trading
-    hypotheses and a beautiful research workbench whose conclusions can be inspected.</p>
+    hypotheses and a beautiful visual report whose conclusions can be inspected.</p>
 </header>
 
 <h2>Mission and research scope</h2>
-<p>Create an interactive workbench for researching a stock, discovering useful factors
+<p>Create a research system with an attractive visual report for a stock, discovering useful factors
     and jointly improving them with testable trading strategies across diverse research
     hypotheses. Factor discovery remains open throughout strategy research. The two areas form
     one continuous report page, with clear conclusions and evidence that readers can explore
@@ -38,8 +38,8 @@
 <p>Base the research on real, lawfully accessible stock prices and trading volume, with
     the corporate actions and trading-session information needed to interpret them. Readers
     should be able to identify the source, actual coverage and adjustment assumptions, and
-    understand any missing data or access limitation. Support research on another stock or
-    date range through the same product.</p>
+    understand any missing data or access limitation. This study researches one stock;
+    a multi-stock selection product is outside its scope.</p>
 <p>Retain raw prices and volume, split and dividend records, provider/feed identity,
     retrieval time, dataset hashes and a data-quality report. Detect duplicate bars, missing
     sessions, invalid OHLC ranges and inconsistent adjustments. A single-venue volume feed,
@@ -55,9 +55,10 @@
 </requirements>
 
 <requirements data-format="html" id="factors">
-<h2>Stage 1 — Factor discovery and the Factor Observatory</h2>
-<p>Discover interpretable signals, compare their predictive usefulness and select a
-    complementary factor library for strategy research. Each conclusion must come from
+<h2>Factor discovery and the Factor Observatory</h2>
+<p>Design strategy hypotheses and the factors needed by each hypothesis together. Evaluate
+    factors for their declared roles and their contribution to those strategies, while retaining
+    a reusable versioned factor library. Each conclusion must come from
     reproducible calculations on the specified observations.</p>
 <p>Explore distinct economic hypotheses, invent new ones from observed evidence, and revise
     promising factors when strategy research exposes a weakness or opportunity. Trend
@@ -85,11 +86,13 @@
 </requirements>
 
 <requirements data-format="html" id="strategies">
-<h2>Stage 2 — Strategy mining and the Strategy Atelier</h2>
-<p>Turn selected factors into executable trading hypotheses and evaluate their returns,
-    risks and costs. Readers should be able to trace a strategy back to its factor evidence
+<h2>Strategy mining and the Strategy Atelier</h2>
+<p>Construct executable strategy hypotheses with their required factors, and evaluate
+    their returns, risks, costs and factor contributions in the same research round. Readers
+    should be able to trace a strategy back to its factor evidence
     and understand how signals lead to positions, trades and profit or loss.</p>
-<p>Design interpretable single-factor baselines before combining complementary factors.
+<p>Evaluate suitable single-factor controls alongside multi-factor hypotheses to explain
+    each factor's contribution.
     Explore multiple distinct trading hypotheses, with their own relevant factors and
     signal-to-position logic. A common factor set, renamed policy or different position size
     does not by itself demonstrate diverse strategy discovery.
@@ -109,33 +112,43 @@
 
 <constraints data-format="html" id="iteration">
 <h2>Research loop and the final evaluation</h2>
-<p>Iterate factor and strategy research on train and validation: diagnose a specific
-    weakness, investigate a new hypothesis and record the outcome. Each iteration explains
-    the evidence, the intended improvement and whether measured results improved afterward.
-    Review every shortlisted strategy individually and identify whether to improve its factors,
-    rules or both. Execute bounded refinements for promising routes; explain evidence-based
-    decisions to park or reject others. Compare parent and revised factors and strategies,
-    including downstream effects, regressions and changes of hypothesis. Retain multiple
-    research directions long enough to assess different mechanisms, without requiring weak
-    candidates to survive. Keep a complete trial
-    history including rejected candidates, validation exposure, cost and changes in reasoning.</p>
+<p>Start with roughly ten diverse strategy hypotheses and each strategy's required factors,
+    then evaluate them together on train and validation. Select a working candidate pool using
+    measured effects, stability, costs, behavioral diversity and specific improvement potential.
+    No fixed number of survivors is required. For every retained strategy, diagnose whether to
+    revise its factors, trading rules or their interaction; measure useful changes or explain
+    why further work on that route is not worthwhile.</p>
+<p>Subsequent rounds combine candidate improvements with new strategy hypotheses and needed
+    factors. Aim for about 100 evaluated factor definitions and 20–30 distinct strategy
+    hypotheses across the research, as specified by study.json. These are cumulative scope
+    references, not minimum candidate counts, prerequisites for starting strategy evaluation,
+    admission quotas or search ceilings. Adapt to evidence and explain material shortfalls.
+    Renaming, parameter tuning and benchmarks do not establish new mechanisms.
+    Preserve failed candidates, exact versions and individual before/after evidence.</p>
+<p>Retain machine-readable results and decisions for every round, with stable candidate,
+    version, evaluation and round identities. A discoverable index links factor definitions,
+    strategy bindings, metrics, comparisons, pool decisions and the next proposed experiments.
+    Keep completed historical records intact. The visual report displays these same results.</p>
 <p>Keep training, validation and test results distinct. Selection must use only information
     available at the relevant time, with no future-data leakage. Fix the evaluation criteria
     before research and finalize the selected factors and strategy before the final test.
     Both report sections should describe that same final evaluation; test factor rankings must not
     influence a strategy that is still being optimized.</p>
-<p>Continue joint discovery, evaluation and refinement while material, testable questions
-    remain. Do not treat a fixed return target, candidate count or number of rounds as the
-    finish line. Before the final evaluation, explain why the hypotheses, strategy-specific
-    factor contributions, robustness, costs and uncertainty justify selecting this candidate
-    and why remaining investigations are unlikely to change that judgment.</p>
+<p>The researcher decides when to continue or stop. Continue when a concrete next experiment
+    has worthwhile expected information or improvement value. Completion may follow supported
+    research objectives, or repeated ineffective improvements and low expected value from more
+    work. No fixed return target, candidate count, patience counter or exhaustive search is
+    required. Before final evaluation, justify the selected candidate through its mechanism,
+    factor contributions, robustness, costs and uncertainty against prospective criteria.</p>
 <p>Complete the research only with a defensible assessment supported by reproducible evidence:
-    clear mechanisms, diverse investigated alternatives, individual candidate improvements,
+    clear mechanisms, diverse investigated alternatives, individual candidate reviews,
     fold/regime and parameter stability, realistic execution costs, adequate sample support,
     explicit search effects and an honest interpretation of final-test results. Address
     counterevidence rather than relying on one attractive statistic. A supported negative
-    or inconclusive finding may close a thorough investigation; it cannot be called a
-    successful trading strategy. Missing work and unsupported opinions cannot certify quality.</p>
+    or inconclusive finding may close the investigation; explain the scope tested and why
+    further work is not worthwhile, without claiming all useful strategies have been ruled
+    out. If no candidate qualifies, preserve the unexposed test and state why it was not run.
+    Completed research and a supported trading strategy are different outcomes.</p>
 <p>A failed final result may lead to further exploratory work on training and validation.
     Preserve the frozen result: repeatedly tuning on the exposed test cannot produce fresh
     confirmation. New confirmatory claims require genuinely unused observations under a
@@ -161,11 +174,11 @@
 <li>A Factor Observatory lets a visitor filter candidates, compare horizons and folds,
       inspect a formula and trace selection into a strategy.</li>
 <li>A Strategy Atelier links factor composition, ablations, equity/drawdown charts,
-      trade markers, fold comparisons and a searchable trade ledger.</li>
-<li>A synchronized time brush and chart tooltips explain which trades and exposures
-      contributed to a selected drawdown. Descriptive filtering must not become test optimization.</li>
-<li>A cost-sensitivity explorer uses predeclared scenarios computed from the frozen
-      backtest. Mark exploratory controls clearly; they cannot overwrite the accepted result.</li>
+      trade markers, fold comparisons and a readable, downloadable trade ledger.</li>
+<li>Aligned charts and saved trade/exposure tables explain major drawdowns. Tooltips or
+      optional descriptive filters may aid reading without changing official scores.</li>
+<li>Cost-sensitivity charts compare predeclared, computed scenarios; displayed controls
+      cannot overwrite the accepted result or initiate test optimization.</li>
 <li>An experiment lineage view links hypotheses, rejected trials, versions and artifacts.
       Show research routes, strategy-specific factor bindings and before/after evidence for
       factor and strategy refinements, including each shortlisted route's next step or closure.
@@ -177,20 +190,21 @@
 <li>The final-test panel stays unavailable until the final evaluation. Test values must
       not be accessible through other report views or downloads beforehand.</li>
 </ul>
-<p>Provide real keyboard interactions, readable charts, responsive layouts and useful
-    loading, empty and failed states. The main investigation should work on desktop and narrow
-    screens. Publish measured factor research first, then extend that same page with strategy
-    evidence in a later release. Keep unfinished sections clearly pending,
-    with working links and evidence that the key reader journeys function as intended.</p>
+<p>Provide readable charts, a responsive layout and useful loading, pending and failed states.
+    The report is a visualization of saved JSON results: HTML supplies the page structure and
+    JavaScript loads the data for display. Research analysis consumes the JSON directly and
+    does not depend on browser interaction or reading HTML. Publish a useful integrated
+    snapshot and retain prior report versions; report releases are not research iterations.</p>
 </interface>
 
 <acceptance data-format="html" id="acceptance">
 <h2>Delivery and acceptance evidence</h2>
 <ul>
-<li>A working data-to-factor-to-strategy research workflow that can evaluate changed
-      inputs and reproduce its conclusions.</li>
+<li>A working joint factor/strategy research workflow that can evaluate new hypotheses
+      and revisions on the specified stock and reproduce its conclusions.</li>
 <li>Real data provenance, frozen protocol, factor library, strategy specifications,
-      trial history, deterministic checks and reproducible machine-readable metrics.</li>
+      trial history, deterministic checks and reproducible JSON metrics, with a discoverable
+      versioned index and per-round selection decisions.</li>
 <li>One detailed, continuous report page showing which factors and strategies were explored,
       what their definitions are and how they performed, including rejected candidates.
       Both stages remain readable without changing pages or tabs. Displayed metrics and
