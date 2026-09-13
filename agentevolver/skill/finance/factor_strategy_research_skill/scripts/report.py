@@ -29,11 +29,127 @@ def finite(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
+def required_text(record, key):
+    value = record.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Missing nonempty {key}")
+    return value
+
+
+def id_list(record, key):
+    values = record.get(key, [])
+    if (not isinstance(values, list)
+            or any(not isinstance(v, str) or not v.strip() for v in values)
+            or len(set(values)) != len(values)):
+        raise ValueError(f"{key} must contain unique nonempty IDs")
+    return values
+
+
+def compile_research(spec, collections, resolve):
+    """Preserve open research metadata and check references, not financial judgments."""
+    candidates = {c["id"]: c for rows in collections.values() for c in rows}
+    kinds = {c["id"]: kind for kind, rows in collections.items() for c in rows}
+    strategies = {c["id"] for c in collections["strategies"]}
+    for candidate in candidates.values():
+        cid = candidate["id"]
+        for parent in candidate["parent_ids"]:
+            if parent not in candidates or kinds[parent] != kinds[cid]:
+                raise ValueError(f"Unknown or incompatible parent: {cid}/{parent}")
+        if kinds[cid] == "factors":
+            if not set(candidate["qualified_strategy_ids"]).issubset(strategies):
+                raise ValueError(f"Unknown qualification consumer: {cid}")
+            if (candidate["status"] == "admitted" and candidate["role"] != "return_prediction"
+                    and not candidate["qualified_strategy_ids"]):
+                raise ValueError(f"Supporting factor needs scoped qualification: {cid}")
+            for sid in candidate["qualified_strategy_ids"]:
+                if cid not in candidates[sid]["factor_ids"]:
+                    raise ValueError(f"Qualification consumer does not bind factor: {cid}/{sid}")
+
+    visited, visiting = set(), set()
+
+    def visit(cid):
+        if cid in visiting:
+            raise ValueError("Candidate lineage contains a cycle")
+        if cid in visited:
+            return
+        visiting.add(cid)
+        for parent in candidates[cid]["parent_ids"]:
+            visit(parent)
+        visiting.remove(cid)
+        visited.add(cid)
+
+    for cid in candidates:
+        visit(cid)
+
+    routes, route_ids, covered = [], set(), set()
+    for raw in spec.get("routes", []):
+        rid = required_text(raw, "id")
+        if rid in route_ids:
+            raise ValueError(f"Duplicate route: {rid}")
+        route_ids.add(rid)
+        route = {key: required_text(raw, key) for key in
+                 ("id", "hypothesis", "status", "diagnosis", "next_step")}
+        if route["status"] not in ("proposed", "active", "retained", "parked", "rejected", "closed"):
+            raise ValueError(f"Unknown route status: {rid}")
+        for key, kind in (("factor_ids", "factors"), ("strategy_ids", "strategies")):
+            route[key] = id_list(raw, key)
+            if any(cid not in candidates or kinds[cid] != kind for cid in route[key]):
+                raise ValueError(f"Unknown route member: {rid}/{key}")
+            covered.update(route[key])
+        routes.append(route)
+    if not routes or any(c["id"] not in covered for c in candidates.values() if not c["baseline"]):
+        raise ValueError("Every research candidate needs a route; baselines are exempt")
+
+    comparisons, comparison_ids = [], set()
+    route_members = {r["id"]: set(r["factor_ids"] + r["strategy_ids"]) for r in routes}
+    for raw in spec.get("comparisons", []):
+        row = {key: required_text(raw, key) for key in
+               ("id", "route_id", "parent_id", "candidate_id", "diagnosis", "decision")}
+        if row["id"] in comparison_ids:
+            raise ValueError("Duplicate comparison ID")
+        comparison_ids.add(row["id"])
+        parent, child = row["parent_id"], row["candidate_id"]
+        if (parent not in candidates or child not in candidates or parent == child
+                or kinds[parent] != kinds[child]):
+            raise ValueError("Comparison requires distinct candidates of the same kind")
+        if any(candidates[cid]["status"] not in ("evaluated", "admitted", "rejected") for cid in (parent, child)):
+            raise ValueError("Comparison requires executed candidate results")
+        if child not in route_members.get(row["route_id"], set()):
+            raise ValueError("Comparison candidate must belong to its route")
+        metrics = []
+        for metric in raw.get("metrics", []):
+            item = {key: required_text(metric, key) for key in ("label", "definition", "unit", "split")}
+            if item["split"] not in ("train", "validation", "test"):
+                raise ValueError("Invalid comparison split")
+            if item["split"] == "test" and spec["test_state"] != "evaluated":
+                raise ValueError("Sealed test comparisons forbidden")
+            values = {side: resolve(metric[side]) for side in ("parent", "candidate")}
+            for side, cid in (("parent", parent), ("candidate", child)):
+                if not any(all(m[k] == metric[side][k] for k in ("source", "pointer"))
+                           and m["split"] == item["split"] and m["unit"] == item["unit"]
+                           for m in candidates[cid]["metrics"]):
+                    raise ValueError("Comparison must reference its candidate metric with matching split/unit")
+            if not all(finite(v) for v in values.values()):
+                raise ValueError("Paired comparison needs two finite measured values")
+            item.update(parent=values["parent"], candidate=values["candidate"],
+                        delta=values["candidate"] - values["parent"],
+                        evidence={side: {k: metric[side][k] for k in ("source", "pointer")}
+                                  for side in values})
+            if not finite(item["delta"]):
+                raise ValueError("Nonfinite comparison delta")
+            metrics.append(item)
+        if not metrics:
+            raise ValueError("Comparison needs measured metrics; retain pending work in route diagnosis")
+        comparisons.append(row | {"metrics": metrics})
+    return {"routes": routes, "comparisons": comparisons}
+
+
 def compile_report(path, *, allow_synthetic=False, stage="integrated"):
     path = Path(path).resolve()
     spec = json.loads(path.read_text())
-    if spec.get("schema") != 1:
-        raise ValueError("Expected report schema=1")
+    if type(spec.get("schema")) is not int or spec["schema"] not in (1, 2):
+        raise ValueError("Expected report schema=1 or 2")
+    joint = spec["schema"] == 2
     if not spec.get("study_id") or not spec.get("data_basis"):
         raise ValueError("study_id and an explicit data_basis are required")
     if spec.get("scope") not in ("research", "synthetic"):
@@ -77,7 +193,7 @@ def compile_report(path, *, allow_synthetic=False, stage="integrated"):
     for kind in ("factors", "strategies"):
         rows = []
         for candidate in spec.get(kind, []):
-            cid = candidate["id"]
+            cid = required_text(candidate, "id")
             if cid in all_ids:
                 raise ValueError(f"Duplicate candidate ID: {cid}")
             all_ids.add(cid)
@@ -110,15 +226,48 @@ def compile_report(path, *, allow_synthetic=False, stage="integrated"):
             rows.append({"id": cid, "name": candidate.get("name", cid), "definition": definition,
                          "status": state, "reason": candidate.get("reason", ""),
                          "baseline": candidate.get("baseline") is True,
-                         "factor_ids": candidate.get("factor_ids", []), "metrics": metrics})
+                         "factor_ids": id_list(candidate, "factor_ids"), "metrics": metrics})
+            if joint:
+                row = rows[-1]
+                row.update(family=required_text(candidate, "family"),
+                           hypothesis=required_text(candidate, "hypothesis"),
+                           parent_ids=id_list(candidate, "parent_ids"),
+                           research_only=candidate.get("research_only") is True)
+                if row["research_only"] and state == "admitted":
+                    raise ValueError(f"Research-only candidate cannot be admitted: {cid}")
+                if kind == "factors":
+                    row.update(role=required_text(candidate, "role"),
+                               qualified_strategy_ids=id_list(candidate, "qualified_strategy_ids"))
+                else:
+                    roles = candidate.get("factor_roles", {})
+                    if (not isinstance(roles, dict) or set(roles) != set(row["factor_ids"])
+                            or any(not isinstance(v, str) or not v.strip() for v in roles.values())):
+                        raise ValueError(f"Every factor binding needs its role: {cid}")
+                    row["factor_roles"] = roles
         collections[kind] = rows
     factors = {c["id"]: c for c in collections["factors"]}
     for strategy in collections["strategies"]:
         if (not strategy["factor_ids"] and not strategy["baseline"]) or any(fid not in factors for fid in strategy["factor_ids"]):
             raise ValueError(f"Unknown or missing factor binding: {strategy['id']}")
         if strategy["status"] in ("evaluated", "admitted", "rejected"):
-            if any(factors[fid]["status"] not in ("evaluated", "admitted") for fid in strategy["factor_ids"]):
+            allowed = ("evaluated", "admitted", "rejected") if joint and strategy["research_only"] else ("evaluated", "admitted")
+            if any(factors[fid]["status"] not in allowed for fid in strategy["factor_ids"]):
                 raise ValueError("A strategy cannot silently consume rejected/unexecuted factors")
+        if joint:
+            for fid in strategy["factor_ids"]:
+                factor = factors[fid]
+                if strategy["factor_roles"][fid] != factor["role"]:
+                    raise ValueError(f"Factor role mismatch: {strategy['id']}/{fid}")
+                consumers = factor["qualified_strategy_ids"]
+                qualified = factor["status"] == "admitted" and (not consumers or strategy["id"] in consumers)
+                if strategy["status"] == "admitted":
+                    if factor["status"] != "admitted":
+                        raise ValueError("Eligible strategy needs admitted factor versions")
+                    if consumers and strategy["id"] not in consumers:
+                        raise ValueError(f"Factor qualification does not cover strategy: {strategy['id']}/{fid}")
+                elif strategy["status"] in ("evaluated", "rejected") and not qualified and not strategy["research_only"]:
+                    raise ValueError("Unqualified factor use must be explicitly research_only")
+    research = compile_research(spec, collections, resolve) if joint else {}
     required = ("factors", "strategies") if stage == "integrated" else ("factors",)
     for kind in required:
         if not any(c["status"] in ("evaluated", "admitted", "rejected") for c in collections[kind]):
@@ -159,10 +308,10 @@ def compile_report(path, *, allow_synthetic=False, stage="integrated"):
     for kind in required:
         if not any(c["section"] == kind for c in charts):
             raise ValueError(f"No measured chart for {kind}")
-    return {"schema": 1, "study_id": spec["study_id"], "title": spec.get("title", "Signal Foundry"),
+    return {"schema": spec["schema"], "study_id": spec["study_id"], "title": spec.get("title", "Signal Foundry"),
             "scope": spec["scope"], "data_basis": spec["data_basis"], "strict_data": qualification,
             "test_state": spec.get("test_state", "sealed"), "sources": hashes,
-            "summary": spec.get("summary", ""), **collections, "charts": charts}
+            "summary": spec.get("summary", ""), **collections, **research, "charts": charts}
 
 
 def render(report, output):
@@ -191,6 +340,14 @@ def render(report, output):
             for series in chart["series"]:
                 for point in series["points"]:
                     writer.writerow([chart["id"], chart["section"], chart["split"], series["label"], point["x"], point["y"]])
+    with (output / "comparisons.csv").open("w", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["comparison", "route", "parent_id", "candidate_id", "metric", "split",
+                         "parent_value", "candidate_value", "delta", "unit", "definition"])
+        for comparison in report.get("comparisons", []):
+            for metric in comparison["metrics"]:
+                writer.writerow([comparison[k] for k in ("id", "route_id", "parent_id", "candidate_id")]
+                                + [metric[k] for k in ("label", "split", "parent", "candidate", "delta", "unit", "definition")])
 
 
 def main():

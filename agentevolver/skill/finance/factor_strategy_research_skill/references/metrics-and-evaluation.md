@@ -43,10 +43,11 @@ An operational error or pending source check is not an evaluated market hypothes
 
 Keep every candidate/version, including rejected ones. A row records:
 
-- ID, parent version, short name, economic hypothesis and falsification condition.
+- ID, parent versions, hypothesis family, short name, economic hypothesis and falsification condition.
+- Declared role, target metric/label, qualification scope and exact consuming strategy versions.
 - Exact executable expression and readable formula; input fields/adjustment basis, units,
   lookback, warm-up, availability time and fitted transformations.
-- Training-selected direction, primary prediction horizon, secondary diagnostic horizons,
+- Training-selected direction where meaningful, primary target horizon, secondary diagnostic horizons,
   fitted-state IDs by fold and the predeclared refit policy.
 - Trial/result IDs, actual execution state and eligibility decision with failed criteria.
 - Consuming strategy IDs and exact factor versions; never bind a strategy to an unnamed
@@ -55,6 +56,43 @@ Keep every candidate/version, including rejected ones. A row records:
 Use separate execution states (proposed, running, evaluated, error, blocked) and selection
 states (pending, admitted, rejected, inconclusive). Show both. An engineering fixture must
 carry a synthetic scope and cannot appear in the real-data candidate leaderboard.
+
+### Roles and qualification scope
+
+Use `return_prediction` for directional-return hypotheses. Other role labels are open to
+the researcher, subject to the study's supporting-factor policy. Before scoring a new role,
+declare target timestamps/horizon, loss or utility, a training-fitted reference, threshold,
+sample support, fold aggregation and non-target guardrails. Keep the existing return-prediction
+thresholds for that role. Additional metrics do not change an already evaluated candidate's role.
+
+Examples below clarify evaluation choices, not a mandatory factor/strategy catalog:
+
+| Intended use | Factor evidence | Consumer evidence |
+| --- | --- | --- |
+| Predict return direction/magnitude | The supplied IC/RankIC, coverage, fold, horizon and redundancy criteria. | Executable baseline and incremental net benefit with the route's trading rules. |
+| Estimate future risk | Compare a causal risk estimate with realized future variation on declared next-open horizons. For variance forecasts, QLIKE = mean(log(v_hat) + realized_variance / v_hat), with positive v_hat and a numerical floor selected on training only; compare to a training-fitted risk baseline. | Paired risk-sizing ablation; predeclare risk utility and return/cost guardrails. Lower forecast loss alone is not strategy qualification. |
+| Identify a conditional state | Predeclare the future outcome that makes the state useful. For a binary event, Brier = mean((predicted_probability - event_indicator)^2), with train-fitted probability baseline; or define conditional effects and support for every state. | Compare the same policy with and without conditioning; count inactive sessions and assess missed gains as well as avoided losses. |
+| Improve trading efficiency | Causal estimate of a declared future cost/turnover-relevant outcome with a specified baseline. Daily OHLCV cannot certify intraday spreads or fills. | Paired net/stressed performance, traded notional and missed-opportunity comparison under unchanged execution assumptions. |
+
+Use coverage and non-overlapping support on each role's declared label intervals; categorical
+states need per-state counts and undefined states cannot pass. Compute future labels only
+for scoring, never as factor inputs. Report incompatible diagnostics as `not_applicable`
+with a reason and show the relevant measured role evidence rather than an all-null table.
+
+For supporting-role admission, require both the frozen factor-level comparison and a
+strategy-specific paired ablation. Define utility so higher is better: for a loss metric,
+improvement = baseline loss - candidate loss; for a benefit metric, candidate - baseline.
+The study requires positive pooled consumer utility and positive utility in the specified
+number of validation folds. Use matched dates/costs/refit rules, show raw values and paired
+uncertainty, and require its predeclared guardrails and no regression of previously passed
+strategy gates. An incomplete comparison means qualification pending, not admitted.
+
+To avoid circular admission, an unqualified supporting factor can be used in an explicitly
+exploratory consumer comparison. The strategy cannot become eligible until the role and
+consumer evidence passes. Scope that qualification to the exact factor/strategy versions,
+bindings and fitted policy. Record the admission receipt separately from the candidate's
+implementation hash, so issuing a receipt does not change the compared strategy. A new
+consumer needs a new check; a changed factor does not inherit its parent's qualification.
 
 ### Labels, samples and causality
 
@@ -97,11 +135,13 @@ the primary score then evaluates that policy, not the best horizon selected afte
 Report the same fixed diagnostic horizon grid for candidates; inspecting an extra horizon
 to change selection consumes a new recorded validation decision within the study budget.
 
-Apply the supplied admission rules to their exact scope: default primary mean RankIC,
+For return-prediction factors, apply the supplied admission rules to their exact scope: default primary mean RankIC,
 positive-fold count, pooled coverage, total non-overlapping validation labels and pairwise
 redundancy. Display minimum fold coverage/counts as diagnostics too. All folds need defined
-primary correlations. Select complementary factors in a deterministic, predeclared order
-and record which retained factor caused each redundancy rejection. Affine renaming of an
+primary correlations. Follow the study's redundancy scope and record peers/counts for every
+decision. Under a co-consumption policy, compare parent/revised factors as alternatives;
+correlation with a version being replaced does not forbid testing the replacement. Evaluate
+co-consumed peers with the same role against the cutoff. Affine renaming of an
 existing expression is not a distinct economic hypothesis. Additional diagnostic metrics
 do not silently create or replace admission thresholds.
 
@@ -130,13 +170,17 @@ size or Deflated Sharpe when the method and its inputs have been numerically ver
 
 ## Strategy identity: what is being traded?
 
-For every strategy/version show factor IDs and expressions, combination/weights, fitted
+For every strategy/version show hypothesis family, parent IDs, factor IDs/roles and exact
+expressions, qualification receipts, combination/weights, fitted
 parameters, entry and exit conditions, target size, rebalance schedule, missing/neutral
 signal behavior, regime/risk rules, next-open execution and costs. Supply readable pseudocode
 that explains how a dated factor observation becomes a target, order, fill and realized PnL.
 An opaque strategy name or factor-weight list alone is insufficient.
 
 Include cash, matched buy-and-hold and executable single-factor baselines before combinations.
+Keep strategy-specific factor sets and compare each shortlisted route with its own parent
+and the shared benchmarks, not only the global leader. Use the joint-exploration reference
+to allocate factor revisions, strategy revisions and new mechanisms.
 List all tried strategies, eligibility and reasons, not only the winning curve. Label the
 validation-selected version independently from whether final test passed. Test contains only
 the frozen strategy, selected factor diagnostics and predeclared benchmark/cost scenarios.
@@ -231,6 +275,23 @@ Signal Foundry also checks all seven final criteria on pooled validation before 
 Export that separate readiness vector with validation scope, exact values and reasons for
 missing metrics. Readiness is never a test result and does not overwrite initial eligibility.
 
+### Diversity and paired revision metrics
+
+On matched validation sessions, report Pearson correlation of net return series and
+Spearman correlation of target exposure series, with pair counts. A constant series yields
+null, never zero. Active-session overlap is |A intersect B| / |A union B| for sessions with
+positive target exposure; entry overlap uses dates that change from flat to positive. Both
+are null if the union is empty. Fix any numerical exposure tolerance in the metric contract.
+Report factor correlations separately; strategy similarity cannot be inferred from factor
+names. Use behavioral similarities alongside economic definitions, not as standalone proof
+of diversity. Parameter and affine variants do not increase distinct-hypothesis counts.
+
+For revisions, export parent value, candidate value and candidate-minus-parent delta in
+each named metric's original units, with the same split/folds, dates, costs and refit policy.
+Drawdown reduction therefore has a negative raw delta; show direction explicitly. Do not
+combine unlike metrics into an unexplained improvement score. Add the declared role utility
+as a separate metric and record regressions, support and gate changes.
+
 ## Evaluation drives the next experiment
 
 Before each market evaluation write a hypothesis, parent IDs, intended change, expected
@@ -246,10 +307,12 @@ errors separately from low performance; fix invalid accounting before interpreti
 | Low coverage, a constant factor, impossible IC or delayed data | Inspect inputs, formula warm-up, timestamps and label alignment; repair and rerun fixtures before another financial claim. |
 | Training IC strong but validation IC weak or sign unstable | Inspect fold/regime and search breadth; reject overfit variants or test a simpler economic hypothesis. Never flip the sign on validation to relabel failure as success. |
 | Positive IC but high redundancy | Compare exact expressions and aligned pair correlations; retain a simpler/stabler representative or propose an economically different input, not another name. |
-| Predictive factor, weak net strategy | Trace signal → target → fill; compare executable single-factor baseline, turnover, costs and horizon versus holding duration. Investigate mapping/rebalance changes as new budgeted candidates. |
+| Predictive factor, weak net strategy | Trace signal → target → fill; compare baseline, turnover, costs and horizon versus holding duration. Diagnose whether a new/revised causal factor or a different mapping is needed; compare against the parent with other compatible components fixed. |
 | Gross works, net/stress fails | Attribute fees/slippage and turnover; test a predeclared small change in rebalance cadence or entry hysteresis on research splits. Keep required costs unchanged. |
 | High return but poor drawdown, fold stability or benchmark advantage | Diagnose actual exposure and losing intervals; try a bounded causal risk/regime hypothesis. A bull-market equity curve alone is insufficient. |
 | Combination improves nothing over one factor | Ablate one factor at a time with the same dates, costs and refit policy; record both risk-adjusted and absolute-return changes and their paired uncertainty. |
+| Risk/state factor has weak directional IC | Evaluate its prospectively declared role and matched consumer ablation. Preserve a failed predictive version; a different-role proposal is a new counted trial, never automatic admission. |
+| Most candidates reuse one mechanism | Review executed coverage and remaining reservations; explore a different evidence-backed mechanism or diagnose why the feasible search is narrower. Renaming formulas or injecting noise is not diversity. |
 | Too few trades or labels | Report inadequate support; reject or change the economic hypothesis on research data. Do not split resizes into fake trades or count overlapping labels as independent. |
 | Eligible strategy misses submission targets or robustness checks | Keep test unexposed. Compare the whole readiness vector and continue a bounded hypothesis; reducing position size alone may not fix return, Sharpe, benchmark advantage or support. |
 | Repeated validation stagnation or exhausted budget | Apply the study's frozen patience/budget rules with actual counters. Preserve unmet readiness/objectives; do not submit an unready candidate because search has stopped. |

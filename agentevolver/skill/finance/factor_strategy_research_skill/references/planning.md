@@ -14,7 +14,8 @@ the actual holdout boundary in the research records; it is an implementation fac
 property supplied by a stock's study specification.
 
 Keep the index short: current stage/status, last verified result, next experiment, remaining
-budget, holdout state and links to the authoritative records. Full plan text, reports, price
+budget, holdout state and links to the authoritative records. Include a concise active-route
+summary and links to factor/strategy lineage and latest route reviews. Full plan text, reports, price
 arrays and experiment ledgers do not belong in the live summary. Update after a meaningful
 implementation, evaluation, decision, stage transition or blocker; reconcile with disk on resume.
 Distinguish the last frozen attempt's outcome, whether research is active/awaiting a prerequisite,
@@ -32,7 +33,10 @@ The detailed plan should cover:
 - Frozen chronological protocol, trial accounting, metric definitions/units/nulls/aggregation,
   admission rules, submission-readiness evidence and stop criteria from the
   [research protocol](research-protocol.md) and [metric contract](metrics-and-evaluation.md).
-- Factor hypotheses, expected economic mechanism, strategy designs and falsification conditions.
+- Open factor/strategy hypotheses and roles, expected mechanisms, route-specific bindings and
+  falsification conditions, following [joint exploration](joint-exploration.md).
+- Search reservations for breadth, factor/strategy refinements and paired/robustness checks;
+  per-route baseline, diagnosis, next trial or closure, actual counters and patience activation.
 - One continuous report page with factor and strategy inventories/evidence, chart specifications,
   shared result artifacts, visual direction, scroll/anchor journeys and browser checks.
 - Implementation progress and acceptance evidence, including partial and failed outcomes.
@@ -53,6 +57,7 @@ plan.md
 research/contract.json            # immutable protocol and source/data identities
 research/metric-contract.json     # versioned definitions shared by engines and report
 research/trials.jsonl             # every attempt, parameters, exposure and cost
+research/routes.json              # mechanisms, exact factor/strategy versions, reviews and next steps
 research/readiness.json           # separate validation eligibility/readiness and closure evidence
 research/submission.json          # frozen factor/strategy/engine hashes
 research/test-access.jsonl        # test requests, exposure and result identity

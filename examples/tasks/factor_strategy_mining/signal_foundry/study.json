@@ -1,6 +1,11 @@
 {
   "schema": 1,
-  "study_id": "signal-foundry-nvda-daily-v3",
+  "study_id": "signal-foundry-nvda-daily-v4",
+  "research_lineage": {
+    "predecessor_study_id": "signal-foundry-nvda-daily-v3",
+    "carry_forward_trials_and_holdout_exposure": true,
+    "revision_scope": "prospective joint exploration and role-scoped factor qualification; existing frozen attempts remain unchanged"
+  },
   "market": {
     "symbol": "NVDA",
     "exchange_calendar": "XNAS",
@@ -56,15 +61,40 @@
     "max_candidates_per_validation_submission": 5,
     "max_rounds_without_validation_improvement": 3
   },
+  "exploration": {
+    "minimum_distinct_factor_hypotheses": 3,
+    "minimum_distinct_strategy_hypotheses": 3,
+    "parameter_variants_count_as_distinct_hypotheses": false,
+    "review_every_shortlisted_route": true,
+    "require_factor_revision_and_consumer_review": true,
+    "require_strategy_refinement_review": true,
+    "reserve_trials_for_breadth_refinement_and_robustness": true,
+    "patience_starts_after_initial_diversity_review": true
+  },
   "acceptance": {
     "kind": "demo_research_objective_not_a_return_promise",
     "factor_admission": {
+      "applies_to_role": "return_prediction",
       "minimum_coverage": 0.95,
       "minimum_validation_time_series_rank_ic": 0.02,
       "minimum_validation_folds_with_positive_rank_ic": 2,
       "maximum_pairwise_absolute_correlation": 0.85,
+      "redundancy_scope": "co-consumed return-prediction factors; alternative versions can be compared for replacement without being consumed together",
       "minimum_nonoverlapping_validation_labels": 30,
       "direction_and_primary_horizon_selected_on_train": true
+    },
+    "supporting_factor_admission": {
+      "applies_to": "prospectively declared non-return-prediction roles",
+      "minimum_coverage": 0.95,
+      "minimum_nonoverlapping_validation_labels": 30,
+      "minimum_validation_folds_with_positive_role_utility": 2,
+      "require_predeclared_target_metric_threshold_and_guardrails": true,
+      "require_role_metric_against_training_fitted_baseline": true,
+      "require_strategy_specific_paired_ablation": true,
+      "require_positive_pooled_incremental_utility": true,
+      "require_no_regression_of_previously_passed_strategy_gates": true,
+      "qualification_scope": "exact factor role, strategy version and fitted evaluation policy",
+      "retrospective_relabeling_permitted": false
     },
     "validation_strategy": {
       "minimum_pooled_net_sharpe": 0.75,
@@ -75,7 +105,8 @@
       "require_validation_eligibility": true,
       "require_final_test_strategy_criteria_on_pooled_validation": true,
       "require_predeclared_robustness_evidence": true,
-      "require_documented_search_closure": true
+      "require_documented_search_closure": true,
+      "require_diversity_and_joint_refinement_review": true
     },
     "final_test_strategy": {
       "minimum_net_cagr": 0.12,

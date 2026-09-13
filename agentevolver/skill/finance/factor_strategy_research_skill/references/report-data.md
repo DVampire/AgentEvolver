@@ -29,7 +29,7 @@ The checker detects integrity/schema failures, not dishonest source labels or fi
 calculation bugs; verify those separately with the numerical acceptance method.
 
 The renderer writes a continuous HTML page, local CSS/JS, `analysis.json`, `metrics.csv`
-and `series.csv`. It copies the installed package's canonical visual stylesheet. Both stages
+and `series.csv`/`comparisons.csv`. It copies the installed package's canonical visual stylesheet. Both stages
 remain in normal flow; anchors scroll without changing routes. SVG charts and visible tables
 use the same saved values. Extend this layout for the full inventory, gates, uncertainty,
 drawdown, costs and research-history requirements, preserving source-bound calculations.
@@ -43,13 +43,14 @@ Root fields:
 
 | Field | Contract |
 | --- | --- |
-| schema, study_id, title, summary | Schema 1, exact study identity and truthful research summary. |
+| schema, study_id, title, summary | Schema 2 for joint research, exact study identity and truthful research summary. Schema 1 remains readable for legacy artifacts. |
 | scope, data_basis | research/synthetic; explicit source, price/volume basis, costs and limitations. |
 | strict_data | status met/unmet and a list of reasons; public research can proceed with unmet strict qualification when authorized. |
 | test_state | sealed/evaluated. The latter requires the real frozen finalization receipt; setting this field does not authorize access. |
 | sources | Map of stable result IDs to path and SHA-256. Paths resolve relative to this manifest; each result JSON has the same scope as the manifest. |
 | factors, strategies | Arrays of all proposed and executed candidates, preserving rejections/errors. |
 | charts | Measured line/bar series referencing source JSON; never fake coordinates or all-null arrays. |
+| routes, comparisons | Schema 2 research routes and measured parent/candidate comparisons, described below. |
 
 Each candidate needs unique `id`, `name`, `status` and its exact `formula` (factor) or
 `rules` (strategy). Include `reason` for a diagnosis/decision and `factor_ids` for a strategy.
@@ -60,6 +61,53 @@ factor bindings; it still needs exact rules and computed metrics. It is not a mi
 Only executed candidates carry measured metrics. An evaluated training factor can support
 an exploratory training strategy, but validation eligibility still requires actual admission.
 A failed factor cannot be silently consumed as an admitted factor.
+
+## Joint research records (schema 2)
+
+Use schema 2 for new work so lineage, roles and reviews survive compilation, display and
+the analysis.json download. Candidate IDs identify exact versions. Each candidate adds
+`family`, `hypothesis` and `parent_ids` (empty for an original); parents must exist in the
+same factor/strategy inventory, with no cycles. Family labels are researcher-defined;
+the adapter does not infer economic diversity from different strings.
+
+Factors add `role`, using `return_prediction` for that role and open names for supporting
+uses. `qualified_strategy_ids` restricts qualification to exact consumers. An admitted
+supporting factor needs a nonempty list and each consumer must actually bind the factor.
+For return-prediction factors an empty list allows general qualification within the frozen
+policy; actual combination redundancy still needs evaluation. Strategies add `factor_roles`,
+a mapping with exactly the same keys as `factor_ids`, matching those versions' roles.
+
+`research_only: true` is required for evaluated strategies using factors not yet qualified
+for that consumer, including diagnostic use of rejected factors. Such a strategy cannot
+be admitted. An admitted strategy requires all
+bindings to be admitted and covered by their qualification scope. Admission status here is
+a reported research judgment; the engine must supply the actual role/consumer gate receipts.
+The adapter checks consistency, not whether an economic claim or gate calculation is valid.
+
+Each route has `id`, `hypothesis`, `status` (proposed/active/retained/parked/rejected/closed),
+`factor_ids`, `strategy_ids`, `diagnosis` and `next_step`. All non-baseline candidates belong
+to at least one route. Early routes can have factors and no strategies. Keep the next step
+or an explicit closure condition even for parked/rejected routes. Record role-specific
+criteria, budgets and all historical decisions in the full plan records linked by the index.
+
+Each measured comparison has `id`, `route_id`, `parent_id`, `candidate_id`, `diagnosis`,
+`decision` and nonempty `metrics`. Both candidates are executed versions of the same kind;
+the candidate belongs to that route. Each metric supplies `label`, `definition`, `unit`,
+`split` and `parent`/`candidate` references (`source`, `pointer`) to numerical artifacts.
+References must also appear in the respective candidate's metric list with matching split
+and unit. The compiler resolves both finite values and exports `delta = candidate - parent`;
+the UI does not recalculate performance. Same dates/folds/costs/fitting policy must be checked
+in the environment. Null/unsupported comparisons remain pending in route diagnoses rather
+than fake measured rows. Comparisons are displayed inline and exported to comparisons.csv.
+Do not use comparison records to rerank post-reveal test candidates.
+
+Source hashes and references apply to all comparison values; sealed test labels are rejected
+in comparisons as in charts/metrics. Verify that a source does not disguise test data under
+another label. Neither this structural adapter nor schema 2 independently enforces holdout
+isolation, mechanism coverage, trial budgets or statistical admission. Those are the native
+environments' research contracts and the agent's evidence-based review responsibilities.
+
+## Metric and chart references
 
 Every metric gives `label`, `definition` (formula, denominator, horizon/fold/scenario),
 `unit`, `split` (train/validation/test), `source`, `pointer` (JSON pointer), and a `reason`
@@ -80,7 +128,9 @@ rows. The adapter references these, rather than copying their values:
 ```json
 {
   "id": "F01@1", "name": "Twenty-session momentum",
-  "formula": "adjusted_close[t] / adjusted_close[t-20] - 1",
+  "family": "trend persistence", "parent_ids": [], "role": "return_prediction",
+  "hypothesis": "Test whether past trend predicts the declared forward return",
+  "formula": "close / delay(close, 20) - 1",
   "status": "evaluated", "reason": "Training diagnostic; admission pending",
   "metrics": [{
     "label": "RankIC", "definition": "Spearman correlation with next-open five-session return; training pairs",

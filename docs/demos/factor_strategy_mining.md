@@ -1,6 +1,6 @@
 # Factor and factor strategy mining
 
-Signal Foundry is a **single-agent, two-stage research demo**. The agent develops its
+Signal Foundry is a **single-agent research demo with joint factor/strategy iteration**. The agent develops its
 market-data and simulation capabilities while building one continuous factor/strategy report
 page. It uses the standard Agent execution loop, shared plan module, memory/compaction,
 native capability router, evolution rules and deployment gateway.
@@ -31,8 +31,8 @@ Runs register on the usual gateway at port 9876; deploy_tool publishes the repor
 | Layer | Location / role |
 | --- | --- |
 | Agent | `agentevolver/agent/actor/factor_strategy_mining_agent.py`: thin MetaAgent specialization with child dispatch disabled |
-| Prompt | `agentevolver/prompt/default/factor_strategy_mining_agent.html`: two-stage ownership and integrity rules; includes shared evolution rules |
-| Skill | `agentevolver/skill/finance/factor_strategy_research_skill/`: planning, data/interfaces, research protocol, numerical evaluation contract and single-page report methods |
+| Prompt | `agentevolver/prompt/default/factor_strategy_mining_agent.html`: joint research ownership and integrity rules; includes shared evolution rules |
+| Skill | `agentevolver/skill/finance/factor_strategy_research_skill/`: open exploration, expression compiler/operators, planning, data/interfaces, evaluation and single-page reports |
 | Config | `configs/factor_strategy_mining_demo.py`: exactly one actor; Bash, job, browser, inspection, adoption, deployment and completion |
 | Task | `signal_foundry/task.html`: English product outline and acceptance requirements; no inline style or scripts |
 | Study | `signal_foundry/study.json`: stock, dates, costs, research budgets and numerical objectives |
@@ -56,6 +56,12 @@ share verified numerical utilities. The router makes registered environments cal
    reproducibility artifacts. A failed attempt leaves the objective unmet; the skill directs
    continued exploratory research while useful work and budget remain.
 
+Factor discovery remains open during strategy research. The skill's
+[joint-exploration method](../../agentevolver/skill/finance/factor_strategy_research_skill/references/joint-exploration.md)
+keeps distinct mechanisms and strategy-specific factor versions, reviews every shortlisted
+route, and reserves trials for factor revisions, consumer comparisons and robustness.
+The agent chooses hypotheses; the initial formulas and strategy modes are not a search catalog.
+
 The framework audit requires one connector and two distinctly named environments with
 registration, evaluated keep and later real native consumer receipts. Registering two
 versions of one environment is insufficient. The prompt/skill additionally requires different
@@ -74,10 +80,13 @@ Sharpe no worse than holding NVDA and positive return under doubled trading cost
 These are **illustrative demo targets**, not an expected or promised return. Change the
 input specification before a new study starts, never to rescue a failing observed result.
 
-Ordinary iterations use train/validation. The v3 study separates preliminary eligibility from
+Ordinary iterations use train/validation. The study separates preliminary eligibility from
 submission readiness: all final numerical targets must also pass on pooled validation, with
 predeclared robustness evidence and documented search closure. Final thresholds remain unchanged.
 A first eligible candidate, completed batch or published report does not end the search.
+The v4 revision also requires diversity and joint-refinement review and supplies supporting-role
+qualification. It preserves the previous study's dates, budgets and final performance targets;
+continuations carry forward prior trial counts and holdout exposure.
 
 Keep frozen-attempt outcome, research activity and overall acceptance separate. A failed test
 can be followed by useful exploratory train/validation work on separate candidate versions;
@@ -110,6 +119,12 @@ Synthetic data is only for engine fixtures. No broker orders or live trading are
 
 ## Work records and reports
 
+The skill's [operator table and compiler](../../agentevolver/skill/finance/factor_strategy_research_skill/references/factor-expressions.md)
+turn factor expressions into portable `compute_factors(DataFrame) -> DataFrame` modules with
+a pinned operator runtime. Each factor version is an output column on the unchanged timestamp
+index. The environment consumes that code for actual evaluation; the compiler does not run
+backtests or admit factors. New operators can be added and verified when research needs them.
+
 The agent expands the brief into the session's plan/plan.md and updates plan/index.md
 with progress, current stage, test state and paths. The skill suggests supporting records
 under that directory without imposing a fixed framework schema. Large results and data stay
@@ -117,6 +132,9 @@ in the workspace. One continuous report contains all factor/strategy definitions
 effects, split comparisons, failed trials, chart interactions, uncertainty and downloadable
 evidence. Both stages remain visible in normal page flow; navigation scrolls to anchors without
 route or stage-tab switching. Two research-bearing releases update that same product over time.
+Report schema 2 preserves route reviews, factor roles, exact consumer bindings and measured
+parent/candidate comparisons in the page and downloadable analysis, alongside legacy schema 1
+support. Numerical admission and research readiness remain the environments' responsibilities.
 
 The [metric contract](../../agentevolver/skill/finance/factor_strategy_research_skill/references/metrics-and-evaluation.md)
 defines factor IC/RankIC, sample support, admission, portfolio accounting, performance/risk/cost

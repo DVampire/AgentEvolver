@@ -98,6 +98,92 @@ def test_synthetic_needs_explicit_opt_in_and_cash_baseline_is_legal(manifest):
     assert report.compile_report(manifest, allow_synthetic=True)["strategies"][0]["baseline"]
 
 
+@pytest.fixture
+def joint_manifest(manifest):
+    from copy import deepcopy
+    spec = json.loads(manifest.read_text())
+    spec["schema"] = 2
+    factor = spec["factors"][0]
+    factor.update(family="response", hypothesis="Fixture response", role="return_prediction", parent_ids=[])
+    strategy = spec["strategies"][0]
+    strategy.update(family="response policy", hypothesis="Fixture consumer", parent_ids=[],
+                    factor_roles={"F": "return_prediction"}, research_only=True)
+    revised = deepcopy(factor)
+    revised.update(id="F@2", parent_ids=["F"], formula="Revised fixture score")
+    revised["metrics"][0]["pointer"] = "/revised_correlation"
+    policy = deepcopy(strategy)
+    policy.update(id="S@2", parent_ids=["S"], factor_ids=["F@2"], factor_roles={"F@2": "return_prediction"})
+    spec["factors"].append(revised)
+    spec["strategies"].append(policy)
+    spec["routes"] = [{"id": "response", "hypothesis": "Fixture mechanism", "status": "active",
+                       "factor_ids": ["F", "F@2"], "strategy_ids": ["S", "S@2"],
+                       "diagnosis": "Factor improved; consumer effect pending", "next_step": "Compare consumer utility"}]
+    spec["comparisons"] = [{"id": "revision", "route_id": "response", "parent_id": "F", "candidate_id": "F@2",
+                            "diagnosis": "Positive paired difference", "decision": "Continue consumer evaluation",
+                            "metrics": [{"label": "RankIC", "definition": "Matched fixture pairs", "unit": "ratio", "split": "train",
+                                         "parent": {"source": "engine", "pointer": "/correlation"},
+                                         "candidate": {"source": "engine", "pointer": "/revised_correlation"}}]}]
+    engine = manifest.parent / "engine.json"
+    data = json.loads(engine.read_text())
+    data["revised_correlation"] = 0.2
+    spec["sources"]["engine"]["sha256"] = save(engine, data)
+    save(manifest, spec)
+    return manifest
+
+
+def test_joint_research_survives_compilation_rendering_and_download(joint_manifest, tmp_path):
+    result = report.compile_report(joint_manifest, allow_synthetic=True)
+    assert result["strategies"][0]["factor_ids"] == ["F"]
+    assert result["strategies"][1]["factor_ids"] == ["F@2"]
+    assert result["factors"][1]["parent_ids"] == ["F"]
+    assert result["comparisons"][0]["metrics"][0]["delta"] == pytest.approx(0.2)
+    output = tmp_path / "joint-public"
+    report.render(result, output)
+    exported = json.loads((output / "analysis.json").read_text())
+    assert exported["routes"] == result["routes"]
+    assert exported["comparisons"] == result["comparisons"]
+    assert "revision,response,F,F@2,RankIC,train,0.0,0.2,0.2,ratio" in (output / "comparisons.csv").read_text()
+
+
+@pytest.mark.parametrize("failure", ["cycle", "parent", "route", "role", "sealed", "unrelated_metric", "unexecuted"])
+def test_joint_report_rejects_inconsistent_lineage_or_comparisons(joint_manifest, failure):
+    spec = json.loads(joint_manifest.read_text())
+    if failure == "cycle": spec["factors"][0]["parent_ids"] = ["F@2"]
+    elif failure == "parent": spec["factors"][1]["parent_ids"] = ["S"]
+    elif failure == "route": spec["routes"][0]["factor_ids"] = ["F"]
+    elif failure == "role": spec["strategies"][0]["factor_roles"]["F"] = "risk"
+    elif failure == "sealed": spec["comparisons"][0]["metrics"][0]["split"] = "test"
+    elif failure == "unrelated_metric": spec["comparisons"][0]["metrics"][0]["parent"]["pointer"] = "/total_return"
+    else: spec["factors"][1].update(status="proposed", metrics=[])
+    save(joint_manifest, spec)
+    with pytest.raises(ValueError): report.compile_report(joint_manifest, allow_synthetic=True)
+
+
+def test_supporting_role_qualification_is_consumer_specific(joint_manifest):
+    spec = json.loads(joint_manifest.read_text())
+    spec["factors"][0].update(role="risk", status="admitted", qualified_strategy_ids=["S"])
+    spec["strategies"][0].update(status="admitted", factor_roles={"F": "risk"}, research_only=False)
+    save(joint_manifest, spec)
+    result = report.compile_report(joint_manifest, allow_synthetic=True)
+    assert result["factors"][0]["qualified_strategy_ids"] == ["S"]
+    spec["strategies"][1].update(status="admitted", factor_ids=["F"], factor_roles={"F": "risk"}, research_only=False)
+    save(joint_manifest, spec)
+    with pytest.raises(ValueError, match="qualification does not cover"):
+        report.compile_report(joint_manifest, allow_synthetic=True)
+
+
+def test_rejected_factor_can_be_diagnosed_without_claiming_admission(joint_manifest):
+    spec = json.loads(joint_manifest.read_text())
+    spec["factors"][0]["status"] = "rejected"
+    spec["strategies"][0]["research_only"] = True
+    save(joint_manifest, spec)
+    assert report.compile_report(joint_manifest, allow_synthetic=True)["strategies"][0]["research_only"]
+    spec["strategies"][0]["status"] = "admitted"
+    save(joint_manifest, spec)
+    with pytest.raises(ValueError, match="Research-only"):
+        report.compile_report(joint_manifest, allow_synthetic=True)
+
+
 @pytest.mark.parametrize("defect", [None, "missing", "duplicate", "nan", "symbol", "adjustment", "hash"])
 def test_local_snapshot_accepts_holiday_bounds_and_rejects_bad_data(tmp_path, defect):
     bars = [{"date": f"2020-01-0{day}", "symbol": "FIX", "open": 10, "high": 12, "low": 9,

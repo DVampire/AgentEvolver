@@ -10,6 +10,12 @@ Read the study specification and write a content-hashed contract before evaluati
 It fixes data identity, market/calendar, session frequency, dates, fit/score boundaries,
 horizons, execution timing, adjustments, cost model, factor admission, strategy selection,
 submission readiness, final acceptance, experiment budgets and insufficient-evidence rules.
+Read [joint-exploration.md](joint-exploration.md). Freeze role-specific qualification,
+diversity coverage, route-review criteria and budget reservations alongside the metric
+contract. Factor formulas, strategy mechanisms and route names remain open to discovery.
+Protocol immutability does not mean an immutable candidate library. Apply revised study
+rules prospectively, preserving prior frozen attempts, trial counts and known test exposure;
+a new study version cannot restart exhausted budgets or make the same test unseen.
 Compute additional diagnostics freely on research splits; freeze any extra selection criterion before using it.
 Do not weaken the task's supplied thresholds. Apply the study's explicit data_policy when
 classifying incompatibility: an authorized adjusted/public-data research mode may proceed
@@ -82,6 +88,12 @@ unrounded values. For another study, apply its declared submission contract:
   remaining budgets/patience, unresolved weaknesses and why further research is not needed
   before this submission. Do not close just because one candidate first became eligible,
   a planned batch ended, or enough report releases were published.
+- When `require_diversity_and_joint_refinement_review` is supplied, verify the study's
+  distinct factor/strategy hypothesis coverage, every shortlisted route's diagnosis and
+  disposition, and the factor/consumer and strategy refinement comparisons specified in
+  [joint exploration](joint-exploration.md). Use executed result IDs; failed experiments
+  can satisfy exploration evidence, but cannot pass financial gates. Missing coverage or
+  refinement review leaves readiness unmet; report it if a budget prevents completion.
 
 For example, an eligible strategy with validation Sharpe 0.95 and drawdown 29% cannot enter
 test when the readiness targets require at least 1.0 and at most 25%. Lowering exposure may
@@ -142,7 +154,10 @@ an explicit new protocol and appropriate sample support. Do not automatically ex
 change instruments or reset counters to obtain it. A new version/session of the same study
 must carry forward prior trials and known exposure; a version label cannot reset independence.
 
-Keep total trial/submission counts and consecutive non-improvement rounds against the frozen
+Use the joint-exploration reference's bounded round and initial diversity-review semantics.
+When the supplied study explicitly defers patience until that initial review, activate it
+once and preserve that activation on resume; round/trial ceilings always apply. Otherwise
+patience applies from the first round. Keep total trial/submission counts and consecutive non-improvement rounds against the frozen
 validation objective. A new factor name, stage switch, cosmetic edit or restart does not reset
 patience. Document the measured improvement that resets it. Maximum budgets are ceilings,
 not quotas; use readiness, measured convergence or a concrete blocker to justify stopping
@@ -167,13 +182,14 @@ first or report it unavailable. UI lock icons and hashes alone do not establish 
 
 ## Factor evaluation
 
-For a single stock, evaluate time-series Pearson IC and Spearman RankIC between an available
+Declare each factor's intended role before evaluation. For return prediction on a single
+stock, evaluate time-series Pearson IC and Spearman RankIC between an available
 factor value and a future tradable return, by horizon and fold. Use the same corporate-action
 and next-open convention as the strategy engine. Specify label endpoints explicitly, e.g.
 the total return from the next open through the open h sessions later. Do not correlate with
 same-bar returns or call a single-stock statistic cross-sectional IC.
 
-The default admission RankIC is the equally weighted mean of the three annual validation
+For the return-prediction role, the default admission RankIC is the equally weighted mean of the three annual validation
 fold RankICs at the training-selected primary horizon and direction. Report each fold and
 the pooled statistic separately. Require the study's positive-fold count, pooled coverage and
 total non-overlapping-label minimum across scored validation folds, with finite evidence in
@@ -185,6 +201,19 @@ coverage and absolute factor correlations on aligned research observations. Prev
 flips selected on validation/test and duplicate formulas disguised by affine transforms.
 Admission ties prefer simpler factors with stable evidence; keep the rejection rationale.
 Single-factor diagnostic returns are not a strategy unless execution and costs are defined.
+
+Where the study permits supporting roles, use its separate supporting-factor admission
+contract and the metric reference's role/consumer checks. Freeze each new role's target,
+loss/utility, baseline, support, threshold and non-target guardrails before its first scored
+trial. Directional RankIC remains a diagnostic when meaningful; it is not a universal gate
+for risk or state information. Qualification is scoped to the exact role and consumer
+strategy version, with paired evidence. A failed predictive factor cannot be relabelled after
+the fact; record a new hypothesis/version and charge the trial while retaining the rejection.
+
+Honor the declared redundancy scope. In Signal Foundry, compare alternative versions for
+replacement without forcing both into a strategy. Apply the cutoff to co-consumed predictive
+factors. Keep the full correlation matrix and rejected alternatives visible; do not use a
+global greedy top-k library to prevent other routes from evaluating their relevant factors.
 
 Overlapping labels and serially correlated returns are not independent observations. Provide
 a dependence-aware uncertainty method, its block/window choices and effective/non-overlapping

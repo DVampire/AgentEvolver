@@ -44,10 +44,16 @@ reason. Follow the [research lifecycle](research-protocol.md) when deciding whet
 | Strategy inventory | Every candidate/version, exact factor composition, readable entry/exit/sizing/rebalance/risk rules, train and validation performance, costs, completed trips, failed gates and selection reason. Readers can answer what it actually trades without reading source code. |
 | Strategy evidence | Selected strategy and baseline curves, aligned split/fold metrics, costs, exposure, drawdown episodes, trades, parameter comparisons and factor ablations. Final test shows only the frozen strategy and predeclared scenarios. |
 | Research decisions | Chronological hypothesis → experiment → baseline/candidate metric changes → diagnosis → decision → next experiment; include rejected, errored and blocked trials, budgets and validation usage. |
+| Research routes | Distinct mechanisms, linked factor/strategy versions, actual coverage and behavioral similarities, every shortlisted route's diagnosis, refinement or park/reject reason, remaining reservations and next question. Routes remain in the same document. |
 | Definitions and evidence | Plain-language metric definitions, units, denominators, scope, uncertainty, execution assumptions, source rights, result identities, limitations and permitted JSON/CSV exports. |
 
 Use a compact comparison table for all candidates and readable inline detail for selected
-comparisons; long expressions may wrap. Do not replace definitions/results with only counts,
+comparisons; long expressions may wrap.
+Show exact parent/version links and strategy-specific factor roles. Use the metric contract's
+role-specific evidence for supporting factors; directional IC charts apply to predictive roles.
+Explain role-inapplicable metrics instead of filling supporting-factor rows with unavailable
+predictive statistics. Include qualification scope and exploratory versus eligible consumers.
+Use compact comparison tables rather than replacing definitions/results with only counts,
 ranking badges or generic "signal quality" scores. Before test reveal, its section says
 sealed/pending and explains prerequisites; no test metrics or bars are shipped in HTML,
 JavaScript, JSON, downloads or network responses. After reveal the official result is fixed.
@@ -73,6 +79,8 @@ Display uncertainty method/support where applicable, not unexplained error bars.
 | Exposure and cost attribution: what caused the drag? | x = session for actual/target exposure (%); separate period bars for commission/slippage (currency or explicitly labelled bps of initial capital). | Do not overlay currency and percentages on an unlabelled axis. Show actual weights versus prior-close targets, turnover definition and fill count; gross/net replay difference is not automatically sum of fees. |
 | Cost stress bars: does it survive the declared scenarios? | x = frozen cost scenario; y = net total return %; adjacent labelled table for net Sharpe, drawdown and costs. | Default/stress scenario boundaries and zero baseline; rerun the frozen policy without tuning. No sliders that launch new test experiments. |
 | Ablation/parameter bars: what actually helps? | x = named research variant; y = delta in one specified validation metric versus the full/fixed baseline; separate plots for return percentage points, Sharpe and drawdown. | Same scored dates/cost/refit scope; show every tested variant, paired uncertainty if valid and trial IDs. An omitted factor's whole-strategy delta is not per-trade causal PnL attribution. |
+| Route refinement bars: did the factor or strategy revision help? | x = named parent/candidate comparison, y = candidate-minus-parent delta in one metric with its own units. Separate factor role utility, net strategy performance and risk changes. | Show parent and candidate versions/values, exact bindings, matched scopes and regression explanations. Lower drawdown is a negative raw delta. Never aggregate incompatible units into a generic improvement score. |
+| Behavioral diversity matrix: are policies doing different things? | Rows/columns = strategy versions; separate cells for return correlation, target-exposure correlation and active-session overlap. | Use the metric contract's aligned samples, definitions and null states. Pair with mechanisms and fold/regime behavior; small correlation alone is not proof of discovery. |
 | Trade distribution bars: is success concentrated? | x = frozen net episode-PnL or holding-session bins; y = completed round-trip count, with zero-PnL boundary and sample size. | Explain bin edges, completed versus open inventory, median/tails and wins/losses. Adds/resizes do not create extra trips; link bars to rows in the trade ledger. |
 
 Keep official train/validation/test summary columns visible simultaneously; local brushing
@@ -91,6 +99,9 @@ Field names can follow the implemented schema, but it must contain:
 - Study/protocol/metric-contract identities, source snapshot, actual coverage, as-of time,
   split/fold definitions and holdout state.
 - All candidate definitions, execution/selection states, parent IDs and consumer links.
+- Route/family identities, scoped factor roles, every shortlist review, and paired revision
+  results. Use schema 2 of the report adapter so these records survive into analysis.json
+  and the same continuous page, rather than existing only in an unlinked research notebook.
 - Per-result metric values/status/reasons, counts, criterion records and uncertainty method.
 - Chart series with explicit timestamps/bins, units, metric IDs, scope/scenario and result IDs;
   references to full equity, order, trade and factor-diagnostic artifacts.

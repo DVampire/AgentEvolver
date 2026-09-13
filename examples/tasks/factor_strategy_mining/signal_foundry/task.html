@@ -21,7 +21,8 @@
 
 <h2>Mission and research scope</h2>
 <p>Create an interactive workbench for researching a stock, discovering useful factors
-    and turning them into testable trading strategies. The two research stages should form
+    and jointly improving them with testable trading strategies across diverse research
+    hypotheses. Factor discovery remains open throughout strategy research. The two areas form
     one continuous report page, with clear conclusions and evidence that readers can explore
     by scrolling, without switching pages or tabs between the stages.</p>
 <p>The accompanying study.json specifies the stock, dates, trading assumptions, research
@@ -58,22 +59,29 @@
 <p>Discover interpretable signals, compare their predictive usefulness and select a
     complementary factor library for strategy research. Each conclusion must come from
     reproducible calculations on the specified observations.</p>
-<p>Explore distinct economic hypotheses such as trend persistence, reversal after shocks,
-    volume-confirmed moves, range structure, volatility compression and regime transitions.
+<p>Explore distinct economic hypotheses, invent new ones from observed evidence, and revise
+    promising factors when strategy research exposes a weakness or opportunity. Trend
+    persistence, shock recovery and conditional risk are examples, not a fixed catalog.
+    Investigate different mechanisms and uses rather than only variations of one formula.
     Give every candidate an ID, formula, units, lookback, availability time, prediction horizon,
-    direction, rationale and falsification condition. Parameter variations count as trials.
+    intended role, direction where applicable, rationale and falsification condition.
+    Parameter variations count as trials, not new mechanisms.
     Select directions and transformations on training observations only.</p>
 <p>Show every proposed and evaluated factor in the report's factor section, distinguishing
     pending, blocked and failed evaluations from admitted or rejected research candidates.
     Readers must see which factors were mined, their formulas and how well each performed.
     Include a sortable candidate table,
-    time-series IC and RankIC by horizon and fold, rolling stability, quantile response curves,
+    time-series IC and RankIC for return-prediction hypotheses, role-appropriate measurements
+    for other uses, and by-horizon/fold results, rolling stability, conditional response curves,
     coverage and missingness, uncertainty, regime behavior, redundancy clusters and admission
     reasons. Define metrics before use. A single stock has no daily cross-sectional IC.
     Show insufficient evidence explicitly instead of inventing confidence or passing a factor.</p>
-<p>The factor library is the contract for stage two. Preserve exact expressions, fitted
-    state, code/data versions and admission evidence. Factors rejected on validation cannot
-    reappear as eligible simply because a strategy needs them.</p>
+<p>The factor library grows with the research. Preserve expressions, parent versions, fitted
+    state, code/data versions and role-specific qualification evidence. Each strategy chooses
+    its own relevant factor versions; sharing is possible but not compulsory. Show which
+    strategies benefited from a factor revision and which did not. Qualification for one use
+    does not imply suitability for every strategy. Rejected versions cannot reappear as
+    eligible simply because a strategy needs them.</p>
 </requirements>
 
 <requirements data-format="html" id="strategies">
@@ -82,6 +90,9 @@
     risks and costs. Readers should be able to trace a strategy back to its factor evidence
     and understand how signals lead to positions, trades and profit or loss.</p>
 <p>Design interpretable single-factor baselines before combining complementary factors.
+    Explore multiple distinct trading hypotheses, with their own relevant factors and
+    signal-to-position logic. A common factor set, renamed policy or different position size
+    does not by itself demonstrate diverse strategy discovery.
     Specify entry, exit, sizing, rebalance timing, neutral states and regime rules. Use the
     declared long-or-cash execution model. Measure the incremental value of each factor with
     ablations and compare against cash and holding the same stock. Rank candidates using the
@@ -101,7 +112,12 @@
 <p>Iterate factor and strategy research on train and validation: diagnose a specific
     weakness, investigate a new hypothesis and record the outcome. Each iteration explains
     the evidence, the intended improvement and whether measured results improved afterward.
-    Carry strategy diagnoses back into factor research when useful. Keep a complete trial
+    Review every shortlisted strategy individually and identify whether to improve its factors,
+    rules or both. Execute bounded refinements for promising routes; explain evidence-based
+    decisions to park or reject others. Compare parent and revised factors and strategies,
+    including downstream effects, regressions and changes of hypothesis. Retain multiple
+    research directions long enough to assess different mechanisms, without requiring weak
+    candidates to survive. Keep a complete trial
     history including rejected candidates, validation exposure, cost and changes in reasoning.</p>
 <p>Keep training, validation and test results distinct. Selection must use only information
     available at the relevant time, with no future-data leakage. Fix the evaluation criteria
@@ -148,6 +164,8 @@
 <li>A cost-sensitivity explorer uses predeclared scenarios computed from the frozen
       backtest. Mark exploratory controls clearly; they cannot overwrite the accepted result.</li>
 <li>An experiment lineage view links hypotheses, rejected trials, versions and artifacts.
+      Show research routes, strategy-specific factor bindings and before/after evidence for
+      factor and strategy refinements, including each shortlisted route's next step or closure.
       Visitors can download the permitted metric tables, a compact structured analysis summary
       and a reproducibility manifest.</li>
 <li>Every line or bar chart states its question, axes, units, series, time range, aggregation

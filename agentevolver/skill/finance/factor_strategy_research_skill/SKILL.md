@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
-description: "Run a solo two-stage stock research project: auditable data acquisition, causal factor discovery, strategy experiments and one continuous evidence report."
-version: "1.3.0"
+description: "Research stocks with one agent: acquire auditable data, jointly discover and refine diverse factors and strategies, and publish one continuous evidence report."
+version: "1.4.0"
 type: worker
 category: finance
 requirements: [cpu]
@@ -18,6 +18,8 @@ having these instructions with having implemented or verified those capabilities
 ## Read at the relevant decision
 
 - Before implementation: [planning and work records](references/planning.md).
+- Before proposing candidates or allocating search: [joint exploration and route refinement](references/joint-exploration.md).
+- Before writing factor calculations: [expression compiler, operator table and DataFrame contract](references/factor-expressions.md).
 - Before acquiring data: [sources and capability interfaces](references/data-and-environments.md).
 - Before computing performance: [research protocol](references/research-protocol.md).
 - Before freezing a submission or ending a run: the protocol's submission-readiness and research-lifecycle rules.
@@ -28,7 +30,7 @@ having these instructions with having implemented or verified those capabilities
 Read referenced files using the absolute skill path returned by the loader. Keep the
 shared index concise; retain detailed evidence as files and read it on demand.
 
-## One agent, two research stages
+## One agent, two recurring research responsibilities
 
 1. Read the supplied study and discover the actual runtime capabilities. Use inspect_tool
    with only capability_type to list loaded names, then inspect an exact returned name.
@@ -65,11 +67,18 @@ shared index concise; retain detailed evidence as files and read it on demand.
    environments; export their results for the report instead of recalculating them in the UI.
 4. Develop or improve the data Connector and factor Environment against demonstrated baseline
    limitations. Download a real snapshot through the kept connector. Evaluate causal factors,
-   retain rejected trials and admit only eligible, complementary versions. Publish the first
+   exploring distinct mechanisms and uses through the joint-exploration method. Retain rejected
+   trials and admit versions only within their evaluated role and scope. Publish the first
    continuous report with factor definitions, actual diagnostics and admission/rejection
    evidence; show strategy progress in the same document without exposing final-test data.
-5. Develop or improve the strategy Environment. Start with simple baselines, then combine
-   admitted factors. Evaluate training and bounded walk-forward validation, cost sensitivity
+   Author factor expressions and compile them with scripts/factor_expression.py. The native
+   environment consumes the generated DataFrame-to-DataFrame implementation and its pinned
+   runtime; compilation alone is not evidence of numerical evaluation or factor admission.
+   Extend missing operators with verification rather than treating the initial table as a
+   ceiling on discovery. Keep train-fitted state and future labels outside pure expressions.
+5. Develop or improve the strategy Environment. Start with simple baselines, then build
+   distinct strategy hypotheses, each with its own versioned factor bindings and rules.
+   Evaluate training and bounded walk-forward validation, cost sensitivity
    and ablations. Add strategy rules, results and comparisons to the same report page.
    Update the workbench and the plan after meaningful experiments.
    Before expanding search, complete one real factor evaluation and one executable strategy
@@ -77,10 +86,14 @@ shared index concise; retain detailed evidence as files and read it on demand.
    check on the adapter manifest. This is a training/validation integration milestone, not a
    test reveal or permission to admit a failed factor. Then complete fold admission, strategy
    fitting, robustness and finalization before calling the environments research-ready.
-6. Feed strategy failures and unmet submission requirements back into factor or strategy research.
-   Give each return to stage one a diagnosis, evidence, a new hypothesis and a bounded budget.
+6. Keep a portfolio of research routes and review every shortlisted route. Jointly mine and
+   refine factors and strategies: pursue new mechanisms, improve causal factor definitions,
+   and test strategy-specific uses instead of freezing the first library. Allocate trials
+   across breadth, route refinement and paired/robustness checks before exhausting either
+   budget. Give each experiment a diagnosis, evidence, a new hypothesis and a bounded budget.
    Read the exported metric/gate summaries and apply the metrics reference's diagnostic
    decision table. Record baseline/candidate changes and the decision with exact result IDs.
+   Record factor-to-consumer comparisons and each route's keep/revise/park/reject decision.
    A new report, renamed formula or parameter permutation is not progress by itself.
 7. Apply the research protocol's submission-readiness check on saved validation results.
    Initial eligibility is only a shortlist. Continue research when readiness is unmet and
@@ -109,6 +122,9 @@ The two Environments need distinct research responsibilities, state and native c
 calls, although they can share numerical utilities. A pair of wrappers over the same
 fixed report does not establish this. Additional skills or tools are appropriate when
 repeated research exposes a reusable limitation; do not generate entities just to raise a count.
+Compiling another factor expression is research work, not itself a new system capability.
+A verified reusable operator/compiler or environment improvement can address a demonstrated
+capability gap; follow the same baseline, comparison, adoption and consumer-use requirements.
 
 Runtime receipts verify provenance and lifecycle, not financial correctness. The same
 agent authors and evaluates this work. Report the limits of that evidence and the exact

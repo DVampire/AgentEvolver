@@ -164,10 +164,10 @@ explicit null reasons. Their artifacts feed the continuous report described in
 
 | Responsibility | Factor environment | Strategy environment |
 | --- | --- | --- |
-| Inputs | Versioned market snapshot, protocol, causal factor specification | Same snapshot/protocol, admitted factor-library version, strategy specification |
+| Inputs | Versioned market snapshot, protocol, open causal factor specification and declared role | Same snapshot/protocol, exact strategy-specific factor bindings/roles, qualification receipts and open strategy specification |
 | State | Fitted transforms, fold definitions, factor trials, library and rejection reasons | Frozen factor bindings, orders/positions/cash, strategy trials and exposure ledger |
 | Operations | Bind study, describe schema, evaluate training, validate bounded candidates, compare, admit, export report artifacts | Bind study/library, simulate training, validate, compare/ablate, freeze submission, finalize once, export ledgers/reports |
-| Output | Exact formulas/fitted versions, coverage, IC/RankIC, fold/horizon/quantile diagnostics, admission/rejection evidence and result paths | Exact trading rules/factor bindings, net/gross/benchmark series, risk/cost metrics, gates, trades/ablations and artifact paths |
+| Output | Exact formulas/fitted versions/parents, role-specific metrics, coverage and fold/conditional diagnostics, scoped admission evidence and result paths | Exact trading rules/factor bindings/parents, net/gross/benchmark series, risk/cost metrics, gates, paired comparisons and artifact paths |
 
 These are interface requirements, not a fixed action-name list. Follow the real Environment
 base class and action decorator. Inspect the current transport contract and return compact
@@ -186,9 +186,39 @@ the test-attempt marker durably before evaluation; concurrent or retried calls m
 them. Same submission may read the cached final result; changed submissions are refused.
 
 Cache keys include snapshot, split, candidate, fitted state, engine, metric contract and cost assumptions.
+Include canonical implementation hashes, role/target definitions and exact factor bindings;
+names alone are insufficient cache identities. Qualification receipts are separate immutable
+evidence bound to compared versions; adding a receipt must not mutate their implementations.
 Use chronological slices and bounded batches; do not download data or rebuild the report
 runtime for every formula. Results must carry schema/version information so a later engine
 change cannot silently reuse stale metrics. Test this invalidation explicitly.
+
+### Open definitions and joint research
+
+Implement a versioned callable/specification boundary for factors and policies. The agent
+uses the skill's [expression compiler](factor-expressions.md) for factor definitions and
+loads its generated `compute_factors(DataFrame) -> DataFrame` plus pinned runtime. Strategy
+representations remain open. Additional factor operations require versioned extensions and
+verification rather than handwritten replacements for already supported expressions.
+Do not restrict research to initial formula IDs or a
+fixed menu of threshold modes. New mechanisms can require implementation work; use the shared
+self-evolution method to improve the environment when its interface blocks valid research.
+Unknown definitions/modes must fail explicitly, never fall back to median/average rules.
+
+Preserve parent versions and snapshots. Support factor revisions, policy revisions, different
+factor sets per strategy and aligned before/after exports. An exploratory consumer operation
+may evaluate a not-yet-qualified role for admission evidence; it must be labelled research-only
+and cannot pass strategy eligibility or finalization before scoped qualification. Evaluate
+predictive redundancy among co-consumed factors when the study specifies that scope, keeping
+replacement alternatives and all historical results available.
+
+Export route/family identities, attempted mechanism coverage, role and consumer admission,
+paired factor/strategy revisions and route-review evidence for submission readiness. Keep
+budget reservations and durable trial counts shared across both responsibilities. Baselines,
+ablations, new horizons and changed bindings count according to the frozen protocol; exact
+replays reuse receipts. A factor and strategy revision in one action charges both applicable
+budgets. Newly generated environments must implement these contracts; the launcher and report
+adapter are not substitutes for numerical evaluation or research-readiness decisions.
 
 ## Engineering evidence before financial claims
 
@@ -202,6 +232,13 @@ Fixtures may simulate eligibility within their own test state but never enter th
 eligible library or consume its test attempt. Exported artifacts must contain computed results
 on valid inputs and explicit errors on invalid ones. Track missing operations individually;
 registration and rejection-path tests are not full engine readiness.
+
+Demonstrate a newly authored factor outside the initial inventory and a different policy
+implementation through the actual native interface on training/fixture data. Then revise a
+factor, compare its consumer against the unchanged parent, and verify a second strategy can
+keep its original bindings. Check unknown definitions, stale cache identities, role mismatch,
+and attempts to admit a supporting factor without a consumer comparison. These checks must
+exercise authored numerical definitions, not produce canned metrics for new names.
 
 Use hand-computable fixtures for a next-open fill, zero signal/cash, buy-and-hold, split,
 dividend, fee on entry/exit, terminal liquidation and a gap in required prices. Compare an

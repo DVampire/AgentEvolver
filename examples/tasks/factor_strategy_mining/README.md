@@ -14,6 +14,12 @@ connected research stages:
 2. Turn selected factors into strategies; extend the same page with the Strategy Atelier's
    trading rules, returns, risk, costs, trade records and final evaluation.
 
+These responsibilities recur together. Explore multiple mechanisms, give strategies their
+own relevant factor versions, and revise factors when consumer evidence identifies an
+opportunity. Review and refine shortlisted routes individually, preserving rejected trials
+and parent/candidate comparisons. Formula names and position-size changes alone do not
+establish diversity. Factor qualification follows its declared role and consumer scope.
+
 The experience should make an investigation easy to follow: inspect a factor, understand
 its selection, trace it into a strategy and explore the trades behind a drawdown. Deliver
 **one continuous report page**, with both stages visible through scrolling and in-page
@@ -31,6 +37,12 @@ The default study uses NVDA daily observations through **2026-09-11**, with trai
 2016–2020, validation in 2021–2023 and final test from 2024-01-01 through the cutoff.
 Only completed trading sessions are eligible. Exact boundaries, gaps and numerical
 criteria are authoritative in [study.json](signal_foundry/study.json).
+
+The v4 specification adds prospective joint exploration and supporting-role qualification.
+It retains the dates, execution assumptions, total trial ceilings and final performance
+targets. Its predecessor is v3: continuing the same research carries forward trial counts,
+patience activation and known holdout exposure. A version label does not authorize a fresh
+test of already seen history or replenish an exhausted search budget.
 
 Documented public historical data may support the research under the study's data policy.
 Keep adjustment conventions and limitations explicit. Strict as-traded prices, consolidated

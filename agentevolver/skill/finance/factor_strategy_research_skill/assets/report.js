@@ -7,6 +7,32 @@ function table(headers, rows) {
   headers.forEach(h => tr.append(node("th", h))); head.append(tr); t.append(head);
   const body = node("tbody"); rows.forEach(row => { const r = node("tr"); row.forEach(v => r.append(node("td", v))); body.append(r); }); t.append(body); wrap.append(t); return wrap;
 }
+function candidateLinks(label, ids) {
+  const p = node("p", label);
+  ids.forEach(id => { const a = node("a", id + " "); a.href = "#" + encodeURIComponent("candidate-" + id); p.append(a); });
+  return p;
+}
+function research(data) {
+  const section = document.getElementById("research"), routes = section.querySelector(".routes");
+  if (!data.routes?.length) routes.append(node("p", "Route records were not supplied in this report version."));
+  for (const r of data.routes || []) {
+    const article = node("article", null, "candidate"); article.id = "route-" + r.id;
+    article.append(node("h3", r.id), node("p", r.status, "status"), node("p", r.hypothesis),
+      candidateLinks("Factors: ", r.factor_ids), candidateLinks("Strategies: ", r.strategy_ids),
+      node("p", "Diagnosis: " + r.diagnosis), node("p", "Next step / closure: " + r.next_step));
+    routes.append(article);
+  }
+  const comparisons = section.querySelector(".comparisons");
+  if (data.routes?.length && !data.comparisons?.length) comparisons.append(node("p", "Paired refinements pending; route diagnoses retain the next investigations."));
+  for (const c of data.comparisons || []) {
+    const article = node("article", null, "candidate"); article.id = "comparison-" + c.id;
+    article.append(node("h3", c.id + " · " + c.route_id), candidateLinks("Parent → candidate: ", [c.parent_id, c.candidate_id]),
+      table(["Metric", "Split", "Parent", "Candidate", "Delta (candidate − parent)", "Definition / unit"],
+        c.metrics.map(m => [m.label, m.split, number(m.parent,m.unit), number(m.candidate,m.unit), number(m.delta,m.unit), `${m.definition} (${m.unit})`])),
+      node("p", "Diagnosis: " + c.diagnosis), node("p", "Decision: " + c.decision));
+    comparisons.append(article);
+  }
+}
 function chart(c) {
   const fig = node("figure"); fig.dataset.chartId = c.id;
   fig.append(node("h3", c.title), node("figcaption", `${c.split} · ${c.x_label} / ${c.y_label}`));
@@ -54,10 +80,16 @@ async function main(){
   for(const kind of ["factors","strategies"]){const section=document.getElementById(kind), inventory=section.querySelector(".inventory");
     if(!data[kind].length)inventory.append(node("p","Pending — no results for this stage yet."));
     data[kind].forEach(c=>{const article=node("article",null,"candidate");article.id=`candidate-${c.id}`;article.append(node("h3",`${c.id} · ${c.name}`),node("p",c.status,"status"),node("p",c.definition,kind==="factors"?"formula":"rules"));
-      if(c.factor_ids.length){const links=node("p","Factors: ");c.factor_ids.forEach(id=>{const a=node("a",id+" ");a.href=`#candidate-${id}`;links.append(a);});article.append(links);}
+      if(c.family)article.append(node("p",`Hypothesis family: ${c.family}`),node("p",c.hypothesis));
+      if(c.parent_ids?.length)article.append(candidateLinks("Parents: ",c.parent_ids));
+      if(c.role)article.append(node("p",`Role: ${c.role}`));
+      if(c.qualified_strategy_ids?.length)article.append(candidateLinks("Qualified consumers: ",c.qualified_strategy_ids));
+      if(c.research_only)article.append(node("p","Exploratory use — not eligible for final submission.","warning"));
+      if(c.factor_ids.length){article.append(candidateLinks("Factors: ",c.factor_ids));if(c.factor_roles)article.append(node("p",Object.entries(c.factor_roles).map(([id,role])=>`${id}: ${role}`).join(" · ")));}
       article.append(table(["Metric","Split","Value","Definition / unit"],c.metrics.map(m=>[m.label,m.split,number(m.value,m.unit),`${m.definition} (${m.unit})${m.reason?" · "+m.reason:""}`])));if(c.reason)article.append(node("p",c.reason));inventory.append(article);
     });data.charts.filter(c=>c.section===kind).forEach(c=>section.querySelector(".charts").append(chart(c)));
   }
+  research(data);
   const provenance=document.getElementById("provenance");Object.entries(data.sources).forEach(([id,hash])=>provenance.append(node("p",`${id} · SHA-256 ${hash}`)));
   let resizeTimer;window.addEventListener("resize",()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{
     for(const kind of ["factors","strategies"]){const target=document.querySelector(`#${kind} .charts`);target.replaceChildren(...data.charts.filter(c=>c.section===kind).map(chart));}
