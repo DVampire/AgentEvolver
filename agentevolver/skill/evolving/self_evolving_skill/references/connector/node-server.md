@@ -269,6 +269,7 @@ Error Handling:
       };
     } catch (error) {
       return {
+        isError: true,
         content: [{
           type: "text",
           text: handleApiError(error)

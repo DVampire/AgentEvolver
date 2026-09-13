@@ -9,6 +9,22 @@ import math
 from pathlib import Path
 
 
+def expected_sessions(start, end, calendar="XNAS"):
+    """Exchange-local session dates, including requests whose bounds are holidays.
+
+    Reuse this boundary in acquisition and backtests; do not construct a calendar
+    at the exact request endpoints, which may lie outside its first/last session.
+    """
+    import exchange_calendars as xc
+
+    first, last = date.fromisoformat(start), date.fromisoformat(end)
+    if first > last:
+        raise ValueError("start must not follow end")
+    cal = xc.get_calendar(calendar, start=str(first - timedelta(days=14)),
+                          end=str(last + timedelta(days=14)))
+    return [t.date().isoformat() for t in cal.sessions_in_range(start, end)]
+
+
 def check_snapshot(path, *, sha256, symbol, start, end, calendar="XNAS",
                    bars_pointer="/result/bars", adjusted_close=None):
     import exchange_calendars as xc
@@ -26,14 +42,7 @@ def check_snapshot(path, *, sha256, symbol, start, end, calendar="XNAS",
             value = value[int(key)] if isinstance(value, list) else value[key]
     if not isinstance(value, list) or not value:
         raise ValueError("No locally saved OHLCV observations")
-    first, last = date.fromisoformat(start), date.fromisoformat(end)
-    if first > last:
-        raise ValueError("start must not follow end")
-    # Calendar endpoints may be holidays; session libraries validate against their
-    # first/last *session*, so constructing them at exactly Jan 1 can fail.
-    cal = xc.get_calendar(calendar, start=str(first - timedelta(days=14)),
-                          end=str(last + timedelta(days=14)))
-    expected = [t.date().isoformat() for t in cal.sessions_in_range(start, end)]
+    expected = expected_sessions(start, end, calendar)
     if not expected:
         raise ValueError("Requested interval contains no exchange sessions")
     dates = []

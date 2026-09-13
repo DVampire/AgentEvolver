@@ -66,6 +66,25 @@ Perform the type's pre-registration checks: syntax, manifest parsing, dependency
 default/intended construction or workflow compilation as applicable. Check the real success
 and failure path where feasible. A compile pass does not prove initialization or execution.
 
+Build one complete consumer path before scaling the implementation. Read a small real input,
+define the result shape, implement the smallest successful operation, then reopen its output
+through the actual consumer. Test each distinct mode/branch you claim to support: a fixture
+that bypasses research-time validation does not check that validation. Expand to independent
+cases and concurrency after the basic path works. This is an implementation order, not a
+fixed architecture or a limit on the agent's hypotheses.
+
+Keep subprocess diagnostics: if using `capture_output=True`, inspect returncode and include
+stdout/stderr (or their archive paths) in the raised/returned error. `check=True` alone hides
+captured diagnostics in a normal traceback. A completed Bash call may still have a nonzero
+shell exit code; decide whether that is an expected diagnostic or a failed implementation
+check. Never infer acceptance from the green tool status alone.
+
+Keep runtime products out of immutable source/input manifests: exclude `__pycache__`, `.pyc`
+and temporary outputs. Launch Python workers that import pinned bundles with `python -B`
+(or set `PYTHONDONTWRITEBYTECODE=1` for that child), so imports do not mutate the input tree.
+Hash authored sources and semantic inputs; importing the same bundle twice must not invalidate
+it. Do not toggle process-global bytecode or working-directory settings in concurrent calls.
+
 Register with `adoption_tool` using `action="register"`, `module`, `name` and the absolute
 `artifact_path` specified by the type reference. Use the existing session authorization and
 runtime permission policy; this skill adds no separate approval ceremony. Do not edit
@@ -204,6 +223,20 @@ the consumer is instance-bound, use a supported fresh instance or handoff; a reg
 is not instance migration. Return to the loop when actual use exposes a defect.
 
 ## Additional receipts when the task explicitly requires evolution
+
+For compact call lookup, use the bundled reader instead of reconstructing IDs from model
+requests or writing another trace parser:
+
+```bash
+python {skill_dir}/scripts/evidence.py /absolute/session/log/trace/SESSION.jsonl --limit 20
+python {skill_dir}/scripts/evidence.py /absolute/session/log/trace/SESSION.jsonl --after-call ACTUAL_CONSUMER_ID
+```
+
+It preserves completion order, handles null step numbers and incomplete live tails, and can
+filter by `--name` (exact native action name). It reports transport status and observed Bash
+exit codes separately; it does not decide whether a negative test passed. Read the named
+output archive for full diagnostics. Preserve the actual consumer and subsequent check IDs
+in the work record when they occur, rather than reconstructing them after compaction.
 
 For `evolution.require_verified_improvement`, include `capability_gap` with `user_need`,
 `required_operation`, `limitation`, `acceptance_criterion`, `observation_evidence_ids` and

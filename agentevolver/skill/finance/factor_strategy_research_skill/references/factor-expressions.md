@@ -69,6 +69,12 @@ module import or importlib and call `compute_factors(frame)`. Keep the exact cod
 hashes in the environment's candidate/cache identity. Existing differing artifacts are not
 overwritten: use a new version path. Repeating an identical compilation is idempotent.
 
+When deriving a fixture or factor revision by copying a parent bundle, give the new library
+a new output filename and bind the compiler receipt's `code_path`/`runtime_path`. The copied
+parent library is still immutable. Do not compile a different spec over it, rename archived
+evidence to disguise replacement, or edit generated code to bypass the conflict. Check a
+new spec with `check --spec ...` before emission and retain subprocess stderr on failure.
+
 Revise the expression/specification and recompile, including synthetic fixtures. Do not
 modify generated Python with string replacement: numeric text can also occur in runtime
 filenames, hashes and metadata. Use `FACTOR_SPEC["factors"][versioned_name]["expression"]`

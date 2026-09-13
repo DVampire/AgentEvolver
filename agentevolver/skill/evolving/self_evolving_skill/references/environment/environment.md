@@ -34,7 +34,10 @@ An environment is a directory: `{extension_root}/environment/{name}/`
 ```
 **Registration is a call you make**: after writing the files, call `adoption_tool` with `action="register"`, `module="environment"`, the environment name, and its directory as `artifact_path`.
 
-**Start from the templates**: read `references/environment/template.py` (the class) and `references/environment/template-manifest.md` (the manifest), copy them, and adapt.
+Choose the class template for the state model: [template.py](template.py) for an interactive
+owner session; [template-evaluation.py](template-evaluation.py) for independent artifact
+evaluations. Both are executable examples. Pair the chosen class with
+[template-manifest.md](template-manifest.md), documenting its actual actions and concurrency.
 
 ## Writing a new one
 
@@ -56,6 +59,9 @@ Use `state_scope="call"` when every request can reconstruct its inputs from argu
 immutable artifacts. The Manager creates a fresh instance, runs the operation and cleans it
 before releasing its worker slot and file claims, including on failure/cancellation. Nothing
 on `self` persists to the next call; status and results must come from durable artifacts.
+The evaluation template implements an actual read → compute → atomic publish path, including
+replay, conflicting-version rejection and visible errors. Replace its sum with your operation;
+do not copy the key-value template's persistent `_state` into an independent evaluator.
 
 ```python
 # Fields on your Environment subclass:
@@ -85,7 +91,16 @@ admission derives from `state_scope`/`concurrent`, with no duplicate `parallel_s
 The shared limit covers active native actions including initialization and cleanup. Do not
 create a full worker pool inside every action or hold a permit while waiting for child calls
 in the same group. Short status actions may declare `capacity_exempt=True`; never exempt
-computation. Observations for call-scoped environments must stay cheap and read artifacts.
+computation. This bypasses capacity only, not path claims. A status reader of `output_dir`
+still waits for an evaluator holding that directory's write claim. For bounded evaluations,
+return the result path when finished; for live background progress, use the existing job
+status/output interface. Do not promise live polling from an ordinary locked result reader,
+or falsely remove effects/claims to obtain it. Observations must stay cheap.
+
+Atomic publication prevents partial reads but does not release a running action's write
+claims. To feed a downstream calculation before diagnostics finish, finish an action that
+publishes the immutable inputs first; then run independent diagnostic and consumer actions
+with shared read claims and distinct outputs. Verify readiness at this public boundary.
 
 Use async methods for async I/O. A synchronous `def` runs in a framework thread and
 cancellation joins it before releasing resources. This prevents event-loop blocking, but

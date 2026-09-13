@@ -97,6 +97,18 @@ def test_all_required_families_need_post_adoption_use(audit):
     assert len(check["receipts"]) == 3
 
 
+def test_usage_error_identifies_stale_evidence_and_preserves_candidate(audit):
+    ctx, _ = audit
+    usage = adopted(audit, "connector", use=False)
+    stale = "reusable_connector-1.0.0-comparison"
+    invalid = {**usage, "evidence_ids": [usage["consumer_call_id"], stale]}
+    with pytest.raises(ValueError) as error:
+        evolution.record_use(ctx, invalid)
+    assert stale in str(error.value) and usage["consumer_call_id"] in str(error.value)
+    assert "record_decision" in str(error.value)
+    assert evolution.record_use(ctx, usage) == usage
+
+
 def test_loading_a_skill_alone_does_not_satisfy_coverage(audit):
     ctx, _ = audit
     usage = adopted(audit, "skill", use=False)

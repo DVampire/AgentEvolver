@@ -39,7 +39,7 @@ The official MCP Python SDK provides FastMCP, a high-level framework for buildin
 - Pydantic model integration for input validation
 - Decorator-based tool registration with `@mcp.tool`
 
-**For complete SDK documentation, use WebFetch to load:**
+**For complete SDK documentation, read with an available retrieval capability:**
 `https://raw.githubusercontent.com/modelcontextprotocol/python-sdk/main/README.md`
 
 ## Server Naming Convention
@@ -206,7 +206,9 @@ async def list_items(params: ListInput) -> str:
 
 ## Error Handling
 
-Provide clear, actionable error messages:
+Provide clear, actionable error messages. This helper only formats text: raise the formatted
+error from the MCP method so FastMCP emits a tool failure. Returning it as ordinary content
+would mark a failed request successful. Empty valid search results remain successful.
 
 ```python
 def _handle_api_error(e: Exception) -> str:
@@ -317,7 +319,7 @@ async def search_users(params: UserSearchInput) -> str:
         }
 
         Error response:
-        "Error: <error message>" or "No users found matching '<query>'"
+        A raised tool error for a failed request; an empty successful result for no matches.
 
     Examples:
         - Use when: "Find all marketing team members" -> params with query="team:marketing"
@@ -327,8 +329,7 @@ async def search_users(params: UserSearchInput) -> str:
 
     Error Handling:
         - Input validation errors are handled by Pydantic model
-        - Returns "Error: Rate limit exceeded" if too many requests (429 status)
-        - Returns "Error: Invalid API authentication" if API key is invalid (401 status)
+        - Raises a tool error if rate limited (429) or authentication fails (401)
         - Returns formatted list of results or "No users found matching 'query'"
     '''
 ```
@@ -471,7 +472,7 @@ async def example_search_users(params: UserSearchInput) -> str:
             return json.dumps(response, indent=2)
 
     except Exception as e:
-        return _handle_api_error(e)
+        raise RuntimeError(_handle_api_error(e)) from e
 
 if __name__ == "__main__":
     mcp.run()

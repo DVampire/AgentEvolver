@@ -134,6 +134,122 @@ async def test_two_numerical_engines_share_capacity_and_match_uncached_serial_re
 
 
 @pytest.mark.asyncio
+async def test_evaluation_template_native_overlap_replay_and_failure(calls, tmp_path, monkeypatch):
+    import threading
+    from agentevolver.registry import ENVIRONMENT
+    monkeypatch.setattr(ENVIRONMENT, "_module_dict", dict(ENVIRONMENT._module_dict))
+    path = Path(__file__).parents[1] / "agentevolver/skill/evolving/self_evolving_skill/references/environment/template-evaluation.py"
+    template = runpy.run_path(str(path))
+    cls = template["MyEvaluationEnvironment"]
+    _, manager = calls
+    mount(manager, cls())
+    source = tmp_path / "input.json"
+    source.write_text('{"values": [1, 2, 3]}')
+    barrier = threading.Barrier(2, timeout=3)
+    original = template["math"].fsum
+    def together(values):
+        barrier.wait()
+        return original(values)
+    monkeypatch.setattr(template["math"], "fsum", together)
+    async def evaluate(result, input_path=source):
+        return await manager(cls().name, "evaluate", {
+            "input_path": str(input_path), "result_path": str(result)}, ctx("a"))
+    # The shipped synchronous business method enters two threads through native admission.
+    outputs = [tmp_path / f"result-{i}.json" for i in range(2)]
+    responses = await asyncio.gather(*(evaluate(p) for p in outputs))
+    assert all(r.success for r in responses), [r.message for r in responses]
+    assert outputs[0].read_bytes() == outputs[1].read_bytes()
+    assert json.loads(outputs[0].read_text())["value"] == 6
+    monkeypatch.setattr(template["math"], "fsum", original)
+    assert (await evaluate(outputs[0])).data["data"]["cached"] is True
+    before = outputs[0].read_bytes()
+    source.write_text('{"values": [10]}')
+    assert not (await evaluate(outputs[0])).success
+    assert outputs[0].read_bytes() == before
+    assert not (await evaluate(tmp_path / "absent-result", tmp_path / "absent-input")).success
+    source.write_text('{"values": [true]}')
+    assert not (await evaluate(tmp_path / "invalid-result")).success
+    assert not (tmp_path / "invalid-result").exists()
+    assert not (await evaluate(source)).success
+
+
+@pytest.mark.asyncio
+async def test_capacity_exempt_status_still_waits_for_result_write_claim(calls, tmp_path):
+    entered, finish = asyncio.Event(), asyncio.Event()
+    class Trial(Environment):
+        name: str = "status_path_fixture"
+        description: str = "Locked result reader fixture"
+        metadata: dict = Field(default_factory=dict)
+        state_scope: str = "call"
+        max_concurrency: int = 1
+        @environment_manager.action(name="evaluate", read_only=False, write_paths=("output_dir",))
+        async def evaluate(self, output_dir: str, **kwargs):
+            entered.set()
+            await finish.wait()
+            Path(output_dir, "result.json").write_text('{"complete": true}')
+            return {"success": True, "message": "done"}
+        @environment_manager.action(name="status", read_only=True, capacity_exempt=True,
+                                    read_paths=("output_dir",))
+        async def status(self, output_dir: str, **kwargs):
+            return {"success": True, "message": Path(output_dir, "result.json").read_text()}
+    _, manager = calls
+    mount(manager, Trial())
+    args = {"output_dir": str(tmp_path)}
+    worker = asyncio.create_task(manager("status_path_fixture", "evaluate", args, ctx("a")))
+    await asyncio.wait_for(entered.wait(), 2)
+    reader = asyncio.create_task(manager("status_path_fixture", "status", args, ctx("a")))
+    try:
+        done, _ = await asyncio.wait([reader], timeout=.05)
+        assert not done  # Capacity exemption cannot turn a locked output into live status.
+    finally:
+        finish.set()
+        result, observed = await asyncio.gather(worker, reader)
+    assert result.success and observed.success and '"complete": true' in observed.message
+
+
+@pytest.mark.asyncio
+async def test_published_features_feed_consumer_before_diagnostics_finish(calls, tmp_path):
+    entered, finish = asyncio.Event(), asyncio.Event()
+    class Stages(Environment):
+        name: str = "stages_fixture"
+        description: str = "Feature readiness fixture"
+        metadata: dict = Field(default_factory=dict)
+        state_scope: str = "call"
+        max_concurrency: int = 2
+        @environment_manager.action(name="materialize", read_only=False, write_paths=("features",))
+        async def materialize(self, features: str, **kwargs):
+            Path(features).write_text('[1, 2, 3]')
+            return {"success": True, "message": "features ready"}
+        @environment_manager.action(name="diagnose", read_only=False,
+                                    read_paths=("features",), write_paths=("output",))
+        async def diagnose(self, features: str, output: str, **kwargs):
+            entered.set()
+            await finish.wait()
+            Path(output).write_text('diagnostics complete')
+            return {"success": True, "message": "diagnosed"}
+        @environment_manager.action(name="simulate", read_only=False,
+                                    read_paths=("features",), write_paths=("output",))
+        async def simulate(self, features: str, output: str, **kwargs):
+            Path(output).write_text(str(sum(json.loads(Path(features).read_text()))))
+            return {"success": True, "message": "simulated"}
+    _, manager = calls
+    mount(manager, Stages())
+    features = str(tmp_path / "features.json")
+    assert (await manager("stages_fixture", "materialize", {"features": features}, ctx("a"))).success
+    work = asyncio.create_task(manager("stages_fixture", "diagnose", {
+        "features": features, "output": str(tmp_path / "diagnostics")}, ctx("a")))
+    await asyncio.wait_for(entered.wait(), 2)
+    try:
+        consumer = await asyncio.wait_for(manager("stages_fixture", "simulate", {
+            "features": features, "output": str(tmp_path / "strategy")}, ctx("a")), 2)
+        assert consumer.success and not work.done()
+        assert (tmp_path / "strategy").read_text() == "6"
+    finally:
+        finish.set()
+        await work
+
+
+@pytest.mark.asyncio
 async def test_call_instances_cleanup_after_success_failure_and_state_observation(calls):
     initialized, cleaned = [], []
 

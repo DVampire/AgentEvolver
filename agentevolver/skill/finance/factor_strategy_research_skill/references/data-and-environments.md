@@ -145,6 +145,13 @@ treat January 1 or a weekend endpoint as an invalid request or missing trading s
 Exercise a changed interval, holiday bounds, empty/partial responses and disk-read failures.
 For this study, request only train/validation during research; download test after freeze.
 
+Reuse `expected_sessions(start, end, calendar)` from `scripts/check_snapshot.py` in generated
+engines (copy and pin this script with the component). It returns exchange-local ISO dates
+and handles holiday/weekend bounds. Compare the saved dates to that exact sequence; never
+clip the requested interval to the available bars. Run a valid research-mode calendar case
+as well as a missing-session rejection: a fixture mode that skips calendar checks proves
+neither, and an unexpected DateOutOfBounds is an implementation failure, not a passing test.
+
 Run the bundled structural checker against the actual saved artifact. It never downloads
 data or grants source qualification. Dependencies: exchange_calendars (which supplies pandas).
 Adapt the bars to the canonical fields above or pass their JSON pointer:
@@ -179,9 +186,8 @@ explicit null reasons. Their artifacts feed the continuous report described in
 These are interface requirements, not a fixed action-name list. Follow the real Environment
 base class and action decorator. Inspect the current transport contract and return compact
 results as a Response or mapping with explicit success/message/data. A JSON string containing
-an error does not mark the native call failed. Include manifests,
-owner-bound instance state and cleanup (or explicitly multiplexed state keyed by
-`owner_id(ctx)`, never just the root session). Do not assume a registered environment is
+an error does not mark the native call failed. Include manifests and use call-scoped trial
+instances with durable artifacts as described below. Do not assume a registered environment is
 in env_names: the demo permits evolved Environment actions through the shared capability router.
 
 Bind immutable snapshot, protocol and engine versions before evaluating. For deferred test
@@ -221,10 +227,14 @@ large batches and return progress paths through job when needed.
 
 Separate feature readiness from diagnostic completion and admission. Publish an immutable
 factor-value artifact with data/code/fit hashes, time index, columns and availability checks
-as soon as it is complete. Factor diagnostic evaluation and exploratory strategy simulation
+through a separate completed materialization action. Factor diagnostic evaluation and exploratory strategy simulation
 can then consume that artifact concurrently; strategy simulation must not require completed
 factor scores or admission receipts. Wait only for actual inputs, including training-fitted
 directions/transforms when a policy uses them. A pending diagnostic is not a missing feature.
+Do not require a `factor-result` with `status=evaluated` just to run a research strategy;
+validate the feature/fit manifest instead, and join diagnostic receipts for qualification.
+Writing features early inside an action that retains their directory's write claim still
+blocks readers. Check the real Manager dependency boundary, not only file existence.
 
 Schedule ready strategies and independent factor computations concurrently with bounded workers;
 do not impose a whole-batch barrier when only a strategy's own inputs are needed. Join completed
@@ -258,7 +268,9 @@ Use a database transaction or declare the shared ledger argument in `write_paths
 access-changing operations. Call isolation is not a substitute for this protocol. Unchanged
 submissions can return a cached result; changed submissions cannot acquire extra attempts.
 Exploratory calls must not write that ledger. Short status operations may use
-`capacity_exempt=True`, with independent control paths, so full capacity does not block them.
+`capacity_exempt=True`; it does not bypass path claims. Use the common Environment guidance
+for completed results versus live job status; do not poll a directory held by a worker and
+claim the observer is nonblocking.
 
 Verify within-engine and cross-engine overlap against uncached serial results, including
 partial failure, duplicate identities, cancellation and owner exit. Cancelling one trial
@@ -342,6 +354,9 @@ cannot validate a research action that unconditionally returns blocked or null m
 Use isolated fixture studies to check factor values, labels, fitted transforms, diagnostics
 and admission decisions; then strategy signals, next-open orders, cash/shares, costs and
 result metrics. These checks and a real planned multi-factor pilot precede batch research.
+Include a successful comparison of two saved evaluations before claiming comparison support,
+with real string candidate/fold IDs and multiple fold boundaries. Check replay/export modes
+with saved outputs too; success of evaluate does not execute those branches.
 Implement and exercise joint freeze/finalization state transitions before enabling final-test
 access; they need not delay the initial research batch. Deferred operations must return explicit
 not-ready errors without accessing test data, and must not be claimed as verified capabilities.

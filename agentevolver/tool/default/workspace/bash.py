@@ -29,7 +29,8 @@ _GUIDANCE = """
 - Use this tool to run system commands, scripts, or any bash operations.
 - Be careful with commands that modify the system or require elevated privileges.
 - For file operations, ALWAYS use ABSOLUTE paths to avoid path-related issues.
-- Input should be a VALID bash command string.
+- Input should be a VALID bash command string. All routes use non-login Bash;
+  shell variables and `cd` last for this command only.
 - The command's exit code is reported in the output. A non-zero exit code is an
   observation, not a tool error (e.g. `grep` returns 1 when it finds no matches);
   read STDOUT/STDERR and the exit code to decide whether the command did what you
@@ -207,7 +208,7 @@ def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
     from agentevolver.sandbox.process import owned_command
 
     process = subprocess.Popen(
-        owned_command(["/bin/sh", "-c", command]), stdin=slave, stdout=slave, stderr=slave,
+        owned_command(["bash", "-c", command]), stdin=slave, stdout=slave, stderr=slave,
         cwd=cwd, env=env, start_new_session=True, close_fds=True,
     )
     os.close(slave)
@@ -298,7 +299,7 @@ class BashTool(Tool):
         from agentevolver.sandbox.process import owned_command
 
         process = subprocess.Popen(
-            owned_command(["/bin/sh", "-c", command]), cwd=cwd, env=env,
+            owned_command(["bash", "-c", command]), cwd=cwd, env=env,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             # Its own process group, so `job__kill` can signal the whole tree. A
             # shell command is usually a shell that spawned the real work; signalling
@@ -567,7 +568,7 @@ class BashTool(Tool):
             from agentevolver.sandbox.process import owned_command
 
             process = await asyncio.create_subprocess_exec(
-                *owned_command(["/bin/sh", "-c", command]),
+                *owned_command(["bash", "-c", command]),
                 stdin=asyncio.subprocess.PIPE if stdin else None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

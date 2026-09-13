@@ -164,7 +164,12 @@ def record_use(ctx, report):
         receipt = audit["calls"].get(call_id) or {}
         if (not receipt.get("ok") or receipt.get("background")
                 or receipt.get("sequence", -1) < consumer["sequence"]):
-            raise ValueError("Usage evidence must be successful calls at or after consumer use")
+            raise ValueError(
+                "Usage evidence must be successful calls at or after consumer use: "
+                f"{call_id!r} does not qualify for consumer {consumer_id!r}. "
+                "Cite the consumer and its subsequent successful result checks; "
+                "earlier baseline/comparison calls belong in record_decision."
+            )
     if candidate["module"] == "skill":
         # Loading instructions is only the first half of using a skill.
         operations = [audit["calls"][i] for i in ids if i != consumer_id]

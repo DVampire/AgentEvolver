@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
 description: "Research stocks with one agent: acquire auditable data, jointly discover and refine diverse factors and multi-factor strategies, and publish one continuous evidence report."
-version: "1.8.0"
+version: "1.8.1"
 type: worker
 category: finance
 requirements: [cpu]

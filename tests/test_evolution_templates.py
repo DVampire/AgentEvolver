@@ -162,6 +162,32 @@ async def test_pure_tool_template_runs_through_manager_without_instance_exclusio
 
 
 @pytest.mark.asyncio
+async def test_complete_python_mcp_example_propagates_upstream_failure(tmp_path, monkeypatch):
+    import re
+    import httpx
+    from mcp import types
+
+    reference = TEMPLATE_ROOT / "self_evolving_skill/references/connector/python-server.md"
+    section = reference.read_text().split("## Complete Example", 1)[1]
+    source = re.search(r"```python\n(.*?)```", section, re.S)[1]
+    path = tmp_path / "example_server.py"
+    path.write_text(source)
+    server = _load(path)
+    monkeypatch.setattr(server, "_make_api_request", AsyncMock(return_value={"users": [], "total": 0}))
+    handler = server.mcp._mcp_server.request_handlers[types.CallToolRequest]
+    request = types.CallToolRequest(method="tools/call", params=types.CallToolRequestParams(
+        name="example_search_users", arguments={"params": {"query": "fixture"}}))
+    success = await handler(request)
+    assert not success.root.isError
+    response = httpx.Response(429, request=httpx.Request("GET", "https://example.invalid/users"))
+    monkeypatch.setattr(server, "_make_api_request", AsyncMock(side_effect=httpx.HTTPStatusError(
+        "rate limited", request=response.request, response=response)))
+    failed = await handler(request)
+    assert failed.root.isError
+    assert "Rate limit exceeded" in failed.root.content[0].text
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("concurrent", [False, True])
 async def test_connector_template_validation_and_native_admission_agree(tmp_path, monkeypatch, concurrent):
     from agentevolver.connector.context import ConnectorContextManager

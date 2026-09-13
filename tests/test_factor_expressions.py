@@ -82,6 +82,26 @@ def test_generated_library_runs_after_move_and_pins_runtime(bars, tmp_path):
         load(destination / path.name)
 
 
+def test_copied_bundle_revision_uses_new_library_without_changing_parent(bars, tmp_path):
+    import subprocess
+    import sys
+    parent = tmp_path / "parent" / "library.py"
+    compiler.compile_factors({"F@1": "delta(close, 1)"}, parent)
+    revised = tmp_path / "revision"
+    shutil.copytree(parent.parent, revised)
+    before = (revised / "library.py").read_bytes()
+    spec = revised / "expression.json"
+    spec.write_text(json.dumps({"factors": {"F@2": "ts_mean(close, 2)"}}))
+    command = [sys.executable, str(SKILL / "scripts/factor_expression.py"), "compile", "--spec", str(spec)]
+    failed = subprocess.run(command + ["--output", str(revised / "library.py")], capture_output=True, text=True)
+    assert failed.returncode == 1 and "choose a new version path" in failed.stderr
+    new_path = revised / "library_v2.py"
+    success = subprocess.run(command + ["--output", str(new_path)], capture_output=True, text=True)
+    assert success.returncode == 0, success.stderr
+    assert (revised / "library.py").read_bytes() == before == parent.read_bytes()
+    assert_frame_equal(load(new_path).compute_factors(bars), compiler.evaluate_expressions(bars, {"F@2": "ts_mean(close, 2)"}))
+
+
 @pytest.mark.parametrize("expression", [
     "delay(close, -1)", "ts_mean(close, 0)", "ts_mean(close, 2.5)",
     "ts_mean(close, True)", "ts_quantile(close, 3, 1.1)", "kth_element(close, 2, 3)",

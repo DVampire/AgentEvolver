@@ -6,7 +6,7 @@ version: 1.0.0
 type: worker
 permission_mode: read_only
 # Admission flags are TOP-LEVEL fields, not nested under metadata.
-# Enable both only after checking independent calls across all exposed actions.
+# Enable only after checking independent calls across all exposed actions.
 concurrent: false                  # independent requests may overlap
 # Optional: artifact saves the full response in session logs and returns a path/hash.
 # The MCP method itself must still be genuinely read-only (no cache/output_dir writes).
@@ -19,6 +19,7 @@ connection:
   # for a LOCAL stdio server instead of url, use command + args. Keep it portable:
   # command: python           # resolved to sys.executable (the running interpreter)
   # args:
+  #   - -B                    # do not write Python bytecode into the pinned component
   #   - server.py             # RELATIVE to this connector dir; resolved to an absolute path at load time
   # (do NOT hard-code machine-specific absolute paths)
 actions:
@@ -41,8 +42,8 @@ of tasks it helps with.
 
 ## Concurrency
 
-This template defaults to serialized calls. For a verified reentrant server, set both
-top-level flags to true and document its rate limits and any shared-write restrictions.
+This template defaults to serialized calls. For a verified reentrant server, set
+`concurrent: true` and document its rate limits and any shared-write restrictions.
 Read-only MCP annotations describe effects, not concurrency. Keep request state local;
 stdio servers may run in separate processes, so shared files need atomic publication or
 cross-process coordination, not just an asyncio lock. See the Connector type reference.

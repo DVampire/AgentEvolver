@@ -569,6 +569,15 @@ def test_rejected_factor_can_be_diagnosed_without_claiming_admission(joint_manif
         report.compile_report(joint_manifest, allow_synthetic=True)
 
 
+def test_shared_calendar_sessions_cover_real_research_bounds_and_empty_holidays():
+    dates = snapshot.expected_sessions("2016-01-01", "2023-12-31", "XNAS")
+    assert dates[0] == "2016-01-04" and dates[-1] == "2023-12-29"
+    assert len(dates) == 2012 and dates == sorted(set(dates))
+    assert snapshot.expected_sessions("2023-12-30", "2024-01-01") == []
+    with pytest.raises(ValueError, match="start must not follow"):
+        snapshot.expected_sessions("2024-01-03", "2024-01-01")
+
+
 @pytest.mark.parametrize("defect", [None, "missing", "duplicate", "nan", "symbol", "adjustment", "hash"])
 def test_local_snapshot_accepts_holiday_bounds_and_rejects_bad_data(tmp_path, defect):
     bars = [{"date": f"2020-01-0{day}", "symbol": "FIX", "open": 10, "high": 12, "low": 9,

@@ -9,6 +9,7 @@ the command: a command that ran is a command that ran.
 """
 
 import os
+import asyncio
 
 import pytest
 
@@ -111,3 +112,36 @@ async def test_foreground_routes_share_default_excerpt_and_explicit_full_output(
         assert len(response.message) < 13_000
         assert "omitted inline" in response.message and str(archive) in response.message
         assert "MIDDLE_EVIDENCE" not in response.message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["local", "tty", "background"])
+async def test_actual_shell_honors_advertised_bash_syntax(session, monkeypatch, route):
+    from types import SimpleNamespace
+    from agentevolver.job import job_manager
+
+    monkeypatch.setattr(bash, "permission_manager", SimpleNamespace(
+        check_declared=lambda *a, **kw: SimpleNamespace(allowed=True, warning=""),
+    ))
+    monkeypatch.setattr("agentevolver.session.resolve_workspace_root", lambda ctx: str(session))
+    monkeypatch.delenv(bash._EXEC_CONTAINER_ENV, raising=False)
+    # The real run silently created a literal `research/{protocol,rounds` directory.
+    command = 'mkdir -p research/{protocol,rounds/R001}; values=(alpha beta); [[ ${values[1]} == beta ]] && test -d research/protocol'
+    response = await bash.BashTool()(command, tty=route == "tty",
+                                     run_in_background=route == "background")
+    assert response.success, response.message
+    if route == "background":
+        job = job_manager.get(response.data["job_id"])
+        try:
+            async with asyncio.timeout(5):
+                while not job.status.is_final:
+                    await asyncio.sleep(.01)
+            assert job.exit_code == 0, job
+        finally:
+            if not job.status.is_final:
+                await job_manager.kill_async(job.id)
+    else:
+        assert response.data["exit_code"] == 0, response.message
+    assert (session / "research/protocol").is_dir()
+    assert (session / "research/rounds/R001").is_dir()
+    assert not any("{" in p.name for p in session.rglob("*"))
