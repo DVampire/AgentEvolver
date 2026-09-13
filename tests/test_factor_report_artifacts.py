@@ -159,6 +159,25 @@ def test_joint_report_rejects_inconsistent_lineage_or_comparisons(joint_manifest
     with pytest.raises(ValueError): report.compile_report(joint_manifest, allow_synthetic=True)
 
 
+@pytest.mark.parametrize("difference", ["statistic", "horizon", "aggregation", "label", "ambiguous"])
+def test_paired_report_cannot_subtract_incompatible_metric_definitions(joint_manifest, difference):
+    spec = json.loads(joint_manifest.read_text())
+    metric = spec["factors"][1]["metrics"][0]
+    if difference == "statistic":
+        metric["definition"] = "Pearson instead of Spearman on fixture pairs"
+    elif difference == "horizon":
+        metric["definition"] = "Spearman on a different forward-return horizon"
+    elif difference == "aggregation":
+        metric["definition"] = "Pooled Spearman rather than equal-fold mean"
+    elif difference == "label":
+        metric["label"] = "Pearson IC"
+    else:
+        spec["factors"][1]["metrics"].append(dict(metric))
+    save(joint_manifest, spec)
+    with pytest.raises(ValueError, match="Comparison"):
+        report.compile_report(joint_manifest, allow_synthetic=True)
+
+
 def test_supporting_role_qualification_is_consumer_specific(joint_manifest):
     spec = json.loads(joint_manifest.read_text())
     spec["factors"][0].update(role="risk", status="admitted", qualified_strategy_ids=["S"])

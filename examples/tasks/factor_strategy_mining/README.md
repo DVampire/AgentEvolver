@@ -29,38 +29,28 @@ and stage-two publications are versions of the same product, not separate report
 
 ## Files and research constraints
 
-- `task.html`: product goals, reader journeys, expected reports and acceptance requirements.
-- `study.json`: market scope, date ranges, trading assumptions, research budgets and
-  numerical criteria for this particular study.
+- `task.html`: product goals, reader journeys and research-quality expectations.
+- `study.json`: market scope, dates, execution assumptions, factor-role qualification,
+  exploration requirements and the domain evidence standard.
 
-The default study uses NVDA daily observations through **2026-09-11**, with training in
-2016–2020, validation in 2021–2023 and final test from 2024-01-01 through the cutoff.
-Only completed trading sessions are eligible. Exact boundaries, gaps and numerical
-criteria are authoritative in [study.json](signal_foundry/study.json).
+The v5 study uses NVDA daily observations through **2026-09-11**, training in 2016–2020,
+validation in 2021–2023 and final test from 2024-01-01 through the cutoff. It replaces
+fixed CAGR/Sharpe finish targets and trial/round/patience ceilings with evidence-based
+research judgment. The researcher repeatedly discovers and refines factors and strategies,
+reviews every shortlisted route and justifies completion against research quality.
 
-The v4 specification adds prospective joint exploration and supporting-role qualification.
-It retains the dates, execution assumptions, total trial ceilings and final performance
-targets. Each launch is an independent experiment with new records and the supplied trial
-ceilings; it imports no earlier experiment's plan, candidates, results or counters. Final
-test is held out within that experiment. Repeating historical data is not independent
-confirmation on new market observations.
+The skill defines how to operationalize the standard and record evidence, counterevidence,
+remaining investigations and a continue/complete decision. Unresolved material questions
+require further feasible research. A report release, first eligible candidate or candidate
+count does not certify completion. Runtime limits yield interrupted research, not success.
 
-Documented public historical data may support the research under the study's data policy.
-Keep adjustment conventions and limitations explicit. Strict as-traded prices, consolidated
-volume and verified corporate-action accounting are separate qualifications; unmet evidence
-must remain visible and must not be reported as passing merely because performance is good.
+Use a documented public-data basis with source/adjustment limitations and separate strict
+data qualification. Keep causal chronological fitting and one frozen final evaluation.
+Further work after test exposure is exploratory; a revised strategy needs genuinely unused
+observations for confirmation. A thorough negative/inconclusive conclusion may complete the
+research without claiming a successful strategy. A failed test alone does not justify closure.
 
-Iterations use training and validation. Preliminary eligibility creates a shortlist; the
-study's final-submission requirements also demand the final numerical targets on validation,
-robustness evidence and justified search closure before test access. A failed candidate or
-final attempt does not by itself end the research objective: continue useful research within
-the budget, preserving the failure and labelling later work exploratory. Fresh confirmation
-requires genuinely unused data. Stop unsuccessfully only at an evidenced budget/patience limit,
-user stop or blocking prerequisite, with unmet requirements and a resume condition visible.
-A useful research product does not imply a profitable strategy.
-
-Research budgets count hypotheses and validation exposure, rather than execution steps
-or model tokens. Methods and implementation details can be designed for the chosen system
-without changing the product's research scope or weakening its acceptance criteria.
+Every experiment starts independently with fresh records and implementations. Repeating
+historical data does not provide independent confirmation on new market observations.
 
 [Running and implementation guide](../../../docs/demos/factor_strategy_mining.md).

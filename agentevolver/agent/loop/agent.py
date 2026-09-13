@@ -419,6 +419,8 @@ class Agent(BaseModel):
                 incoming = incoming[len(brief) + 2:]
             self.conversation.note(incoming)
         self._notes = []
+        self._review_completion_attempts = 0
+        self._review_completion_signature = ()
         self._model_failures = 0
         self._truncated_turns = 0
         self._folds = 0
@@ -503,6 +505,8 @@ class Agent(BaseModel):
                 # a model call, a recorded turn — and returning here without POST_STEP
                 # left the last turn of every such run out of the trajectory.
                 await self._post_step(step, decision, ())
+                if not await self._review_completion():
+                    continue
                 return self._finish(decision.text or decision.reasoning)
 
             if len(decision.calls) > self.max_actions:
@@ -520,6 +524,8 @@ class Agent(BaseModel):
 
             finished = next((result for result in results if result.final), None)
             if finished is not None:
+                if not await self._review_completion():
+                    continue
                 return self._finish(finished.output)
 
             self._notes.extend(
@@ -1348,6 +1354,11 @@ class Agent(BaseModel):
         from agentevolver.task.self_review import observe_state
 
         observe_state(self.ctx, self._environment_observations.get("browser_environment"))
+        from agentevolver.task.self_review import live_notice as review_notice
+
+        review = review_notice(self.ctx)
+        if review:
+            blocks.append(review)
         if state:
             blocks.append(state)
         note = await self.on_step(step)
@@ -1735,6 +1746,41 @@ class Agent(BaseModel):
             return task
         listed = "\n".join(f"- {path}" for path in files)
         return f"{task}\n\n<files>\n{listed}\n</files>"
+
+    async def _review_completion(self) -> bool:
+        """Refresh browser evidence and return repairable omissions to the loop."""
+        from agentevolver.task.self_review import enabled, observe_state, status
+
+        if not enabled(self.ctx):
+            return True
+        try:
+            # Also covers browser interaction and done_tool in the same turn.
+            await self.environment_state(self.ctx)
+            observe_state(self.ctx, self._environment_observations.get("browser_environment"))
+            check = status(self.ctx)
+            reasons = check.get("reasons", []) if not check["ready"] else []
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            reasons = [f"Could not verify browser review: {error}"]
+        if not reasons:
+            return True
+        signature = tuple(sorted(reasons))
+        if signature != self._review_completion_signature:
+            self._review_completion_signature = signature
+            self._review_completion_attempts = 0
+        # A repeated unsupported ending must not spin until the full run budget.
+        # Finalization still records failure if these repair opportunities expire.
+        if self._review_completion_attempts >= 3:
+            return True
+        self._review_completion_attempts += 1
+        self._notes.append("Completion deferred: " + "; ".join(reasons)
+                           + ". Repair the missing review before ending; "
+                           + "preserve the task's execution constraints.")
+        # A text ending has no tool result separating it from the next assistant
+        # turn. Persist a runtime notice to keep provider reasoning replay valid.
+        self.conversation.note("Runtime notice: completion was deferred for missing browser "
+                               "review evidence. Follow the pending review instructions. "
+                               "This is not a new user message or approval.")
+        return False
 
     def _finish(self, result: str) -> Response:
         response = self._respond(True, result or "")

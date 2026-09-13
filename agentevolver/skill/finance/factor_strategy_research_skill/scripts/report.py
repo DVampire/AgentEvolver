@@ -124,11 +124,16 @@ def compile_research(spec, collections, resolve):
             if item["split"] == "test" and spec["test_state"] != "evaluated":
                 raise ValueError("Sealed test comparisons forbidden")
             values = {side: resolve(metric[side]) for side in ("parent", "candidate")}
+            matched = {}
             for side, cid in (("parent", parent), ("candidate", child)):
-                if not any(all(m[k] == metric[side][k] for k in ("source", "pointer"))
-                           and m["split"] == item["split"] and m["unit"] == item["unit"]
-                           for m in candidates[cid]["metrics"]):
-                    raise ValueError("Comparison must reference its candidate metric with matching split/unit")
+                matches = [m for m in candidates[cid]["metrics"]
+                           if all(m[k] == metric[side][k] for k in ("source", "pointer"))
+                           and all(m[k] == item[k] for k in ("label", "split", "unit"))]
+                if len(matches) != 1:
+                    raise ValueError("Comparison must unambiguously reference its candidate metric with matching label/split/unit")
+                matched[side] = matches[0]
+            if matched["parent"]["definition"] != matched["candidate"]["definition"]:
+                raise ValueError("Comparison metrics must have the same definition and evaluation convention")
             if not all(finite(v) for v in values.values()):
                 raise ValueError("Paired comparison needs two finite measured values")
             item.update(parent=values["parent"], candidate=values["candidate"],

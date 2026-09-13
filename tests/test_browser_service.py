@@ -29,6 +29,33 @@ async def test_missing_search_credentials_remove_registered_action(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_command_destination_survives_native_response_normalization(service, tmp_path):
+    from types import SimpleNamespace
+    from agentevolver.environment.default.browser.environment import BrowserEnvironment
+    from agentevolver.environment.server import environment_manager
+    from agentevolver.agent.loop.decision import ActionCall
+    from agentevolver.agent.loop.router import CapabilityRouter
+
+    env = BrowserEnvironment(base_dir=str(tmp_path))
+    env._service = service
+    ctx = SimpleNamespace(id="destination")
+    page = await service._page_for(ctx.id)
+    await page.route("http://review.test/**", lambda route: route.fulfill(
+        body='<button onclick="document.querySelector(\'p\').textContent=\'Selected\'">Select</button><p>Ready</p>',
+        content_type="text/html"))
+    result = await env.command("await page.goto('http://review.test/new/')\n"
+                               "await page.locator('button').click()\n"
+                               "return {'browser_url':'http://spoof.test/','text':await page.locator('p').inner_text()}", ctx=ctx)
+    response = environment_manager._normalize_response("browser_environment", "command", result)
+    normalized = CapabilityRouter._from_response(ActionCall(id="combined", name="command", args={}), response)
+    assert normalized.ok and "Selected" in normalized.output
+    assert normalized.extra["extra"]["browser_url"] == "http://review.test/new/"
+    failure = await env.command("await page.goto('http://review.test/other/')\nraise ValueError('failed click')", ctx=ctx)
+    assert not failure["success"]
+    assert failure["extra"]["browser_url"] == "http://review.test/other/"
+
+
+@pytest.mark.asyncio
 async def test_keypress_aliases_chords_and_sequences(service):
     page = await service._page_for("keys")
     await page.set_content('<input id="a"><input id="b"><button>Go</button>')

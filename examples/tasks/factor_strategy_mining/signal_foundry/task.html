@@ -26,7 +26,7 @@
     one continuous report page, with clear conclusions and evidence that readers can explore
     by scrolling, without switching pages or tabs between the stages.</p>
 <p>The accompanying study.json specifies the stock, dates, trading assumptions, research
-    budget and numerical acceptance targets. The default study uses NVDA daily OHLCV.
+    quality requirements and evaluation scope. The default study uses NVDA daily OHLCV.
     Detailed implementation choices remain open.</p>
 <p>The user must be able to answer: What did we download? Why might this factor work?
     Which evidence admitted or rejected it? How did it change a strategy? What survives
@@ -49,7 +49,7 @@
     adjusted-price research proxy. Preserve provider fields, adjustment rules and limitations.
     Show strict data qualification separately as unmet where necessary; this does not block
     factor evaluation, strategy research or numerical reports on the declared public-data basis.
-    Never present proxy fills as verified historical executions or change the statistical targets.</p>
+    Never present proxy fills as verified historical executions or weaken the declared evidence standard.</p>
 <p>Distinguish measured data quality from assumptions. Unavailable history must remain
     visible as a limitation rather than being replaced by fabricated observations.</p>
 </requirements>
@@ -124,22 +124,24 @@
     before research and finalize the selected factors and strategy before the final test.
     Both report sections should describe that same final evaluation; test factor rankings must not
     influence a strategy that is still being optimized.</p>
-<p>Continue the connected factor and strategy investigation while the objective remains unmet
-    and useful research is possible within the declared budget. Preliminary eligibility is not
-    sufficient to submit a final strategy: first meet the study's submission requirements on
-    validation data, demonstrate robustness and justify closing the search. Publishing a report
-    or completing a batch does not complete the research objective.</p>
-<p>Successful research requires every frozen final-test strategy criterion to pass on real
-    data. A failed test remains a failed attempt, with the overall objective unmet. Continue
-    useful research on the permitted research data; new confirmation requires unused evaluation
-    data under a protocol fixed before access. Repeatedly tuning against the same test invalidates
-    a confirmatory claim. If budgets or the declared no-improvement limit are exhausted, or a
-    concrete prerequisite leaves no useful work possible, preserve the unsuccessful outcome,
-    remaining requirements. Each experiment starts independently, with new records and the
-    supplied research budget. Within an experiment, failed attempts and test exposure remain
-    immutable. Repeating the same historical period is an experimental replication; independent
-    confirmation needs genuinely new observations. State how the
-    evaluation was controlled and distinguish self-review from independent evidence.</p>
+<p>Continue joint discovery, evaluation and refinement while material, testable questions
+    remain. Do not treat a fixed return target, candidate count or number of rounds as the
+    finish line. Before the final evaluation, explain why the hypotheses, strategy-specific
+    factor contributions, robustness, costs and uncertainty justify selecting this candidate
+    and why remaining investigations are unlikely to change that judgment.</p>
+<p>Complete the research only with a defensible assessment supported by reproducible evidence:
+    clear mechanisms, diverse investigated alternatives, individual candidate improvements,
+    fold/regime and parameter stability, realistic execution costs, adequate sample support,
+    explicit search effects and an honest interpretation of final-test results. Address
+    counterevidence rather than relying on one attractive statistic. A supported negative
+    or inconclusive finding may close a thorough investigation; it cannot be called a
+    successful trading strategy. Missing work and unsupported opinions cannot certify quality.</p>
+<p>A failed final result may lead to further exploratory work on training and validation.
+    Preserve the frozen result: repeatedly tuning on the exposed test cannot produce fresh
+    confirmation. New confirmatory claims require genuinely unused observations under a
+    prospectively fixed protocol. If time, resources or access prevent useful progress,
+    label the research interrupted or blocked and retain unfinished questions. Each experiment
+    starts independently; its trial history and test exposure remain immutable within it.</p>
 </constraints>
 
 <interface data-format="html" id="experience">
@@ -193,8 +195,9 @@
       what their definitions are and how they performed, including rejected candidates.
       Both stages remain readable without changing pages or tabs. Displayed metrics and
       chart values reconcile with exported records, with usable scroll navigation and interactions.</li>
-<li>Explicit final outcome: passed, failed, inconclusive or blocked; each unmet numerical
-      criterion, test exposure state, limitations and a precise reproduction/resume path.</li>
+<li>Explicit research decision and evidence for every quality dimension, supported or unsupported
+      strategy claims, test exposure, counterevidence, remaining investigations, limitations and
+      reproduction instructions. Distinguish completed research from resource interruption.</li>
 </ul>
 <p>This is historical research software. Do not place orders, promise future profit,
     purchase data subscriptions or claim independent evaluation from self-review.</p>

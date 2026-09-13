@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "study_id": "signal-foundry-nvda-daily-v4",
+  "study_id": "signal-foundry-nvda-daily-v5",
   "market": {
     "symbol": "NVDA",
     "exchange_calendar": "XNAS",
@@ -48,13 +48,14 @@
     "terminal_liquidation": true,
     "benchmarks": ["cash", "same_stock_buy_and_hold_total_return"]
   },
-  "research_budget": {
-    "max_rounds": 12,
-    "max_factor_candidates": 60,
-    "max_strategy_candidates": 30,
-    "max_validation_submissions": 24,
-    "max_candidates_per_validation_submission": 5,
-    "max_rounds_without_validation_improvement": 3
+  "research_policy": {
+    "completion_basis": "evidence_based_researcher_judgment",
+    "fixed_return_target": false,
+    "fixed_candidate_or_round_ceiling": false,
+    "fixed_nonimprovement_patience": false,
+    "track_all_trials_and_validation_looks": true,
+    "continue_while_material_testable_questions_remain": true,
+    "resource_limit_outcome": "interrupted_not_research_complete"
   },
   "exploration": {
     "minimum_distinct_factor_hypotheses": 3,
@@ -63,11 +64,10 @@
     "review_every_shortlisted_route": true,
     "require_factor_revision_and_consumer_review": true,
     "require_strategy_refinement_review": true,
-    "reserve_trials_for_breadth_refinement_and_robustness": true,
-    "patience_starts_after_initial_diversity_review": true
+    "balance_breadth_refinement_and_robustness": true
   },
   "acceptance": {
-    "kind": "demo_research_objective_not_a_return_promise",
+    "kind": "research_quality_and_supported_conclusions_not_a_return_promise",
     "factor_admission": {
       "applies_to_role": "return_prediction",
       "minimum_coverage": 0.95,
@@ -91,27 +91,23 @@
       "qualification_scope": "exact factor role, strategy version and fitted evaluation policy",
       "retrospective_relabeling_permitted": false
     },
-    "validation_strategy": {
-      "minimum_pooled_net_sharpe": 0.75,
-      "minimum_folds_with_positive_net_return": 2,
-      "maximum_pooled_drawdown": 0.30
-    },
     "final_submission": {
-      "require_validation_eligibility": true,
-      "require_final_test_strategy_criteria_on_pooled_validation": true,
+      "require_role_qualified_factor_bindings": true,
+      "require_predeclared_comparison_and_evidence_standard": true,
       "require_predeclared_robustness_evidence": true,
       "require_documented_search_closure": true,
       "require_diversity_and_joint_refinement_review": true
     },
-    "final_test_strategy": {
-      "minimum_net_cagr": 0.12,
-      "minimum_net_sharpe": 1.0,
-      "maximum_drawdown": 0.25,
-      "minimum_completed_round_trips": 20,
-      "minimum_scored_sessions": 400,
-      "minimum_net_sharpe_minus_buy_hold_sharpe": 0.0,
-      "positive_net_return_at_stress_cost": true,
-      "all_criteria_required": true
+    "research_quality": {
+      "economic_explanation": "Falsifiable factor mechanisms and executable, strategy-specific uses.",
+      "diversity_and_joint_refinement": "Distinct evaluated mechanisms, individual shortlist reviews, factor revisions with consumer evidence and strategy refinements.",
+      "incremental_value": "Matched baseline and ablation evidence for the claimed return, risk or execution benefit; disclose all tradeoffs.",
+      "robustness": "Fold/regime and parameter-neighborhood evidence supports the claim without unexplained dependence on one interval, parameter or exceptional trade.",
+      "costs_and_feasibility": "Net effects, stressed costs, turnover, exposure and execution assumptions support the stated use.",
+      "uncertainty_and_selection": "Dependence-aware uncertainty, adequate sample/trade support and full search history constrain the strength of the conclusion.",
+      "final_evidence": "Interpret the frozen test with the predeclared evidence standard, including degradation and contradictions; never select or retune using test results.",
+      "closure": "Explain why remaining concrete investigations would not materially change the conclusion; a count, first passing metric, report release or unsupported opinion is insufficient.",
+      "reproducibility": "Data, code, versions, calculations and the continuous report reconcile and can be replayed."
     }
   }
 }

@@ -1,6 +1,6 @@
 # Metrics and evaluation contract
 
-Read this with [research-protocol.md](research-protocol.md) before implementing either
+Read this with the [research workflow](research-workflow.md#protocol-and-chronology) before implementing either
 environment or inspecting candidate performance. It defines the numerical and diagnostic
 contract; [reports.md](reports.md) defines its presentation. The supplied study owns dates,
 budgets and acceptance thresholds. The conventions below fill unspecified definitions;
@@ -143,7 +143,8 @@ decision. Under a co-consumption policy, compare parent/revised factors as alter
 correlation with a version being replaced does not forbid testing the replacement. Evaluate
 co-consumed peers with the same role against the cutoff. Affine renaming of an
 existing expression is not a distinct economic hypothesis. Additional diagnostic metrics
-do not silently create or replace admission thresholds.
+do not silently create or replace admission thresholds. Admission ties favor simpler factors
+with stable evidence; retain the rejection rationale.
 
 When admitting the first factor, the peer set is empty: the pairwise redundancy condition
 is satisfied without a comparison, with that reason recorded and no invented correlation.
@@ -179,13 +180,19 @@ An opaque strategy name or factor-weight list alone is insufficient.
 
 Include cash, matched buy-and-hold and executable single-factor baselines before combinations.
 Keep strategy-specific factor sets and compare each shortlisted route with its own parent
-and the shared benchmarks, not only the global leader. Use the joint-exploration reference
+and the shared benchmarks, not only the global leader. Use [joint exploration](research-workflow.md#joint-exploration)
 to allocate factor revisions, strategy revisions and new mechanisms.
 List all tried strategies, eligibility and reasons, not only the winning curve. Label the
 validation-selected version independently from whether final test passed. Test contains only
 the frozen strategy, selected factor diagnostics and predeclared benchmark/cost scenarios.
 
 ### Portfolio accounting and scope
+
+The default daily strategy is long-or-cash without leverage/shorts. A completed close's
+signal can first trade at the next tradable open; daily OHLC alone cannot establish intrabar
+stop execution. Freeze dividend entitlement/payment timing. If exact payment records are
+unavailable, declare and verify a consistent total-return convention and its approximations;
+never credit both adjusted-price returns and separate dividend cash.
 
 Let E_0 be initial capital and E_t the reconciled marked equity after session t, with the
 declared terminal liquidation included in the final value. Use cash plus shares times raw
@@ -264,16 +271,15 @@ than the study's required sessions/trades fails that gate even when some metrics
 Nonpositive equity is an insolvency/accounting outcome, not a silently omitted return.
 Apply conservative null handling to all undefined formulas, including empty quantile bins.
 
-For Signal Foundry, validation eligibility uses pooled net Sharpe, positive-return fold count
-and pooled maximum drawdown. The joint final decision requires all seven study criteria:
-net CAGR, net Sharpe, positive-loss maximum drawdown, completed round trips, scored sessions,
-Sharpe advantage over buy-and-hold and stressed net total return. Load thresholds directly
-from study.json. Extra attractive metrics cannot compensate for a failed criterion.
-These preliminary validation gates are not submission approval. Apply
-`acceptance.final_submission` as described in the [research protocol](research-protocol.md):
-Signal Foundry also checks all seven final criteria on pooled validation before opening test.
-Export that separate readiness vector with validation scope, exact values and reasons for
-missing metrics. Readiness is never a test result and does not overwrite initial eligibility.
+For Signal Foundry, these metrics inform the prospective evidence standard and
+[readiness review](research-workflow.md#readiness-review); they are not fixed CAGR/Sharpe stopping gates.
+Compare benefit, risk/cost, fold/regime behavior and uncertainty together. Apply the study's
+explicit factor-role qualification rules and any constraints a different study supplies.
+Export eligibility, readiness measurements and the researcher's interpretation separately,
+with exact scope and artifact references. Missing support or contradictory evidence cannot
+be replaced by a good point estimate. A renderer or environment does not make a subjective
+quality decision merely by counting passed metrics. Final evidence uses the standard frozen
+before reveal and remains separate from validation readiness.
 
 ### Diversity and paired revision metrics
 
@@ -315,8 +321,9 @@ errors separately from low performance; fix invalid accounting before interpreti
 | Most candidates reuse one mechanism | Review executed coverage and remaining reservations; explore a different evidence-backed mechanism or diagnose why the feasible search is narrower. Renaming formulas or injecting noise is not diversity. |
 | Too few trades or labels | Report inadequate support; reject or change the economic hypothesis on research data. Do not split resizes into fake trades or count overlapping labels as independent. |
 | Eligible strategy misses submission targets or robustness checks | Keep test unexposed. Compare the whole readiness vector and continue a bounded hypothesis; reducing position size alone may not fix return, Sharpe, benchmark advantage or support. |
-| Repeated validation stagnation or exhausted budget | Apply the study's frozen patience/budget rules with actual counters. Preserve unmet readiness/objectives; do not submit an unready candidate because search has stopped. |
-| Failed or inconclusive final test | Preserve the frozen failure and continue useful, budgeted exploratory research on separate versions. Mark test exposure and the need for unused confirmation data. Apply the protocol's lifecycle to stop only for an evidenced limit/blocker, not failure alone. |
+| Repeated validation stagnation | Diagnose mechanisms, factor/consumer fit and alternative routes. Review remaining informative experiments; no fixed patience counter ends the default study. Use the completion review if evidence supports closure. |
+| Runtime resource limit | Save partial research, unmet quality items and the next hypothesis as interrupted. An unavailable next trial cannot make an unready candidate ready or certify completion. |
+| Failed or inconclusive final test | Preserve the frozen result and continue useful exploratory research on separate versions. Mark exposure and the need for unused confirmation data. Use the completion review to justify eventual negative/inconclusive closure; test failure alone is insufficient. |
 
 For parameter stability and ablations, predeclare small research-only comparisons, show every
 variant and charge the appropriate trial/validation budget. Refit trainable parts only on
@@ -353,6 +360,7 @@ chart point, metric row, gate and exported record for the same real result ident
 
 ## Primary references
 
+- [Bailey and López de Prado, The Deflated Sharpe Ratio](https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf): selection bias and non-normality when judging the best of many trials; any implementation needs verified inputs and assumptions.
 - [SciPy Spearman correlation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.spearmanr.html): rank correlation, constant-input behavior and limitations of the default p-value.
 - [William Sharpe, The Sharpe Ratio](https://web.stanford.edu/~wfsharpe/art/sr/sr.htm): differential returns, variability and interpretation across time periods.
 - [arch time-series bootstraps](https://bashtage.github.io/arch/bootstrap/timeseries-bootstraps.html): stationary, circular and moving-block resampling for dependent observations.

@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
 description: "Research stocks with one agent: acquire auditable data, jointly discover and refine diverse factors and strategies, and publish one continuous evidence report."
-version: "1.4.0"
+version: "1.5.2"
 type: worker
 category: finance
 requirements: [cpu]
@@ -10,150 +10,70 @@ metadata: {}
 
 # Factor and strategy research
 
-Use this method when building research software and mining hypotheses from historical
-market data. It supplies research and reporting methods; the reusable data Connector
-and two research Environments are developed or improved during the task. Do not confuse
-having these instructions with having implemented or verified those capabilities.
+Use this method to build research software and jointly mine/refine factors and strategies
+from historical market data. It supplies methods, not a ready-made data Connector or
+backtesting Environment. Implement and verify those capabilities through self_evolving_skill.
 
-Each experiment starts independently from its supplied task, study and built-in capabilities.
-Create a new plan, local dataset, trial ledger and factor/strategy implementations. Do not
-import previous experiments' plans, memories, components, candidates, results or exhausted
-budgets. The study ceilings and one final evaluation apply within this experiment. Preserve
-its own history across turns and retries; starting a different experiment does not resume it.
-Repeated use of the same historical market period is not independent market confirmation.
+This skill owns research methods, domain plan guidance and evidence standards. The Agent
+chooses and executes the next operation; the shared plan module supplies storage/context
+rules. Use the workflow reference to design the actual plan and its supporting records.
 
-## Read at the relevant decision
+## Reference map
 
-- Before implementation: [planning and work records](references/planning.md).
-- Before proposing candidates or allocating search: [joint exploration and route refinement](references/joint-exploration.md).
-- Before writing factor calculations: [expression compiler, operator table and DataFrame contract](references/factor-expressions.md).
-- Before acquiring data: [sources and capability interfaces](references/data-and-environments.md).
-- Before computing performance: [research protocol](references/research-protocol.md).
-- Before freezing a submission or ending a run: the protocol's submission-readiness and research-lifecycle rules.
-- Before implementing either engine or evaluating candidates: [metrics and evaluation contract](references/metrics-and-evaluation.md).
-- Before report design: [report experience and acceptance](references/reports.md).
-- Before the first result export: [report data adapter and executable checks](references/report-data.md).
+Read the relevant section at each decision using the absolute skill path from the loader.
+Each function has one reference; formulas and interface contracts have a single owner.
 
-Read referenced files using the absolute skill path returned by the loader. Keep the
-shared index concise; retain detailed evidence as files and read it on demand.
+| Function and reference | When to read; contents |
+| --- | --- |
+| [Research workflow](references/research-workflow.md) | Before implementation, allocating experiments, final freeze or completion: index/plan records, frozen chronology, diverse joint exploration, evidence standard, final test and reasoned ending. |
+| [Data and environments](references/data-and-environments.md) | Before data acquisition or capability implementation: provider feasibility, local download acceptance, public-data qualification, Connector and two native Environment contracts, recovery and readiness. |
+| [Factor expressions](references/factor-expressions.md) | Before implementing a factor: operator table, expression compiler, causal DataFrame input/output, CLI and extending operations. |
+| [Metrics and evaluation](references/metrics-and-evaluation.md) | Before implementing numerical calculations or interpreting results: role-specific qualification, factor/strategy metric definitions, diversity and paired comparisons, diagnostic decisions and numerical fixtures. |
+| [Reports](references/reports.md) | Before result export or UI work: one continuous page, inventories/charts, report adapter CLI and schema, source-bound values, visual theme and browser acceptance. |
 
-## One agent, two recurring research responsibilities
+Keep index.md concise and retain detailed designs, trials and reviews under the shared plan
+directory. Read them on demand instead of copying full records into live context.
 
-1. Read the supplied study and discover the actual runtime capabilities. Use inspect_tool
-   with only capability_type to list loaded names, then inspect an exact returned name.
-   This demo starts without market connectors or research environments. Draft names are
-   not registered capabilities; register a completed candidate before inspecting or calling
-   that name. Repository implementations can inform a baseline, but read their source with
-   Bash at observed paths rather than passing file/class names to inspect_tool.
-2. Make local data acquisition the first executable milestone: author/register the Connector,
-   invoke a native training-period query and verify its saved artifact from disk. A successful
-   HTTP probe, schema inspection or in-memory response is not a downloaded dataset. Record
-   the native call ID, actual path, SHA-256, bytes, symbol, interval, adjustment basis, row
-   count and requested/observed dates. Check OHLCV values and exchange-session coverage.
-   After the probe passes, acquire and freeze the permitted train/validation snapshot locally;
-   final-test acquisition remains deferred until submission freeze. Engines must reopen this
-   verified snapshot, not refetch data for each candidate. Until local data acceptance passes,
-   repair acquisition and avoid market trials, research releases or elaborate report styling.
-   Fix the provider/feed, calendar,
-   adjustment policy, dates and data fingerprints in the research contract. If access or
-   coverage fails, follow the recovery workflow in the sources reference before spending
-   on downstream trials or reports. Keep real research pending; fixtures cannot replace it.
-   Provider choice is open: a missing commercial API key is a reason to check suitable public
-   access, not to declare the whole study impossible. Use self_evolving_skill for component
-   generation, repair and versioned verification.
-   Follow the supplied data_policy: authorized public-data research proceeds with explicit
-   adjustment/volume limitations and separate strict qualification. Do not turn an unmet
-   strict qualification into an unconditional research blocker. For remote read operations,
-   prefer a genuinely read-only MCP method and result_mode: artifact in CONNECTOR.md; the
-   framework saves the full response and returns a path/hash receipt. Read its result field
-   with Bash for normalization instead of implementing unrestricted MCP filesystem writes.
-3. Establish the frozen protocol and an append-only experiment ledger. Build deterministic
-   small fixtures with hand-computed outcomes before researching real performance. These
-   check engineering correctness, not the existence of profitable signals. Implement the
-   metrics reference's definitions, null handling, aggregation and gate records in the
-   environments; export their results for the report instead of recalculating them in the UI.
-4. Develop or improve the data Connector and factor Environment against demonstrated baseline
-   limitations. Download a real snapshot through the kept connector. Evaluate causal factors,
-   exploring distinct mechanisms and uses through the joint-exploration method. Retain rejected
-   trials and admit versions only within their evaluated role and scope. Publish the first
-   continuous report with factor definitions, actual diagnostics and admission/rejection
-   evidence; show strategy progress in the same document without exposing final-test data.
-   Author factor expressions and compile them with scripts/factor_expression.py. The native
-   environment consumes the generated DataFrame-to-DataFrame implementation and its pinned
-   runtime; compilation alone is not evidence of numerical evaluation or factor admission.
-   Extend missing operators with verification rather than treating the initial table as a
-   ceiling on discovery. Keep train-fitted state and future labels outside pure expressions.
-5. Develop or improve the strategy Environment. Start with simple baselines, then build
-   distinct strategy hypotheses, each with its own versioned factor bindings and rules.
-   Evaluate training and bounded walk-forward validation, cost sensitivity
-   and ablations. Add strategy rules, results and comparisons to the same report page.
-   Update the workbench and the plan after meaningful experiments.
-   Before expanding search, complete one real factor evaluation and one executable strategy
-   baseline through the native interfaces, export actual values/series and run scripts/report.py
-   check on the adapter manifest. This is a training/validation integration milestone, not a
-   test reveal or permission to admit a failed factor. Then complete fold admission, strategy
-   fitting, robustness and finalization before calling the environments research-ready.
-6. Keep a portfolio of research routes and review every shortlisted route. Jointly mine and
-   refine factors and strategies: pursue new mechanisms, improve causal factor definitions,
-   and test strategy-specific uses instead of freezing the first library. Allocate trials
-   across breadth, route refinement and paired/robustness checks before exhausting either
-   budget. Give each experiment a diagnosis, evidence, a new hypothesis and a bounded budget.
-   Read the exported metric/gate summaries and apply the metrics reference's diagnostic
-   decision table. Record baseline/candidate changes and the decision with exact result IDs.
-   Record factor-to-consumer comparisons and each route's keep/revise/park/reject decision.
-   A new report, renamed formula or parameter permutation is not progress by itself.
-7. Apply the research protocol's submission-readiness check on saved validation results.
-   Initial eligibility is only a shortlist. Continue research when readiness is unmet and
-   useful work and budget remain. Once readiness and documented search closure pass, freeze
-   one final factor/strategy/engine bundle. Evaluate final test once, with the predeclared
-   scenarios and metrics. Publish the integrated page
-   with both stages and all final gates continuously visible; no report routes or stage tabs.
-   Preserve a failed/inconclusive attempt and keep the research objective unmet. Apply the
-   lifecycle below to continue useful research; never reuse an exposed test as unseen.
+## Research method
 
-## Capability evolution
+1. Read the study and the workflow's planning and protocol sections. Define an implementable
+   research plan, domain records and prospective evidence standards before evaluating performance.
+2. Make the first executable milestone a native Connector download to disk, reopened and
+   verified for path/hash, nonempty OHLCV and session coverage. Freeze the permitted local
+   train/validation snapshot. Repair acquisition before market trials or report polish;
+   a probe, in-memory response or fixture is not a research dataset. Honor authorized public
+   data with disclosed limitations and separate strict qualification; defer test acquisition.
+3. Implement both research Environments with the frozen metric contract. Check deterministic
+   fixtures and successful native real-data operations. Compile factor expressions into
+   versioned DataFrame-to-DataFrame implementations. Before expanding search, complete one
+   real factor evaluation and one executable strategy baseline, export their metrics/series
+   and pass scripts/report.py check. This milestone does not replace admission or finalization.
+4. Iterate both research responsibilities: discover mechanisms, revise factors and each
+   strategy's exact bindings/rules, evaluate on train/validation, and review every shortlisted
+   route. Diagnose saved numerical evidence, perform matched parent/candidate comparisons,
+   and keep meaningful alternatives. Update plan records and the same continuous report.
+5. Apply the workflow's readiness review before freezing one joint final-test bundle. Continue
+   while material testable questions or repairable gaps remain. Completion needs evidenced
+   judgment of quality, remaining exploration and deliverables, not a fixed return target,
+   candidate count or patience limit. Failed tests stay visible; later research is exploratory.
+   A justified negative conclusion is distinct from a supported strategy; resource exhaustion
+   is interruption. Use the workflow's completion decision before any ending.
 
-Invoke self_evolving_skill and follow the shared evolution rules and current adoption
-schemas. Read its Connector and Environment references, including templates, before
-authoring either type. Preserve executed baseline evidence before registration. Reuse
-correct existing code; improve a suitable component rather than adding an identical one.
+## Research-specific capability evidence
 
-Evaluate each exact registered version on a comparison and a different reuse/regression
-case, with actual numerical expectations, failures and measured cost. For example, replay
-a connector on another training-only date interval; compare an engine on a deterministic
-split/dividend or delayed-fill fixture and a different real research hypothesis. Keep only
-passing candidates, then invoke them directly on subsequent real research operations and
-record use. Do not use final test to evaluate a capability candidate.
+Use self_evolving_skill for shared authoring, repair and versioned verification. Read its
+Connector/Environment references and templates before authoring; that skill owns the common
+lifecycle. Define research-specific numerical expectations for its comparisons and reuse
+checks: another training date interval for a connector, or an action/delayed-fill fixture
+and a different real hypothesis for an engine. Final test cannot evaluate a capability candidate.
 
-The two Environments need distinct research responsibilities, state and native consumer
-calls, although they can share numerical utilities. A pair of wrappers over the same
-fixed report does not establish this. Additional skills or tools are appropriate when
-repeated research exposes a reusable limitation; do not generate entities just to raise a count.
-Compiling another factor expression is research work, not itself a new system capability.
-A verified reusable operator/compiler or environment improvement can address a demonstrated
-capability gap; follow the same baseline, comparison, adoption and consumer-use requirements.
+The two Environments have distinct research responsibilities, state and native consumer
+calls, although they may share utilities. Wrappers around fixed reports, failure-only
+interfaces or fixture-only calculators do not provide the required research capability.
+Compiling a factor is research work; a verified reusable operator/compiler improvement may
+address a demonstrated system gap. Generate additional entities only for such a need.
 
-Runtime receipts verify provenance and lifecycle, not financial correctness. The same
-agent authors and evaluates this work. Report the limits of that evidence and the exact
-test access controls. Never label a protocol-only holdout as an isolated evaluator.
-Verify the engines' successful numerical paths through their research interfaces as well as
-their rejection paths. A failure-reporting wrapper or fixture-only calculator leaves the
-market-research capability incomplete; see the sources reference for readiness checks.
-
-## Research lifecycle
-
-Successful research requires the task's real-data final-test criteria and all requested
-deliverables. A failed candidate, failed final attempt or report release does not by itself
-end the research task. Follow the protocol's research-lifecycle decision table: continue
-budgeted factor/strategy work or repair a demonstrated capability gap while useful work
-remains. Keep attempt outcome, research activity and overall acceptance separate in the plan
-and report. After test exposure, preserve the frozen attempt and mark further research as
-exploratory; fresh confirmation needs genuinely unused data under a new predeclared protocol.
-
-End unsuccessfully only with evidence of an exhausted applicable budget/patience rule, a user
-stop, or a concrete prerequisite with no useful in-scope work remaining. Awaiting fresh test
-data can block confirmation without immediately blocking research. Do not keep a process
-busy with repeated checks when no progress is possible. Record the actual stop reason,
-remaining budget, unmet criteria, next hypothesis and exact resume dependency. Repairable
-engine defects and missing connector code are work, not external-access blockers. Never
-relax criteria, hide unsuccessful trials or purchase data to manufacture a passing run.
+Runtime receipts establish provenance/lifecycle, not financial correctness or independent
+approval. The same agent authors and evaluates this work. Declare the actual test-access
+boundary and keep research quality, strategy support, source qualification, product delivery
+and system evolution as separate evidenced outcomes.

@@ -57,13 +57,18 @@ def observe_state(ctx, observation):
 def observe_actions(ctx, results, routing, observation):
     if not enabled(ctx):
         return
-    url = ((observation or {}).get("extra") or {}).get("url") or ""
+    previous_url = ((observation or {}).get("extra") or {}).get("url") or ""
     receipts = _state(ctx).setdefault("browser_reviews", {})
     for result in results:
         route = tuple(routing.get(result.call.name) or ())
         if route[:2] != ("environment", "browser_environment") or len(route) < 3:
             continue
+        # A command can navigate and interact in one call, or a batch can visit
+        # several releases. Each call's observed destination owns its receipt.
+        metadata = (result.extra or {}).get("extra") or {}
+        url = metadata.get("browser_url", "")
         if not result.ok:
+            url = url or previous_url
             for target in _targets(ctx):
                 if _same_site(url, _url(target)):
                     receipt = receipts.setdefault(_key(target), {})
@@ -71,7 +76,7 @@ def observe_actions(ctx, results, routing, observation):
                     receipt["observed_after_interaction"] = False
             continue
         if route[2] not in {
-                    "click", "double_click", "type_text", "keypress", "drag", "command",
+                    "click", "double_click", "type", "type_text", "keypress", "drag", "command",
                 }:
             continue
         for target in _targets(ctx):
@@ -108,3 +113,12 @@ def status(ctx):
     return {"required": True, "ready": not reasons, "reasons": reasons,
             "completed_releases": releases.get("completed_releases", 0),
             "verification": "builder_self_review"}
+
+
+def live_notice(ctx):
+    """Make outstanding reviews actionable before a completion attempt."""
+    if not enabled(ctx):
+        return ""
+    reasons = [reason for release in _state(ctx).get("deployment_release_history") or []
+               if (reason := blocker(ctx, release))]
+    return "Published release self-review pending: " + "; ".join(reasons) if reasons else ""

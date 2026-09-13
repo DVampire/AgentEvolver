@@ -1,5 +1,11 @@
 # Sources and capability interfaces
 
+Sections: [source discovery](#discover-an-authorized-source),
+[access recovery](#recovering-data-access), [Connector and local files](#connector-contract),
+[two research Environments](#two-stateful-environments),
+[engineering verification](#engineering-evidence-before-financial-claims).
+Research chronology and stopping judgments live in the [workflow](research-workflow.md).
+
 ## Discover an authorized source
 
 Verify current provider documentation and actual account entitlements before choosing.
@@ -35,7 +41,7 @@ report a specific unmet contract field rather than declaring every public source
 
 ### Public-data research policy
 
-Read data_policy from the study before deciding a source is blocking. Signal Foundry v2
+Read data_policy from the study before deciding a source is blocking. Signal Foundry
 explicitly authorizes public-data research with separately reported strict qualification.
 Provider-native volume with uncertain consolidated coverage and documented adjusted prices
 may support that qualified research. Do not require a commercial feed or raw-price certificate
@@ -77,8 +83,8 @@ channel, without requesting secret values in a report or conversation. Do not in
 factor/strategy trials against the same missing snapshot: record proposals as pending and one
 representative prerequisite check. Research budgets count evaluations, not renamed blocked
 proposals; retain all attempted calls in the operational record. Failed numerical evaluations
-still consume their trial allowance. Preserve any attempts already charged by the existing
-ledger rather than reclaiming budget on retries within this experiment.
+remain in the trial ledger, even when repaired or rejected. Do not erase retries or
+validation looks from this experiment's search history.
 
 Implement the source-independent numerical engines while data access is being resolved,
 within the remaining budget. Their missing implementation is not an external prerequisite.
@@ -214,12 +220,12 @@ predictive redundancy among co-consumed factors when the study specifies that sc
 replacement alternatives and all historical results available.
 
 Export route/family identities, attempted mechanism coverage, role and consumer admission,
-paired factor/strategy revisions and route-review evidence for submission readiness. Keep
-budget reservations and durable trial counts shared across both responsibilities. Baselines,
-ablations, new horizons and changed bindings count according to the frozen protocol; exact
-replays reuse receipts. A factor and strategy revision in one action charges both applicable
-budgets. Newly generated environments must implement these contracts; the launcher and report
-adapter are not substitutes for numerical evaluation or research-readiness decisions.
+paired factor/strategy revisions and route-review evidence for submission readiness. Share
+complete trial and validation-look records across both responsibilities. Support adjustable
+batch sizes, changed factor/policy versions and repeated research rounds. No implicit trial,
+round or patience ceiling may be copied from earlier demos. Engines execute calculations and
+export evidence; the Agent applies the [completion decision](research-workflow.md#completion-decision).
+Neither a fixed performance check nor a report renderer certifies research completion.
 
 ## Engineering evidence before financial claims
 

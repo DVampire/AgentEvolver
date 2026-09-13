@@ -142,10 +142,13 @@ class BrowserEnvironment(Environment):
         path = await self._ss.store_screenshot(img, rec["step"], filename)
         return path
 
-    def _wrap(self, result, extra_override: Dict = None) -> Dict[str, Any]:
+    def _wrap(self, result, extra_override: Dict = None, *, session_id=None) -> Dict[str, Any]:
         extra = result.extra.copy() if result.extra else {}
         if extra_override:
             extra.update(extra_override)
+        if session_id is not None:
+            # Runtime provenance, never the requested URL or a snippet's return value.
+            extra["browser_url"] = self._service.current_url(session_id)
         return {"success": result.success, "message": result.message, "extra": extra}
 
     # ------------------------------------------------------------------ actions
@@ -165,7 +168,7 @@ class BrowserEnvironment(Environment):
                     encode_file_base64(file_path=path), path, f"Action: Click at ({x}, {y}) with {button} button"
                 )
             result = await self._service.click(x, y, button, session_id=sid)
-            return self._wrap(result, {"x": x, "y": y, "button": button})
+            return self._wrap(result, {"x": x, "y": y, "button": button}, session_id=sid)
         except Exception as e:
             logger.error(f"| ❌ click failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
@@ -185,7 +188,7 @@ class BrowserEnvironment(Environment):
                     encode_file_base64(file_path=path), path, f"Action: Double-click at ({x}, {y})"
                 )
             result = await self._service.double_click(x, y, session_id=sid)
-            return self._wrap(result, {"x": x, "y": y})
+            return self._wrap(result, {"x": x, "y": y}, session_id=sid)
         except Exception as e:
             logger.error(f"| ❌ double_click failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
@@ -206,7 +209,7 @@ class BrowserEnvironment(Environment):
                     f"Action: Scroll at ({x}, {y}) offset ({scroll_x}, {scroll_y})"
                 )
             result = await self._service.scroll(x, y, scroll_x, scroll_y, session_id=sid)
-            return self._wrap(result, {"x": x, "y": y, "scroll_x": scroll_x, "scroll_y": scroll_y})
+            return self._wrap(result, {"x": x, "y": y, "scroll_x": scroll_x, "scroll_y": scroll_y}, session_id=sid)
         except Exception as e:
             logger.error(f"| ❌ scroll failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
@@ -219,7 +222,7 @@ class BrowserEnvironment(Environment):
         try:
             sid, _ = self._sess(ctx)
             result = await self._service.type(text, session_id=sid)
-            return self._wrap(result, {"text": text})
+            return self._wrap(result, {"text": text}, session_id=sid)
         except Exception as e:
             logger.error(f"| ❌ type failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
@@ -232,7 +235,7 @@ class BrowserEnvironment(Environment):
         try:
             sid, _ = self._sess(ctx)
             result = await self._service.wait(ms, session_id=sid)
-            return self._wrap(result, {"ms": ms})
+            return self._wrap(result, {"ms": ms}, session_id=sid)
         except Exception as e:
             logger.error(f"| ❌ wait failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
@@ -252,7 +255,7 @@ class BrowserEnvironment(Environment):
                     encode_file_base64(file_path=path), path, f"Action: Move to ({x}, {y})"
                 )
             result = await self._service.move(x, y, session_id=sid)
-            return self._wrap(result, {"x": x, "y": y})
+            return self._wrap(result, {"x": x, "y": y}, session_id=sid)
         except Exception as e:
             logger.error(f"| ❌ move failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
@@ -265,7 +268,7 @@ class BrowserEnvironment(Environment):
         try:
             sid, _ = self._sess(ctx)
             result = await self._service.keypress(keys, session_id=sid)
-            return self._wrap(result, {"keys": keys})
+            return self._wrap(result, {"keys": keys}, session_id=sid)
         except Exception as e:
             logger.error(f"| ❌ keypress failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
@@ -286,7 +289,7 @@ class BrowserEnvironment(Environment):
                     f"Action: Drag along {len(path)} points"
                 )
             result = await self._service.drag(path, session_id=sid)
-            return self._wrap(result, {"path": path})
+            return self._wrap(result, {"path": path}, session_id=sid)
         except Exception as e:
             logger.error(f"| ❌ drag failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
@@ -301,7 +304,7 @@ class BrowserEnvironment(Environment):
         try:
             sid, _ = self._sess(ctx)
             result = await self._service.goto(url, session_id=sid)
-            return self._wrap(result, {"url": url})
+            return self._wrap(result, {"url": url}, session_id=sid)
         except Exception as e:
             logger.error(f"| ❌ goto failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}
@@ -334,7 +337,7 @@ class BrowserEnvironment(Environment):
     async def handle_dialog(self, accept: bool, prompt_text: str = "", ctx=None, **kwargs) -> Dict[str, Any]:
         sid, _ = self._sess(ctx)
         result = await self._service.handle_dialog(accept, prompt_text, session_id=sid)
-        return self._wrap(result, {"accept": accept, "prompt_text": prompt_text})
+        return self._wrap(result, {"accept": accept, "prompt_text": prompt_text}, session_id=sid)
 
     @environment_manager.action(
         name="command",
@@ -369,7 +372,7 @@ class BrowserEnvironment(Environment):
         try:
             sid, _ = self._sess(ctx)
             result = await self._service.command(code, timeout=self.command_timeout, session_id=sid)
-            return self._wrap(result, {"code": code})
+            return self._wrap(result, {"code": code}, session_id=sid)
         except Exception as e:
             logger.error(f"| ❌ command failed: {e}")
             return {"success": False, "message": str(e), "extra": {"error": str(e)}}

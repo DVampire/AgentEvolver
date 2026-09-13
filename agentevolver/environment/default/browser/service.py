@@ -346,6 +346,11 @@ class BrowserService:
             logger.info(f"| 🪟 Browser session created: {session_id}")
         return sess["page"]
 
+    def current_url(self, session_id: str = "default") -> str:
+        """URL of the live session page, without creating a page or navigating."""
+        page = (self._sessions.get(session_id) or {}).get("page")
+        return page.url if page is not None and not page.is_closed() else ""
+
     async def close_session(self, session_id: str = "default") -> None:
         """Close a session's page and context (if we created it)."""
         # Dropped whether or not there is a session left to close: the scope holds

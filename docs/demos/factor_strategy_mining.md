@@ -23,7 +23,7 @@ python -m examples.run_factor_strategy_mining_demo --task-dir /absolute/path/to/
 Only executing the launcher starts a model experiment. Default model:
 `llm_hub/gpt-6-astra`; override with `--model`. The runtime ceiling is 10,000 steps,
 1,000,000,000 tokens and 8 hours, with input compaction at 100,000 tokens. These ceilings
-do not mandate spending the budget. The study separately bounds research trials and validation.
+do not mandate spending the budget. The study tracks research trials and validation looks without fixed search ceilings.
 Runs register on the usual gateway at port 9876; deploy_tool publishes the report links.
 Every launch starts a new experiment. The shared example launcher isolates its adopted
 capability library under a new session namespace, alongside fresh workspace, plan and memory
@@ -34,11 +34,11 @@ state. It does not load an earlier experiment's components, candidates, plans or
 | Layer | Location / role |
 | --- | --- |
 | Agent | `agentevolver/agent/actor/factor_strategy_mining_agent.py`: thin MetaAgent specialization with child dispatch disabled |
-| Prompt | `agentevolver/prompt/default/factor_strategy_mining_agent.html`: joint research ownership and integrity rules; includes shared evolution rules |
+| Prompt | `agentevolver/prompt/default/factor_strategy_mining_agent.html`: task orchestration, skill/capability routing and plan execution; includes shared runtime and evolution rules |
 | Skill | `agentevolver/skill/finance/factor_strategy_research_skill/`: open exploration, expression compiler/operators, planning, data/interfaces, evaluation and single-page reports |
 | Config | `configs/factor_strategy_mining_demo.py`: exactly one actor; Bash, job, browser, inspection, adoption, deployment and completion |
 | Task | `signal_foundry/task.html`: English product outline and acceptance requirements; no inline style or scripts |
-| Study | `signal_foundry/study.json`: stock, dates, costs, research budgets and numerical objectives |
+| Study | `signal_foundry/study.json`: stock, dates, costs, factor qualification and research-quality requirements |
 | Runtime policy | `task_manifest_defaults` in the demo config: deployment, self-review, evolution evidence and declared holdout control |
 
 No market connector or factor/strategy environment is preloaded in this demo. The agent
@@ -54,13 +54,13 @@ share verified numerical utilities. The router makes registered environments cal
 2. **Strategy research:** develop the strategy environment, combine admitted factors,
    backtest training and validation, inspect costs/ablations, return to factor research
    when evidence warrants it, then extend the same page with the Strategy Atelier.
-3. Check submission readiness and justify closing research before freezing one final bundle
+3. Review the evidence standard and justify closing research before freezing one final bundle
    for **both** report sections. Report the frozen test outcome, uncertainty, failed gates and
-   reproducibility artifacts. A failed attempt leaves the objective unmet; the skill directs
-   continued exploratory research while useful work and budget remain.
+   reproducibility artifacts. The Agent judges research quality and strategy support separately; the skill directs
+   further exploratory work while material questions and resources remain.
 
 Factor discovery remains open during strategy research. The skill's
-[joint-exploration method](../../agentevolver/skill/finance/factor_strategy_research_skill/references/joint-exploration.md)
+[joint-exploration method](../../agentevolver/skill/finance/factor_strategy_research_skill/references/research-workflow.md#joint-exploration)
 keeps distinct mechanisms and strategy-specific factor versions, reviews every shortlisted
 route, and reserves trials for factor revisions, consumer comparisons and robustness.
 The agent chooses hypotheses; the initial formulas and strategy modes are not a search catalog.
@@ -77,28 +77,30 @@ The provided example uses NVDA daily bars, train 2016–2020, expanding annual v
 2021–2023 and final test 2024-01-01 through 2026-09-11, with a minimum 21-session boundary gap.
 The September cutoff includes only completed regular trading sessions; it does not request
 future September dates or unfinished daily bars. The cutoff stays fixed once the study starts.
-See [study.json](../../examples/tasks/factor_strategy_mining/signal_foundry/study.json) for the complete research specification. Default final-test objectives jointly require net CAGR ≥12%,
-net Sharpe ≥1, drawdown ≤25%, at least 20 closed round trips and 400 scored sessions,
-Sharpe no worse than holding NVDA and positive return under doubled trading costs.
-These are **illustrative demo targets**, not an expected or promised return. Change the
-input specification before a new study starts, never to rescue a failing observed result.
+See [study.json](../../examples/tasks/factor_strategy_mining/signal_foundry/study.json).
+The v5 study replaces fixed return/Sharpe completion targets and the former 30-strategy,
+60-factor, 12-round and 3-round patience limits with research-quality judgment. These old
+limits are not defaults for generated engines. The runtime still has token, step and time
+ceilings; reaching them means interrupted research, not successful completion.
 
-Ordinary iterations use train/validation. The study separates preliminary eligibility from
-submission readiness: all final numerical targets must also pass on pooled validation, with
-predeclared robustness evidence and documented search closure. Final thresholds remain unchanged.
-A first eligible candidate, completed batch or published report does not end the search.
-The v4 revision also requires diversity and joint-refinement review and supplies supporting-role
-qualification. It preserves the study's dates, budgets and final performance targets. Those
-budgets apply independently to each new experiment; counts persist across turns and retries inside it.
+The [completion review](../../agentevolver/skill/finance/factor_strategy_research_skill/references/research-workflow.md#completion-decision)
+defines the decision. Before selection, establish a prospective evidence standard for
+mechanisms, incremental value, diversity and joint refinement, robustness, execution/costs,
+uncertainty and search effects. Repeatedly investigate and revise both factors and strategies.
+Each shortlisted route receives a diagnosis and refinement or an evidenced park/reject decision.
 
-Keep frozen-attempt outcome, research activity and overall acceptance separate. A failed test
-can be followed by useful exploratory train/validation work on separate candidate versions;
-its failure and exposure remain immutable. Confirmation requires genuinely unused data under
-a new protocol fixed before access. If an applicable budget/patience limit is exhausted, the
-user stops, or a prerequisite leaves no useful in-scope work, end unsuccessfully with the exact
-stop reason and resume dependency. Do not poll unavailable future data or run meaningless trials.
-Repeated historical studies are experimental replications; they do not supply independent
-confirmation on new market observations. New experiments do not inherit previous run state.
+The researcher records exact results, counterevidence, remaining concrete investigations and
+why more work would or would not change the conclusion. An attractive statistic or subjective
+"looks good" is insufficient. When readiness is justified, freeze the selected bundle and
+standard before the one final test. Never select replacements on the same exposed test.
+
+Keep research completeness, strategy support and delivery separate. Test may support, refute
+or leave the claim inconclusive. A negative conclusion can close a thorough investigation only
+with justified quality review and no feasible material questions left. A failed test alone does
+not end useful research. Subsequent train/validation work is exploratory; new confirmation
+requires genuinely unused data and a prospectively fixed protocol. Record resource/access
+interruptions and unfinished work without calling the research complete. Experiments do not
+inherit previous run state; repeated historical studies are not independent new observations.
 
 The runtime config declares a **protocol-only** access boundary. The agent can author code and acquire
 data, so its self-written environment/ledger cannot enforce independence against itself.
@@ -138,7 +140,8 @@ evidence. Both stages remain visible in normal page flow; navigation scrolls to 
 route or stage-tab switching. Two research-bearing releases update that same product over time.
 Report schema 2 preserves route reviews, factor roles, exact consumer bindings and measured
 parent/candidate comparisons in the page and downloadable analysis, alongside legacy schema 1
-support. Numerical admission and research readiness remain the environments' responsibilities.
+support. Environments export numerical admission and readiness evidence; the Agent applies
+the skill's quality review to decide whether research is ready or needs further investigation.
 
 The [metric contract](../../agentevolver/skill/finance/factor_strategy_research_skill/references/metrics-and-evaluation.md)
 defines factor IC/RankIC, sample support, admission, portfolio accounting, performance/risk/cost
