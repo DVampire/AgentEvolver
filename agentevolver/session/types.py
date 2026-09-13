@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -38,10 +39,7 @@ class BaseContext(BaseModel):
     @classmethod
     def from_context(cls, ctx: Optional["BaseContext"] = None) -> "BaseContext":
         if ctx is None:
-            return cls(id=make_id(),
-                       name=None,
-                       input={},
-                       extra={})
+            return cls(id=make_id(), input={}, extra={})
         # Fall back to the target class's field default when the source value is
         # None — subclasses may narrow Optional fields (e.g. ToolContext.name: str).
         name = getattr(ctx, "name", None)
@@ -57,10 +55,13 @@ class BaseContext(BaseModel):
             v = getattr(ctx, k, None)
             if v is not None:
                 extra.setdefault(k, v)
+        workspace = getattr(ctx, "workspace_root", None)
+        if workspace:
+            extra.setdefault("workspace_root", workspace)
         return cls(
             id=ctx.id,
             name=name,
-            input=getattr(ctx, "input", {}),
+            input=deepcopy(getattr(ctx, "input", {})),
             extra=extra,
         )
 

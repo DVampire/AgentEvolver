@@ -65,7 +65,9 @@ def _fail(message: str, **extra: Any) -> Dict[str, Any]:
 
 @ENVIRONMENT.register_module(force=True)
 class SSHEnvironment(Environment):
+
     """A remote machine, operated over one persistent SSH connection."""
+    managed_sessions: bool = True
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -146,7 +148,8 @@ class SSHEnvironment(Environment):
 
     @staticmethod
     def _session_id(ctx) -> str:
-        return (getattr(ctx, "id", "") or "default") if ctx else "default"
+        from agentevolver.runtime.invocation import owner_id
+        return owner_id(ctx) or "default"
 
     def active_host(self, ctx) -> Optional[RemoteHost]:
         """The machine this session is working on, falling back to the first configured."""
@@ -178,11 +181,20 @@ class SSHEnvironment(Environment):
         return host
 
     async def _svc(self, ctx, host: str = "") -> SSHService:
+        from agentevolver.runtime.invocation import ResourceClaim, runtime
+        target = self._resolve(ctx, host)
+        key = f"ssh-acquire:{id(self)}:{self._session_id(ctx)}:{target.name}"
+        return await runtime().invoke("environment", self.name + ":connect",
+            lambda: self._create_service(ctx, host), ctx=ctx, claims=(ResourceClaim(key),))
+
+    async def _create_service(self, ctx, host: str = "") -> SSHService:
         """The connection for this session and machine, opened on first use."""
         target = self._resolve(ctx, host)
         key = (self._session_id(ctx), target.name)
         service = self._services.get(key)
         if service is None or not await service.is_alive():
+            if service is not None:
+                await service.stop()
             service = SSHService(
                 SSHConfig(
                     host=target.host,
@@ -196,7 +208,11 @@ class SSHEnvironment(Environment):
                 ),
                 f"{key[0]}:{key[1]}",
             )
-            await service.start()
+            try:
+                await service.start()
+            except BaseException:
+                await service.stop()
+                raise
             self._services[key] = service
         return service
 
@@ -214,16 +230,17 @@ class SSHEnvironment(Environment):
         self._services.clear()
 
     async def close_session(self, session_id: str) -> None:
+        errors = []
         for key in [k for k in self._services if k[0] == session_id]:
-            service = self._services.pop(key)
+            service = self._services[key]
             try:
                 await self._stop_view(service, key)
-            except Exception as exc:  # noqa: BLE001 — teardown must not raise
-                logger.warning(f"| ⚠️ SSH view teardown: {exc}")
-            try:
                 await service.stop()
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(f"| ⚠️ SSH teardown: {exc}")
+                self._services.pop(key, None)
+            except Exception as exc:
+                errors.append(exc)
+        if errors:
+            raise ExceptionGroup("SSH session cleanup failed", errors)
         self._active.pop(session_id, None)
 
     async def close_host(self, name: str) -> None:

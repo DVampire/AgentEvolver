@@ -39,6 +39,27 @@ verdict and explanation. Preserve every failed gate. Undefined required evidence
 an inconclusive gate; any failed gate prevents passing, as does any inconclusive required gate.
 An operational error or pending source check is not an evaluated market hypothesis.
 
+## Multi-factor strategy and contribution scope
+
+Formal strategies combine multiple distinct factors, with open roles and combination methods.
+Assess the joint policy as well as its inputs: a high marginal IC does not establish incremental
+value and a low marginal IC does not rule out a useful state filter or interaction. Declare
+the role and its evaluation target before inspecting results; apply the role-specific rules below.
+
+Measure full-policy results on common train/validation folds first. For promising routes,
+compare useful remove/replace/neutralize-factor controls and, where relevant, interaction or
+combination-rule alternatives under matched fitting, costs and scored dates. Distinguish a
+fixed-policy input intervention from a refitted reduced model; label which question each asks.
+Save factor availability/variation, actual executed input IDs, paired objective/risk/cost deltas
+and their uncertainty. Inspect redundancy and inactive branches; a listed factor with no use
+or an identical/affine copy is not evidence of a multi-factor mechanism. Redesign or qualify
+the conclusion when contribution is unsupported; never invent a positive effect.
+
+Archive reduced policies as ablations with control_for pointing to the full candidate. They
+may contain one, several or zero factors; cash/buy-and-hold are benchmarks. Neither category
+counts as a discovered strategy, enters the candidate pool or becomes the selected submission.
+Role/binding validation checks structure; executed contribution tests establish actual use.
+
 ## Factor identity: what was actually mined?
 
 Keep every candidate/version, including rejected ones. A row records:

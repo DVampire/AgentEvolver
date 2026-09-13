@@ -1,4 +1,4 @@
-"""Agent runtime.
+"""Execution runtime for Agents and lightweight component invocations.
 
 An agent is a process and this is its kernel: it owns the states, the two channels and
 the lifecycle, and dispatch and subscription are the same mechanism with one flag
@@ -32,6 +32,7 @@ from agentevolver.runtime.errors import (
     Stopped,
 )
 from agentevolver.runtime.kernel import Kernel, kernel
+from agentevolver.runtime.invocation import InvocationRuntime, ResourceClaim
 from agentevolver.runtime.mailbox import Mailbox
 from agentevolver.runtime.process import Process
 from agentevolver.runtime.signals import Signal, SignalBox
@@ -56,6 +57,7 @@ __all__ = [
     "EventEnvelope",
     "ExitStatus",
     "InvalidTransition",
+    "InvocationRuntime",
     "Kernel",
     "Killed",
     "Mailbox",
@@ -66,6 +68,7 @@ __all__ = [
     "ProcessState",
     "ReplyEnvelope",
     "ReportEnvelope",
+    "ResourceClaim",
     "RuntimeKernelError",
     "Signal",
     "SignalBox",

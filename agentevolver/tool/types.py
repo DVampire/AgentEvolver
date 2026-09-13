@@ -41,6 +41,19 @@ class Tool(BaseModel):
     """Base class for all tools that can be exposed through function calling."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
+    concurrent: bool = Field(default=False, description="Calls may share this instance without mutable invocation state")
+
+    def resource_claims(self, ctx, arguments):
+        from agentevolver.runtime.invocation import ResourceClaim
+        from agentevolver.session import resolve_workspace_root
+        claims = [] if self.concurrent else [ResourceClaim(f"tool:{self.name}")]
+        request = self.permission_request(arguments, ctx)
+        if request is not None and str(getattr(request.op, "value", request.op)) in ("write", "bash"):
+            root = resolve_workspace_root(ctx)
+            if root:
+                claims.append(ResourceClaim.path(root))
+        return tuple(claims)
+
     name: str = Field(description="The name of the tool")
     description: str = Field(description="The description of the tool")
     #: What a caller needs beyond the call schema: when to reach for this, what it

@@ -24,7 +24,11 @@ from agentevolver.environment.types import Environment, EnvironmentConfig, Actio
 from agentevolver.sandbox import SandboxServerManager
 from agentevolver.dynamic import dynamic_manager
 from agentevolver.registry import ENVIRONMENT
-from agentevolver.permission import permission_manager, PermissionMode
+from agentevolver.permission import PermissionMode
+
+from agentevolver.permission import EffectContract, Operation, PermissionRequest, permission_manager
+from agentevolver.response.types import Response, ResponseType
+from agentevolver.tool.execution import ToolExecution, ToolExecutionPipeline, ToolPolicyDecision
 
 class EnvironmentContextManager(BaseModel):
     """Global context manager for all environments with lazy loading support."""
@@ -41,6 +45,7 @@ class EnvironmentContextManager(BaseModel):
             base_dir: Base directory for storing environment data
         """
         super().__init__(**kwargs)
+        self._execution_pipeline = ToolExecutionPipeline(capability_type="environment")
         
         # Set up paths
         if base_dir is not None:
@@ -344,7 +349,7 @@ class EnvironmentContextManager(BaseModel):
             env_instance = env_config.cls(**env_config.config) if env_config.config else env_config.cls()
             
             # Initialize environment if it has an initialize method
-            if hasattr(env_instance, "initialize"):
+            if (env_instance.managed_sessions or env_instance.state_scope == "shared") and hasattr(env_instance, "initialize"):
                 await env_instance.initialize()
 
             # Initialization may disable actions whose optional service is unavailable.
@@ -515,7 +520,7 @@ class EnvironmentContextManager(BaseModel):
             logger.error(f"| ❌ Failed to register environment: {e}")
             raise
         
-    async def get(self, env_name: str) -> Optional[Environment]:
+    async def get(self, env_name: str, ctx=None) -> Optional[Environment]:
         """Get environment instance by name
         
         Args:
@@ -526,7 +531,7 @@ class EnvironmentContextManager(BaseModel):
         """
         env_config = self._environment_configs.get(env_name)
         if env_config:
-            return env_config.instance
+            return await self.bound(env_config, ctx) if ctx is not None else env_config.instance
         return None
     
     async def get_info(self, env_name: str) -> Optional[EnvironmentConfig]:
@@ -550,18 +555,17 @@ class EnvironmentContextManager(BaseModel):
             Optional[Dict[str, Any]]: State of the environment or None if not found
         """
 
-        if ctx is None:
-            ctx = EnvironmentContext(name=env_name)
-            
-        env_args = {
-            "ctx": ctx,
-        }
-        
-        env_config = self._environment_configs.get(env_name)
-        if not env_config or not env_config.instance:
-            raise ValueError(f"Environment '{env_name}' not found")
-        return await env_config.instance.get_state(**env_args)
-        
+        from agentevolver.runtime.invocation import runtime
+        ctx = EnvironmentContext.from_context(ctx)
+        info = await self.get_info(env_name)
+        if info is None:
+            raise ValueError(f"Environment {env_name!r} not found")
+        async def observe():
+            value = await self.bound(info, ctx)
+            return await value.get_state(ctx=ctx, **kwargs)
+        return await runtime().invoke("environment", env_name + ":state", observe,
+            ctx=ctx, version=info.version, claims=info.instance.resource_claims(ctx, {}, "get_state"))
+
     async def list(self) -> List[str]:
         """Get list of registered environments
         
@@ -938,76 +942,167 @@ class EnvironmentContextManager(BaseModel):
         await self._sandbox_server.ensure_running()
 
     async def cleanup(self):
-        """Cleanup all active environments."""
-        try:
-            # Cleanup all instances
-            for env_name, env_config in self._environment_configs.items():
-                if env_config.instance and hasattr(env_config.instance, "cleanup"):
-                    try:
-                        await env_config.instance.cleanup()
-                    except Exception as e:
-                        logger.warning(f"| ⚠️ Error cleaning up environment {env_name} instance: {e}")
-                permission_manager.unregister(env_name)
-            
-            # Clear all environment configs and version history
-            self._environment_configs.clear()
-            self._environment_history_versions.clear()
+        """Join calls before closing shared backends; retain failed resources for retry."""
+        from agentevolver.runtime.invocation import runtime
+        await runtime().release(module="environment")
+        errors = []
+        for name, info in self._environment_configs.items():
+            value = info.instance
+            if value and (value.managed_sessions or value.state_scope == "shared") and hasattr(value, "cleanup"):
+                try:
+                    await value.cleanup()
+                except Exception as error:
+                    errors.append(error)
+        if errors:
+            raise ExceptionGroup("Environment backend cleanup failed", errors)
+        await self._sandbox_server.shutdown()
+        for name in self._environment_configs:
+            permission_manager.unregister(name)
+        self._environment_configs.clear()
+        self._environment_history_versions.clear()
+        logger.info("| 🧹 Environment context manager cleaned up")
 
-            # Shut down opensandbox-server if we started it
-            await self._sandbox_server.shutdown()
-
-            logger.info("| 🧹 Environment context manager cleaned up")
-            
-        except Exception as e:
-            logger.error(f"| ❌ Error during environment context manager cleanup: {e}")
-            
-    async def __call__(self, 
+    async def __call__(self,
                        name: str, 
                        action: str, 
                        input: Dict[str, Any], 
                        ctx: EnvironmentContext = None,
-                       **kwargs) -> Any:
+                       **kwargs) -> Response:
         """Call an environment action
-        
+
         Args:
-            name: Name of the environment
-            action: Name of the action
-            input: Input for the action
+            name (str): Name of the environment
+            action (str): Name of the action
+            input (Dict[str, Any]): Input for the action
+            ctx (EnvironmentContext): Environment context
             
         Returns:
-            Action result
+            Response: the action's outcome, in the shape every capability returns
         """
-        if name in self._environment_configs:
-            env_config = self._environment_configs[name]
-            
-            version = env_config.version
-            env_instance = env_config.instance
-            logger.info(f"| ✅ Using environment {name}@{version}")
-            
-            action_config = env_config.actions.get(action)
-            if action_config is None:
-                raise ValueError(f"Action {action} not found in environment {name}")
-            action_function = action_config.function
-            
-            # ``ctx`` is owned by the runtime.  Older persisted schemas and provider
-            # caches may still send it, so remove it again at the execution boundary
-            # before injecting the authoritative EnvironmentContext.  This makes the
-            # compatibility guarantee independent of schema refresh timing.
-            action_input = dict(input or {})
-            action_input.pop("ctx", None)
+        ctx = EnvironmentContext.from_context(ctx)
+        ctx.action = action
+        env_info = await self.get_info(name)
+        if env_info is None:
+            raise ValueError(f"Environment {name!r} not found")
+        action_info = env_info.actions.get(action)
+        if action_info is None:
+            return Response(
+                type=ResponseType.ENVIRONMENT,
+                success=False,
+                message=f"Action {action!r} not found in environment {name!r}.",
+            )
+        execution = ToolExecution.create(
+            name=f"{name}__{action}",
+            version=env_info.version,
+            arguments=input or {},
+            ctx=ctx,
+        )
+        call_input = execution.arguments
+        ctx.input = dict(call_input)
+        metadata = dict(action_info.metadata or {})
+        effect = EffectContract.from_annotations(metadata)
 
-            # Environment args
-            env_args = {
-                "ctx": ctx,
-            }
-            
-            # Check if action_function is a bound method (already has self bound)
-            # Bound methods have __self__ attribute, unbound methods don't
-            if hasattr(action_function, '__self__'):
-                # Bound method: call directly without passing instance
-                return await action_function(**action_input, **env_args)
-            else:
-                # Unbound method: pass instance as first argument
-                return await action_function(env_instance, **action_input, **env_args)
-        else:
-            raise ValueError(f"Environment {name} not found")
+        def effect_guard(_execution):
+            op = metadata.get("permission_op")
+            target_arg = metadata.get("permission_target")
+            if op and target_arg:
+                target = str(call_input.get(str(target_arg), "") or "")
+                checked = permission_manager.check(
+                    name,
+                    PermissionRequest(op=Operation(str(op)), target=target),
+                )
+                if not checked.allowed:
+                    return ToolPolicyDecision.deny(
+                        checked.reason or "Environment operation denied."
+                    )
+                if checked.requires_approval:
+                    return ToolPolicyDecision.ask(
+                        checked.warning or "Environment operation requires approval."
+                    )
+            decision = effect.policy_decision(
+                mode=env_info.permission_mode,
+                label=f"Environment action {name}__{action}",
+            )
+            if not decision.allowed:
+                return ToolPolicyDecision.deny(decision.reason or "Environment action denied.")
+            if decision.requires_approval:
+                return ToolPolicyDecision.ask(
+                    decision.warning or "Environment action requires approval."
+                )
+            return None
+
+        async def checkpoint_effect() -> None:
+            if effect.read_only is True:
+                return
+            from agentevolver.trace.integrity import TraceDurabilityBoundary, ensure_trace_durable
+
+            await ensure_trace_durable(
+                execution.session_id,
+                TraceDurabilityBoundary.EXTERNAL_EFFECT,
+                ctx=ctx,
+                metadata={"environment": name, "action": action},
+            )
+
+        async def invoke() -> Response:
+            result = await self._invoke_config(env_info, action, call_input, ctx, **kwargs)
+            return self._normalize_response(name, action, result)
+
+        from agentevolver.runtime.invocation import runtime
+        return await self._execution_pipeline.execute(
+            execution,
+            invoke,
+            timeout=None,
+            runtime_options={"ctx": ctx, "claims": lambda: env_info.instance.resource_claims(ctx, call_input, action), "max_concurrency": env_info.instance.max_concurrency, "limit_key": ("environment", name)},
+            call_guards=[effect_guard],
+            before_invoke=checkpoint_effect,
+        )
+
+    @staticmethod
+    def _normalize_response(name, action, result):
+        from agentevolver.environment.server import EnvironmentManagerServer
+        return EnvironmentManagerServer._normalize_response(name, action, result)
+
+    async def live_view(self, name, ctx):
+        from agentevolver.runtime.invocation import runtime
+        info = await self.get_info(name)
+        if info is None:
+            return None
+        async def observe():
+            value = await self.bound(info, ctx)
+            return await value.live_view(ctx)
+        return await runtime().invoke("environment", name + ":view", observe,
+            ctx=ctx, version=info.version, claims=info.instance.resource_claims(ctx, {}, "live_view"))
+
+    async def bound(self, info, ctx):
+        from agentevolver.runtime.invocation import runtime, owner_id
+        prototype = info.instance
+        owner = owner_id(ctx)
+        async def create():
+            if prototype.managed_sessions or prototype.state_scope == "shared":
+                return prototype
+            value = info.cls(**(info.config or {}))
+            try:
+                if hasattr(value, "initialize"):
+                    await value.initialize()
+            except BaseException:
+                if hasattr(value, "cleanup"):
+                    await value.cleanup()
+                raise
+            return value
+        async def close(value):
+            if value.managed_sessions:
+                if hasattr(value, "close_session"):
+                    await value.close_session(owner)
+            elif value.state_scope != "shared" and hasattr(value, "cleanup"):
+                await value.cleanup()
+        return await runtime().bind("environment", info.name, info.version, owner, create, close)
+
+    async def _invoke_config(self, info, action, input, ctx, **kwargs):
+        value = await self.bound(info, ctx)
+        call = value.actions.get(action)
+        if call is None:
+            raise ValueError(f"Action {action!r} is not available in {info.name}")
+        args = dict(input or {})
+        args.pop("ctx", None)
+        function = call.function
+        return await function(**args, ctx=ctx) if hasattr(function, "__self__") else await function(value, **args, ctx=ctx)

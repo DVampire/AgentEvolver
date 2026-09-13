@@ -531,7 +531,17 @@ class SkillContextManager(BaseModel):
     # Persistence (JSON) — with version history
     # ------------------------------------------------------------------
 
-    async def __call__(
+    async def __call__(self, name, input, ctx=None, **kwargs):
+        from agentevolver.runtime.invocation import runtime
+        cfg = self._skill_configs.get(name)
+        # Materialize the immutable text before submission; registration may replace it.
+        result = await self._instructions(name, input, ctx=ctx, **kwargs)
+        async def read():
+            return result
+        return await runtime().invoke("skill", name, read, ctx=ctx,
+                                      version=getattr(cfg, "version", ""))
+
+    async def _instructions(
         self,
         name: str,
         input: Dict[str, Any],
@@ -587,6 +597,8 @@ class SkillContextManager(BaseModel):
 
     async def cleanup(self):
         """Release all loaded skills."""
+        from agentevolver.runtime.invocation import runtime
+        await runtime().release(module="skill")
         self._skill_configs.clear()
         self._skill_history_versions.clear()
         logger.info("| 🧹 Skill context manager cleaned up")

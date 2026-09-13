@@ -58,7 +58,9 @@ def _ok(message: str, **extra: Any) -> Dict[str, Any]:
 
 @ENVIRONMENT.register_module(force=True)
 class TerminalEnvironment(Environment):
+
     """Terminals that outlive a call, and the actions that drive them."""
+    managed_sessions: bool = True
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -85,6 +87,14 @@ class TerminalEnvironment(Environment):
     def _session(ctx) -> str:
         return str(getattr(ctx, "id", "") or "")
 
+    def _owned(self, ctx):
+        from agentevolver.runtime.invocation import owner_id
+        session = self._session(ctx)
+        if not session:
+            return []
+        return [value for value in terminal_manager.list(session)
+                if not getattr(value, "owner_id", "") or value.owner_id == owner_id(ctx)]
+
     def _resolve(self, terminal_id: str, ctx):
         """The terminal, or a failure naming the ids that do exist.
 
@@ -92,9 +102,11 @@ class TerminalEnvironment(Environment):
         usually one it mistyped, or one belonging to a terminal since closed.
         """
         terminal = terminal_manager.get(terminal_id)
-        if terminal is not None:
-            return terminal, None
-        known = [t.id for t in terminal_manager.list(self._session(ctx))]
+        from agentevolver.runtime.invocation import owner_id
+        if terminal is not None and self._session(ctx) and terminal.session_id == self._session(ctx):
+            if not getattr(terminal, "owner_id", "") or terminal.owner_id == owner_id(ctx):
+                return terminal, None
+        known = [t.id for t in self._owned(ctx)]
         return None, _fail(
             f"No terminal {terminal_id!r}. This session has: "
             f"{', '.join(known) if known else '(none — open one with terminal__open)'}"
@@ -132,12 +144,19 @@ class TerminalEnvironment(Environment):
         denial = self._permitted(command or "bash -i")
         if denial:
             return denial
-        start_in = cwd or config.workspace_root or None
+        from agentevolver.session import resolve_workspace_root
+        start_in = cwd or resolve_workspace_root(ctx) or None
         try:
             terminal = terminal_manager.open(
                 name=name, session_id=self._session(ctx), command=command, cwd=start_in)
         except (RuntimeError, ValueError, OSError) as error:
             return _fail(f"Could not open a terminal: {error}")
+
+        from agentevolver.runtime.invocation import owner_id
+        terminal.owner_id = owner_id(ctx)
+        from agentevolver.runtime.invocation import runtime
+        runtime().own("terminal", terminal.id, terminal.owner_id, terminal,
+                      lambda value: terminal_manager.close(value.id))
 
         # An empty send: type nothing, wait for the shell to settle, take what it printed
         # while starting up.
@@ -326,7 +345,7 @@ class TerminalEnvironment(Environment):
         ),
     )
     async def list(self, ctx=None, **kwargs: Any) -> Dict[str, Any]:
-        terminals = terminal_manager.list(self._session(ctx))
+        terminals = self._owned(ctx)
         if not terminals:
             return _ok("No terminals open in this session.")
         return _ok("\n".join(t.summary() for t in terminals), count=len(terminals))
@@ -347,7 +366,7 @@ class TerminalEnvironment(Environment):
         removes a terminal from the registry outright, so one the agent closed on purpose
         never reaches here.
         """
-        terminals = terminal_manager.list(self._session(ctx))
+        terminals = self._owned(ctx)
         if not terminals:
             return {"success": True, "state": ""}
 

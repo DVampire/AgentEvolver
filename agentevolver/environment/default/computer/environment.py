@@ -33,7 +33,9 @@ _SHOT_PATH = "/tmp/agentevolver_shot.png"
 
 @ENVIRONMENT.register_module(force=True)
 class ComputerEnvironment(Environment):
+
     """A Linux desktop driven with generic mouse/keyboard actions."""
+    managed_sessions: bool = True
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -80,7 +82,8 @@ class ComputerEnvironment(Environment):
     # ------------------------------------------------------------------ session
     @staticmethod
     def _session_id(ctx) -> str:
-        return (getattr(ctx, "id", None) or "default") if ctx is not None else "default"
+        from agentevolver.runtime.invocation import owner_id
+        return owner_id(ctx) or "default"
 
     async def _desktop(self, ctx):
         """Return the started desktop sandbox for this session, creating it once.
@@ -106,8 +109,8 @@ class ComputerEnvironment(Environment):
     async def close_session(self, session_id: str) -> None:
         """Release this session's desktop container."""
         from agentevolver.sandbox import sandbox_manager
-        self._sandboxes.pop(session_id, None)
         await sandbox_manager.release("computer", reuse_key=session_id)
+        self._sandboxes.pop(session_id, None)
 
     async def _xdotool(self, ctx, args: str) -> None:
         sandbox = await self._desktop(ctx)

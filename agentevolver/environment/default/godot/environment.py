@@ -29,6 +29,8 @@ from .inputs import InputSteps
 
 @ENVIRONMENT.register_module(force=True)
 class GodotEnvironment(Environment):
+    managed_sessions: bool = True
+
     name: str = Field(default="godot_environment")
     description: str = Field(default=(
         "Godot 4 project workspace: engine discovery, imports, GDScript parsing, "
@@ -50,9 +52,19 @@ class GodotEnvironment(Environment):
     input_idle_seconds: float = Field(default=10.0, ge=0.25, le=60)
     _input_watchdogs: dict = PrivateAttr(default_factory=dict)
 
+    def resource_claims(self, ctx, arguments, operation=""):
+        from agentevolver.runtime.invocation import ResourceClaim
+        claims = list(super().resource_claims(ctx, arguments, operation))
+        if operation in {"prepare_workspace", "open_project", "import_project", "check_script", "run_headless", "export_project", "run_export", "start_game"}:
+            root = resolve_workspace_root(ctx)
+            if root:
+                claims.append(ResourceClaim.path(root))
+        return tuple(claims)
+
     @staticmethod
     def _sid(ctx):
-        return str(getattr(ctx, "id", "") or "default")
+        from agentevolver.runtime.invocation import owner_id
+        return owner_id(ctx) or "default"
 
     def _session(self, ctx):
         sid = self._sid(ctx)
@@ -811,10 +823,11 @@ class GodotEnvironment(Environment):
         sid = session_id or "default"
         async with self._locks.setdefault(sid, asyncio.Lock()):
             self._cancel_input_watchdog(sid)
-            proc = self._processes.pop(sid, None)
+            proc = self._processes.get(sid)
             if proc is not None:
                 await self._stop(proc)
-            runtime = self._runtimes.pop(sid, None)
+                self._processes.pop(sid, None)
+            runtime = self._runtimes.get(sid)
             if runtime is not None:
                 if runtime.task and not runtime.task.done():
                     try:
@@ -822,6 +835,7 @@ class GodotEnvironment(Environment):
                     except Exception:
                         pass
                 await runtime.close()
+                self._runtimes.pop(sid, None)
             self._sessions.pop(sid, None)
 
     async def cleanup(self):

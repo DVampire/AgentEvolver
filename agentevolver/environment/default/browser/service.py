@@ -292,6 +292,12 @@ class BrowserService:
             "url": url, "storage": storage}, ensure_ascii=False, allow_nan=False))
 
     async def _page_for(self, session_id: str = "default") -> Optional[Page]:
+        from agentevolver.runtime.invocation import ResourceClaim, runtime
+        return await runtime().invoke("environment", "browser:create-page",
+            lambda: self._create_page(session_id),
+            claims=(ResourceClaim(f"browser-acquire:{id(self)}:{session_id}"),))
+
+    async def _create_page(self, session_id: str = "default") -> Optional[Page]:
         """Return the Page for a session, lazily creating an isolated context+page."""
         if not self._browser:
             return None

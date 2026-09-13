@@ -420,6 +420,8 @@ class WorkflowContextManager(BaseModel):
 
     async def cleanup(self) -> None:
         """Release active registry state while retaining persisted evidence on disk."""
+        from agentevolver.runtime.invocation import runtime
+        await runtime().release(module="workflow")
         self._definitions.clear()
         self._workflow_history_versions.clear()
         self._evaluations.clear()

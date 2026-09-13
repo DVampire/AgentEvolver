@@ -5,6 +5,38 @@ This is the operational reference for the loop in [SKILL.md](../SKILL.md). It ap
 `workflow` and `plugin`. Type references supply artifact contracts and specific checks.
 No family has a separate generation, optimization, evaluation or failure-completion policy.
 
+## Concurrent execution
+
+Call through the component Manager. The existing runtime owns admission, resource claims,
+call ownership and cancellation; do not implement another scheduler in a generated entity.
+Agent creation stays with kernel dispatch, and Workflow retains its dependency graph.
+
+- Stateless Tool/Plugin implementations may declare `concurrent = True` after checking
+  reentrancy. Tools default to exclusive instance access; known filesystem effects also
+  claim the workspace. Override `resource_claims(ctx, arguments)` for finer verified scopes.
+- Environment defaults to a separate instance per runtime owner. Keep state on that instance;
+  `initialize`/`cleanup` run with its binding. Existing multiplexed backends alone use
+  `managed_sessions = True` and implement `close_session(owner_id)`.
+- Independent Environment evaluations may set `max_concurrency` and override
+  `resource_claims(ctx, arguments, operation)` using `ResourceClaim` from
+  `agentevolver.runtime.invocation`. Use shared claims for immutable inputs and exclusive
+  claims for each trial's outputs. `concurrent = True` removes the default instance claim
+  only when the implementation is actually reentrant.
+- Mark an action `parallel_safe=True` only when sibling calls can be independent. This
+  enables Agent batch admission; resource claims still apply. `read_only` describes effects
+  and must remain truthful. Connector/Plugin metadata can declare the same independence;
+  Connector metadata `concurrent: true` permits reentrant requests to its remote service.
+- Memory defaults to exclusive backend calls. A backend such as `TieredMemory` declares
+  `concurrent=True` because it owns namespace transactions and compaction revision checks.
+  Its framework projection path is internal: emitting ordinary trace events for each projected event would recurse.
+- CPU work needs an owned worker/job backend, not merely `async def`. Register background
+  jobs through the framework, retain distinct trial outputs and confirm actual cancellation.
+
+Evaluate two simultaneous owners, same-resource serialization, independent-resource overlap,
+failed acquisition, owner exit and serial/concurrent result parity. Do not count `gather`
+alone as evidence of isolation or speedup. Skill calls return instructions; their scripts
+inherit the execution contract of the Tool/Environment that runs them.
+
 ## Author and register
 
 Use the actual paths supplied in the current context. Write candidates under the session's

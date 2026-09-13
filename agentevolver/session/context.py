@@ -233,6 +233,10 @@ def stage_input_files(ctx: Any, input: Dict[str, Any]) -> Dict[str, Any]:
 
     workspace = Path(config.workspace_root).resolve()
     inputs_dir = path_manager.under(Path(config.log_root).resolve(), P.LOG_INPUTS)
+    extra = getattr(ctx, "extra", {}) or {}
+    if extra.get("workflow_child") or extra.get("process_pid"):
+        # Same-named attachments in concurrent child briefs are distinct inputs.
+        inputs_dir = inputs_dir / str(ctx.id)
     staged: list[str] = []
     for index, value in enumerate(files):
         source = Path(str(value)).expanduser().resolve()

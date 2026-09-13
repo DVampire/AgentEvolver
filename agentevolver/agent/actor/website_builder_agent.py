@@ -42,16 +42,6 @@ class WebsiteBuilderAgent(MetaAgent):
         )
         return values
 
-    async def on_exit(self, status):
-        try:
-            if "browser_environment" in self.env_names:
-                from agentevolver.environment.server import environment_manager
-
-                environment = await environment_manager.get("browser_environment")
-                if environment is not None:
-                    await environment.close_session(str(getattr(self.ctx, "id", "") or "default"))
-        finally:
-            await super().on_exit(status)
 
 
 __all__ = ["WebsiteBuilderAgent"]

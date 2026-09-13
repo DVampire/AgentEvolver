@@ -280,6 +280,7 @@ class ToolExecutionPipeline:
         call_guards: Optional[List[ToolGuard]] = None,
         before_invoke: Optional[BeforeInvoke] = None,
         finalize: Optional[Callable[[Response], Awaitable[Response]]] = None,
+        runtime_options: Optional[Dict[str, Any]] = None,
     ) -> Response:
         """Run every phase once and always return a classified Tool Response.
 
@@ -326,34 +327,85 @@ class ToolExecutionPipeline:
                 ToolExecutionStage.GUARD, code,
             )
 
-        # Guards and any one-shot human approval have now settled. This hook is where
-        # callers put the final durability checkpoint: after the consent fact exists,
-        # immediately before the only line that may enter the Tool body.
-        if before_invoke is not None:
-            try:
-                prepared = before_invoke()
-                if inspect.isawaitable(prepared):
-                    await prepared
-            except asyncio.CancelledError:
-                raise
-            except Exception as error:  # checkpoint/persistence failure is fail-closed
-                from agentevolver.trace.integrity import TraceIntegrityError
-                if isinstance(error, TraceIntegrityError):
-                    raise
+        # Approval has settled. Runtime owns admission; checkpoints and effects share
+        # the same resource guard. The receipt remains the existing ToolExecution.
+        async def finalize_candidate(candidate):
+            if not isinstance(candidate, Response):
                 message = (
-                    f"Tool '{execution.tool_name}' could not prepare a safe execution: "
-                    f"{type(error).__name__}: {error}"
+                    f"Tool '{execution.tool_name}' returned {type(candidate).__name__}; "
+                    "tools must return agentevolver.response.Response."
                 )
-                logger.error(f"| ❌ {message}")
                 return await self._finish(
                     execution, self._failure(message), started, timeout,
-                    ToolExecutionStage.PREPARE, ToolErrorCode.PREPARATION_ERROR,
+                    ToolExecutionStage.EXECUTE, ToolErrorCode.INVALID_RESULT,
                 )
 
+            response = candidate.model_copy(deep=True)
+            error_code = None if response.success else ToolErrorCode.TOOL_REPORTED_ERROR
+            try:
+                response = await self._run_postprocessors(execution, response)
+            except Exception as error:  # noqa: BLE001 — extensions cannot escape the funnel
+                response = self._failure(
+                    f"Tool '{execution.tool_name}' post-processing failed: "
+                    f"{type(error).__name__}: {error}"
+                )
+                error_code = ToolErrorCode.POSTPROCESS_ERROR
+
+            if finalize is not None:
+                try:
+                    finalized = await finalize(response)
+                    if not isinstance(finalized, Response):
+                        raise TypeError("finalizer must return Response")
+                    response = finalized
+                except Exception as error:  # noqa: BLE001
+                    response = self._failure(
+                        f"Tool '{execution.tool_name}' result finalization failed: "
+                        f"{type(error).__name__}: {error}"
+                    )
+                    error_code = ToolErrorCode.FINALIZATION_ERROR
+
+            if not response.success and error_code is None:
+                error_code = ToolErrorCode.TOOL_REPORTED_ERROR
+            return await self._finish(
+                execution, response, started, timeout, ToolExecutionStage.FINALIZE,
+                error_code,
+            )
+
+        async def prepared_invoke():
+            if before_invoke is not None:
+                try:
+                    prepared = before_invoke()
+                    if inspect.isawaitable(prepared):
+                        await prepared
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:  # checkpoint/persistence failure is fail-closed
+                    from agentevolver.trace.integrity import TraceIntegrityError
+                    if isinstance(error, TraceIntegrityError):
+                        raise
+                    message = (
+                        f"Tool '{execution.tool_name}' could not prepare a safe execution: "
+                        f"{type(error).__name__}: {error}"
+                    )
+                    logger.error(f"| ❌ {message}")
+                    return await self._finish(
+                        execution, self._failure(message), started, timeout,
+                        ToolExecutionStage.PREPARE, ToolErrorCode.PREPARATION_ERROR,
+                    )
+            return await finalize_candidate(await invoke())
+
+        from types import SimpleNamespace
+        from agentevolver.runtime.invocation import ResourceClaim, runtime
+        options = dict(runtime_options or {})
+        options.setdefault("ctx", SimpleNamespace(id=execution.session_id, extra={}))
+        options.setdefault("claims", (ResourceClaim(f"{self.capability_type}:{execution.tool_name}"),))
         try:
-            candidate = (
-                await invoke() if timeout is None
-                else await asyncio.wait_for(invoke(), timeout=timeout)
+            if callable(options["claims"]):
+                options["claims"] = options["claims"]()
+            candidate = await runtime().invoke(
+                self.capability_type, execution.tool_name, prepared_invoke,
+                version=execution.tool_version, call_id=execution.call_id,
+                timeout=timeout, **options,
             )
         except asyncio.CancelledError:
             raise
@@ -377,46 +429,7 @@ class ToolExecutionPipeline:
                 ToolExecutionStage.EXECUTE, ToolErrorCode.EXECUTION_ERROR,
             )
 
-        if not isinstance(candidate, Response):
-            message = (
-                f"Tool '{execution.tool_name}' returned {type(candidate).__name__}; "
-                "tools must return agentevolver.response.Response."
-            )
-            return await self._finish(
-                execution, self._failure(message), started, timeout,
-                ToolExecutionStage.EXECUTE, ToolErrorCode.INVALID_RESULT,
-            )
-
-        response = candidate.model_copy(deep=True)
-        error_code = None if response.success else ToolErrorCode.TOOL_REPORTED_ERROR
-        try:
-            response = await self._run_postprocessors(execution, response)
-        except Exception as error:  # noqa: BLE001 — extensions cannot escape the funnel
-            response = self._failure(
-                f"Tool '{execution.tool_name}' post-processing failed: "
-                f"{type(error).__name__}: {error}"
-            )
-            error_code = ToolErrorCode.POSTPROCESS_ERROR
-
-        if finalize is not None:
-            try:
-                finalized = await finalize(response)
-                if not isinstance(finalized, Response):
-                    raise TypeError("finalizer must return Response")
-                response = finalized
-            except Exception as error:  # noqa: BLE001
-                response = self._failure(
-                    f"Tool '{execution.tool_name}' result finalization failed: "
-                    f"{type(error).__name__}: {error}"
-                )
-                error_code = ToolErrorCode.FINALIZATION_ERROR
-
-        if not response.success and error_code is None:
-            error_code = ToolErrorCode.TOOL_REPORTED_ERROR
-        return await self._finish(
-            execution, response, started, timeout, ToolExecutionStage.FINALIZE,
-            error_code,
-        )
+        return candidate
 
     async def _run_guards(
         self,

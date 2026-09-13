@@ -8,8 +8,12 @@
 </head>
 <body>
 <action-batching-rules>
-Up to {{ max_actions }} actions in one turn execute concurrently. Batch independent work, not
-unresolved dependencies; an edit and its consuming test must be sequential. Do not run
+Up to {{ max_actions }} actions are accepted in one turn. The executor runs a batch concurrently
+when every action is known independent (read-only tools, skill reads, separate child Agents,
+or operations explicitly marked parallel_safe). Runtime still serializes conflicting resource
+access. Unclassified batches execute in order. Use an available background-job or native batch
+interface for long-running work. Never mislabel writes as read-only to obtain parallel execution.
+Batch independent work, not unresolved dependencies; an edit and its consuming test must be sequential. Do not run
 concurrent edits to the same files, or checks against files another action is changing.
 
 Known sequential shell operations may share a command (e.g. `make && ./run-tests`): keep

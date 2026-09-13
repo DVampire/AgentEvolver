@@ -48,7 +48,9 @@ def _ok(message: str, **extra: Any) -> Dict[str, Any]:
 
 @ENVIRONMENT.register_module(force=True)
 class JobEnvironment(Environment):
+
     """Everything this session started in the background, and the actions that control it."""
+    managed_sessions: bool = True
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -65,6 +67,14 @@ class JobEnvironment(Environment):
     @staticmethod
     def _session(ctx) -> str:
         return str(getattr(ctx, "id", "") or "")
+
+    def _owned(self, ctx):
+        from agentevolver.runtime.invocation import owner_id
+        session = self._session(ctx)
+        if not session:
+            return []
+        return [value for value in job_manager.list(session)
+                if not getattr(value, "owner_id", "") or value.owner_id == owner_id(ctx)]
 
     def _resolve(self, job_id: str, ctx):
         """The job, or a failure naming the ids that exist.
@@ -84,20 +94,22 @@ class JobEnvironment(Environment):
         """
         owner = self._session(ctx)
         job = job_manager.get(job_id)
-        if job is not None and (not owner or job.session_id == owner):
-            return job, None
+        if job is not None and owner and job.session_id == owner:
+            from agentevolver.runtime.invocation import owner_id
+            if not getattr(job, "owner_id", "") or job.owner_id == owner_id(ctx):
+                return job, None
 
-        process = self._as_job(job_id, owner)
+        process = self._as_job(job_id, owner, ctx)
         if process is not None:
             return process, None
 
-        known = [j.id for j in job_manager.list(owner)]
+        known = [j.id for j in self._owned(ctx)]
         return None, _fail(
             f"No job {job_id!r}. This session has: {', '.join(known) if known else '(none)'}"
         )
 
     @staticmethod
-    def _as_job(job_id: str, owner: str):
+    def _as_job(job_id: str, owner: str, ctx=None):
         """A kernel process, shaped like the job record this action reads.
 
         Exactly the fields this action reads, each answered from the process's own
@@ -106,10 +118,8 @@ class JobEnvironment(Environment):
         because a turn result is a return value, not a captured stream that could have
         been cut.
 
-        A sub-agent is visible to whoever can already address it: a pid comes from a
-        dispatch, so holding one is the permission. The session check that guards
-        `job_manager` does not transfer — a child runs in its own session by design, and
-        applying it would hide every sub-agent from the parent that started it.
+        Access follows the process parent relationship or a trusted explicit grant.
+        Knowing a PID alone does not grant another Agent's process or output.
         """
         import time
         from types import SimpleNamespace
@@ -117,7 +127,17 @@ class JobEnvironment(Environment):
         from agentevolver.runtime import kernel
 
         process = kernel.get(str(job_id))
-        if process is None:
+        if process is None or not owner:
+            return None
+        from agentevolver.runtime.invocation import owner_id
+        caller = kernel.get(owner_id(ctx)) if ctx is not None else None
+        if caller is None:
+            candidates = [p for p in kernel.list() if p.session_id == owner]
+            caller = candidates[0] if len(candidates) == 1 else None
+        grants = (getattr(ctx, "extra", {}) or {}).get("deployment_contract", {})
+        explicitly_granted = str(job_id) in grants.get("subscriber_job_ids", ())
+        if process.session_id != owner and not explicitly_granted and not (
+                caller is not None and getattr(process, "parent_pid", "") == caller.pid):
             return None
         ended = process.ended_at or time.time()
         return SimpleNamespace(
@@ -157,7 +177,7 @@ class JobEnvironment(Environment):
         ),
     )
     async def list(self, ctx=None, **kwargs: Any) -> Dict[str, Any]:
-        jobs = job_manager.list(self._session(ctx))
+        jobs = self._owned(ctx)
         if not jobs:
             # Not an error, and worth saying plainly: an empty listing after starting
             # something is a real signal, and "no output" would read as a broken action.
@@ -439,7 +459,7 @@ class JobEnvironment(Environment):
         """
         session = self._session(ctx)
         try:
-            jobs = [j for j in job_manager.list(session) if not j.status.is_final]
+            jobs = [j for j in self._owned(ctx) if not j.status.is_final]
         except Exception as error:  # noqa: BLE001
             logger.warning(f"| ⚠️ could not read job state: {error}")
             return {"success": True, "state": f"[job state unavailable — {error}]"}

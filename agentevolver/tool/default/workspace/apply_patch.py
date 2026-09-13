@@ -187,6 +187,7 @@ def _check_hunk_positions(patch: str, content: bytes | None) -> None:
 @TOOL.register_module(force=True)
 class ApplyPatchTool(Tool):
     """Apply one atomic, workspace-scoped text patch."""
+    concurrent: bool = True
 
     name: str = "apply_patch_tool"
     description: str = _DESCRIPTION

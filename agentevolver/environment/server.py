@@ -6,7 +6,7 @@ import copy
 import json
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentevolver.capability import CapabilitySchema, SchemaSource, roster, roster_card
 from agentevolver.config import config
@@ -14,9 +14,7 @@ from agentevolver.environment.context import EnvironmentContextManager
 from agentevolver.environment.types import Environment, EnvironmentConfig, EnvironmentContext
 from agentevolver.logger import logger
 from agentevolver.paths import P, path_manager
-from agentevolver.permission import EffectContract, Operation, PermissionRequest, permission_manager
 from agentevolver.response.types import Response, ResponseType
-from agentevolver.tool.execution import ToolExecution, ToolExecutionPipeline, ToolPolicyDecision
 from agentevolver.utils import assemble_workspace_path
 
 
@@ -25,7 +23,6 @@ class EnvironmentManagerServer(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     base_dir: str = Field(default=None, description="The base directory to use for the environments")
-    _execution_pipeline: ToolExecutionPipeline = PrivateAttr()
     
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the ECP Server."""
@@ -34,9 +31,8 @@ class EnvironmentManagerServer(BaseModel):
         # reconfigures it with the proper base_dir.
         self.environment_context_manager: Optional[EnvironmentContextManager] = None
         self._registered_configs: Dict[str, EnvironmentConfig] = {}  # env_name -> EnvironmentConfig
-        # (session_id, env_name) -> last announced live-view URL, to dedupe announcements.
+        # (session_id, env_name, owner_id) -> last announced live-view URL, to dedupe announcements.
         self._announced_views: Dict[tuple, str] = {}
-        self._execution_pipeline = ToolExecutionPipeline(capability_type="environment")
 
     def _ensure_context_manager(self) -> EnvironmentContextManager:
         """Lazily create the context manager so methods work before initialize().
@@ -218,7 +214,7 @@ class EnvironmentManagerServer(BaseModel):
         ).render(format)
     
     
-    async def get(self, env_name: str) -> Optional[Environment]:
+    async def get(self, env_name: str, ctx=None) -> Optional[Environment]:
         """Get environment instance by name
         
         Args:
@@ -227,8 +223,11 @@ class EnvironmentManagerServer(BaseModel):
         Returns:
             Environment: Environment instance or None if not found
         """
-        return await self._ensure_context_manager().get(env_name)
+        return await self._ensure_context_manager().get(env_name, ctx=ctx)
     
+    async def live_view(self, name, ctx):
+        return await self._ensure_context_manager().live_view(name, EnvironmentContext.from_context(ctx))
+
     async def get_info(self, env_name: str) -> Optional[EnvironmentConfig]:
         """Get environment configuration by name
         
@@ -384,110 +383,12 @@ class EnvironmentManagerServer(BaseModel):
             self._registered_configs[env_config.name] = env_config
         return env_config
     
-    async def __call__(self,
-                       name: str, 
-                       action: str, 
-                       input: Dict[str, Any], 
-                       ctx: EnvironmentContext = None,
-                       **kwargs) -> Response:
-        """Call an environment action
-
-        Args:
-            name (str): Name of the environment
-            action (str): Name of the action
-            input (Dict[str, Any]): Input for the action
-            ctx (EnvironmentContext): Environment context
-            
-        Returns:
-            Response: the action's outcome, in the shape every capability returns
-        """
-        if ctx is None:
-            ctx = EnvironmentContext(name=name, action=action, input=input)
-        elif not isinstance(ctx, EnvironmentContext):
-            # Accept a caller's context (e.g. AgentContext) — carry over its id/workspace_root
-            ctx = EnvironmentContext.from_context(ctx)
+    async def __call__(self, name, action, input, ctx=None, **kwargs):
+        ctx = EnvironmentContext.from_context(ctx)
         manager = self._ensure_context_manager()
-        get_info = getattr(manager, "get_info", None)
-        env_info = await get_info(name) if get_info is not None else None
-        # Test doubles and compatibility adapters may provide only the callable surface.
-        # They retain the old normalization path; registered environments take the
-        # authoritative execution funnel below.
-        if env_info is None:
-            result = await manager(name, action, input, ctx, **kwargs)
-            await self._announce_live_view(name, ctx)
-            return self._normalize_response(name, action, result)
-
-        action_info = env_info.actions.get(action)
-        if action_info is None:
-            return Response(
-                type=ResponseType.ENVIRONMENT,
-                success=False,
-                message=f"Action {action!r} not found in environment {name!r}.",
-            )
-        execution = ToolExecution.create(
-            name=f"{name}__{action}",
-            version=env_info.version,
-            arguments=input or {},
-            ctx=ctx,
-        )
-        call_input = execution.arguments
-        ctx.input = dict(call_input)
-        metadata = dict(action_info.metadata or {})
-        effect = EffectContract.from_annotations(metadata)
-
-        def effect_guard(_execution):
-            op = metadata.get("permission_op")
-            target_arg = metadata.get("permission_target")
-            if op and target_arg:
-                target = str(call_input.get(str(target_arg), "") or "")
-                checked = permission_manager.check(
-                    name,
-                    PermissionRequest(op=Operation(str(op)), target=target),
-                )
-                if not checked.allowed:
-                    return ToolPolicyDecision.deny(
-                        checked.reason or "Environment operation denied."
-                    )
-                if checked.requires_approval:
-                    return ToolPolicyDecision.ask(
-                        checked.warning or "Environment operation requires approval."
-                    )
-            decision = effect.policy_decision(
-                mode=env_info.permission_mode,
-                label=f"Environment action {name}__{action}",
-            )
-            if not decision.allowed:
-                return ToolPolicyDecision.deny(decision.reason or "Environment action denied.")
-            if decision.requires_approval:
-                return ToolPolicyDecision.ask(
-                    decision.warning or "Environment action requires approval."
-                )
-            return None
-
-        async def checkpoint_effect() -> None:
-            if effect.read_only is True:
-                return
-            from agentevolver.trace.integrity import TraceDurabilityBoundary, ensure_trace_durable
-
-            await ensure_trace_durable(
-                execution.session_id,
-                TraceDurabilityBoundary.EXTERNAL_EFFECT,
-                ctx=ctx,
-                metadata={"environment": name, "action": action},
-            )
-
-        async def invoke() -> Response:
-            result = await manager(name, action, call_input, ctx, **kwargs)
-            await self._announce_live_view(name, ctx)
-            return self._normalize_response(name, action, result)
-
-        return await self._execution_pipeline.execute(
-            execution,
-            invoke,
-            timeout=None,
-            call_guards=[effect_guard],
-            before_invoke=checkpoint_effect,
-        )
+        result = await manager(name, action, input, ctx, **kwargs)
+        await self._announce_live_view(name, ctx)
+        return self._normalize_response(name, action, result)
 
     @staticmethod
     def _normalize_response(name: str, action: str, result: Any) -> Response:
@@ -526,20 +427,22 @@ class EnvironmentManagerServer(BaseModel):
 
     def set_approval_resolver(self, resolver):
         """Install the same one-shot approval channel used by tools/connectors."""
-        return self._execution_pipeline.set_approval_resolver(resolver)
+        return self._ensure_context_manager()._execution_pipeline.set_approval_resolver(resolver)
 
     async def _announce_live_view(self, name: str, ctx: EnvironmentContext) -> None:
         """Announce this environment's live-view endpoint on change (idempotent)."""
         try:
-            env = await self.get(name)
+            env = await self.get(name, ctx=ctx)
             if env is None:
                 return
-            view = await env.live_view(ctx)
+            view = await self._ensure_context_manager().live_view(name, ctx)
             if view is None:
                 return
             view.session_id = view.session_id or getattr(ctx, "id", "") or ""
             view.env_name = view.env_name or name
-            key = (view.session_id, name)
+            from agentevolver.runtime.invocation import owner_id
+            view.owner_id = owner_id(ctx)
+            key = (view.session_id, name, view.owner_id)
             if self._announced_views.get(key) == view.url:
                 return  # same endpoint already announced — don't spam the bus
             self._announced_views[key] = view.url

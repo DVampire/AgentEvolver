@@ -46,7 +46,9 @@ _EXTERNAL_PATTERNS = [
 
 @ENVIRONMENT.register_module(force=True)
 class ArtifactRendererEnvironment(Environment):
+
     """Render self-contained HTML in a sandboxed headless Chrome → screenshot."""
+    managed_sessions: bool = True
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -84,19 +86,28 @@ class ArtifactRendererEnvironment(Environment):
         logger.info("| 🎨 ArtifactRendererEnvironment ready")
 
     async def cleanup(self) -> None:
-        for page in list(self._sessions.values()):
-            try:
-                await page.close()
-            except Exception:
-                pass
-        self._sessions.clear()
+        for sid in list(self._sessions):
+            await self.close_session(sid)
         if self._browser:
             await self._browser.close()
         if self._playwright:
             await self._playwright.stop()
 
     # ------------------------------------------------------------ page acquisition
+    async def close_session(self, sid: str):
+        page = self._sessions.get(sid)
+        if page is not None:
+            await page.context.close()
+        if self.use_sandbox:
+            await sandbox_manager.release("playwright", reuse_key=sid)
+        self._sessions.pop(sid, None)
+
     async def _page_for(self, sid: str):
+        from agentevolver.runtime.invocation import ResourceClaim, runtime
+        return await runtime().invoke("environment", self.name + ":page",
+            lambda: self._create_page(sid), claims=(ResourceClaim(f"renderer-acquire:{id(self)}"),))
+
+    async def _create_page(self, sid: str):
         if sid in self._sessions:
             return self._sessions[sid]
 
@@ -106,21 +117,27 @@ class ArtifactRendererEnvironment(Environment):
             )
             ws_url = await sandbox.cdp_ws_url()
             browser = await self._playwright.chromium.connect_over_cdp(ws_url)
-            contexts = browser.contexts
-            context = contexts[0] if contexts else await browser.new_context(viewport=self.viewport)
+            context = await browser.new_context(viewport=self.viewport)
         else:
             if self._browser is None:
                 self._browser = await self._playwright.chromium.launch(headless=True)
             context = await self._browser.new_context(viewport=self.viewport)
 
-        page = await context.new_page()
-        await page.set_viewport_size(self.viewport)
-        self._sessions[sid] = page
-        return page
+        try:
+            page = await context.new_page()
+            await page.set_viewport_size(self.viewport)
+            self._sessions[sid] = page
+            return page
+        except BaseException:
+            await context.close()
+            if self.use_sandbox:
+                await sandbox_manager.release("playwright", reuse_key=sid)
+            raise
 
     @staticmethod
     def _sid(ctx) -> str:
-        return getattr(ctx, "id", None) or "default"
+        from agentevolver.runtime.invocation import owner_id
+        return owner_id(ctx) or "default"
 
     # ------------------------------------------------------------ CSP helpers
     def _inject_csp(self, html: str) -> str:

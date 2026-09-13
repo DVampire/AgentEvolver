@@ -9,9 +9,10 @@ metadata: {}
 ---
 # Runtime
 
-**Runtime is the kernel; an agent is a process.** The kernel owns three things and no
-more: when a process may run, when a message reaches it, and how it is created and
-reaped. What happens inside a turn belongs to the agent, and the kernel never looks.
+**Runtime is the kernel; an agent is a process.** The kernel owns process scheduling,
+messages and lifecycle, and manages lightweight component invocations through `calls`.
+Managers submit bound operations; component implementations own their domain state.
+Agent turns still use the existing Process/mailbox driver.
 
 That is why a model-driven agent, a deterministic procedure and an orchestrator are the
 same kind of thing here — each is an object with a `__call__` and some optional hooks.
@@ -26,9 +27,20 @@ same kind of thing here — each is an object with a `__call__` and some optiona
 | `modes.py` | The three endpoint roles, and what each means to the kernel |
 | `topics.py` | Topic ↔ pid subscriptions |
 | `kernel.py` | Process table, turn driver, IPC, lifecycle |
+| `invocation.py` | Lightweight calls, resource admission, owner bindings and cleanup |
 | `errors.py` | Kernel errors, and the two control-flow signals |
 
 `Kernel` drives the registered Agent implementations through their `__call__` contract.
+
+Tool, Skill, Connector, Plugin, Environment, Memory and Workflow entry points also use
+this kernel's invocation service. Calls are coroutines, not additional Agent processes.
+`ResourceClaim` coordinates shared/exclusive access across component families; path claims
+include descendants. Resource guards do not imply CPU worker parallelism or distributed
+locking. Internal Memory projections are managed without recursively generating Trace.
+
+See [runtime concurrency](../../docs/proposals/runtime-concurrency.md) for the contract,
+migration details and validation scope. Independent Agent batches use declared independence;
+unclassified operations retain sequential ordering.
 
 Launchers declare task-specific roles in the input manifest. The common
 `Agent.prepare_task(task, files, ctx)` implementation resolves those declarations;

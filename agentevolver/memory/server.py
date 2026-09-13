@@ -160,17 +160,7 @@ class MemoryManagerServer(BaseModel):
         return await self._ensure_context_manager().list()
     
     async def get(self, memory_name: str) -> Memory:
-        """Get memory system instance by name (similar to tool_manager.get()).
-        
-        Note: Unlike tools, memory systems create a new instance each time since each agent
-        needs its own memory system instance to manage its own sessions.
-        
-        Args:
-            memory_name: Memory system name
-            
-        Returns:
-            Memory: Memory system instance (new instance each time)
-        """
+        """Return the shared backend; sessions are isolated by its namespace contract."""
         return await self._ensure_context_manager().get(memory_name)
     
     async def index(self, memory_name: str, notes: Any) -> str:
@@ -179,7 +169,7 @@ class MemoryManagerServer(BaseModel):
             try:
                 info = await self.get_info(memory_name)
                 if info and info.instance is not None:
-                    result = info.instance.index(notes)
+                    result = await self._ensure_context_manager().invoke(memory_name, "index", notes, _config=info)
                     if not isinstance(result, str):
                         raise TypeError("Memory.index must return text")
                     return result
@@ -297,7 +287,7 @@ class MemoryManagerServer(BaseModel):
         memory = await self.get(memory_name)
         if memory is None:
             return False
-        return await memory.compact(session_id, keep_steps=keep_steps)
+        return await self._ensure_context_manager().invoke(memory_name, "compact", session_id, keep_steps=keep_steps)
 
     async def consume_trace_event(
         self,
@@ -316,7 +306,7 @@ class MemoryManagerServer(BaseModel):
             try:
                 info = await self.get_info(name)
                 if info and info.instance is not None:
-                    await info.instance.emit(event, session_id=event.session_id or "")
+                    await self._ensure_context_manager().invoke(name, "emit", event, session_id=event.session_id or "", _config=info, _internal=True)
             except Exception as error:  # memory is a projection, never the fact source
                 logger.warning(f"| ⚠️ Memory projection {name!r} failed: {error}")
 

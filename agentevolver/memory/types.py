@@ -98,6 +98,7 @@ class Summary(BaseModel):
 
 class Memory(BaseModel):
     """Base class for all memory systems"""
+    concurrent: bool = Field(default=False, description="Backend owns coherent session transactions and concurrent compaction")
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="", description="The name of the memory system")

@@ -220,6 +220,21 @@ class WorkflowRuntime:
         return await self._drive(definition, run, ctx, depth)
 
     async def _drive(self, definition, run, ctx, depth):
+        from agentevolver.runtime.invocation import owner_id, runtime
+        ctx = self._run_context(ctx, run.id, depth)
+        calls = runtime()
+        owns_scope = depth == 0 and not (getattr(ctx, "extra", {}) or {}).get("process_pid")
+        if owns_scope:
+            calls.open_owner(owner_id(ctx))
+        try:
+            return await calls.invoke("workflow", definition.name,
+                lambda: self._drive_body(definition, run, ctx, depth), ctx=ctx,
+                version=getattr(definition, "version", ""))
+        finally:
+            if owns_scope:
+                await calls.release(owner=owner_id(ctx))
+
+    async def _drive_body(self, definition, run, ctx, depth):
         """Run the program under cancellation, concurrency, and pause control to a terminal state.
 
         Sets up the per-run cancel/continue events and concurrency semaphore, executes the
@@ -287,7 +302,10 @@ class WorkflowRuntime:
         reproducible. Nested runs (``depth > 0``) keep the parent's: a
         sub-workflow is part of the same unit of work, not a new one.
         """
-        if ctx is None or depth > 0 or getattr(ctx, "id", run_id) == run_id:
+        if ctx is None:
+            from agentevolver.session import SessionContext
+            return SessionContext(id=run_id)
+        if depth > 0 or getattr(ctx, "id", run_id) == run_id:
             return ctx
         derive = getattr(ctx, "model_copy", None)
         # ``ctx`` is duck-typed here — callers pass anything carrying what the
@@ -759,7 +777,17 @@ class WorkflowRuntime:
             payload.setdefault("task", task)
         if capability_type == StepType.AGENT:
             from agentevolver.agent import agent_manager
+            from agentevolver.agent.types import AgentContext
+            from agentevolver.utils import make_id
             ctx = self._apply_agent_mounts(payload, ctx)
+            if not (getattr(ctx, "extra", {}) or {}).get("process_pid"):
+                from agentevolver.config import config
+                from agentevolver.session.context import ensure_session_sandbox
+                ensure_session_sandbox(ctx, shared_extension_root=config.extension_root)
+            ctx = AgentContext.from_context(ctx)
+            ctx.extra = dict(ctx.extra)
+            ctx.extra["workflow_child"] = True
+            ctx.id = make_id()
             return await agent_manager(name=target, input=payload, ctx=ctx)
         if capability_type == StepType.TOOL:
             from agentevolver.tool import tool_manager

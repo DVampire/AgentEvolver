@@ -1142,8 +1142,6 @@ class Agent(BaseModel):
         if not session:
             return
         for label, release in (
-            ("jobs", self._release_jobs),
-            ("terminals", self._release_terminals),
             ("attachments", self._release_attachments),
             ("capabilities", self._release_capabilities),
         ):
@@ -1158,18 +1156,6 @@ class Agent(BaseModel):
                     logger.warning(f"| ⚠️ [{self.name}] could not release {label}: {error}")
                     if self.proc is not None:
                         self.proc.cleanup_errors.append({"phase": label, "error": str(error)})
-
-    @staticmethod
-    def _release_jobs(session: str) -> None:
-        from agentevolver.job import job_manager
-
-        job_manager.forget(session)
-
-    @staticmethod
-    def _release_terminals(session: str) -> None:
-        from agentevolver.terminal import terminal_manager
-
-        terminal_manager.forget(session)
 
     @staticmethod
     def _release_attachments(session: str) -> None:

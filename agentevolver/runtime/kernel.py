@@ -163,6 +163,8 @@ class Kernel:
     """Creates, schedules, connects and reaps agent processes."""
 
     def __init__(self) -> None:
+        from agentevolver.runtime.invocation import InvocationRuntime
+        self.calls = InvocationRuntime()
         self._procs: Dict[str, Process] = {}
         self._topics = TopicRegistry()
         #: When each process was last handed work by `assign`. The round-robin half of
@@ -250,7 +252,7 @@ class Kernel:
         return jobs
 
     async def dispatch(
-        self, name: str, brief: Dict[str, Any], *, parent: Any, ctx: Any,
+        self, name: str, brief: Dict[str, Any], *, parent: Any, ctx: Any, template: Any = None,
     ) -> Process:
         """Start one child agent by name under ``parent``, and return its process.
 
@@ -279,7 +281,8 @@ class Kernel:
         from agentevolver.permission import permission_manager
         from agentevolver.runtime.modes import for_brief, topics_of
 
-        template = await agent_manager.get(name)
+        if template is None:
+            template = await agent_manager.get(name)
         if template is None:
             raise LookupError(f"Agent {name!r} is not registered")
         # The registry holds the program; each dispatch is its own process. A template
@@ -460,6 +463,7 @@ class Kernel:
             except BaseException:
                 proc.mailbox.release()
                 raise
+        self.calls.open_owner(pid)
         self._procs[pid] = proc
         proc.worktree = worktree
         if restored:
@@ -823,6 +827,8 @@ class Kernel:
         Calling shutdown again can collect processes which have since finished.
         """
         self._closing = True
+        started_shutdown = time.monotonic()
+        remaining = []
         waiters = []
         try:
             pending = [proc for proc in self._procs.values() if not proc._exited.is_set()]
@@ -833,6 +839,8 @@ class Kernel:
                 await asyncio.wait(waiters, timeout=max(0, timeout))
             self.forget()
             remaining = list(self._procs)
+            if not remaining:
+                remaining.extend(await self.calls.shutdown(timeout=max(0, timeout - (time.monotonic() - started_shutdown))))
             if remaining:
                 logger.warning(f"| ⚠️ shutdown still awaiting cleanup: {remaining}")
             return remaining
@@ -840,7 +848,7 @@ class Kernel:
             for waiter in waiters:
                 waiter.cancel()
             await asyncio.gather(*waiters, return_exceptions=True)
-            self._closing = bool(self._procs)
+            self._closing = bool(remaining or self._procs)
 
     def forget(self, *, session_id: str = "") -> int:
         """Drop exited processes from the table. Returns how many were removed."""
@@ -868,6 +876,9 @@ class Kernel:
         reason = ""
         graceful = True
         proc._started = True
+        from agentevolver.runtime.invocation import CURRENT_RUNTIME, _CURRENT
+        invocation_token = _CURRENT.set(None)
+        runtime_token = CURRENT_RUNTIME.set(self.calls)
         budget_scope = proc.budget.scope()
         budget_scope.__enter__()
         try:
@@ -923,6 +934,8 @@ class Kernel:
                 await asyncio.shield(proc._cleanup)
             finally:
                 budget_scope.__exit__(None, None, None)
+                CURRENT_RUNTIME.reset(runtime_token)
+                _CURRENT.reset(invocation_token)
 
     async def _turn(self, proc: Process, envelope: Envelope) -> Any:
         """Run the agent once over one input."""
@@ -1026,6 +1039,7 @@ class Kernel:
             await self._guarded(self._reap_children(proc), proc, "reaping children")
 
             await self._guarded(proc._hook("on_exit", status), proc, "on_exit")
+            await self._guarded(self.calls.release(owner=proc.pid), proc, "component resources")
             if proc.worktree is not None:
                 if proc.cleanup_errors:
                     proc.artifacts["worktree"] = str(proc.worktree.path)

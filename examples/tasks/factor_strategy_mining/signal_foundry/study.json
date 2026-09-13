@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "study_id": "signal-foundry-nvda-daily-v7",
+  "study_id": "signal-foundry-nvda-daily-v8",
   "market": {
     "symbol": "NVDA",
     "exchange_calendar": "XNAS",
@@ -82,7 +82,7 @@
     "resource_limit_outcome": "interrupted_not_research_complete"
   },
   "exploration": {
-    "scope": "single_stock_joint_strategy_and_factor_candidates",
+    "scope": "single_stock_joint_multifactor_strategy_and_factor_candidates",
     "initial_strategy_batch_guidance": 10,
     "cumulative_factor_candidate_target": 100,
     "cumulative_strategy_hypothesis_target_range": [
@@ -90,12 +90,13 @@
       30
     ],
     "target_semantics": "Cumulative exploration guidance, not candidate minimums, first-round prerequisites, passing quotas or search ceilings. Adapt to evidence and explain material shortfalls at completion.",
-    "counting": "Count nonduplicate evaluated factor definitions, distinct strategy hypotheses and all revisions separately. Benchmarks, aliases, affine copies and parameter-only revisions do not increase hypothesis coverage.",
+    "counting": "Count nonduplicate evaluated factor definitions, distinct multi-factor strategy hypotheses and all revisions separately. Single-factor controls, ablations, benchmarks, aliases, affine copies and parameter-only revisions do not increase hypothesis coverage.",
     "parameter_variants_count_as_distinct_hypotheses": false,
     "review_every_shortlisted_route": true,
     "joint_refinement_policy": "Review factor and policy limitations for promising routes. Test useful revisions with matched consumer evidence; explain deferral or rejection without forcing ineffective changes.",
     "new_hypothesis_policy": "Keep exploration open during refinement and allocate new mechanisms by expected information and cost; no fixed per-round quota.",
-    "shortlist_policy": "Evidence, diagnostic improvement potential and behavioral diversity determine membership. No fixed survivor quota; exploratory candidates remain separate from eligible submissions."
+    "shortlist_policy": "Evidence, diagnostic improvement potential and behavioral diversity determine membership. No fixed survivor quota; exploratory candidates remain separate from eligible submissions.",
+    "strategy_design": "Design complete initial multi-factor hypotheses and their needed factor roles/interactions together. Choose the number and combination per mechanism; factors can differ between strategies or share exact versions. A pilot does not replace broad exploration."
   },
   "acceptance": {
     "kind": "research_quality_and_supported_conclusions_not_a_return_promise",
@@ -127,7 +128,10 @@
       "require_predeclared_comparison_and_evidence_standard": true,
       "require_predeclared_robustness_evidence": true,
       "require_documented_readiness_and_selection_reason": true,
-      "require_diversity_and_joint_refinement_review": true
+      "require_diversity_and_joint_refinement_review": true,
+      "require_multifactor_candidate": true,
+      "minimum_distinct_used_factors": 2,
+      "diagnostic_controls_eligible": false
     },
     "research_quality": {
       "economic_explanation": "Falsifiable factor mechanisms and executable, strategy-specific uses.",

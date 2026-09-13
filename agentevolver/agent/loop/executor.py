@@ -279,10 +279,12 @@ class ActionExecutor:
     def _parallel_safe(
         self, calls: Sequence[ActionCall], routing: Dict[str, Any]
     ) -> bool:
-        """Only when every call in the batch is declared read-only."""
+        """Only independent calls; runtime enforces their resource access contracts."""
         if len(calls) < 2:
             return False
-        return all(self.router.read_only(call, routing) is True for call in calls)
+        check = getattr(self.router, "parallel_safe", None)
+        return all(check(call, routing) if check else self.router.read_only(call, routing) is True
+                   for call in calls)
 
 
 def _brief(args: Dict[str, Any], limit: int = 120) -> str:

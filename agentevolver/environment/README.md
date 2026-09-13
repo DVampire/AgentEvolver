@@ -30,6 +30,21 @@ step.
 Environment owns external state and action semantics; multi-step planning belongs to Agent
 or Workflow.
 
+## Concurrency and ownership
+
+The [shared runtime contract](../../docs/proposals/runtime-concurrency.md) covers all eight
+component families. Environment Managers adapt actions, state and live views to `Kernel.calls`.
+A new Environment gets one instance per owner; same-owner actions serialize and independent
+owners may overlap. Keep state on the instance and implement `initialize()` / `cleanup()`.
+Only backends that already multiplex sessions use `managed_sessions=True` and
+`close_session(owner_id)`. Resource claims coordinate shared files or services; tested
+reentrant evaluators may declare `concurrent=True` and a bounded `max_concurrency`.
+
+Use an explicit context for a persistent interactive session. Manager execution derives
+ownership from its Agent process or that context's ID. Bare instance methods are internal
+implementation APIs and bypass admission. Separate owner state does not isolate shared
+filesystems; background jobs must own their outputs or coordinate writes.
+
 ## Actions are the whole interface
 
 An action reaches a model as a native tool schema named `{environment}__{action}` —

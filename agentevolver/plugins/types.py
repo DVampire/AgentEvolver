@@ -318,6 +318,21 @@ class Plugin(BaseModel):
     dispatches to it.
     """
 
+    concurrent: bool = Field(default=False, description="Bound actions can safely overlap")
+    state_scope: str = Field(default="shared", description="shared or owner client state")
+
+    @property
+    def context(self):
+        from agentevolver.runtime.invocation import current_context
+        return current_context()
+
+    def resource_claims(self, ctx, arguments):
+        from agentevolver.runtime.invocation import ResourceClaim, owner_id
+        if self.concurrent:
+            return ()
+        scope = owner_id(ctx) if self.state_scope == "owner" else "shared"
+        return (ResourceClaim(f"plugin:{self.name}:{scope}"),)
+
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     #: Tool classes this plugin provides. A ClassVar, so it is a declaration the
@@ -589,6 +604,12 @@ class MemoryPluginTool(PluginTool):
 
     async def _memory(self, action: str = "get", session_id: str = "default",
                       message: str = "", role: str = "user", **cfg: Any) -> Response:
+        from agentevolver.runtime.invocation import current_context, owner_id
+        owner = owner_id(current_context())
+        if owner:
+            if session_id not in ("", "default", owner):
+                return self._fail("A memory plugin cannot access another execution's session")
+            session_id = owner
         action = (action or "get").strip().lower()
         try:
             history = self._history(session_id, **cfg)

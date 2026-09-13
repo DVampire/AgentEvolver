@@ -36,9 +36,10 @@ async def test_builder_start_uses_process_session_before_first_turn(monkeypatch)
     assert agent.ctx is None  # Kernel invokes on_start before Agent._run binds ctx.
     await agent.on_start("Build the game", SimpleNamespace(ctx=ctx))
     environment.prepare_workspace.assert_awaited_once_with(ctx=ctx)
-    # Even a failure before the first model turn must close the same session.
+    # Kernel resource bindings own release, including failures in on_start.
+    # Actor hooks must not independently close a shared environment a second time.
     await agent.on_exit("failed")
-    environment.close_session.assert_awaited_once_with(ctx.id)
+    environment.close_session.assert_not_awaited()
 
 
 @pytest.mark.integration

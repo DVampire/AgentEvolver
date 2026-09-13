@@ -206,8 +206,9 @@ Each candidate needs unique `id`, `name`, `status` and its exact `formula` (fact
 `rules` (strategy). Include `reason` for a diagnosis/decision and `factor_ids` for a strategy.
 Statuses are proposed, blocked, error, evaluated, admitted, rejected; they are the adapter's
 display state, not replacements for separate execution/selection state in the research ledger.
-An explicitly labelled `baseline: true` strategy (for example cash/buy-and-hold) may have no
-factor bindings; it still needs exact rules and computed metrics. It is not a mined strategy.
+In legacy definitions, `baseline: true` permits an empty factor binding list. New definitions
+derive the flag from their explicit research role as described below. Controls still need
+exact rules and computed metrics; they are not mined strategies.
 Only executed candidates carry measured metrics. An evaluated training factor can support
 an exploratory training strategy, but validation eligibility still requires actual admission.
 A failed factor cannot be silently consumed as an admitted factor.
@@ -230,6 +231,19 @@ values are rejected. The row still supplies status, metrics, reason and research
 appropriate. Pending proposals may reference an unimplemented definition; measured strategies
 must have a pinned implementation record. File/entrypoint verification occurs in the engine,
 not by opening implementation paths from a public report.
+
+New strategy definitions use spec schema 2 and explicit research_role/control_for. The report
+derives these roles from the hash-bound definition: formal candidates, ablations and benchmarks
+have separate counts/labels. Routes and pool membership contain formal candidates, while
+control_for links diagnostics to those candidates for comparisons. Controls cannot be admitted
+as selected strategies. Keep both full and reduced policies in the inventory to make the
+contribution evidence readable without inflating discoveries. Historical spec schema 1 stays
+readable as legacy_unclassified; it does not silently become a formal candidate.
+
+analysis.json and CLI receipts expose strategy_counts: candidate (version records),
+candidate_hypotheses (distinct IDs), evaluated_candidate_hypotheses, ablation, benchmark and
+legacy_unclassified. Proposed and evaluated coverage remain distinguishable; a new ID alone
+does not prove a new economic mechanism. strategy_records is the total including controls.
 
 analysis.json preserves the full `strategy_spec`, canonical `spec_sha256`, `definition_source`
 reference, and directly queryable strategy_id, version, description and created_round. This
@@ -254,14 +268,15 @@ a reported research judgment; the engine must supply the actual role/consumer ga
 The adapter checks consistency, not whether an economic claim or gate calculation is valid.
 
 Each route has `id`, `hypothesis`, `status` (proposed/active/retained/parked/rejected/closed),
-`factor_ids`, `strategy_ids`, `diagnosis` and `next_step`. All non-baseline candidates belong
-to at least one route. Early routes can have factors and no strategies. Keep the next step
+`factor_ids`, `strategy_ids`, `diagnosis` and `next_step`. All formal candidates and research
+factors belong to at least one route; controls link through control_for, outside strategy_ids.
+Early routes can have factors and no strategies. Keep the next step
 or an explicit closure condition even for parked/rejected routes. Record role-specific
 criteria, budgets and all historical decisions in the full plan records linked by the index.
 
 Each measured comparison has `id`, `route_id`, `parent_id`, `candidate_id`, `diagnosis`,
 `decision` and nonempty `metrics`. Both candidates are executed versions of the same kind;
-the candidate belongs to that route. Each metric supplies `label`, `definition`, `unit`,
+the candidate belongs to that route or is an ablation of one of its strategies. Each metric supplies `label`, `definition`, `unit`,
 `split` and `parent`/`candidate` references (`source`, `pointer`) to numerical artifacts.
 Both references must identify exactly one exported candidate metric with the comparison's
 label/split/unit and the same metric definition. Keep horizon, aggregation and evaluation

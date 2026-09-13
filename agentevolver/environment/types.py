@@ -41,6 +41,7 @@ class EnvironmentView(BaseModel):
 
     session_id: str = Field(default="", description="Session this view belongs to (set by the manager).")
     env_name: str = Field(default="", description="Environment that owns this view.")
+    owner_id: str = Field(default="", description="Process or explicit resource scope owning this view.")
     type: str = Field(default="vnc", description="vnc | iframe")
     url: str = Field(description="Endpoint the frontend connects to / embeds.")
     label: str = Field(default="", description="Human-readable label for the view.")
@@ -54,6 +55,18 @@ class Environment(BaseModel):
     description: str = Field(description="The description of the environment.")
     metadata: Dict[str, Any] = Field(description="The metadata of the environment.")
     enable_evolving: bool = Field(default=False, description="Whether the environment may be evolved (self-optimized)")
+    concurrent: bool = Field(default=False, description="Independent actions are reentrant; shared mutable resources must still be declared")
+    max_concurrency: Optional[int] = Field(default=None, ge=1)
+    state_scope: str = Field(default="owner", description="owner or shared state binding")
+    managed_sessions: bool = Field(default=False, description="Implementation already maintains owner-indexed sessions")
+
+    def resource_claims(self, ctx, arguments, operation=""):
+        from agentevolver.runtime.invocation import ResourceClaim, owner_id
+        if self.concurrent:
+            return ()
+        scope = owner_id(ctx) if self.state_scope == "owner" else "shared"
+        return (ResourceClaim(f"environment:{self.name}:{scope}"),)
+
     permission_mode: str = Field(
         default="workspace_write",
         description="Permission mode for environment actions with host-side effects.",

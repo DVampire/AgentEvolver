@@ -821,9 +821,19 @@ class ConnectorContextManager(BaseModel):
             execution,
             lambda: self._invoke_mcp(connector_config, action, call_args),
             timeout=None,
+            runtime_options={"ctx": ctx, "claims": self._claims(connector_config, action)},
             call_guards=[effect_guard],
             before_invoke=checkpoint_effect,
         )
+
+    @staticmethod
+    def _claims(cfg, action):
+        from agentevolver.runtime.invocation import ResourceClaim
+        # Only an explicit contract permits shared remote requests. MCP readOnlyHint
+        # describes effects, not transport/session reentrancy.
+        if (cfg.metadata or {}).get("concurrent") is True:
+            return ()
+        return (ResourceClaim(f"connector:{cfg.name}"),)
 
     def set_approval_resolver(self, resolver):
         return self._execution_pipeline.set_approval_resolver(resolver)
@@ -960,6 +970,8 @@ class ConnectorContextManager(BaseModel):
 
     async def cleanup(self):
         """Release all loaded connectors."""
+        from agentevolver.runtime.invocation import runtime
+        await runtime().release(module="connector")
         self._connector_configs.clear()
         self._connector_history_versions.clear()
         logger.info("| 🧹 Connector context manager cleaned up")

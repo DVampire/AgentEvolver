@@ -1362,11 +1362,22 @@ class AgentGateway:
         env = await environment_manager.get(name)
         if env is None:
             raise ValueError(f"Environment not available: {name!r} (is it enabled in this config?)")
-        view = await env.live_view(session.context) if hasattr(env, "live_view") else None
+        from agentevolver.runtime import kernel as agent_kernel
+        candidates = [proc for proc in agent_kernel.list(session_id=session.context.id) if proc.alive]
+        requested_owner = str(params.get("owner_id") or "")
+        selected = next((proc for proc in candidates if proc.pid == requested_owner), None)
+        if requested_owner and selected is None:
+            raise ValueError("Environment owner is not an active process in this session")
+        if selected is None:
+            selected = next((proc for proc in candidates if not proc.parent_pid), None)
+        view_ctx = selected.ctx if selected else session.context
+        view = await environment_manager.live_view(name, view_ctx)
         if view is None:
             return {"opened": False, "reason": "This environment has no live view yet (it needs a VNC-capable runtime, e.g. the computer/chrome-vnc sandbox)."}
         view.session_id = self._bound_session_id or session.context.id
         view.env_name = view.env_name or name
+        from agentevolver.runtime.invocation import owner_id
+        view.owner_id = owner_id(view_ctx)
         payload = self._relayed_view(view.model_dump(mode="json"))
         await self._publish("environment.view", payload, session_id=self._bound_session_id)
         return {"opened": True, "view": payload}
@@ -2729,6 +2740,11 @@ class AgentGateway:
         if payload.get("type") != "vnc" or not payload.get("url"):
             return payload
         env_name = payload.get("env_name") or "default"
+        if payload.get("owner_id"):
+            # Owner-specific relay URLs remain stable when a sibling opens its desktop.
+            from hashlib import sha256
+            identity = f"{payload.get('session_id', '')}:{payload['owner_id']}"
+            env_name += "-" + sha256(identity.encode()).hexdigest()[:16]
         self._vnc_targets[env_name] = payload["url"]
         # Kept for a client that still asks for the unqualified path.
         self._latest_vnc_target = payload["url"]

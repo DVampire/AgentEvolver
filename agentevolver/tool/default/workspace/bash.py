@@ -261,6 +261,7 @@ def _run_under_pty(command: str, cwd, env, timeout: float, stdin: str) -> tuple:
 @TOOL.register_module(force=True)
 class BashTool(Tool):
     """A tool for executing bash commands asynchronously."""
+    concurrent: bool = True
 
     def model_observation(self, response: Response) -> str:
         # The message contains output, status and archive/job locators. Data also

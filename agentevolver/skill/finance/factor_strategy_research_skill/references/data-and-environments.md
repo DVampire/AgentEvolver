@@ -208,7 +208,8 @@ change cannot silently reuse stale metrics. Test this invalidation explicitly.
 
 ### Batch execution and result summaries
 
-Implement bounded native batch evaluation for the joint-candidate workflow. Accept a saved
+Both generated Environments must implement configurable bounded parallel evaluation for the
+joint-candidate workflow, within batches and across independent factor/strategy work. Accept a saved
 batch manifest with round ID, snapshot/protocol identities, strategy definitions and their
 exact factor dependencies. Action names remain chosen by the generated environments. Factor
 calculation and strategy simulation stay separate responsibilities within one round; the
@@ -217,14 +218,38 @@ multi-factor DataFrame output and identical fold/features/benchmark calculations
 one download, compilation or model exchange per formula. Respect memory/time limits; chunk
 large batches and return progress paths through job when needed.
 
+Separate feature readiness from diagnostic completion and admission. Publish an immutable
+factor-value artifact with data/code/fit hashes, time index, columns and availability checks
+as soon as it is complete. Factor diagnostic evaluation and exploratory strategy simulation
+can then consume that artifact concurrently; strategy simulation must not require completed
+factor scores or admission receipts. Wait only for actual inputs, including training-fitted
+directions/transforms when a policy uses them. A pending diagnostic is not a missing feature.
+
+Schedule ready strategies and independent factor computations concurrently with bounded workers;
+do not impose a whole-batch barrier when only a strategy's own inputs are needed. The current
+action executor admits known independent batches, including actions marked parallel_safe;
+runtime resource claims and max_concurrency still apply. max_actions is not a worker count.
+Evaluation writes artifacts, so keep its write annotation truthful. Give each Environment a
+nonblocking submission operation returning a durable job ID/status path, with status/result
+operations: sequential submissions can start overlapping workers for both responsibilities.
+Use the job facility or an explicitly owned worker lifecycle with cancellation/cleanup, bounded
+resources, trial receipts and restart detection. Status calls must not repeat submission.
+Within a batch, use a bounded execution backend suited to the workload; CPU work must not block
+the async dispatcher. Keep shared inputs read-only and fitted state/results isolated per evaluation.
+Expose worker limits and size a shared research concurrency budget to available CPU/memory;
+account for both environments and nested numerical-library threads to avoid oversubscription.
+Join completed diagnostics, backtests and contribution comparisons for qualification, pool
+selection and report export. Missing evidence remains pending, never implicitly passed.
+
 Persist each trial start before execution, then its terminal status, semantic cache key,
 result ID/path/hash and actionable error. Successful candidates survive a partially failing
 batch; return counts and per-item statuses, explicitly marking partial failure. Never turn
 an error into a zero score, abort unrelated candidates or replay the entire successful batch
 after one failure. A factor failure blocks its dependent strategies, not other routes.
 Concurrent writers must serialize ledger/catalog changes and claim the same evaluation key
-once; incomplete results are not cache hits. A dependent consumer runs after its input is
-complete. Retries preserve both the original attempt and its recovery.
+once; incomplete results are not cache hits. Lock only shared publication/metadata updates,
+not the whole numerical computation. A dependent consumer waits for its required artifact,
+not unrelated diagnostics. Retries preserve both the original attempt and its recovery.
 
 Return compact summary metadata plus catalog, batch-results and per-evaluation paths, not
 all price arrays or full tables into context. Use the workflow's
@@ -235,15 +260,27 @@ generated environment if imported as a helper. Recheck code hashes before use, v
 IDs against the catalog and factor IDs/roles against actual factor artifacts, then execute
 the named entrypoint through the native interface. Embed the unchanged strategy_spec and
 its canonical spec_sha256 in the result; the checker alone does not execute the policy.
+Use schema 2 definitions for new research. Only research_role=candidate with at least two
+distinct, executed factor inputs can enter the working pool or final submission. Propagate
+research_role/control_for from definitions into results, never default every policy to a
+candidate. Resolve ablations to exact full candidates; benchmarks and ablations remain
+executable diagnostics. Check actual factor dependencies and redundancy/contribution evidence:
+zero-weight, unused or duplicated inputs do not prove a multi-factor strategy. Report executed
+input IDs and contribution-check result IDs; fail candidate eligibility if these are missing.
 Each result exposes schema version, candidate/version/parents, exact factor bindings, data,
 engine/metric/fitted identities, fold scope, measured metrics, failed criteria and series
 paths. Export common summary fields for every candidate so the Agent can compare a batch
 from JSON without guessing field names. Keep selection/pool membership separate from
 numerical evaluation: diagnostic consumers can be measured before qualification.
 
-Verify batch/single-result parity, mixed valid/invalid dependencies, exact-retry cache hits,
-changed-definition invalidation and partial-batch recovery on fixtures before scaling. Use
-small bounded batches initially, then scale from measured execution cost. This interface is
+Before scaling, exercise both native interfaces with independent jobs and record worker start/end
+times proving actual computation overlaps, not just queued submissions. Compare the same uncached
+workload serially and concurrently with identical inputs, fit identities and per-trial seeds;
+check result parity within declared numerical tolerances and report wall time, worker limits and
+measured speedup (including a slowdown). Do not claim speedup from cache hits or concurrency labels.
+Also check mixed ready/pending/failed dependencies, atomic publication, duplicate-key claims,
+exact-retry cache hits, changed-definition invalidation and partial-batch recovery on small fixtures.
+Keep these receipts linked from the plan index; use measurements to size subsequent batches. This interface is
 a reusable capability to author and verify through self_evolving_skill, not a built-in
 financial engine or a fixed menu of strategies.
 
@@ -275,12 +312,15 @@ they do not decide whether research must continue. The Agent applies the workflo
 
 ## Engineering evidence before financial claims
 
-Before calling either environment implemented, exercise a successful path through the same
+Before declaring an operation ready, exercise a successful path through the same
 interfaces and numerical code that will consume market data. A separate `run_fixture` demo
 cannot validate a research action that unconditionally returns blocked or null metrics.
 Use isolated fixture studies to check factor values, labels, fitted transforms, diagnostics
 and admission decisions; then strategy signals, next-open orders, cash/shares, costs and
-result metrics. Also exercise validation, joint freeze and finalization state transitions.
+result metrics. These checks and a real planned multi-factor pilot precede batch research.
+Implement and exercise joint freeze/finalization state transitions before enabling final-test
+access; they need not delay the initial research batch. Deferred operations must return explicit
+not-ready errors without accessing test data, and must not be claimed as verified capabilities.
 Fixtures may simulate eligibility within their own test state but never enter the real study's
 eligible library or consume its test attempt. Exported artifacts must contain computed results
 on valid inputs and explicit errors on invalid ones. Track missing operations individually;

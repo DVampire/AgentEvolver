@@ -70,23 +70,24 @@ Public artifact links must not expose credentials or internal filesystem paths.
 
 ### Strategy definition archive
 
-Archive a complete `spec.json` before evaluating a strategy version. Schema 1 describes the
+Archive a complete `spec.json` before evaluating a strategy version. Schema 2 describes the
 strategy without restricting its family, algorithm or parameter structure; extensions are
 allowed. Names/descriptions are required, not inferred from IDs or filenames.
 
 | Field | Contract |
 | --- | --- |
-| `schema` | Integer 1; separate from the report format version. |
+| `schema` | Integer 2; separate from the report format version. Schema 1 remains readable for historical archives, without inferring candidate status. |
 | `strategy_id`, `version`, `id` | Stable ID, exact version and `strategy_id@version`. |
 | `name`, `description` | Display name and standalone explanation of what it does, when and why. |
 | `family`, `hypothesis`, `falsification` | Open mechanism label, testable hypothesis and contradicting evidence. |
 | `created_round`, `parent_ids` | Origin round and exact parent versions; no parents for an initial proposal. |
 | `change` | `kind`, `summary`, `reason`, `evidence_ids`; initial proposals use kind=initial, revisions cite parents and motivating evidence. Other kind labels remain open. |
-| `factor_bindings` | `{factor_id, role, purpose}` entries using exact factor versions; empty only for explicitly marked baselines. |
+| `research_role`, `control_for` | `candidate`, `ablation` or `benchmark`. Ablations name exact full-candidate versions in nonempty `control_for`; others use `[]`. |
+| `factor_bindings` | `{factor_id, role, purpose}` entries using exact versions. Candidates need at least two distinct factor identities; only one version per identity. Controls may have fewer. |
 | `design` | `objective`, `mechanism`, `combination`, `fit_policy`, `pseudocode`; nonempty `assumptions` and `failure_modes` arrays; `rules` for entry, exit, sizing, rebalance, neutral, risk and execution. |
 | `parameters` | Open JSON object, possibly empty; explain parameter meaning in the design. |
 | `implementation` | Null for a proposal; otherwise version-relative `path`, `entrypoint`, `sha256` and optional `dependencies` with relative paths/hashes. |
-| `baseline` | Optional boolean, default false; controls remain described but are not discoveries. |
+| `baseline` | Legacy flag; omit in new definitions. If present it must agree with research_role (true for controls). |
 
 Describe signal timing, factor interactions, past-only fitting and signal-to-position rules.
 State explicit absence where a rule is unused. Long notes may supplement the structured
@@ -101,6 +102,12 @@ The checker validates structure and implementation/dependency file hashes withou
 code. Its `spec_sha256` hashes UTF-8 JSON with sorted keys, compact separators, unescaped
 Unicode and no NaN. The engine still checks executable behavior, causality and referenced
 factor/parent versions; pin package/runtime versions in the engine identity.
+
+Candidate counts and pool/final eligibility use research_role, not filenames or display names.
+Single-factor policies, including promising ones, are diagnostic controls. Two bindings alone
+do not prove meaningful use: review executed dependencies and contribution evidence. If a
+revision leaves only one useful factor, keep it as a control and redesign the combination or
+park the route. Do not add an inert factor merely to regain candidate status.
 
 Embed the validated definition unchanged as `strategy_spec`, with `spec_sha256`, in each
 strategy result. Keep fitted state, numerical scores, qualification and pool decisions in
@@ -132,44 +139,64 @@ Validation is reused tuning data: retain all trials/looks and account for select
 
 ## Joint exploration
 
-### Establish the executable research path
+### Design the batch, then establish its numerical path
 
-First download through the native Connector and verify a nonempty local OHLCV snapshot.
-Implement both numerical Environments under the frozen contract and check deterministic
-fixtures through their actual interfaces. Reuse local data for research; fixtures demonstrate
-engineering behavior, not market performance.
+Before engineering a pilot, record the initial strategy batch in round/batch.json. For each
+hypothesis define its mechanism and falsification, required factor expressions/roles, how
+they interact, past-only fitting and entry/exit/sizing rules. A list of strategy names is not
+a designed batch. Link shared exact factors rather than manufacturing a separate copy for
+every strategy. Plan alternative mechanisms beyond the first example; do not let the pilot's
+two factors become the whole search universe.
 
-Compile factor expressions and implement cash, matched buy-and-hold and a single-factor
-policy baseline. Complete one real factor/strategy evaluation with actual metrics/series and
-pass the [report adapter check](reports.md#report-adapter) before scaling search. Use the
-bundled renderer; custom UI engineering is not a prerequisite for numerical exploration.
+Acquire and verify local train/validation OHLCV through the native Connector before numerical
+research. Build the two Environments' evaluation path for representative planned candidates:
+factor computation, causal fitting, signals/orders/accounting and compact source-bound JSON.
+Check relevant hand-computable fixtures, the [concurrent execution contract](data-and-environments.md#batch-execution-and-result-summaries)
+and a small real multi-factor pilot, then execute the initial batch. Cache shared factors/folds;
+retry failed dependencies without rerunning successes. Use concurrent evaluation for independent
+work when resources and batch size justify it; record workers, elapsed time and any reason for
+serial execution in the round summary. A batch API or async signature alone is not concurrency.
+
+Build capabilities incrementally. Verify accounting and causality before trusting research
+numbers; verify freeze/access/replay safeguards before using final test. Do not implement the
+entire final-test/report pipeline as a prerequisite for the first broad batch. Track deferred
+operations explicitly and report capability readiness only for exercised operations. Use the
+bundled renderer at meaningful research reviews; early research reads numerical JSON directly.
 
 ### Batch screening and candidate pools
 
-The research unit is a **strategy hypothesis + its required factor versions/roles + executable
-policy**. Design them together; compute factor diagnostics, then policy and contribution
-results in the same research round. A global marginal-IC leaderboard is not a prerequisite:
+The research unit is a **multi-factor strategy hypothesis + its factor versions/roles + executable
+policy**. Design them together; once each policy's factor values and past-only fitted inputs
+are ready, run factor diagnostics and strategy backtests concurrently. Join the evidence for
+contribution review and selection in the same round. A global marginal-IC leaderboard is not a prerequisite:
 apply [role-specific qualification](metrics-and-evaluation.md#roles-and-qualification-scope).
 Exploratory consumer tests can establish that evidence, but do not imply eligibility.
 
 For Signal Foundry, roughly ten initial strategies, about 100 cumulative factor definitions
 and 20–30 distinct strategy hypotheses guide exploration. Adapt the schedule and size to
 findings; these are neither minimum passing counts nor ceilings. Different strategies can
-use different factor sets or share exact versions. Count economic mechanisms, evaluated
-versions, parameter variants, baselines and execution failures separately. Explain scope
+use different factor sets or share exact versions. Factor count follows the mechanism, not a
+fixed pair: signals can interact with state, participation, timing or risk factors. Linear,
+conditional, nonlinear and learned combinations are open, with fitting restricted to the past.
+Count proposed/evaluated mechanisms, versions, parameter variants, controls and errors separately. Explain scope
 shortfalls without creating filler trials.
 
 | Step | Work and decision |
 | --- | --- |
-| Propose | Choose falsifiable mechanisms, factors/roles and policy rules. Set benefit claims, baselines, qualification and guardrails before scoring. |
-| Evaluate | Batch factor diagnostics and complete gross/net strategies on matched folds. Save all results/errors. Missing dependencies block only their consumers. |
-| Select | Compare benefit, risk, costs, support, robustness, complexity, behavioral diversity and specific improvement potential. Pool membership means worth investigating, not qualified for final test. No survivor quota. |
+| Propose | Complete multi-factor designs and their dependency map; declare each factor's actual use and interaction. Set benefit claims, controls, qualification and guardrails before scoring. |
+| Evaluate | Compute/cache each required factor once per data/fit identity; concurrently run its diagnostics and ready strategies on matched folds. Save results/errors separately. A missing input blocks only its consumers. |
+| Select | Rank formal candidates by benefit, risk, costs, support, robustness, complexity, behavioral diversity and improvement potential. Controls cannot enter the pool. Membership means worth investigating, not final eligibility; no survivor quota. |
 | Refine | Review each shortlisted route; change factors, policy or both with an attributable comparison, or park/reject with evidence. Routes need not receive equal resources. |
 | Replenish/review | Consider new mechanisms alongside revisions. Decide from expected information and cost whether another batch, final evaluation or completion is worthwhile. |
 
 Use inexpensive common coverage, fold and net-performance diagnostics first. Concentrate
 costly uncertainty checks, ablations and parameter neighborhoods on plausible candidates;
 complete required evidence before final eligibility. Missing diagnostics remain pending.
+Evaluate factors in their declared role and consumer context alongside strategy performance;
+do not reject useful interaction/state inputs solely for weak univariate return IC. Record
+each pooled strategy's diagnosis, proposed factor change, proposed policy change (or reasons
+to keep either fixed), expected benefit and next matched comparison. Dropping a factor is a
+diagnostic experiment; retaining a formal strategy still requires a useful multi-factor design.
 Allow distinct return, risk-reduction or efficiency claims with prospective utilities and
 tradeoff guardrails; never relabel an unsuccessful claim after seeing its results.
 
@@ -223,7 +250,7 @@ Use saved result IDs and include counterevidence; unknown is not passed.
 
 | Dimension | Review |
 | --- | --- |
-| Mechanism/value | Falsifiable claim, qualified factor roles, baseline/ablation evidence and explicit tradeoffs. |
+| Mechanism/value | Formal multi-factor candidate, actually used and qualified factor roles, baseline/ablation evidence, falsifiable claim and explicit tradeoffs. |
 | Exploration | Distinct evaluated alternatives, each shortlist disposition, factor/policy revision evidence or reasons to defer, actual coverage versus guidance. |
 | Robustness | Fold/regime consistency, parameter neighborhoods, concentration and uncertainty appropriate to the claim. |
 | Feasibility | Cash/order reconciliation, costs/stress, turnover/exposure and sufficient labels/trades. |

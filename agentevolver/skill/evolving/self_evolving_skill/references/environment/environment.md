@@ -17,6 +17,12 @@ text response to the runtime. Keep large results in artifacts and return their p
 
 An environment is a stateful Python class over the shared base `Environment` that exposes named **actions** an agent can call, paired with an `ENVIRONMENT.md` manifest.
 
+The Manager adapts calls to the shared runtime. The default is one stateful instance per
+runtime owner; initialization is lazy and owner exit releases its binding. Keep application
+state on the instance. For parallel evaluation inside one owner, declare resource claims
+and a bounded `max_concurrency` as described in [conventions](../conventions.md).
+Do not add an environment-specific runtime or assume separate connections isolate shared files.
+
 ## Layout
 
 An environment is a directory: `{extension_root}/environment/{name}/`

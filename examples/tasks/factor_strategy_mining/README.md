@@ -28,7 +28,7 @@ operation, separate stage pages or mandatory publication sequence is part of the
 - `study.json`: market scope, dates, execution assumptions, factor-role qualification,
   exploration guidance and the domain evidence standard.
 
-The v7 study uses NVDA daily observations through **2026-09-11**, training in 2016–2020,
+The v8 study uses NVDA daily observations through **2026-09-11**, training in 2016–2020,
 validation in 2021–2023 and final test from 2024-01-01 through the cutoff. It replaces
 fixed CAGR/Sharpe finish targets and trial/round/patience ceilings with evidence-based
 research judgment. The researcher repeatedly discovers and refines factors and strategies,
@@ -52,3 +52,8 @@ Every experiment starts independently with fresh records and implementations. Re
 historical data does not provide independent confirmation on new market observations.
 
 [Running and implementation guide](../../../docs/demos/factor_strategy_mining.md).
+
+Formal strategies are multi-factor combinations with at least two distinct, actually used
+factors. Design their factors and policies together and refine each selected route. Single-factor
+controls, ablations and benchmarks explain contribution but do not count as candidates or enter
+the working pool/final selection. The combination and factor count remain hypothesis-specific.

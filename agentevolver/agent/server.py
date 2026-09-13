@@ -423,10 +423,8 @@ class AgentManagerServer(BaseModel):
         # No explicit root: the layout puts this exactly where the gateway puts
         # a session, so a locally-started task and a browser-started one share
         # output/<owner>/sessions/<id> rather than diverging.
-        ensure_session_sandbox(
-            ctx,
-            shared_extension_root=config.extension_root,
-        )
+        if not (ctx.extra.get("workflow_child") or ctx.extra.get("process_pid")):
+            ensure_session_sandbox(ctx, shared_extension_root=config.extension_root)
         input = stage_input_files(ctx, input)
 
         return await self._ensure_context_manager()(name, input, ctx=ctx, **kwargs)

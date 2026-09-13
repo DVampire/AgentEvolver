@@ -762,8 +762,8 @@ class AgentContextManager(BaseModel):
             Agent result
         """
         agent_info = await self.get_info(name)
-
-        agent_args = dict(ctx=ctx, **kwargs)
+        if agent_info is None or agent_info.instance is None:
+            raise LookupError(f"Agent {name!r} is not registered")
 
         version = agent_info.version
         agent_instance = agent_info.instance
@@ -774,15 +774,30 @@ class AgentContextManager(BaseModel):
         payload = dict(input or {})
         # The registry holds one object per name — that is the *program*. Each run gets
         # its own instance, so two concurrent runs cannot share a conversation.
-        process = await kernel.spawn(
-            agent_instance.fresh(),
-            payload.pop("task", "") or "",
-            files=payload.pop("files", None),
-            ctx=ctx,
-            **payload,
-            **{key: value for key, value in kwargs.items() if key != "ctx"},
-        )
-        return await kernel.wait(process)
+        parent_id = (getattr(ctx, "extra", {}) or {}).get("process_pid")
+        parent = kernel.get(parent_id) if parent_id else None
+        if parent is not None:
+            # Dispatch owns fresh child context, permissions, parent budget and cleanup.
+            for key, value in (getattr(ctx, "extra", {}) or {}).items():
+                if key.endswith("_allowlist"):
+                    payload.setdefault(key, value)
+            process = await kernel.dispatch(name, payload, parent=parent.agent, ctx=ctx,
+                                            template=agent_instance)
+        else:
+            process = await kernel.spawn(
+                agent_instance.fresh(), payload.pop("task", "") or "",
+                files=payload.pop("files", None), ctx=ctx, **payload,
+                **{key: value for key, value in kwargs.items() if key != "ctx"},
+            )
+        try:
+            return await kernel.wait(process)
+        except BaseException:
+            # This foreground entry point owns the child, unlike a standalone observer.
+            await kernel.stop(process, force=True, reason="owning invocation cancelled")
+            import asyncio
+            await asyncio.shield(kernel.wait(process))
+            raise
+
 
 
 __all__ = ["AgentContextManager"]

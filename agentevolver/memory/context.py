@@ -566,6 +566,23 @@ class MemoryContextManager(BaseModel):
         logger.info(f"| 🗑️ Unregistered memory {memory_name}@{memory_config.version}")
         return True
     
+    async def invoke(self, name, operation, *args, _config=None, _internal=False, **kwargs):
+        """Route backend operations without recursively tracing memory projections."""
+        import inspect
+        from types import SimpleNamespace
+        from agentevolver.runtime.invocation import invocation_claims, runtime
+        info = _config or await self.get_info(name)
+        if info is None or info.instance is None:
+            raise ValueError(f"Memory {name!r} is not registered")
+        session = kwargs.get("session_id") or (args[0] if operation == "compact" and args else "")
+        ctx = kwargs.get("ctx") or SimpleNamespace(id=session, extra={})
+        async def call():
+            result = getattr(info.instance, operation)(*args, **kwargs)
+            return await result if inspect.isawaitable(result) else result
+        return await runtime().invoke("memory", name + ":" + operation, call,
+            ctx=ctx, version=getattr(info, "version", ""), internal=_internal,
+            claims=invocation_claims(info.instance, ctx, kwargs, module="memory", name=name))
+
     async def get(self, memory_name: str) -> Memory:
         """Get memory configuration by name
         
@@ -692,6 +709,8 @@ class MemoryContextManager(BaseModel):
     
     async def cleanup(self):
         """Cleanup all active memory systems."""
+        from agentevolver.runtime.invocation import runtime
+        await runtime().release(module="memory")
         try:
             # Clear all memory configs and version history
             self._memory_configs.clear()
@@ -727,7 +746,7 @@ class MemoryContextManager(BaseModel):
         instance = await self.get(memory_name)
         if instance is None:
             raise ValueError(f"Memory system '{memory_name}' not found")
-        return await instance.start_session(agent_name=agent_name, task_id=task_id, description=description, ctx=memory_ctx, **kwargs)
+        return await self.invoke(memory_name, "start_session", agent_name=agent_name, task_id=task_id, description=description, ctx=memory_ctx, **kwargs)
 
     async def add_event(self,
                         memory_name: str,
@@ -755,7 +774,7 @@ class MemoryContextManager(BaseModel):
         instance = await self.get(memory_name)
         if instance is None:
             raise ValueError(f"Memory system '{memory_name}' not found")
-        return await instance.add_event(step_number, event_type, data, agent_name, task_id, ctx=memory_ctx, **kwargs)
+        return await self.invoke(memory_name, "add_event", step_number, event_type, data, agent_name, task_id, ctx=memory_ctx, **kwargs)
 
     async def end_session(self, memory_name: str,
                           ctx: SessionContext = None,
@@ -772,7 +791,7 @@ class MemoryContextManager(BaseModel):
         instance = await self.get(memory_name)
         if instance is None:
             raise ValueError(f"Memory system '{memory_name}' not found")
-        return await instance.end_session(ctx=memory_ctx, **kwargs)
+        return await self.invoke(memory_name, "end_session", ctx=memory_ctx, **kwargs)
 
     async def get_session_info(self, memory_name: str,
                                ctx: SessionContext = None,
@@ -792,7 +811,7 @@ class MemoryContextManager(BaseModel):
         instance = await self.get(memory_name)
         if instance is None:
             raise ValueError(f"Memory system '{memory_name}' not found")
-        return await instance.get_session_info(ctx=memory_ctx, **kwargs)
+        return await self.invoke(memory_name, "get_session_info", ctx=memory_ctx, **kwargs)
 
     async def clear_session(self,
                             memory_name: str,
@@ -810,7 +829,7 @@ class MemoryContextManager(BaseModel):
         instance = await self.get(memory_name)
         if instance is None:
             raise ValueError(f"Memory system '{memory_name}' not found")
-        return await instance.clear_session(ctx=memory_ctx, **kwargs)
+        return await self.invoke(memory_name, "clear_session", ctx=memory_ctx, **kwargs)
 
     async def get_state(self,
                         memory_name: str,
@@ -838,9 +857,9 @@ class MemoryContextManager(BaseModel):
         logger.info(f"| ✅ Using memory {memory_name}@{version}")
         
         # Get events, summaries, and insights from memory instance
-        events = await memory_instance.get_event(n=n, ctx=memory_ctx, **kwargs)
-        summaries = await memory_instance.get_summary(n=n, ctx=memory_ctx, **kwargs)
-        insights = await memory_instance.get_insight(n=n, ctx=memory_ctx, **kwargs)
+        events = await self.invoke(memory_name, "get_event", _config=memory_info, n=n, ctx=memory_ctx, **kwargs)
+        summaries = await self.invoke(memory_name, "get_summary", _config=memory_info, n=n, ctx=memory_ctx, **kwargs)
+        insights = await self.invoke(memory_name, "get_insight", _config=memory_info, n=n, ctx=memory_ctx, **kwargs)
         
         return {
             "events": events,

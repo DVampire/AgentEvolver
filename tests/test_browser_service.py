@@ -236,9 +236,7 @@ async def test_browser_agent_observe_model_action_error_and_recovery(service, tm
     env = BrowserEnvironment(base_dir=str(tmp_path), use_som=False)
     env._service = service
     ctx = SimpleNamespace(id="browser-e2e", extra={})
-    page = await service._page_for(ctx.id)
-    page.set_default_timeout(100)
-    await page.set_content('<input id="name"><button onclick="document.querySelector(\'p\').textContent=\'Saved: \'+document.querySelector(\'input\').value">Save</button><p>Ready</p>')
+    page = None
 
     class Router(ToolRouter):
         async def schemas(self, agent, ctx):
@@ -255,8 +253,20 @@ async def test_browser_agent_observe_model_action_error_and_recovery(service, tm
     async def state(name, *, ctx):
         return await env.get_state(ctx=ctx)
 
-    async def environment(name):
-        return env
+    from agentevolver.environment.types import EnvironmentConfig
+    manager = environment_manager._ensure_context_manager()
+    info = EnvironmentConfig(name=env.name, description=env.description, rules="Test browser",
+                             cls=BrowserEnvironment, instance=env, actions=env.actions,
+                             permission_mode="danger_full_access")
+    monkeypatch.setattr(manager, "_environment_configs", {env.name: info})
+    original_start = BrowserAgent.on_start
+    async def start(self, task, proc):
+        nonlocal page
+        await original_start(self, task, proc)
+        page = await service._page_for(env._session_id(proc.ctx))
+        page.set_default_timeout(100)
+        await page.set_content('<input id="name"><button onclick="document.querySelector(\'p\').textContent=\'Saved: \'+document.querySelector(\'input\').value">Save</button><p>Ready</p>')
+        await manager.bound(info, proc.ctx)
 
     observed = []
     async def stream(**kwargs):
@@ -279,8 +289,7 @@ async def test_browser_agent_observe_model_action_error_and_recovery(service, tm
 
     monkeypatch.setattr(BrowserAgent, "system_messages", system)
     monkeypatch.setattr(type(environment_manager), "get_state", lambda self, name, **kw: state(name, **kw))
-    monkeypatch.setattr(type(environment_manager), "get", lambda self, name: environment(name))
-    monkeypatch.setattr(type(environment_manager), "get_info", lambda self, name: environment(name))
+    monkeypatch.setattr(BrowserAgent, "on_start", start)
     monkeypatch.setattr(type(model_manager), "stream", lambda self, **kw: stream(**kw))
     kernel = Kernel()
     agent = BrowserAgent(router=Router(), use_memory=False, max_step=4)

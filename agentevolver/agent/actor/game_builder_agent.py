@@ -33,28 +33,13 @@ class GameBuilderAgent(MetaAgent):
         # all own the same session instead of creating a second default runtime.
         self.ctx = proc.ctx
         await super().on_start(task, proc)
-        environment = await environment_manager.get("godot_environment")
+        environment = await environment_manager.get("godot_environment", ctx=self.ctx)
         if environment is None:
             raise RuntimeError("GameBuilder requires godot_environment")
         result = await environment.prepare_workspace(ctx=self.ctx)
         if not result["success"]:
             raise RuntimeError(result["message"])
 
-    async def on_exit(self, status):
-        from agentevolver.environment.server import environment_manager
-        from agentevolver.logger import logger
-
-        try:
-            for name in ("godot_environment",):
-                if name in self.env_names:
-                    try:
-                        environment = await environment_manager.get(name)
-                        if environment is not None:
-                            await environment.close_session(str(getattr(self.ctx, "id", "") or "default"))
-                    except Exception as error:
-                        logger.warning(f"GameBuilder could not close {name}: {error}")
-        finally:
-            await super().on_exit(status)
 
 
 __all__ = ["GameBuilderAgent"]

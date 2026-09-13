@@ -7,8 +7,13 @@ imports the class so it registers on load.
 
 Key points:
 - Each callable is an action declared with `@environment_manager.action(name=..., description=...)`.
-- State lives on the instance (that is what makes an environment *stateful*, unlike a
-  stateless tool). If the environment serves concurrent sessions, key state by `ctx`.
+- Runtime creates an owner-scoped instance by default. State lives on that instance;
+  do not add a second owner map or a private scheduler. Shared backends require explicit
+  resource claims and a tested isolation contract; see ../conventions.md.
+- For independent evaluations, override resource_claims(ctx, arguments, operation),
+  declare immutable input/shared and trial output/exclusive ResourceClaims, and bound
+  max_concurrency. Set parallel_safe=True on the action only after verifying overlap.
+  The default below deliberately serializes one owner's mutable key/value state.
 - Start heavy resources (servers, browsers) in `initialize()`, not `__init__`; release
   them in `cleanup()`.
 - If an action returns an image (e.g. a base64 screenshot), it's a *vision* environment —
@@ -45,11 +50,11 @@ class MyEnvironment(Environment):
 
     # ---------------------------------------------------------------- lifecycle
     async def initialize(self) -> None:
-        """Start any external resources. Called once before first use."""
+        """Start resources for this owner binding, once before its first use."""
         logger.info(f"| 🌱 {self.name} ready")
 
     async def cleanup(self) -> None:
-        """Release resources. Called on shutdown."""
+        """Release this binding's resources on owner exit or module cleanup."""
         self._state.clear()
         logger.info(f"| 🧹 {self.name} cleaned up")
 

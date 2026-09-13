@@ -64,6 +64,7 @@ class Job(BaseModel):
     id: str = Field(description="Short handle the agent uses to name this job.")
     type: str = Field(description="What started it — 'bash', 'terminal', 'agent'. Descriptive only; the controller treats every type alike.")
     label: str = Field(default="", description="Human-readable summary, e.g. the command line. Shown in listings so a job can be recognised without reading its output.")
+    owner_id: str = Field(default="")
     session_id: str = Field(default="", description="The session that started it. Jobs are session-local; this is what scopes a listing.")
     status: JobStatus = Field(default=JobStatus.RUNNING)
     exit_code: Optional[int] = Field(default=None, description="None while running, and for a job killed before it could exit.")

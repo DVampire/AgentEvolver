@@ -42,8 +42,8 @@ def exact_id(value):
 
 def validate(spec, *, require_implementation=False):
     """Validate the archive contract. Numerical/causality checks remain engine-owned."""
-    if not isinstance(spec, dict) or type(spec.get("schema")) is not int or spec["schema"] != 1:
-        raise ValueError("Expected strategy spec schema=1")
+    if not isinstance(spec, dict) or type(spec.get("schema")) is not int or spec["schema"] not in (1, 2):
+        raise ValueError("Expected strategy spec schema=2 (schema=1 is readable for historical archives)")
     # Reject nonfinite JSON, including values nested in open parameter/extension structures.
     json.dumps(spec, allow_nan=False)
     for key in ("strategy_id", "version"):
@@ -62,6 +62,17 @@ def validate(spec, *, require_implementation=False):
         raise ValueError("A strategy cannot be its own parent")
     if "baseline" in spec and type(spec["baseline"]) is not bool:
         raise ValueError("baseline must be a boolean")
+    if spec["schema"] == 2:
+        role = spec.get("research_role")
+        if role not in ("candidate", "ablation", "benchmark"):
+            raise ValueError("research_role must be candidate, ablation or benchmark")
+        controls = strings(spec, "control_for", nonempty=role == "ablation")
+        if any(not exact_id(cid) or cid == spec["id"] for cid in controls):
+            raise ValueError("control_for requires exact full-strategy IDs, never self")
+        if role != "ablation" and controls:
+            raise ValueError("Only ablations declare control_for")
+        if "baseline" in spec and spec["baseline"] != (role != "candidate"):
+            raise ValueError("baseline conflicts with research_role; omit the legacy flag")
     change = spec.get("change")
     if not isinstance(change, dict):
         raise ValueError("Strategy spec requires change metadata")
@@ -83,7 +94,7 @@ def validate(spec, *, require_implementation=False):
     for key in ("entry", "exit", "sizing", "rebalance", "neutral", "risk", "execution"):
         text(rules, key)
     bindings = spec.get("factor_bindings")
-    if not isinstance(bindings, list) or (not bindings and not spec.get("baseline", False)):
+    if not isinstance(bindings, list) or (spec["schema"] == 1 and not bindings and not spec.get("baseline", False)):
         raise ValueError("Non-baseline strategies require factor_bindings")
     ids = []
     for binding in bindings:
@@ -97,6 +108,12 @@ def validate(spec, *, require_implementation=False):
         ids.append(fid)
     if len(set(ids)) != len(ids):
         raise ValueError("Duplicate factor binding; declare one exact role per factor version")
+    if spec["schema"] == 2:
+        identities = {fid.split("@")[0] for fid in ids}
+        if len(identities) != len(ids):
+            raise ValueError("Bind only one version of each factor identity in a policy")
+        if role == "candidate" and len(identities) < 2:
+            raise ValueError("A formal candidate requires at least two distinct factors; single-factor policies are controls")
     if not isinstance(spec.get("parameters"), dict):
         raise ValueError("Strategy parameters must be an object, possibly empty")
     if "implementation" not in spec:
@@ -138,6 +155,7 @@ def check_file(path, *, require_implementation=False):
             if hashlib.sha256(code.read_bytes()).hexdigest() != item["sha256"]:
                 raise ValueError(f"Strategy implementation hash mismatch: {item['path']}")
     return {"ok": True, "id": spec["id"], "name": spec["name"], "spec_path": str(path),
+            "research_role": spec.get("research_role") if spec["schema"] == 2 else "legacy_unclassified",
             "spec_sha256": digest(spec), "implementation_hashes_verified": spec["implementation"] is not None}
 
 

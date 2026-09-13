@@ -126,6 +126,116 @@ def test_strategy_definition_and_source_identity_survive_report_export(archived_
     output = tmp_path / "archived-report"
     report.render(result, output)
     assert json.loads((output / "analysis.json").read_text())["strategies"][0] == row
+    assert row["research_role"] == "legacy_unclassified"
+    assert result["strategy_counts"]["candidate"] == 0
+
+
+@pytest.fixture
+def multifactor_manifest(archived_manifest):
+    from copy import deepcopy
+    spec = json.loads(archived_manifest.read_text())
+    engine = archived_manifest.parent / "engine.json"
+    data = json.loads(engine.read_text())
+    full = data["strategy_spec"]
+    full.update(schema=2, research_role="candidate", control_for=[])
+    full["factor_bindings"].append({"factor_id": "F002@v001", "role": "return_prediction", "purpose": "Confirm entry"})
+    full["design"]["combination"] = "Require both fixture inputs to select exposure"
+    second = deepcopy(spec["factors"][0])
+    second.update(id="F002@v001", name="Confirmation", formula="Other fixture score")
+    spec["factors"].append(second)
+    spec["routes"][0]["factor_ids"].append(second["id"])
+    control = deepcopy(full)
+    control.update(strategy_id="A001", id="A001@v001", research_role="ablation", control_for=[full["id"]])
+    control["factor_bindings"] = control["factor_bindings"][:1]
+    benchmark = deepcopy(full)
+    benchmark.update(strategy_id="B001", id="B001@v001", research_role="benchmark", factor_bindings=[])
+    for label, definition in (("ablation", control), ("benchmark", benchmark)):
+        data[label] = definition
+        row = deepcopy(spec["strategies"][0])
+        row["strategy_spec"]["pointer"] = f"/{label}"
+        spec["strategies"].append(row)
+    spec["sources"]["engine"]["sha256"] = save(engine, data)
+    save(archived_manifest, spec)
+    return archived_manifest
+
+
+def test_multifactor_inventory_separates_controls_and_counts_versions(multifactor_manifest, tmp_path):
+    from copy import deepcopy
+    spec = json.loads(multifactor_manifest.read_text())
+    engine = multifactor_manifest.parent / "engine.json"
+    data = json.loads(engine.read_text())
+    revised = deepcopy(data["strategy_spec"])
+    revised.update(id="S001@v002", version="v002", parent_ids=["S001@v001"])
+    revised["change"].update(kind="policy_revision")
+    data["revised"] = revised
+    row = deepcopy(spec["strategies"][0])
+    row["strategy_spec"]["pointer"] = "/revised"
+    spec["strategies"].append(row)
+    spec["routes"][0]["strategy_ids"].append(revised["id"])
+    spec["comparisons"] = [{"id": "remove_confirmation", "route_id": "recovery",
+        "parent_id": "S001@v001", "candidate_id": "A001@v001",
+        "diagnosis": "Fixture contribution", "decision": "Diagnostic only", "metrics": [{
+            "label": "Total return", "definition": "Matched fixture costs and folds", "unit": "percent", "split": "train",
+            "parent": {"source": "engine", "pointer": "/total_return"},
+            "candidate": {"source": "engine", "pointer": "/total_return"}}]}]
+    spec["sources"]["engine"]["sha256"] = save(engine, data)
+    save(multifactor_manifest, spec)
+    result = report.compile_report(multifactor_manifest, allow_synthetic=True)
+    assert result["strategy_counts"] == {"candidate": 2, "candidate_hypotheses": 1,
+        "evaluated_candidate_hypotheses": 1, "ablation": 1, "benchmark": 1, "legacy_unclassified": 0}
+    assert result["strategies"][1]["control_for"] == ["S001@v001"]
+    assert result["comparisons"][0]["metrics"][0]["delta"] == 0
+    output = tmp_path / "multifactor-report"
+    report.render(result, output)
+    assert json.loads((output / "analysis.json").read_text())["strategy_counts"] == result["strategy_counts"]
+
+
+@pytest.mark.parametrize("defect,match", [
+    ("single", "at least two"), ("same_identity", "one version"),
+    ("baseline", "conflicts"), ("role", "research_role"),
+    ("missing_control_target", "control_for"), ("unknown_control_target", "archived formal"),
+    ("control_in_pool", "not controls"), ("admitted_control", "cannot be admitted"),
+    ("role_override", "conflicts"), ("control_target_is_control", "archived formal")])
+def test_multifactor_contract_prevents_false_candidates(multifactor_manifest, defect, match):
+    spec = json.loads(multifactor_manifest.read_text())
+    engine = multifactor_manifest.parent / "engine.json"
+    data = json.loads(engine.read_text())
+    full = data["strategy_spec"]
+    if defect == "single":
+        full["factor_bindings"] = full["factor_bindings"][:1]
+    elif defect == "same_identity":
+        full["factor_bindings"][1]["factor_id"] = "F001@v002"
+    elif defect == "baseline":
+        data["ablation"]["baseline"] = False
+    elif defect == "role":
+        del full["research_role"]
+    elif defect == "missing_control_target":
+        data["ablation"]["control_for"] = []
+    elif defect == "unknown_control_target":
+        data["ablation"]["control_for"] = ["UNKNOWN@v001"]
+    elif defect == "control_in_pool":
+        spec["routes"][0]["strategy_ids"].append("A001@v001")
+    elif defect == "admitted_control":
+        spec["strategies"][1]["status"] = "admitted"
+    elif defect == "role_override":
+        spec["strategies"][1]["research_role"] = "candidate"
+    elif defect == "control_target_is_control":
+        data["ablation"]["control_for"] = ["B001@v001"]
+    spec["sources"]["engine"]["sha256"] = save(engine, data)
+    save(multifactor_manifest, spec)
+    with pytest.raises(ValueError, match=match):
+        report.compile_report(multifactor_manifest, allow_synthetic=True)
+
+
+def test_candidate_factor_count_is_open_and_controls_can_remove_all_inputs(strategy_definition):
+    from copy import deepcopy
+    spec = deepcopy(strategy_definition)
+    spec.update(schema=2, research_role="candidate", control_for=[])
+    for n in range(2, 6):
+        spec["factor_bindings"].append({"factor_id": f"F{n:03}@v001", "role": "state", "purpose": "Condition the signal"})
+    assert len(strategy_spec.validate(spec)["factor_bindings"]) == 5
+    spec.update(research_role="ablation", control_for=["OTHER@v001"], factor_bindings=[])
+    assert strategy_spec.validate(spec)["research_role"] == "ablation"
 
 
 @pytest.mark.parametrize("key,value", [("name", "Wrong display name"), ("id", "S002@v001"),

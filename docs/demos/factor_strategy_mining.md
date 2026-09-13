@@ -48,9 +48,11 @@ an appropriate Connector and **two distinct Environment components**. Environmen
 share verified numerical utilities. The router makes registered environments callable via
 `accepts_evolved`; connector and skill discovery remain open, while child agents stay disabled.
 
-1. Acquire and verify a local snapshot through the authored Connector, then implement and
-   verify the factor and strategy environments on deterministic fixtures and a real pilot.
-2. Propose strategy hypotheses with their required factors, roles and rules together. Batch
+1. Design complete multi-factor hypotheses and their factor dependencies first. Acquire and
+   verify local data through the Connector; check numerical correctness and representative
+   planned strategies through the two environments. Defer finalization engineering until needed
+   before test access, rather than blocking the first batch.
+2. Archive explicit candidate/ablation/benchmark roles. Batch
    factor diagnostics and full strategy evaluation through the two environments. Form a
    working pool using measured evidence, improvement potential and behavioral diversity.
 3. Refine each shortlisted strategy's factors/rules with matched comparisons, and include
@@ -59,7 +61,9 @@ share verified numerical utilities. The router makes registered environments cal
    frozen test honestly and justify completion or further exploratory research.
 
 The [joint-exploration method](../../agentevolver/skill/finance/factor_strategy_research_skill/references/research-workflow.md#joint-exploration)
-keeps factor and policy definitions open. A marginal factor score does not gate every
+keeps factor and policy definitions open. Formal candidates require at least two distinct,
+actually used factors. Single-factor controls and other ablations remain diagnostics, outside
+candidate counts, the working pool and final selection. A marginal factor score does not gate every
 exploratory strategy; role-specific qualification is required before final eligibility.
 The skill owns the research and record layout. The prompt remains an orchestration layer.
 
@@ -82,7 +86,7 @@ The provided example uses NVDA daily bars, train 2016–2020, expanding annual v
 The September cutoff includes only completed regular trading sessions; it does not request
 future September dates or unfinished daily bars. The cutoff stays fixed once the study starts.
 See [study.json](../../examples/tasks/factor_strategy_mining/signal_foundry/study.json).
-The v7 study starts with roughly ten joint strategy hypotheses and their required factors.
+The v8 study starts with roughly ten joint strategy hypotheses and their required factors.
 About 100 evaluated factor definitions and 20–30 distinct strategy hypotheses describe the
 cumulative exploration guidance. These are neither minimum counts, initial prerequisites nor search ceilings;
 benchmarks and parameter-only revisions do not count as distinct hypotheses. Pool size is

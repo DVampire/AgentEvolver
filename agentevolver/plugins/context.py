@@ -222,7 +222,8 @@ class PluginContextManager(BaseModel):
                                 if plugin_config.config else plugin_config.cls())
             if not instance.name:
                 instance.name = plugin_config.name
-            await instance.initialize()
+            if instance.state_scope != "owner":
+                await instance.initialize()
 
             plugin_config.instance = instance
             # The class binds its tools at construction; surface them on the
@@ -485,35 +486,57 @@ class PluginContextManager(BaseModel):
         plugin_config, addressed_tool = self._resolve(name)
         if plugin_config is None:
             return Response(type=ResponseType.TOOL, success=False, message=f"Unknown plugin: {name}")
-        if plugin_config.instance is None:
-            await self.build(plugin_config)
-
-        logger.info(f"| ✅ Using plugin {plugin_config.name}@{plugin_config.version}")
-        payload = input or {}
+        from agentevolver.runtime.invocation import runtime, invocation_claims
+        ctx = PluginContext.from_context(ctx)
+        scope = getattr(plugin_config.instance, "state_scope", None)
+        if scope is None and plugin_config.cls is not None:
+            scope = plugin_config.cls.model_fields["state_scope"].default
+        from agentevolver.runtime.invocation import owner_id
+        binding_owner = owner_id(ctx) if scope == "owner" else "shared"
+        async def initialize():
+            if scope == "owner":
+                instance = plugin_config.cls(**(plugin_config.config or {}))
+                try:
+                    await instance.initialize()
+                except BaseException:
+                    await instance.cleanup()
+                    raise
+                return instance
+            if plugin_config.instance is None:
+                await self.build(plugin_config)
+            return plugin_config.instance
+        async def close(instance):
+            if scope == "owner":
+                await instance.cleanup()
+        instance = await runtime().bind("plugin", plugin_config.name, plugin_config.version,
+            binding_owner, initialize, close)
+        payload = dict(input or {})
         target = action or addressed_tool
-        # A bare plugin name goes through the plugin's own ``__call__``, so a
-        # single-capability plugin can keep a natural signature.
-        if target:
-            return await plugin_config.instance.invoke(target, **payload)
-        return await plugin_config.instance(**payload)
+        async def invoke():
+            if target:
+                return await instance.invoke(target, **payload)
+            return await instance(**payload)
+        return await runtime().invoke("plugin", plugin_config.name + ":" + (target or "call"), invoke,
+            ctx=ctx, version=plugin_config.version,
+            claims=invocation_claims(instance, ctx, payload, module="plugin", name=plugin_config.name))
 
     async def cleanup(self):
-        """Cleanup all active plugins."""
-        try:
-            for plugin_name, plugin_config in self._plugin_configs.items():
-                if plugin_config.instance is not None:
-                    try:
-                        await plugin_config.instance.cleanup()
-                    except Exception as e:  # noqa: BLE001
-                        logger.warning(f"| ⚠️ Error cleaning up plugin {plugin_name} instance: {e}")
-
-            self._plugin_configs.clear()
-            self._plugin_history_versions.clear()
-            self._invalidate_instruction()
-
-            logger.info("| 🧹 Plugin context manager cleaned up")
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"| ❌ Error during plugin context manager cleanup: {e}")
+        """Join calls and close shared clients, retaining failed clients for retry."""
+        from agentevolver.runtime.invocation import runtime
+        await runtime().release(module="plugin")
+        errors = []
+        for info in self._plugin_configs.values():
+            if info.instance is not None and info.instance.state_scope != "owner":
+                try:
+                    await info.instance.cleanup()
+                except Exception as error:
+                    errors.append(error)
+        if errors:
+            raise ExceptionGroup("Plugin backend cleanup failed", errors)
+        self._plugin_configs.clear()
+        self._plugin_history_versions.clear()
+        self._invalidate_instruction()
+        logger.info("| 🧹 Plugin context manager cleaned up")
 
 
 __all__ = ["PluginContextManager"]

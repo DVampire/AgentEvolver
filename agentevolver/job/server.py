@@ -82,7 +82,12 @@ class JobManagerServer(metaclass=Singleton):
         """
         job = Job(id=f"job_{uuid.uuid4().hex[:8]}", type=type, label=label,
                   session_id=session_id, handle=handle)
+        from agentevolver.runtime.invocation import current_owner
+        job.owner_id = current_owner()
         self._jobs[job.id] = job
+        if job.owner_id:
+            from agentevolver.runtime.invocation import runtime
+            runtime().own("job", job.id, job.owner_id, job, self._release_owned)
         self._evict(session_id)
         logger.info(f"| 🧵 Job {job.id} started ({type}): {label[:80]}")
         return job
@@ -143,7 +148,12 @@ class JobManagerServer(metaclass=Singleton):
         job = Job(id=f"job_{uuid.uuid4().hex[:8]}", type="reminder", label=text,
                   session_id=session_id, status=JobStatus.SCHEDULED,
                   due_at=due_at, every_seconds=interval)
+        from agentevolver.runtime.invocation import current_owner
+        job.owner_id = current_owner()
         self._jobs[job.id] = job
+        if job.owner_id:
+            from agentevolver.runtime.invocation import runtime
+            runtime().own("job", job.id, job.owner_id, job, self._release_owned)
         self._evict(session_id)
         logger.info(f"| ⏰ Reminder {job.id} due in {due_at - now:.0f}s"
                     f"{f' every {interval}s' if interval else ''}: {text[:80]}")
@@ -307,6 +317,15 @@ class JobManagerServer(metaclass=Singleton):
             # Uninterruptible sleep — a wedged mount, usually. Nothing more to send, and
             # saying so beats a log that implies the process stopped.
             raise RuntimeError(f"Job {job_id} did not exit after SIGKILL (pid {pid})")
+
+    async def _release_owned(self, job):
+        if not job.status.is_final:
+            self.kill(job.id)
+        if isinstance(job.handle, asyncio.Task) and not job.handle.done():
+            await asyncio.gather(job.handle, return_exceptions=True)
+        if not job.status.is_final:
+            raise RuntimeError(f"Job {job.id} has not stopped")
+        self._jobs.pop(job.id, None)
 
     def forget(self, session_id: str) -> None:
         """Drop a finished session's jobs. Running ones are killed first."""

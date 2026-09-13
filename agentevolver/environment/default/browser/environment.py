@@ -22,7 +22,9 @@ def _b64_to_image(b64: str) -> Image.Image:
 
 @ENVIRONMENT.register_module(force=True)
 class BrowserEnvironment(Environment):
+
     """Playwright-based browser environment."""
+    managed_sessions: bool = True
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
@@ -110,7 +112,8 @@ class BrowserEnvironment(Environment):
 
     @staticmethod
     def _session_id(ctx) -> str:
-        return (getattr(ctx, "id", "") or "default") if ctx else "default"
+        from agentevolver.runtime.invocation import owner_id
+        return owner_id(ctx) or "default"
 
     def _sess(self, ctx) -> tuple:
         """Return (session_id, per-session state record), creating it on first use."""

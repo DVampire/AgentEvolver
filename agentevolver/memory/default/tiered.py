@@ -210,6 +210,7 @@ class TieredMemory(Memory):
 
     Subclasses define ``_render`` (JSON vs HTML)."""
 
+    concurrent: bool = True
     base_dir: str = Field(default="")
     model_name: str = Field(default="gpt-4.1")
     compact_hook: str = Field(

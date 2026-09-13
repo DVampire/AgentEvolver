@@ -52,6 +52,10 @@ def compile_research(spec, collections, resolve):
     candidates = {c["id"]: c for rows in collections.values() for c in rows}
     kinds = {c["id"]: kind for kind, rows in collections.items() for c in rows}
     strategies = {c["id"] for c in collections["strategies"]}
+    for strategy in collections["strategies"]:
+        for full_id in strategy["control_for"]:
+            if full_id not in strategies or candidates[full_id]["research_role"] != "candidate":
+                raise ValueError(f"Ablation must reference an archived formal candidate: {strategy['id']}/{full_id}")
     for candidate in candidates.values():
         cid = candidate["id"]
         for parent in candidate["parent_ids"]:
@@ -98,6 +102,9 @@ def compile_research(spec, collections, resolve):
             if any(cid not in candidates or kinds[cid] != kind for cid in route[key]):
                 raise ValueError(f"Unknown route member: {rid}/{key}")
             covered.update(route[key])
+        # Controls remain queryable in the inventory and comparisons, never pool members.
+        if any(candidates[cid]["research_role"] in ("ablation", "benchmark") for cid in route["strategy_ids"]):
+            raise ValueError(f"Research routes contain formal strategies, not controls: {rid}")
         routes.append(route)
     if not routes or any(c["id"] not in covered for c in candidates.values() if not c["baseline"]):
         raise ValueError("Every research candidate needs a route; baselines are exempt")
@@ -116,7 +123,8 @@ def compile_research(spec, collections, resolve):
             raise ValueError("Comparison requires distinct candidates of the same kind")
         if any(candidates[cid]["status"] not in ("evaluated", "admitted", "rejected") for cid in (parent, child)):
             raise ValueError("Comparison requires executed candidate results")
-        if child not in route_members.get(row["route_id"], set()):
+        members = route_members.get(row["route_id"], set())
+        if child not in members and not (set(candidates[child].get("control_for", [])) & members):
             raise ValueError("Comparison candidate must belong to its route")
         metrics = []
         for metric in raw.get("metrics", []):
@@ -217,7 +225,9 @@ def compile_report(path, *, allow_synthetic=False, stage="integrated"):
                 projection = {key: definition_spec[key] for key in
                               ("id", "name", "family", "hypothesis", "parent_ids")}
                 projection.update(
-                    baseline=definition_spec.get("baseline", False),
+                    baseline=(definition_spec["research_role"] != "candidate") if definition_spec["schema"] == 2 else definition_spec.get("baseline", False),
+                    research_role=definition_spec["research_role"] if definition_spec["schema"] == 2 else "legacy_unclassified",
+                    control_for=definition_spec["control_for"] if definition_spec["schema"] == 2 else [],
                     factor_ids=[b["factor_id"] for b in definition_spec["factor_bindings"]],
                     factor_roles={b["factor_id"]: b["role"] for b in definition_spec["factor_bindings"]},
                     rules="\n".join(f"{k}: {v}" for k, v in definition_spec["design"]["rules"].items()))
@@ -265,6 +275,12 @@ def compile_report(path, *, allow_synthetic=False, stage="integrated"):
                                 definition_source={k: reference[k] for k in ("source", "pointer")})
                 rows[-1].update({key: definition_spec[key] for key in
                                 ("strategy_id", "version", "description", "created_round")})
+            if kind == "strategies":
+                role = candidate["research_role"] if definition_spec is not None else "legacy_unclassified"
+                rows[-1].update(research_role=role,
+                                control_for=candidate["control_for"] if definition_spec is not None else [])
+                if role in ("ablation", "benchmark") and state == "admitted":
+                    raise ValueError(f"A control cannot be admitted as a formal strategy: {cid}")
             if joint:
                 row = rows[-1]
                 row.update(family=required_text(candidate, "family"),
@@ -353,10 +369,17 @@ def compile_report(path, *, allow_synthetic=False, stage="integrated"):
         record = {key: required_text(spec["record"], key) for key in ("round_id", "report_id", "phase")}
         if "parent_report_id" in spec["record"]:
             record["parent_report_id"] = required_text(spec["record"], "parent_report_id")
+    counts = {role: sum(c["research_role"] == role for c in collections["strategies"])
+              for role in ("candidate", "ablation", "benchmark", "legacy_unclassified")}
+    counts["candidate_hypotheses"] = len({c["strategy_id"] for c in collections["strategies"]
+                                          if c["research_role"] == "candidate"})
+    counts["evaluated_candidate_hypotheses"] = len({c["strategy_id"] for c in collections["strategies"]
+        if c["research_role"] == "candidate" and c["status"] in ("evaluated", "admitted", "rejected")})
     return {"schema": spec["schema"], "study_id": spec["study_id"], "title": spec.get("title", "Signal Foundry"),
             "scope": spec["scope"], "data_basis": spec["data_basis"], "strict_data": qualification,
             "test_state": spec.get("test_state", "sealed"), "sources": hashes,
             "summary": spec.get("summary", ""), **collections, **research, "charts": charts,
+            "strategy_counts": counts,
             **({"record": record} if record else {})}
 
 
@@ -438,7 +461,7 @@ def main():
                 parser.error("render requires --output")
             receipt = render(report, args.output)
         print(json.dumps({"ok": True, "scope": report["scope"], "factors": len(report["factors"]),
-                          "strategies": len(report["strategies"]), "charts": len(report["charts"]),
+                          "strategy_records": len(report["strategies"]), "strategy_counts": report["strategy_counts"], "charts": len(report["charts"]),
                           **({"record": report["record"]} if "record" in report else {}), **receipt}))
     except (ValueError, KeyError, TypeError, IndexError, OSError) as error:
         parser.exit(1, f"Report is not ready: {error}\n")

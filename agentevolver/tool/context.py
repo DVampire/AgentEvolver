@@ -902,6 +902,8 @@ class ToolContextManager(BaseModel):
     
     async def cleanup(self):
         """Cleanup all active tools."""
+        from agentevolver.runtime.invocation import runtime
+        await runtime().release(module="tool")
         try:
             # Clear all tool configs and version history
             self._tool_configs.clear()
@@ -954,6 +956,7 @@ class ToolContextManager(BaseModel):
         keeps the selected ``ToolConfig`` call-local while retaining argument checks,
         permission guards, checkpoints, timeouts, output bounds, and trace receipts.
         """
+        ctx = ToolContext.from_context(ctx)
         version = str(getattr(tool_info, "version", "") or "")
         effective_execution_context = dict(execution_context or {})
         execution = ToolExecution.create(
@@ -1014,6 +1017,7 @@ class ToolContextManager(BaseModel):
             logger.warning(f"| ⚠️ {msg}")
             validation_error = (ToolErrorCode.INVALID_ARGUMENTS, msg)
 
+        from agentevolver.runtime.invocation import invocation_claims
         timeout = self._call_timeout(tool_instance)
         permission_guard = self._permission_guard(tool_instance, ctx)
         checkpoint: Dict[str, Any] = {}
@@ -1027,6 +1031,8 @@ class ToolContextManager(BaseModel):
             execution,
             lambda: tool_instance(**call_input, **tool_kwargs),
             timeout=timeout,
+            runtime_options={"ctx": ctx, "claims": lambda: invocation_claims(
+                tool_instance, ctx, call_input, module="tool", name=name)},
             preflight_error=validation_error,
             initial_denials=list((execution_context or {}).get("guard_denials") or []),
             call_guards=[permission_guard],
