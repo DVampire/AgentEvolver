@@ -88,7 +88,7 @@ allowed. Names/descriptions are required, not inferred from IDs or filenames.
 | `created_round`, `parent_ids` | Origin round and exact parent versions; no parents for an initial proposal. |
 | `change` | `kind`, `summary`, `reason`, `evidence_ids`; initial proposals use kind=initial, revisions cite parents and motivating evidence. Other kind labels remain open. |
 | `research_role`, `control_for` | `candidate`, `ablation` or `benchmark`. Ablations name exact full-candidate versions in nonempty `control_for`; others use `[]`. |
-| `factor_bindings` | `{factor_id, role, purpose}` entries using exact versions. Candidates need at least two distinct factor identities; only one version per identity. Controls may have fewer. |
+| `factor_bindings` | `{factor_id, role, purpose}` entries using exact versions. Candidates need at least two distinct identities with no fixed upper limit. Within one strategy bind only one version per identity; other strategies may reuse the same versions. Controls may have fewer. |
 | `design` | `objective`, `mechanism`, `combination`, `fit_policy`, `pseudocode`; nonempty `assumptions` and `failure_modes` arrays; `rules` for entry, exit, sizing, rebalance, neutral, risk and execution. |
 | `parameters` | Open JSON object, possibly empty; explain parameter meaning in the design. |
 | `implementation` | Null for a proposal; otherwise version-relative `path`, `entrypoint`, `sha256` and optional `dependencies` with relative paths/hashes. |
@@ -97,6 +97,9 @@ allowed. Names/descriptions are required, not inferred from IDs or filenames.
 Describe signal timing, factor interactions, past-only fitting and signal-to-position rules.
 State explicit absence where a rule is unused. Long notes may supplement the structured
 design. A new independent hypothesis may lack prior numerical evidence; never fabricate it.
+Use `design.objective` to reference the prospective comparison standard and tradeoffs;
+`mechanism`, `combination`, `fit_policy` and `rules` describe how this route differs from
+its peers. These existing fields suffice; no extra mandatory planning files are needed.
 
 ```bash
 python {skill_dir}/scripts/strategy_spec.py /absolute/strategies/S001/v001/spec.json
@@ -126,7 +129,11 @@ Before scoring, fix a versioned, hashed contract for source/adjustment basis, ca
 fit/score boundaries, labels, execution/costs, metric definitions, factor-role qualification,
 comparison policy and evidence standards. Bind both engines and results to it. Honor study
 constraints; additional roles or criteria must be prospective new versions, not changes that
-rescue a failed claim. There is no universal return target or automatic search-count gate.
+rescue a failed claim. Use the [objective contract](metrics-and-evaluation.md#prospective-objectives-and-comparisons)
+to define benefit, utility, benchmarks and acceptable sacrifices. Different permitted claims
+can coexist, but do not compare their utilities as one ranking or relabel a failed route.
+Preserve the study's final-selection policy and test budget. There is no universal return
+target or automatic search-count gate.
 
 Use inclusive exchange-local session boundaries, translating provider range semantics.
 Verify required completed sessions through the fixed cutoff; missing bars are acquisition
@@ -152,6 +159,14 @@ they interact, past-only fitting and entry/exit/sizing rules. A list of strategy
 a designed batch. Link shared exact factors rather than manufacturing a separate copy for
 every strategy. Plan alternative mechanisms beyond the first example; do not let the pilot's
 two factors become the whole search universe.
+
+Vary both the information hypothesis and how information becomes a position. For example,
+compare continuous score blending, interactions or conditional weighting, event-memory/exit
+rules, or a compact training-fitted policy when justified. These are options, not required
+families. Different formulas inside the same threshold-AND-risk template cover only a narrow
+policy search. Record the distinguishing combination, fitting and holding choices in each
+design; sample materially different planned policies in the pilot so its engine does not
+hard-code one mapping, number of factors or default holding horizon.
 
 Acquire and verify local train/validation OHLCV through the native Connector before numerical
 research. Build the two Environments' evaluation path for representative planned candidates:
@@ -180,9 +195,11 @@ Exploratory consumer tests can establish that evidence, but do not imply eligibi
 For Signal Foundry, roughly ten initial strategies, about 100 cumulative factor definitions
 and 20–30 distinct strategy hypotheses guide exploration. Adapt the schedule and size to
 findings; these are neither minimum passing counts nor ceilings. Different strategies can
-use different factor sets or share exact versions. Factor count follows the mechanism, not a
-fixed pair: signals can interact with state, participation, timing or risk factors. Linear,
-conditional, nonlinear and learned combinations are open, with fitting restricted to the past.
+use overlapping factor sets from one shared library. Factor count follows the mechanism:
+four, five or more distinct inputs are welcome; two or three is not a ceiling or an optimum.
+For example, one strategy may bind F001–F005 and another F001/F003/F006–F009, all at exact
+versions, with different weights, interactions and holding rules. Shared inputs count once
+in the factor inventory, while consumer tests remain strategy-specific. All fitting is past-only.
 Count proposed/evaluated mechanisms, versions, parameter variants, controls and errors separately. Explain scope
 shortfalls without creating filler trials.
 
@@ -190,13 +207,14 @@ shortfalls without creating filler trials.
 | --- | --- |
 | Propose | Complete multi-factor designs and their dependency map; declare each factor's actual use and interaction. Set benefit claims, controls, qualification and guardrails before scoring. |
 | Evaluate | Compute/cache each required factor once per data/fit identity; concurrently run its diagnostics and ready strategies on matched folds. Save results/errors separately. A missing input blocks only its consumers. |
-| Select | Rank formal candidates by benefit, risk, costs, support, robustness, complexity, behavioral diversity and improvement potential. Controls cannot enter the pool. Membership means worth investigating, not final eligibility; no survivor quota. |
+| Select | Compare candidates within their declared claims, retaining useful return/risk/cost tradeoffs, distinct behaviors and diagnostic potential. A global scalar leaderboard is not the entire working pool. Controls cannot enter it; exploration is not final eligibility. |
 | Refine | Review each shortlisted route; change factors, policy or both with an attributable comparison, or park/reject with evidence. Routes need not receive equal resources. |
 | Replenish/review | Consider new mechanisms alongside revisions. Decide from expected information and cost whether another batch, final evaluation or completion is worthwhile. |
 
-Use inexpensive common coverage, fold and net-performance diagnostics first. Concentrate
-costly uncertainty checks, ablations and parameter neighborhoods on plausible candidates;
-complete required evidence before final eligibility. Missing diagnostics remain pending.
+Use common coverage, fold and net-performance diagnostics across the broad batch first.
+Spend detailed ablations, uncertainty and parameter work where they can change a pool or
+readiness decision; do not require the full final-evidence matrix for every weak proposal.
+Keep missing checks pending and complete required evidence before final eligibility.
 Evaluate factors in their declared role and consumer context alongside strategy performance;
 do not reject useful interaction/state inputs solely for weak univariate return IC. Record
 each pooled strategy's diagnosis, proposed factor change, proposed policy change (or reasons
@@ -205,22 +223,30 @@ diagnostic experiment; retaining a formal strategy still requires a useful multi
 Allow distinct return, risk-reduction or efficiency claims with prospective utilities and
 tradeoff guardrails; never relabel an unsuccessful claim after seeing its results.
 
+Keep promising factor versions discoverable in the same catalog when a consumer fails.
+Record factor-role results, exact consumer contributions and whole-strategy eligibility
+separately: a useful risk forecast is not universally useful, and a failed strategy does
+not erase its inputs' measured evidence. A transfer needs a new hypothesis and consumer test.
+
 Examples for exploration include persistence/acceleration, recovery, failed breakout,
 compression/expansion, gap/intraday behavior and risk or participation interactions. Invent
 other justified mechanisms; daily OHLCV does not establish order-book or institutional activity.
 
 ### Refine factors and their consumers
 
-Trace factor → target → order → return before choosing a change. Revise a factor when its
-information, normalization, availability or conditional use is weak; revise policy when the
-mapping, holding, sizing or costs lose useful information. Joint changes and cross-route
-factor transfers are welcome when their incremental contribution can be tested.
+Trace factor → target → order → return before choosing a change. Separate weak information
+from lost information in the combination, holding, sizing or execution. Check forecast
+horizon versus actual holding time, train-selected orientation, inactive opportunity and
+costs before adding filters. Positive IC with weak returns warrants a mapping experiment,
+not automatically another factor. Joint changes and cross-route transfers remain open.
 
 Compare exact parent/candidate versions on matched dates, folds, costs and fitting policies.
 Hold the consumer fixed for compatible factor comparisons and factors fixed for policy
 comparisons; use small crossed comparisons when needed for interactions. Preserve gains,
 regressions and rejected/incompatible revisions. A shared-factor revision cannot silently
-change other strategies' historical bindings.
+change other strategies' historical bindings. Publish a revised shared factor as a new
+version, compare its effects on chosen consumers, and record each consumer's keep/replace
+decision independently; improvement in one policy does not upgrade all of them.
 
 Keep factor discovery open throughout refinement. For promising routes investigate both
 factor and policy limitations, rather than only permuting one leader's thresholds. Choose
@@ -231,17 +257,16 @@ helps choose the next investigation.
 
 ### Diversity and efficient allocation
 
-Assess mechanism diversity alongside measured behavior: aligned factor correlations,
-strategy net-return/exposure correlations, active/entry overlap and fold/regime losses.
-Use the metric contract's definitions; undefined correlation is not evidence of independence.
-Renamed, affine or parameter-only copies do not establish a new hypothesis. Low correlation
-alone cannot justify noisy formulas; a better IC alone cannot prove a better strategy.
+Assess diversity at both design and behavior levels: information source/role, combination,
+fitting and holding mechanism; then aligned returns/exposures, entry overlap and fold/regime
+losses. Group close relatives and count formula changes, policy changes and new hypotheses
+separately. Undefined or low correlation alone does not establish a useful new mechanism.
 
-Allocate batches between unexplored mechanisms, promising revisions and robustness checks.
-Read compact summaries, then only the detailed JSON/CSV needed for decisions. Reuse completed
-calculations with identical bindings and successful engineering checks until relevant changes
-invalidate them. Avoid one conversation or report dump per factor and repeated low-information
-tuning. Record time/cost alongside progress so presentation work cannot displace research.
+Allocate work between unexplored mechanisms, promising revisions and resolving uncertainty.
+If many routes fail for the same reason, investigate that shared limitation before extending
+the same template. Read compact summaries, reuse identical calculations and valid engineering
+checks, and spend new evaluations on decision-changing comparisons. Record time/cost with
+progress; presentation cannot displace research. No fixed family quota or exhaustive search.
 
 Render local reports at meaningful research reviews and publish useful milestones/final
 results, not every candidate. Check files, hashes, links and HTTP delivery directly; no browser

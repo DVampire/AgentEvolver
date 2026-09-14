@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
 description: "Research stocks with one agent: acquire auditable data, jointly discover and refine diverse factors and multi-factor strategies, and publish one continuous evidence report."
-version: "1.8.2"
+version: "1.9.0"
 type: worker
 category: finance
 requirements: [cpu]
@@ -30,8 +30,9 @@ paths from the skill loader; keep detailed records on disk, not duplicated in li
 
 ## Research method
 
-1. Read the task/study, fix causal evaluation assumptions, and design an initial batch of
-   complete multi-factor hypotheses: each strategy's factors, roles, combination and rules.
+1. Read the task/study; predeclare the benefit, comparison standard and allowed tradeoffs.
+   Design a batch of complete multi-factor hypotheses with distinct information and policy
+   mechanisms: each strategy's factors, roles, combination, fitting and holding rules.
    Maintain concise `index.md` progress and links; put detailed designs and reviews on disk.
 2. Download train/validation data through a native Connector, reopen and verify the local
    snapshot. Disclose authorized public-data limitations; defer final-test acquisition.
@@ -41,10 +42,11 @@ paths from the skill loader; keep detailed records on disk, not duplicated in li
    verify actual overlapping execution and serial/concurrent result parity through their native
    interfaces, alongside causality/accounting fixtures and a representative real-data pilot.
    Add finalization checks before final-test access; render reports at research milestones.
-4. Propose strategies and their factors together → batch evaluate → select a diverse working
-   pool → diagnose and revise factors, policies or both. Add new mechanisms when useful;
+4. Propose strategies and factors together → screen broadly → select a diverse working
+   pool → diagnose and revise factors, combination or holding policy. Keep factor-level
+   evidence, consumer contribution and whole-strategy eligibility separate. Add new mechanisms;
    run independent factor diagnostics and strategies concurrently once their inputs are ready.
-   Choose batch sizes and effort from evidence. Analyze saved JSON, not HTML or screenshots.
+   Choose batch sizes and deeper checks from evidence. Analyze JSON, not HTML or screenshots.
 5. At research reviews, decide whether the next experiment is worthwhile. Stop when the
    objective is supported, or repeated ineffective improvements and low expected value
    justify a negative/inconclusive conclusion. No universal patience/count/return gate or
@@ -52,10 +54,11 @@ paths from the skill loader; keep detailed records on disk, not duplicated in li
    rules; publish the saved results as one continuous HTML/JS report. Delivery uses file
    and HTTP checks, without browser acceptance or an open-ended presentation review.
 
-Formal candidates combine at least two distinct, actually used factors. The Agent chooses
-how many and how they interact; unused inputs and duplicate formulas do not establish a
-multi-factor mechanism. Archive explicit candidate/ablation/benchmark roles. Controls explain
-contribution and are never counted, shortlisted or submitted as discoveries.
+Factors and strategies have a many-to-many relationship: share exact factor versions across
+strategies, and use four, five or more factors when the mechanism benefits. There is no fixed
+upper count; formal candidates need at least two distinct, actually used factors. Choose
+inputs by contribution and complexity, not a quota. Archive candidate/ablation/benchmark
+roles; unused copies and diagnostic controls do not count as discoveries.
 
 ## Research-specific capability evidence
 

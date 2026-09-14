@@ -8,6 +8,7 @@ freeze them before search and never change a denominator, window or benchmark to
 result. These instructions are a specification to implement and verify, not a built-in engine.
 
 Sections: [shared contract](#one-contract-reproducible-results),
+[objectives and comparisons](#prospective-objectives-and-comparisons),
 [factor definitions and diagnostics](#factor-identity-what-was-actually-mined),
 [strategy rules and performance](#strategy-identity-what-is-being-traded),
 [iteration decisions](#evaluation-drives-the-next-experiment),
@@ -38,6 +39,28 @@ Gate records contain criterion ID, metric ID/result ID, scope, value, operator, 
 verdict and explanation. Preserve every failed gate. Undefined required evidence yields
 an inconclusive gate; any failed gate prevents passing, as does any inconclusive required gate.
 An operational error or pending source check is not an evaluated market hypothesis.
+
+## Prospective objectives and comparisons
+
+Before scoring, connect each strategy's `design.objective` to a protocol-defined claim:
+the benefit, baseline, primary metric/utility, its coefficients and allowed return/risk/cost
+tradeoffs. Follow supplied requirements; fill unspecified choices with a reasoned research
+design. Do not silently give every mechanism one scalar utility, risk-aversion coefficient
+or trade-count threshold just because the pilot used it.
+
+Return enhancement, downside protection and trading efficiency are possible distinct claims.
+A defensive claim states the return sacrifice it allows; a return claim still measures
+drawdown and costs. Compare within the declared claim and retain useful nondominated
+tradeoffs in the exploratory pool (no peer better on every named dimension). This is not
+an eligibility waiver. Declare any cross-claim final-selection policy before scoring
+candidates; respect the study's final-test budget and never select by test performance.
+
+Keep the required cash/hold benchmarks. For a risk or timing claim, also consider a simple
+exposure/risk-controlled hold allocation to distinguish signal value from merely investing
+less. Fix its sizing on training or prospectively in the protocol, with matched dates and
+costs; never fit benchmark exposure to the candidate's realized validation path. Report
+missed upside and avoided losses by fold/regime. An optional control cannot replace the
+required benchmark or make a failed original objective pass.
 
 ## Multi-factor strategy and contribution scope
 
@@ -100,13 +123,15 @@ states need per-state counts and undefined states cannot pass. Compute future la
 for scoring, never as factor inputs. Report incompatible diagnostics as `not_applicable`
 with a reason and show the relevant measured role evidence rather than an all-null table.
 
-For supporting-role admission, require both the frozen factor-level comparison and a
-strategy-specific paired ablation. Define utility so higher is better: for a loss metric,
-improvement = baseline loss - candidate loss; for a benefit metric, candidate - baseline.
-The study requires positive pooled consumer utility and positive utility in the specified
-number of validation folds. Use matched dates/costs/refit rules, show raw values and paired
-uncertainty, and require its predeclared guardrails and no regression of previously passed
-strategy gates. An incomplete comparison means qualification pending, not admitted.
+For supporting-role admission, require both the frozen factor-level comparison and an exact
+consumer comparison. Keep three decisions separate: role evidence, contribution to this
+consumer, and whole-strategy eligibility. Define improvement as baseline loss minus candidate
+loss, or candidate benefit minus baseline. Factor forecast-loss improvement and strategy
+utility are different quantities; name both and show their raw values and paired uncertainty.
+Apply the study's positive consumer-utility/fold requirements, guardrails and no-regression
+rules in their declared scope. A risk benefit may trade return for protection only within
+prospectively allowed limits; neither demand improvement in every metric nor change the
+utility after a failure. An incomplete comparison means pending, not admitted.
 
 To avoid circular admission, an unqualified supporting factor can be used in an explicitly
 exploratory consumer comparison. The strategy cannot become eligible until the role and
@@ -337,11 +362,10 @@ as a separate metric and record regressions, support and gate changes.
 
 Assess a joint candidate's factor diagnostics, complete policy and contribution evidence
 together. Pool membership means a worthwhile next investigation, not a passed final gate.
-Record the declared benefit (return, risk reduction or trading efficiency), baseline,
-predeclared utility and guardrails alongside net performance, fold/regime consistency,
-sample support, cost sensitivity, complexity and behavioral similarity. A risk objective
-must state the allowed return tradeoff before scoring; it cannot be invented to rescue a
-failed return objective. Preserve uncertainty and all failed criteria.
+Use the [objective contract](#prospective-objectives-and-comparisons), fold/regime consistency,
+support, cost sensitivity, complexity and behavioral similarity. Preserve uncertainty and
+failed criteria. Factor-role passes remain library evidence even when the consumer fails;
+an alternative consumer requires a fresh comparison, not inherited qualification.
 
 Use evidence and a concrete, falsifiable improvement hypothesis to retain a route. Avoid
 filling a survivor quota or taking only the highest Sharpe rows. Group near-identical
@@ -366,13 +390,14 @@ errors separately from low performance; fix invalid accounting before interpreti
 | Low coverage, a constant factor, impossible IC or delayed data | Inspect inputs, formula warm-up, timestamps and label alignment; repair and rerun fixtures before another financial claim. |
 | Training IC strong but validation IC weak or sign unstable | Inspect fold/regime and search breadth; reject overfit variants or test a simpler economic hypothesis. Never flip the sign on validation to relabel failure as success. |
 | Positive IC but high redundancy | Compare exact expressions and aligned pair correlations; retain a simpler/stabler representative or propose an economically different input, not another name. |
-| Predictive factor, weak net strategy | Trace signal → target → fill; compare baseline, turnover, costs and horizon versus holding duration. Diagnose whether a new/revised causal factor or a different mapping is needed; compare against the parent with other compatible components fixed. |
+| Predictive factor, weak net strategy | Inspect train-selected orientation, forecast versus holding horizon, discarded score magnitude and inactive gains. Compare a justified change in combination or holding rules with factors fixed before assuming another factor is needed. |
 | Gross works, net/stress fails | Attribute fees/slippage and turnover; test a predeclared small change in rebalance cadence or entry hysteresis on research splits. Keep required costs unchanged. |
 | High return but poor drawdown, fold stability or benchmark advantage | Diagnose actual exposure and losing intervals; try a bounded causal risk/regime hypothesis. A bull-market equity curve alone is insufficient. |
-| Combination improves nothing over one factor | Ablate one factor at a time with the same dates, costs and refit policy; record both risk-adjusted and absolute-return changes and their paired uncertainty. |
+| Combination improves nothing over one factor | Compare input interventions and, where interactions make them misleading, a separately labelled train-refitted reduced policy. Measure the joint interaction under matched dates/costs; preserve failed constituent claims and the multi-factor eligibility rules. |
+| Better Sharpe/drawdown but weak benchmark utility | Compare avoided losses with missed upside and an appropriately predeclared exposure control. Diagnose sizing, exit or combination losses against the original claim; do not rename the strategy defensive after seeing the result. |
 | Risk/state factor has weak directional IC | Evaluate its prospectively declared role and matched consumer ablation. Preserve a failed predictive version; a different-role proposal is a new counted trial, never automatic admission. |
-| Most candidates reuse one mechanism | Review executed coverage and remaining reservations; explore a different evidence-backed mechanism or diagnose why the feasible search is narrower. Renaming formulas or injecting noise is not diversity. |
-| Too few trades or labels | Report inadequate support; reject or change the economic hypothesis on research data. Do not split resizes into fake trades or count overlapping labels as independent. |
+| Most candidates reuse one mechanism | Compare actual information, fitting, combination and holding choices. Investigate the shared failure and test a materially different mapping or information hypothesis when worthwhile; new names and thresholds do not broaden coverage. |
+| Too few trades or labels | Apply the study's support rules. For unspecified minima, predeclare support appropriate to the holding/decision horizon; a slow allocation policy and a short event policy need different evidence. Report insufficiency without manufacturing trips from resizes or treating overlapping labels as independent. |
 | Eligible strategy misses submission targets or robustness checks | Keep test unexposed. Compare the readiness dimensions and choose a useful next experiment or a justified unsupported conclusion; reducing position size alone may not resolve the weaknesses. |
 | Repeated validation stagnation | Compare meaningful attempts and alternative mechanisms. The Agent may stop when further work has low expected value, documenting evidence and scope limitations; no fixed patience counter or exhaustive search is required. |
 | Runtime resource limit | Save partial research, unmet quality items and the next hypothesis as interrupted. An unavailable next trial cannot make an unready candidate ready or certify completion. |

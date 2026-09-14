@@ -47,13 +47,13 @@ resource interruption need separate labels; a large return or candidate count ca
 
 | Section | Always-visible content |
 | --- | --- |
-| Study overview | Stock, source/coverage/quality, split timeline, as-of time, research status, candidate counts by execution/selection state, validation-selected strategy, all final gate states and the next research question. Separate engineering readiness from market results. |
+| Study overview | Stock, source/coverage/quality, split timeline, prospective objectives/benchmarks/tradeoffs, as-of time, counts by execution/selection state, validation-selected strategy, final gates and next question. Separate engineering readiness from market results. |
 | Factor inventory | Every proposed and executed factor with ID/version, readable formula, rationale, lookback, availability, direction/horizon, train and per-fold validation IC/RankIC, primary mean RankIC, coverage, non-overlapping count, redundancy and admission/rejection reason. Mark unexecuted rows pending, with no invented performance. |
 | Factor evidence | Inline fitted-definition details and the predictive/coverage/stability charts below; selected-factor diagnostics after the joint final test only. Connect admitted versions to the strategies that use them. |
 | Strategy inventory | Every candidate/version, exact factor composition, readable entry/exit/sizing/rebalance/risk rules, train and validation performance, costs, completed trips, failed gates and selection reason. Readers can answer what it actually trades without reading source code. |
 | Strategy evidence | Selected strategy and baseline curves, aligned split/fold metrics, costs, exposure, drawdown episodes, trades, parameter comparisons and factor ablations. Final test shows only the frozen strategy and predeclared scenarios. |
 | Research decisions | Chronological hypothesis → experiment → baseline/candidate metric changes → diagnosis → decision → next experiment; include rejected, errored and blocked trials, budgets and validation usage. |
-| Research routes | Distinct mechanisms, linked factor/strategy versions, actual coverage and behavioral similarities, every shortlisted route's diagnosis, refinement or park/reject reason, remaining reservations and next question. Routes remain in the same document. |
+| Research routes | Information and combination/holding mechanisms, linked versions, behavioral similarities, each shortlist diagnosis, measured factor-only/policy-only/joint changes, park/reject reasons and next question. Compare prospective claims separately in the same document. |
 | Definitions and evidence | Plain-language metric definitions, units, denominators, scope, uncertainty, execution assumptions, source rights, result identities, limitations and permitted JSON/CSV exports. |
 
 Use a compact comparison table for all candidates and readable inline detail for selected
@@ -61,7 +61,10 @@ comparisons; long expressions may wrap.
 Show exact parent/version links and strategy-specific factor roles. Use the metric contract's
 role-specific evidence for supporting factors; directional IC charts apply to predictive roles.
 Explain role-inapplicable metrics instead of filling supporting-factor rows with unavailable
-predictive statistics. Include qualification scope and exploratory versus eligible consumers.
+predictive statistics. Show factor-role evidence, exact consumer contribution and complete
+strategy eligibility separately; a failed consumer must not erase promising factor evidence.
+Preserve return/risk/cost tradeoffs and parent deltas, including missed upside. Distinguish
+new mechanisms from revisions, parameter controls and invalid definitions in the counts.
 Use compact comparison tables rather than replacing definitions/results with only counts,
 ranking badges or generic "signal quality" scores. Before test reveal, its section says
 sealed/pending and explains prerequisites; no test metrics or bars are shipped in HTML,

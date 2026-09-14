@@ -175,6 +175,10 @@ operations. Both environments bind the same versioned metric contract, export de
 candidate/result identities, per-fold and aggregate values, series, counts, gate verdicts and
 explicit null reasons. Their artifacts feed the continuous report described in
 [reports.md](reports.md); factor and strategy outputs do not require separate website routes.
+Keep factor production/fitting and strategy target generation extensible: the pilot's
+percentile transform, threshold, sizing helper or holding horizon is one candidate policy,
+not an engine-wide rule. Bind candidate-specific fitting/state and prospective objective
+identities in results/cache keys so different combinations run through the same accounting.
 
 | Responsibility | Factor environment | Strategy environment |
 | --- | --- | --- |
@@ -224,6 +228,12 @@ strategy environment consumes the factor environment's pinned artifacts. Reuse t
 multi-factor DataFrame output and identical fold/features/benchmark calculations rather than
 one download, compilation or model exchange per formula. Respect memory/time limits; chunk
 large batches and return progress paths through job when needed.
+
+The dependency manifest is many-to-many: compute each shared factor once per exact
+definition/data/fold/fit identity, then let ready strategies read their required columns
+concurrently without mutating the shared frame. Different fitted transforms need distinct
+cache entries. Read variable-length factor bindings, including five or more inputs; keep
+weights, policy state and consumer contribution results local to each strategy version.
 
 Separate feature readiness from diagnostic completion and admission. Publish an immutable
 factor-value artifact with data/code/fit hashes, time index, columns and availability checks
@@ -311,8 +321,9 @@ the declared schema, including list/object shapes, nulls and invalid/empty resul
 reader/adapter for that schema and reuse it for batch summaries and reports; a report-schema
 field name is not proof that the numerical engine uses the same name. Contract violations
 need an explicit error with its artifact path, not an empty-dictionary or zero-score fallback.
-Keep selection/pool membership separate from numerical evaluation: diagnostic consumers
-can be measured before qualification.
+Keep selection/pool membership separate from numerical evaluation. Cheap batch screening
+can precede expensive contribution/uncertainty checks; export the latter as pending, never
+passed or zero. Complete the exact candidate's required evidence before final eligibility.
 
 Before scaling, exercise both native interfaces with independent jobs and record worker start/end
 times proving actual computation overlaps, not just queued submissions. Compare the same uncached
