@@ -137,7 +137,10 @@ missing trading price with a future price. Declarations of data quality do not r
 
 Reopen the saved native response before accepting acquisition. Compare its SHA-256 with the
 receipt; normalize into a workspace snapshot and reopen that file too. Keep both hashes and
-paths in the plan's data receipt. Check that every required field exists, the requested
+paths in the plan's data receipt. Inspect the persisted response's actual envelope and keys
+once, then reuse that adapter; report field names do not define a Connector's metadata layout.
+Do not refetch valid data to fix a local normalization/path error. Check that every required
+field exists, the requested
 symbol/interval matches, counts are nonzero, numeric values are finite and the expected
 exchange sessions match exactly. Calendar dates may be holidays: construct the calendar with
 padding around request bounds, then select sessions inside the requested interval. Do not
@@ -158,7 +161,7 @@ Adapt the bars to the canonical fields above or pass their JSON pointer:
 
 ```bash
 python {skill_dir}/scripts/check_snapshot.py /absolute/saved-response.json \
-  --sha256 RECEIPT_SHA256 --symbol NVDA --start 2016-01-01 --end 2023-12-31 \
+  --sha256 RECEIPT_SHA256 --symbol TSLA --start 2016-09-12 --end 2023-12-31 \
   --calendar XNAS --bars-pointer /result/bars --adjusted-close adjusted_close
 ```
 
@@ -247,9 +250,10 @@ Writing features early inside an action that retains their directory's write cla
 blocks readers. Check the real Manager dependency boundary, not only file existence.
 
 Schedule ready strategies and independent factor computations concurrently with bounded workers;
-do not impose a whole-batch barrier when only a strategy's own inputs are needed. Join completed
-diagnostics, backtests and contribution comparisons for qualification, pool selection and
-report export. Missing evidence remains pending, never implicitly passed.
+do not impose a whole-batch barrier when only a strategy's own inputs are needed. Select an
+exploratory pool from each route's completed screen evidence; full contribution/qualification
+receipts are not prerequisites. Join the required deeper evidence before final qualification,
+and export coherent completed snapshots for reports. Missing evidence stays explicitly pending.
 
 Use the framework's independent-evaluation contract from the self-evolving Environment
 reference. Prefer **one native action per trial**, `state_scope="call"`, and the same
@@ -282,10 +286,8 @@ Exploratory calls must not write that ledger. Short status operations may use
 for completed results versus live job status; do not poll a directory held by a worker and
 claim the observer is nonblocking.
 
-Verify within-engine and cross-engine overlap against uncached serial results, including
-partial failure, duplicate identities, cancellation and owner exit. Cancelling one trial
-must preserve unrelated successful results. Performance claims require measured worker
-intervals; declaring async methods alone is not evidence.
+Use the scoped engineering checks below for concurrency and recovery. Reuse their receipts
+for unchanged implementations instead of repeating them at every research round.
 
 Persist each trial start before execution, then its terminal status, semantic cache key,
 result ID/path/hash and actionable error. Successful candidates survive a partially failing
@@ -312,7 +314,8 @@ research_role/control_for from definitions into results, never default every pol
 candidate. Resolve ablations to exact full candidates; benchmarks and ablations remain
 executable diagnostics. Check actual factor dependencies and redundancy/contribution evidence:
 zero-weight, unused or duplicated inputs do not prove a multi-factor strategy. Report executed
-input IDs and contribution-check result IDs; fail candidate eligibility if these are missing.
+input IDs and contribution-check result IDs; missing contribution evidence prevents final
+eligibility, not exploratory pool membership or further refinement.
 Each result exposes schema version, candidate/version/parents, exact factor bindings, data,
 engine/metric/fitted identities, fold scope, measured metrics, failed criteria and series
 paths. Export common summary fields for every candidate so the Agent can compare a batch
@@ -321,9 +324,18 @@ the declared schema, including list/object shapes, nulls and invalid/empty resul
 reader/adapter for that schema and reuse it for batch summaries and reports; a report-schema
 field name is not proof that the numerical engine uses the same name. Contract violations
 need an explicit error with its artifact path, not an empty-dictionary or zero-score fallback.
-Keep selection/pool membership separate from numerical evaluation. Cheap batch screening
-can precede expensive contribution/uncertainty checks; export the latter as pending, never
-passed or zero. Complete the exact candidate's required evidence before final eligibility.
+An unimplemented proposal can have null implementation; a cash-only result can have null
+Sharpe. Readers must branch on these states, preserve reasons and skip undefined arithmetic;
+failed expressions or missing files remain errors. Follow returned artifact paths or catalog
+entries instead of reconstructing them from the recommended directory tree. Resolve a
+skill reference relative to its containing document, using the exact linked filename.
+
+Support the workflow's [evaluation depths](research-workflow.md#staged-evaluation-and-route-scheduling)
+as request metadata. Separate simulation/materialization from optional deep diagnostics:
+screening emits valid core metrics and explicit pending checks; refinement and qualification
+add only requested evidence. Include depth and diagnostic settings in the assessment/cache
+identity. Reuse unchanged base artifacts when adding comparisons or uncertainty, without
+treating a screen as a cached full qualification or overwriting earlier results.
 
 Before scaling, exercise both native interfaces with independent jobs and record worker start/end
 times proving actual computation overlaps, not just queued submissions. Compare the same uncached
@@ -332,9 +344,13 @@ check result parity within declared numerical tolerances and report wall time, w
 measured speedup (including a slowdown). Do not claim speedup from cache hits or concurrency labels.
 Also check mixed ready/pending/failed dependencies, atomic publication, duplicate-key claims,
 exact-retry cache hits, changed-definition invalidation and partial-batch recovery on small fixtures.
-Keep these receipts linked from the plan index; use measurements to size subsequent batches. This interface is
-a reusable capability to author and verify through self_evolving_skill, not a built-in
-financial engine or a fixed menu of strategies.
+Follow self_evolving_skill's Environment contract and exercise registered native actions.
+When owner-isolation fixtures need a separate Manager, use its supported build API and
+unchanged declared permissions; do not reconstruct config from guessed instance attributes
+or change grants to make a test pass. Exercise cancellation/cleanup where the component owns
+resources. Reuse unchanged framework checks,
+while verifying the candidate's actual path declarations, outputs and cleanup. Keep receipts
+linked from the index and rerun checks affected by code/config changes or a concrete failure.
 
 ### Open definitions and joint research
 
@@ -367,31 +383,18 @@ they do not decide whether research must continue. The Agent applies the workflo
 Before declaring an operation ready, exercise a successful path through the same
 interfaces and numerical code that will consume market data. A separate `run_fixture` demo
 cannot validate a research action that unconditionally returns blocked or null metrics.
-Use isolated fixture studies to check factor values, labels, fitted transforms, diagnostics
-and admission decisions; then strategy signals, next-open orders, cash/shares, costs and
-result metrics. These checks and a real planned multi-factor pilot precede batch research.
-Include a successful comparison of two saved evaluations before claiming comparison support,
-with real string candidate/fold IDs and multiple fold boundaries. Check replay/export modes
-with saved outputs too; success of evaluate does not execute those branches.
-Implement and exercise joint freeze/finalization state transitions before enabling final-test
-access; they need not delay the initial research batch. Deferred operations must return explicit
-not-ready errors without accessing test data, and must not be claimed as verified capabilities.
-Fixtures may simulate eligibility within their own test state but never enter the real study's
-eligible library or consume its test attempt. Exported artifacts must contain computed results
-on valid inputs and explicit errors on invalid ones. Track missing operations individually;
-registration and rejection-path tests are not full engine readiness.
+Keep verification scoped to the operation about to be used:
 
-Demonstrate a newly authored factor outside the initial inventory and a different policy
-implementation through the actual native interface on training/fixture data. Then revise a
-factor, compare its consumer against the unchanged parent, and verify a second strategy can
-keep its original bindings. Check unknown definitions, stale cache identities, role mismatch,
-and attempts to admit a supporting factor without a consumer comparison. These checks must
-exercise authored numerical definitions, not produce canned metrics for new names.
+| Operation | Required evidence before claiming readiness |
+| --- | --- |
+| Materialize/screen | Hand-computable features, causal labels/fitting and future-perturbation checks; a valid real calendar and missing-session rejection. Verify next-open orders, cash/units, entry/exit fees, terminal liquidation and the chosen corporate-action basis against a small independent accounting reference. Include cash, buy-and-hold, constant/zero-variance and empty-signal cases, then a real planned multi-factor pilot. |
+| Extend/refine | A changed factor and materially different policy run through the native interface. Check unknown definitions, role mismatch, changed cache identity and that unchanged consumers keep their pinned inputs. Reuse numerical fixtures unaffected by the change. |
+| Compare/deepen | Compare saved evaluations with actual string IDs, matched fold boundaries and null/zero-activity behavior. Check requested uncertainty/role/consumer calculations against an independent small reference; block unsupported admission. Success of evaluate does not validate compare. |
+| Finalize | Verify joint freeze, changed-candidate rejection, exposure before retrieval, crash/replay and single-attempt semantics before test access. These operations need not exist during initial research. |
 
-Use hand-computable fixtures for a next-open fill, zero signal/cash, buy-and-hold, split,
-dividend, fee on entry/exit, terminal liquidation and a gap in required prices. Compare an
-independent small accounting reference with the candidate; two code paths sharing the same
-bug are weak evidence. Add prefix/future-perturbation tests for features and fitted parameters,
-as well as changed-candidate-after-freeze, consumed-test-after-crash and cache-invalidation cases.
-Synthetic fixtures and an independent calculation are self-produced engineering checks,
-not independent market validation or profitable trading evidence.
+Use the concurrency/recovery evidence above across cooperating engines. One small fixture
+may cover several cases; repairs rerun affected checks and relevant regressions, not a new
+whole-project audit. Deferred operations return not-ready without accessing test data.
+Synthetic studies never enter the research pool or consume the real test attempt. Preserve
+successful native evidence, exact versions and reuse as required by self_evolving_skill;
+fixtures and self-produced reference calculations do not establish market profitability.

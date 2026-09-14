@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "study_id": "signal-foundry-tsla-daily-v9",
+  "study_id": "signal-foundry-tsla-daily-v10",
   "market": {
     "symbol": "TSLA",
     "exchange_calendar": "XNAS",
@@ -93,9 +93,10 @@
     "counting": "Count nonduplicate evaluated factor definitions, distinct multi-factor strategy hypotheses and all revisions separately. Single-factor controls, ablations, benchmarks, aliases, affine copies and parameter-only revisions do not increase hypothesis coverage.",
     "parameter_variants_count_as_distinct_hypotheses": false,
     "review_every_shortlisted_route": true,
+    "working_pool_target_range": [3, 5],
     "joint_refinement_policy": "Review factor and policy limitations for promising routes. Test useful revisions with matched consumer evidence; explain deferral or rejection without forcing ineffective changes.",
-    "new_hypothesis_policy": "Keep exploration open during refinement and allocate new mechanisms by expected information and cost; no fixed per-round quota.",
-    "shortlist_policy": "Evidence, diagnostic improvement potential and behavioral diversity determine membership. No fixed survivor quota; exploratory candidates remain separate from eligible submissions.",
+    "new_hypothesis_policy": "Prioritize joint refinement of the active pool. Screen worthwhile new mechanisms and replace parked or weaker routes with reasons; no fixed per-round quota or unbounded expansion of deep evaluation.",
+    "shortlist_policy": "After initial screening, default to 3-5 active strategy routes selected by evidence, diagnostic improvement potential and behavioral diversity. Keep fewer when quality is insufficient; versions and controls are not additional routes. Exploratory membership is separate from final eligibility.",
     "strategy_design": "Design complete initial multi-factor hypotheses and their needed factor roles/interactions together. Choose the number and combination per mechanism; factors can differ between strategies or share exact versions. A pilot does not replace broad exploration."
   },
   "acceptance": {

@@ -87,11 +87,12 @@ and final test covers 2024-01-01–2026-09-11, with a minimum 21-session boundar
 The September cutoff includes only completed regular trading sessions; it does not request
 future September dates or unfinished daily bars. The cutoff stays fixed once the study starts.
 See [study.json](../../examples/tasks/factor_strategy_mining/signal_foundry/study.json).
-The v9 study starts with roughly ten joint strategy hypotheses and their required factors.
+The v10 study starts with roughly ten joint strategy hypotheses and their required factors.
 About 100 evaluated factor definitions and 20–30 distinct strategy hypotheses describe the
 cumulative exploration guidance. These are neither minimum counts, initial prerequisites nor search ceilings;
-benchmarks and parameter-only revisions do not count as distinct hypotheses. Pool size is
-chosen from evidence rather than a fixed survivor quota. There is no fixed return target or
+benchmarks and parameter-only revisions do not count as distinct hypotheses. After screening,
+normally retain 3–5 distinct promising routes and prioritize joint factor/policy refinement.
+Keep fewer if quality is insufficient; new hypotheses can replace weaker routes. There is no fixed return target or
 non-improvement patience limit. The Agent may stop on supported goals or evidenced stagnation
 when more research has low expected value; no exhaustive search is required. Actual runtime
 limits still yield interruption, not successful research completion.

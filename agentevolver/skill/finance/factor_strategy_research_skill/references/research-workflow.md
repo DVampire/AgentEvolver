@@ -6,7 +6,7 @@ The Agent chooses hypotheses, allocation and completion; the study supplies doma
 [expressions](factor-expressions.md) and [reports](reports.md) own their detailed contracts.
 
 Sections: [records](#planning-and-records), [chronology](#protocol-and-chronology),
-[joint exploration](#joint-exploration), [readiness](#readiness-review),
+[joint exploration](#joint-exploration), [allocation](#staged-evaluation-and-route-scheduling), [readiness](#readiness-review),
 [final evaluation](#final-evaluation), [completion](#completion-decision).
 
 ## Planning and records
@@ -16,9 +16,10 @@ only those two are framework defaults. Each experiment starts from supplied inpu
 built-in capabilities, without importing previous experiments' plans, generated components,
 data, candidates or results. Preserve this experiment's history across turns and retries.
 
-Keep the index brief: task/study paths, current round and pool, last verified result, next
-operation, resources, test-exposure state and exact lookup paths. Update at meaningful result,
-decision or blocker boundaries. The detailed plan links the protocol, data receipts/checks,
+Keep the index brief: task/study paths, current pool, latest evaluated research revision,
+next ready experiment, resources, test-exposure state and exact lookup paths. Separate
+engineering, candidate screening, actual refinement and delivery progress; show pending work.
+Update at result, decision or blocker boundaries. The detailed plan links the protocol, data receipts/checks,
 implementation status, trial history, candidate reviews, final bundle and delivery/capability
 evidence. Large arrays and tables stay in files read on demand.
 
@@ -61,7 +62,9 @@ Archived specs, completed results, pool snapshots and reports are immutable. Wri
 artifacts atomically, then update the catalog/index; preserve round manifests and trial history.
 A report correction needs a new report version, not a repeat of unchanged numerical trials.
 Keep mutable drafting separate from published versions. An archived unimplemented proposal
-also needs a new version when implementation is added.
+also needs a new version when implementation is added. Such an implementation-only version
+does not count as a research refinement. A refinement records changed factor/policy behavior
+and its measured parent comparison, including regressions.
 
 The live index, catalog and resource counters are navigation/status records, not immutable
 evidence. Reviews and reports bind completed results and definitions directly; if a catalog
@@ -107,7 +110,11 @@ python {skill_dir}/scripts/strategy_spec.py /absolute/strategies/S001/v001/spec.
 ```
 
 The checker validates structure and implementation/dependency file hashes without executing
-code. Its `spec_sha256` hashes UTF-8 JSON with sorted keys, compact separators, unescaped
+code. Validate one representative definition before generating a family. An implementation
+path is relative to its version directory (e.g. `policy.py`); `implementation: null` means
+an unimplemented proposal. A derived control may start at v001 but still names its full
+candidate in `parent_ids`/`control_for` and uses a non-initial `change.kind`.
+Its `spec_sha256` hashes UTF-8 JSON with sorted keys, compact separators, unescaped
 Unicode and no NaN. The engine still checks executable behavior, causality and referenced
 factor/parent versions; pin package/runtime versions in the engine identity.
 
@@ -203,25 +210,42 @@ in the factor inventory, while consumer tests remain strategy-specific. All fitt
 Count proposed/evaluated mechanisms, versions, parameter variants, controls and errors separately. Explain scope
 shortfalls without creating filler trials.
 
-| Step | Work and decision |
-| --- | --- |
-| Propose | Complete multi-factor designs and their dependency map; declare each factor's actual use and interaction. Set benefit claims, controls, qualification and guardrails before scoring. |
-| Evaluate | Compute/cache each required factor once per data/fit identity; concurrently run its diagnostics and ready strategies on matched folds. Save results/errors separately. A missing input blocks only its consumers. |
-| Select | Compare candidates within their declared claims, retaining useful return/risk/cost tradeoffs, distinct behaviors and diagnostic potential. A global scalar leaderboard is not the entire working pool. Controls cannot enter it; exploration is not final eligibility. |
-| Refine | Review each shortlisted route; change factors, policy or both with an attributable comparison, or park/reject with evidence. Routes need not receive equal resources. |
-| Replenish/review | Consider new mechanisms alongside revisions. Decide from expected information and cost whether another batch, final evaluation or completion is worthwhile. |
+After the initial screen, default to **3–5 active strategy routes**, following the study's
+working-pool target when supplied. Select by measured promise, distinct behavior and a
+specific improvement hypothesis. Prioritize joint factor/policy refinement of these routes;
+versions and controls do not occupy new route slots. Keep fewer if evidence does not justify
+three, rather than padding with weak or duplicate candidates. Additional ideas can receive
+cheap screening and replace parked/weaker routes; record the replacement reason instead of
+continually expanding deep evaluation across every historical candidate.
 
-Use common coverage, fold and net-performance diagnostics across the broad batch first.
-Spend detailed ablations, uncertainty and parameter work where they can change a pool or
-readiness decision; do not require the full final-evidence matrix for every weak proposal.
-Keep missing checks pending and complete required evidence before final eligibility.
-Evaluate factors in their declared role and consumer context alongside strategy performance;
-do not reject useful interaction/state inputs solely for weak univariate return IC. Record
-each pooled strategy's diagnosis, proposed factor change, proposed policy change (or reasons
-to keep either fixed), expected benefit and next matched comparison. Dropping a factor is a
-diagnostic experiment; retaining a formal strategy still requires a useful multi-factor design.
-Allow distinct return, risk-reduction or efficiency claims with prospective utilities and
-tradeoff guardrails; never relabel an unsuccessful claim after seeing its results.
+### Staged evaluation and route scheduling
+
+Choose evaluation depth explicitly in the request/receipt. This changes work allocation,
+not the study's thresholds, chronology, costs or final evidence requirements.
+
+| Depth | Evidence and next decision |
+| --- | --- |
+| Screen | Valid data/causal fitting/accounting; factor coverage and role point metrics; strategy net/stressed performance, folds, activity, exposure and costs. Retain, reject or identify a concrete repair. Expensive uncertainty/contribution checks may remain pending. |
+| Refine | Test a changed factor expression, combination, fitting, entry/exit or sizing rule against its parent on matched scopes. Add the smallest diagnostic needed to choose that change; preserve regressions and pending qualification. |
+| Qualify | Complete required factor roles, exact-consumer contributions, redundancy, uncertainty, stability and search review for a candidate that merits final submission. Freeze and access test only after readiness passes. |
+
+Maintain a ready-work queue in the existing pool/round record. Each retained route names its
+next changed candidate and comparison, or one unresolved question whose answer selects the
+edit. Record the expected decision and cost before scheduling that diagnostic. A weak route
+can be parked with its current evidence; a full ablation sweep is not its default disposition.
+Choose additional controls only when they can change a research decision. Unknown evidence
+stays pending; a missing qualification receipt does not prevent exploratory research.
+
+Advance each route when its own inputs and required diagnosis are ready. Do not wait for
+all factors, every route's controls or a report release before testing a useful revision.
+Round IDs group records, not synchronization barriers. Independent diagnostic, refinement
+and new-mechanism trials can run together through the bounded environment workers. Reuse
+successful materializations and evaluations; shared factor changes never mutate old consumers.
+
+If checks keep accumulating while candidate behavior stays unchanged, reassess the queue:
+execute the best supported revision/new hypothesis, resolve a concrete blocking defect, or
+park the route. Verification of unchanged results is not evidence of ineffective optimization.
+Judge progress by compared changes and explored mechanisms, not tool calls or version counts.
 
 Keep promising factor versions discoverable in the same catalog when a consumer fails.
 Record factor-role results, exact consumer contributions and whole-strategy eligibility
@@ -239,6 +263,11 @@ from lost information in the combination, holding, sizing or execution. Check fo
 horizon versus actual holding time, train-selected orientation, inactive opportunity and
 costs before adding filters. Positive IC with weak returns warrants a mapping experiment,
 not automatically another factor. Joint changes and cross-route transfers remain open.
+Check training-time entry reachability and fitted direction versus policy conditions before
+scaling an event strategy. Diagnose low exposure, missed opportunities and multiplicative
+filters before adding another gate. Low return from a defensive allocation may match its
+claim; compare sizing/holding alternatives under the declared objective rather than assuming
+more filters or larger positions improve the information signal.
 
 Compare exact parent/candidate versions on matched dates, folds, costs and fitting policies.
 Hold the consumer fixed for compatible factor comparisons and factors fixed for policy
@@ -254,6 +283,10 @@ changes with a falsifiable benefit; do not force a pointless revision to satisfy
 Record why a proposed change was tested, deferred or rejected, including consumer evidence
 when the change is compatible. The [diagnostic table](metrics-and-evaluation.md#evaluation-drives-the-next-experiment)
 helps choose the next investigation.
+Weak standalone evidence with useful consumer contribution is a reason to investigate a
+prospectively defined interaction or conditional use, not to repeatedly retest the same
+failed definition. Preserve its original failed claim and apply the study's role rules to
+the new hypothesis; a profitable aggregate does not retroactively qualify its inputs.
 
 ### Diversity and efficient allocation
 
@@ -269,7 +302,9 @@ checks, and spend new evaluations on decision-changing comparisons. Record time/
 progress; presentation cannot displace research. No fixed family quota or exhaustive search.
 
 Render local reports at meaningful research reviews and publish useful milestones/final
-results, not every candidate. Check files, hashes, links and HTTP delivery directly; no browser
+results, not every candidate. Use a completed snapshot while ready research continues; report
+polish and unrelated diagnostic completion are not prerequisites for the next trial.
+Check files, hashes, links and HTTP delivery directly; no browser
 or screenshot review is needed. A changed training interval can check capability reuse;
 additional stocks and a stock-search application are outside this single-stock brief.
 
@@ -339,7 +374,10 @@ limitations, candidate support, test state, delivered artifacts and any unmet re
 | Interrupted/blocked | A user stop, actual runtime/resource limit or external prerequisite prevents planned useful work. Preserve partial results, the actual cause and a restartable next step. |
 
 For stagnation, compare recent meaningful attempts with their parents and consider whether
-a different mechanism offers a worthwhile alternative. The Agent chooses the review horizon;
+a different mechanism offers a worthwhile alternative. Initial proposals, implementation
+versions and unchanged-policy diagnostics do not establish repeated ineffective improvement.
+If no meaningful revisions ran, describe the actual constraint and the unexplored opportunity.
+The Agent chooses the review horizon;
 there is no mandatory patience counter, candidate minimum, return threshold or requirement to
 prove exhaustive search. One failed tweak alone is weak evidence, but unused budget or a
 merely conceivable idea is not an obligation to continue. Explain deviations from exploration

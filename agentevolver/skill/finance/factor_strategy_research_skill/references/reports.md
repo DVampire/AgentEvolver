@@ -30,6 +30,11 @@ export. Reset clears local investigation filters without replacing any report se
 
 Save both responsibilities in each round's versioned JSON results. Generate the continuous
 page from a selected completed snapshot; unfinished sections remain explicitly pending.
+Include completed screen results without requiring full qualification artifacts for every
+row. Label depth, pending evidence and the snapshot's as-of time. Publish the useful bundled
+view first; ready factor/strategy revisions do not wait for custom controls or UI extensions.
+Reuse one adapter for the actual engine schema and update it only for changed fields or a
+concrete defect. The eventual report still covers the required research results and charts.
 Publish a useful milestone/final report without a mandatory two-stage release sequence.
 Keep previous round/report versions intact while the main deployed URL shows the selected
 latest result. Report iteration does not require a new browser session or deployment.
@@ -215,6 +220,14 @@ exact rules and computed metrics; they are not mined strategies.
 Only executed candidates carry measured metrics. An evaluated training factor can support
 an exploratory training strategy, but validation eligibility still requires actual admission.
 A failed factor cannot be silently consumed as an admitted factor.
+
+For staged reports, put the snapshot's as-of time in `summary`, its stage in `record.phase`,
+and each row's evaluation depth/pending checks in `reason`. Those fields survive compilation
+and display. Keep structured depth and diagnostic receipts in the source evaluation JSON;
+the adapter does not preserve arbitrary extra manifest fields. `--stage integrated` checks
+numeric results from both sections, not full qualification. Use `evaluated` with
+`research_only: true` for a screened strategy awaiting admission, and retain its route with
+the next refinement in `next_step`; do not label it `admitted` merely to publish the snapshot.
 
 ### Joint research records (schemas 2/3)
 

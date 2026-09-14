@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
 description: "Research stocks with one agent: acquire auditable data, jointly discover and refine diverse factors and multi-factor strategies, and publish one continuous evidence report."
-version: "1.9.0"
+version: "1.10.0"
 type: worker
 category: finance
 requirements: [cpu]
@@ -36,17 +36,17 @@ paths from the skill loader; keep detailed records on disk, not duplicated in li
    Maintain concise `index.md` progress and links; put detailed designs and reviews on disk.
 2. Download train/validation data through a native Connector, reopen and verify the local
    snapshot. Disclose authorized public-data limitations; defer final-test acquisition.
-3. Build both numerical Environments with configurable bounded concurrency and one shared
-   worker allowance. Prefer call-scoped trial instances with declared input/output paths;
-   let Manager/Runtime handle admission and lifecycle. Before scaling,
-   verify actual overlapping execution and serial/concurrent result parity through their native
-   interfaces, alongside causality/accounting fixtures and a representative real-data pilot.
-   Add finalization checks before final-test access; render reports at research milestones.
-4. Propose strategies and factors together → screen broadly → select a diverse working
-   pool → diagnose and revise factors, combination or holding policy. Keep factor-level
-   evidence, consumer contribution and whole-strategy eligibility separate. Add new mechanisms;
-   run independent factor diagnostics and strategies concurrently once their inputs are ready.
-   Choose batch sizes and deeper checks from evidence. Analyze JSON, not HTML or screenshots.
+3. Establish the numerical path with both Environments, one shared worker allowance,
+   causality/accounting fixtures and a real pilot. Verify native overlap and serial/concurrent
+   parity; reuse valid checks for unchanged behavior. Manager/Runtime owns admission and
+   lifecycle. Add finalization safeguards before final-test access, not before broad research.
+4. Use the workflow's [staged evaluation](references/research-workflow.md):
+   screen broadly, then revise promising routes as soon as their own evidence is sufficient.
+   A missing final qualification does not block exploratory revisions. Choose a diagnostic
+   only when its answer changes the next edit, pool decision or readiness claim; avoid a full
+   control matrix for rejected routes. Schedule useful factor/policy revisions and new
+   mechanisms alongside ready evaluations. Analyze JSON; rounds and reports are checkpoints,
+   not barriers. Count tested research changes separately from implementation and controls.
 5. At research reviews, decide whether the next experiment is worthwhile. Stop when the
    objective is supported, or repeated ineffective improvements and low expected value
    justify a negative/inconclusive conclusion. No universal patience/count/return gate or

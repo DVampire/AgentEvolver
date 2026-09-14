@@ -64,6 +64,12 @@ required benchmark or make a failed original objective pass.
 
 ## Multi-factor strategy and contribution scope
 
+Use the workflow's [evaluation depths](research-workflow.md#staged-evaluation-and-route-scheduling).
+Numerical correctness and causal data boundaries apply at every depth. Broad screening can
+omit expensive resampling and contribution matrices, with those checks explicitly pending;
+point metrics alone never establish final eligibility. Add uncertainty when it can resolve
+a selection/iteration decision, and complete the frozen required checks before submission.
+
 Formal strategies combine multiple distinct factors, with open roles and combination methods.
 Assess the joint policy as well as its inputs: a high marginal IC does not establish incremental
 value and a low marginal IC does not rule out a useful state filter or interaction. Declare
@@ -73,6 +79,11 @@ Measure full-policy results on common train/validation folds first. For promisin
 compare useful remove/replace/neutralize-factor controls and, where relevant, interaction or
 combination-rule alternatives under matched fitting, costs and scored dates. Distinguish a
 fixed-policy input intervention from a refitted reduced model; label which question each asks.
+An input intervention diagnoses the unchanged policy; it is not a tested optimized policy.
+When its answer identifies an edit, evaluate that revised candidate next. Avoid testing
+every input of every rejected route just to complete a matrix. Inspect the saved signal and
+position traces first; zero activity or an obvious unreachable condition may already explain
+the failure. Use one targeted control where needed to disambiguate, then revise or park.
 Save factor availability/variation, actual executed input IDs, paired objective/risk/cost deltas
 and their uncertainty. Inspect redundancy and inactive branches; a listed factor with no use
 or an identical/affine copy is not evidence of a multi-factor mechanism. Redesign or qualify
@@ -148,6 +159,9 @@ matched consumer ablations. A composite predictive expression can be a separatel
 factor with its own admission tests. Preserve failed constituent claims; do not retroactively
 admit them, change roles, or let a profitable aggregate override missing qualification.
 Keep exploration open through research-only consumers while that evidence is pending.
+Preserve promising interactions in the exploratory pool when the study permits further
+research. Do not use the final role-admission conjunction as a prerequisite for creating
+their next versions, or relabel an old failed role after seeing consumer gains.
 
 ### Labels, samples and causality
 
@@ -316,7 +330,7 @@ Sharpe reference, and d_t = r_t-rf_t. Convert a specified effective annual refer
 | `win_rate` / `payoff_ratio` | Fraction of completed episodes with strictly positive net PnL (zero is not a win); mean positive PnL / absolute mean negative PnL, respectively. PnL includes allocated fees, slippage and attributable dividends. |
 | `profit_factor` | Sum positive completed-episode net PnL / absolute sum negative completed-episode net PnL; not win rate or average payoff. |
 | `active_return` / `information_ratio` | a_t = strategy net r_t - matched benchmark net r_t; show difference in total return separately in percentage points. Information ratio = sqrt(K)*mean(a)/std(a,ddof=1). |
-| `sharpe_advantage` | Strategy net Sharpe minus matched buy-and-hold net Sharpe on exactly the same scored sessions. This is the study's comparison gate, not information ratio or CAGR outperformance. |
+| `sharpe_advantage` | Strategy net Sharpe minus matched buy-and-hold net Sharpe on exactly the same scored sessions. This comparison is distinct from information ratio and CAGR outperformance; it is a gate only when the prospective study/protocol specifies one. |
 | `stressed_net_return` | Recomputed net_total_return under the study's frozen stress multiplier; use a rerun, not scaling the headline return. |
 
 List completed-episode net PnL, holding sessions and entry/exit timestamps. Reconcile total
@@ -367,8 +381,8 @@ support, cost sensitivity, complexity and behavioral similarity. Preserve uncert
 failed criteria. Factor-role passes remain library evidence even when the consumer fails;
 an alternative consumer requires a fresh comparison, not inherited qualification.
 
-Use evidence and a concrete, falsifiable improvement hypothesis to retain a route. Avoid
-filling a survivor quota or taking only the highest Sharpe rows. Group near-identical
+Use evidence and a concrete, falsifiable improvement hypothesis to retain a route within
+the workflow's small active pool. Do not pad the pool or take only the highest Sharpe rows. Group near-identical
 behaviors and retain meaningful alternatives; weaker but distinct routes may merit a
 bounded diagnostic. Rejected routes keep their result IDs and reasons. For each retained
 route, save the next useful change, its fixed comparison controls and falsification condition,
@@ -411,7 +425,10 @@ selection opportunities. Do not optimize chart aesthetics as a substitute for re
 
 ## Numerical acceptance before market interpretation
 
-Verify these cases through the actual environment operations and exported report artifacts:
+Verify applicable cases through the actual environment operations and exported artifacts.
+Follow the [operation-scoped checks](data-and-environments.md#engineering-evidence-before-financial-claims):
+causality/accounting before screening, added diagnostics before use, and finalization before
+test access. Reuse unaffected receipts; this list is not a new full audit for every round.
 
 - Factor [1,2,3,4] and labels [0.01,0.02,0.03,0.04] give Pearson/Spearman 1;
   reversed order gives -1; a constant input gives null. Ties [1,1,2,3] rank as [1.5,1.5,3,4].

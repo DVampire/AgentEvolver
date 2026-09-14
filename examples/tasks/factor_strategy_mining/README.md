@@ -8,8 +8,9 @@ independent of the implementation framework and can be used with different resea
 [The project brief](signal_foundry/task.html) asks for joint strategy and factor research
 on one stock. Start with roughly ten diverse strategies and the factors each needs; evaluate
 factor diagnostics, complete trading policies and their contributions together. Select a
-working pool by evidence, diversity and improvement potential, then refine the factors/rules
-while adding new hypotheses. Different strategies may use different factor sets.
+working pool of normally 3–5 strategy routes by evidence, diversity and improvement potential,
+then prioritize joint factor/rule refinement. Keep fewer if quality is insufficient; screen
+new hypotheses to replace weaker routes. Different strategies may use different factor sets.
 
 About 100 evaluated factor definitions and 20–30 distinct strategy hypotheses are cumulative
 exploration references across rounds, not candidate minimums, a required first batch, a passing
@@ -28,7 +29,7 @@ operation, separate stage pages or mandatory publication sequence is part of the
 - `study.json`: market scope, dates, execution assumptions, factor-role qualification,
   exploration guidance and the domain evidence standard.
 
-The v9 study uses **TSLA** daily observations over the trailing ten-year window
+The v10 study uses **TSLA** daily observations over the trailing ten-year window
 **2016-09-12 through 2026-09-11**. Training covers 2016-09-12–2020-12-31,
 validation covers 2021–2023, and final test covers 2024-01-01 through the cutoff.
 Acquire train/validation first and defer test acquisition until the frozen final evaluation.
