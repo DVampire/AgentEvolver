@@ -22,6 +22,37 @@ snapshot = module("check_snapshot")
 strategy_spec = module("strategy_spec")
 
 
+def test_control_uses_actual_parent_parameters_and_declares_all_changes(strategy_definition):
+    from copy import deepcopy
+
+    parent = deepcopy(strategy_definition)
+    parent["parameters"] = {"entry": 0.65, "hold": 10}
+    # Prose is deliberately stale, as in the audited run. It is not a config source.
+    parent["description"] = "Enter above 0.70"
+    child = deepcopy(parent)
+    child.update(version="v002", id="S001@v002", parent_ids=[parent["id"]])
+    child["change"]["kind"] = "hold_revision"
+    child["parameters"].update(hold=7, entry=0.70)
+    with pytest.raises(ValueError, match="Undeclared"):
+        strategy_spec.revision_receipt(parent, child, ["/parameters/hold"])
+    child["parameters"]["entry"] = parent["parameters"]["entry"]
+    receipt = strategy_spec.revision_receipt(parent, child, ["/parameters/hold"])
+    assert receipt["before"]["parameters"]["entry"] == 0.65
+    # Combined changes are supported when explicitly declared.
+    child["parameters"]["entry"] = 0.70
+    assert len(strategy_spec.revision_receipt(parent, child,
+               ["/parameters/entry", "/parameters/hold"])["changed_paths"]) == 2
+
+
+def test_noop_replay_detects_threshold_drift_in_real_decision_fields():
+    def trace(entry):
+        return [{"date": "2023-01-23", "target": 1 if 0.659196 > entry else 0, "rebalance": True}]
+
+    with pytest.raises(ValueError, match="does not reproduce"):
+        strategy_spec.assert_noop_parity(trace(0.65), trace(0.70))
+    assert strategy_spec.assert_noop_parity(trace(0.65), trace(0.65))["decisions"] == 1
+
+
 def save(path, value):
     raw = json.dumps(value).encode()
     path.write_bytes(raw)
@@ -61,6 +92,21 @@ def test_measured_zero_survives_and_exports_match_sources(manifest, tmp_path):
     assert ",-0.01,percent," in (output / "metrics.csv").read_text()
     assert "2020-01-04,99" in (output / "series.csv").read_text()
     assert json.loads((output / "analysis.json").read_text())["charts"][1]["series"][0]["points"][-1]["y"] == 99
+
+
+def test_sealed_run_cannot_erase_source_bound_prior_test_exposure(manifest):
+    spec = json.loads(manifest.read_text())
+    engine = manifest.parent / "engine.json"
+    source = json.loads(engine.read_text())
+    source["test_policy"] = {"prior_exposure": "previously_exposed"}
+    spec["sources"]["engine"]["sha256"] = save(engine, source)
+    spec["test_history"] = {"source": "engine", "pointer": "/test_policy"}
+    save(manifest, spec)
+    result = report.compile_report(manifest, allow_synthetic=True)
+    assert result["test_state"] == "sealed"
+    assert result["test_history"]["prior_exposure"] == "previously_exposed"
+    assert "diagnostic" in result["test_history"]["interpretation"]
+    assert result["factors"][0]["metrics"][0]["split"] == "train"
 
 
 @pytest.fixture

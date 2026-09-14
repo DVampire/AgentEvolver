@@ -23,7 +23,7 @@ python -m examples.run_factor_strategy_mining_demo --task-dir /absolute/path/to/
 Only executing the launcher starts a model experiment. Default model:
 `llm_hub/gpt-6-astra`; override with `--model`. The runtime ceiling is 10,000 steps,
 1,000,000,000 tokens and 8 hours, with input compaction at 100,000 tokens. These ceilings
-do not mandate spending the budget. The study tracks research trials and validation looks without fixed search ceilings.
+do not mandate spending the budget. The study tracks research trials and result observations without fixed search ceilings.
 Runs register on the usual gateway at port 9876; deploy_tool publishes the report links.
 Every launch starts a new experiment. The shared example launcher isolates its adopted
 capability library under a new session namespace, alongside fresh workspace, plan and memory
@@ -64,7 +64,7 @@ The [joint-exploration method](../../agentevolver/skill/finance/factor_strategy_
 keeps factor and policy definitions open. Formal candidates require at least two distinct,
 actually used factors. Single-factor controls and other ablations remain diagnostics, outside
 candidate counts, the working pool and final selection. A marginal factor score does not gate every
-exploratory strategy; role-specific qualification is required before final eligibility.
+exploratory strategy; evidence for the actual individual/conditional/group claim is required before final eligibility.
 The skill owns the research and record layout. The prompt remains an orchestration layer.
 
 The config mounts job only, alongside the dynamically authored research environments.
@@ -81,38 +81,52 @@ not independently judge financial validity or prove that the two implementations
 
 ## Default study and test integrity
 
-The provided example uses TSLA daily bars over 2016-09-12–2026-09-11, a trailing ten-year
-window. Train covers 2016-09-12–2020-12-31, expanding annual validation covers 2021–2023,
-and final test covers 2024-01-01–2026-09-11, with a minimum 21-session boundary gap.
-The September cutoff includes only completed regular trading sessions; it does not request
-future September dates or unfinished daily bars. The cutoff stays fixed once the study starts.
-See [study.json](../../examples/tasks/factor_strategy_mining/signal_foundry/study.json).
-The v11 study starts with roughly ten joint strategy hypotheses and their required factors.
-About 100 evaluated factor definitions and 20–30 distinct strategy hypotheses describe the
-cumulative exploration guidance. These are neither minimum counts, initial prerequisites nor search ceilings;
-benchmarks and parameter-only revisions do not count as distinct hypotheses. After screening,
-normally retain 3–5 distinct promising routes and prioritize joint factor/policy refinement.
-Keep fewer if quality is insufficient; new hypotheses can replace weaker routes. There is no fixed return target or
-non-improvement patience limit. The Agent may stop on supported goals or evidenced stagnation
-when more research has low expected value; no exhaustive search is required. Actual runtime
-limits still yield interruption, not successful research completion.
+The v13 example uses TSLA daily bars over 2016-09-12–2026-09-11.
+**Train covers 2016-09-12–2023-12-31; test covers 2024-01-01–2026-09-11.**
+All discovery, factor and combination fitting, policy optimization and selection occur inside
+train. The agent designs chronological rolling fit/score windows, support criteria, horizons,
+gaps and statistical methods from training evidence. Actual label availability is checked
+against every fit cutoff. There is no fixed annual fold count, universal IC/correlation
+threshold or mandatory confidence level. User dates, costs and execution constraints remain
+binding. See [study.json](../../examples/tasks/factor_strategy_mining/signal_foundry/study.json).
+
+The historical test has already been examined in earlier project experiments, including the
+S005-v003 diagnostic for e2dac449. The study preserves that disclosure. Reserving test from
+this run's optimization does not make it project-wide unseen; its later evaluation is a
+historical diagnostic, not new independent confirmation. Dates are not silently moved.
+
+Research focuses on complete mechanisms: information and factor roles, conditional/group
+relationships, combination fitting, entry, holding/exit, sizing and risk. Threshold/weight
+search calibrates or tests a hypothesis; it is not a replacement for investigating a shared
+information or policy failure. The agent chooses pool and batch sizes by evidence, behavioral
+diversity and expected information/cost, without fixed candidate counts or structural quotas.
+Simple fixed rules and train-fitted combinations are both supported.
+
+Before each comparison, record the claim and evidence standard with reasons. Separate
+marginal factor diagnostics, conditional/group evidence and exact-consumer value. Context
+inputs do not universally require standalone directional-IC passes. Preserve failed claims;
+new roles or revised criteria are new research, never retrospective passes. Freeze the final
+standard, selected candidate and all fitted/refit policies before the one final operation.
+
+The [integrity helpers](../../agentevolver/skill/finance/factor_strategy_research_skill/references/experiment-integrity.md)
+are copied, pinned and invoked by the generated actions. They check dynamic training windows,
+actual fitted rows, parent/control configuration differences and no-intervention decision
+parity. Worker-owned completion receipts distinguish planned, dispatched, computed and observed
+work; reconciliation recovers finished results without a round summary. One shared final
+ledger reserves the bundle before retrieval and binds the downloaded snapshot before scoring.
+These checks do not implement a backtester or independently judge financial merit.
 
 The [completion review](../../agentevolver/skill/finance/factor_strategy_research_skill/references/research-workflow.md#completion-decision)
-defines the decision. Before selection, establish a prospective evidence standard for
-mechanisms, incremental value, diversity and joint refinement, robustness, execution/costs,
-uncertainty and search effects. Repeatedly investigate and revise both factors and strategies.
-Each shortlisted route receives a diagnosis and refinement or an evidenced park/reject decision.
-
-The researcher records exact results, counterevidence, recent improvement history and the
-expected information/cost of useful next experiments. An attractive statistic or subjective
-"looks good" is insufficient. When readiness is justified, freeze the selected bundle and
-standard before the one final test. Never select replacements on the same exposed test.
+connects counterevidence, recent improvements and the expected value of further research.
+Required failed/inconclusive evidence prevents readiness. No universal return target,
+non-improvement patience or exhaustive search is imposed. Actual runtime limits mean
+interruption, not successful completion.
 
 Keep research completeness, strategy support and delivery separate. Test may support, refute
 or leave the claim inconclusive. A negative conclusion can close research when diverse
 attempts and ineffective revisions justify the low expected value of further work. Remaining
 possible ideas do not force continuation. If no candidate qualifies, preserve the unexposed
-test and explain why it was not run. Subsequent train/validation work after exposure is exploratory; new confirmation
+test and explain why it was not run. Subsequent train work after exposure is exploratory; new confirmation
 requires genuinely unused data and a prospectively fixed protocol. Record resource/access
 interruptions and unfinished work without calling the research complete. Experiments do not
 inherit previous run state; repeated historical studies are not independent new observations.
@@ -131,7 +145,7 @@ starts with a small **training-only** request. Never print API keys or buy acces
 The [source reference](../../agentevolver/skill/finance/factor_strategy_research_skill/references/data-and-environments.md)
 links provider contracts and public-data alternatives. Signal Foundry permits documented
 public adjusted-price research, while strict as-traded/consolidated/action qualification is
-reported separately as unmet when unverified. Dates, costs and numerical gates remain fixed.
+reported separately as unmet when unverified. User dates and costs remain fixed; research criteria are prospectively versioned.
 The first milestone is a native Connector download saved locally, with a checked hash,
 nonempty OHLCV and exchange-session coverage. The skill includes a local snapshot checker
 and a source-bound report adapter with executable line/bar charts using the visual theme.
@@ -149,7 +163,7 @@ backtests or admit factors. New operators can be added and verified when researc
 The agent expands the brief into the session's plan/plan.md and updates plan/index.md
 with progress, current round, test state and exact JSON lookup paths. The skill suggests supporting records
 under that directory without imposing a fixed framework schema. The domain layout uses
-workspace/research/catalog.json, versioned factors/strategies, immutable evaluations and
+workspace/research/catalog.json, versioned factors/strategies, worker-owned trial receipts and immutable evaluations, and
 rounds/R001/{batch,results,pool}.json. Each round has reports/v001 with analysis.json, the
 HTML shell and local assets. Definitions, evaluation IDs, parent versions, comparisons and
 selection decisions remain queryable. A report correction gets v002 without rerunning
@@ -159,8 +173,9 @@ evidence. Both stages remain visible in normal page flow; navigation scrolls to 
 route or stage-tab switching. The HTML shell loads JSON; the researcher analyzes the JSON directly without browser work.
 Report schema 3 also preserves each strategy's full archived spec: name, description, design,
 parameters, exact bindings, version lineage and modification reasons, alongside route reviews
-and measured comparisons. The skill's strategy_spec.py checks definition structure and pinned
-implementation hashes before evaluation. The report derives metadata from a hash-bound
+and measured comparisons. The skill's strategy_spec.py checks definition structure, pinned
+implementation hashes and declared parent/control changes before evaluation; actual decision
+parity is exercised through the generated comparison operation. The report derives metadata from a hash-bound
 strategy_spec reference and rejects conflicting manually copied fields; schemas 1/2 remain
 readable for existing artifacts. Environments export numerical admission and readiness evidence; the Agent applies
 the skill's quality review to decide whether research is ready or needs further investigation.

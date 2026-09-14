@@ -295,6 +295,39 @@ async def test_call_instances_cleanup_after_success_failure_and_state_observatio
 
 
 @pytest.mark.asyncio
+async def test_public_dispatch_does_not_rebind_a_viewless_call_environment(calls, monkeypatch):
+    from agentevolver.environment import server as server_module
+
+    lifecycle, warnings = [], []
+
+    class Numerical(Environment):
+        name: str = "viewless_trial"
+        description: str = "A numerical call without a live view"
+        metadata: dict = Field(default_factory=dict)
+        state_scope: str = "call"
+
+        async def initialize(self):
+            lifecycle.append("initialize")
+
+        async def cleanup(self):
+            lifecycle.append("cleanup")
+
+        @environment_manager.action(read_only=False, destructive=False, open_world=False)
+        async def evaluate(self, ctx=None):
+            return {"success": True, "value": 42}
+
+    _, manager = calls
+    mount(manager, Numerical())
+    server = server_module.EnvironmentManagerServer()
+    server.environment_context_manager = manager
+    monkeypatch.setattr(server_module.logger, "warning", warnings.append)
+    result = await server("viewless_trial", "evaluate", {}, ctx("researcher"))
+    assert result.success and result.data["value"] == 42
+    assert lifecycle == ["initialize", "cleanup"]
+    assert warnings == []
+
+
+@pytest.mark.asyncio
 async def test_sync_trial_cancel_joins_thread_and_cleanup_before_conflicting_writer(calls, tmp_path):
     import threading
     started, finish = threading.Event(), threading.Event()

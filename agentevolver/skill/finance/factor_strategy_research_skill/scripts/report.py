@@ -209,6 +209,18 @@ def compile_report(path, *, allow_synthetic=False, stage="integrated"):
     def resolve(ref):
         return pointer(sources[ref["source"]], ref["pointer"])
 
+    # This run's sealed/evaluated state cannot erase a previous run's exposure.
+    history = resolve(spec["test_history"]) if "test_history" in spec else {"prior_exposure": "unknown"}
+    if not isinstance(history, dict) or history.get("prior_exposure") not in (
+            "previously_exposed", "no_known_exposure", "unknown"):
+        raise ValueError("Test history requires an explicit prior_exposure classification")
+    interpretation = {
+        "previously_exposed": "Previously examined historical test; results are diagnostic, not new independent confirmation.",
+        "no_known_exposure": "No known prior exposure declared; independence still depends on the evaluation boundary.",
+        "unknown": "Prior historical exposure is unknown; a sealed run does not establish unseen confirmation.",
+    }[history["prior_exposure"]]
+    test_history = {"prior_exposure": history["prior_exposure"], "interpretation": interpretation}
+
     all_ids = set()
     collections = {}
     for kind in ("factors", "strategies"):
@@ -377,7 +389,7 @@ def compile_report(path, *, allow_synthetic=False, stage="integrated"):
         if c["research_role"] == "candidate" and c["status"] in ("evaluated", "admitted", "rejected")})
     return {"schema": spec["schema"], "study_id": spec["study_id"], "title": spec.get("title", "Signal Foundry"),
             "scope": spec["scope"], "data_basis": spec["data_basis"], "strict_data": qualification,
-            "test_state": spec.get("test_state", "sealed"), "sources": hashes,
+            "test_state": spec.get("test_state", "sealed"), "test_history": test_history, "sources": hashes,
             "summary": spec.get("summary", ""), **collections, **research, "charts": charts,
             "strategy_counts": counts,
             **({"record": record} if record else {})}

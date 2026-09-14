@@ -73,7 +73,8 @@ def test_task_and_study_are_staged_with_runtime_policy_from_config(tmp_path):
     assert "record_use" not in text  # lifecycle instructions stay in the prompt/skill
     study = json.loads(inputs[1].read_text())
     splits = study["splits"]
-    assert splits["train"][1] < splits["validation"][0] < splits["validation"][1] < splits["test"][0]
+    assert "validation" not in splits
+    assert splits["train"][1] < splits["test"][0]
     assert splits["final_test_attempts"] == 1
     assert "holdout_control" not in splits
 

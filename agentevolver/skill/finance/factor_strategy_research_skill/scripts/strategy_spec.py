@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -145,6 +146,79 @@ def digest(spec):
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def execution_definition(spec):
+    """Return executable settings, including unknown extensions, without prose metadata.
+
+    Policies must read parameters/bindings/fitting here, never extract numeric values
+    from descriptions. Unknown extension fields are included so a new model's settings
+    cannot silently escape revision checks.
+    """
+    metadata = {"schema", "strategy_id", "version", "id", "name", "description", "family",
+                "hypothesis", "falsification", "created_round", "parent_ids", "change",
+                "research_role", "control_for", "baseline", "design", "intervention"}
+    return copy.deepcopy({k: v for k, v in spec.items() if k not in metadata})
+
+
+def changed_paths(before, after, prefix=""):
+    """Exact JSON-pointer differences; lists are one ordered binding/config value."""
+    if isinstance(before, dict) and isinstance(after, dict):
+        paths = []
+        for key in sorted(before.keys() | after.keys()):
+            path = prefix + "/" + key.replace("~", "~0").replace("/", "~1")
+            if key not in before or key not in after:
+                paths.append(path)
+            else:
+                paths.extend(changed_paths(before[key], after[key], path))
+        return paths
+    return [] if digest(before) == digest(after) else [prefix]
+
+
+def revision_receipt(parent, candidate, declared_paths):
+    """Reject undeclared changes before attributing a parent/control comparison.
+
+    This establishes configuration differences, not causal equivalence of arbitrary
+    Python programs. Generated engines must also execute the no-intervention replay.
+    """
+    validate(parent)
+    validate(candidate)
+    if parent["id"] not in candidate["parent_ids"]:
+        raise ValueError("Revision must name the exact parent")
+    if (not isinstance(declared_paths, list)
+            or any(not isinstance(p, str) or not p.startswith("/") for p in declared_paths)
+            or len(set(declared_paths)) != len(declared_paths)):
+        raise ValueError("Declare unique exact executable JSON-pointer changes")
+    before, after = execution_definition(parent), execution_definition(candidate)
+    actual = changed_paths(before, after)
+    if set(actual) != set(declared_paths):
+        raise ValueError(f"Undeclared or ineffective configuration changes: actual={actual}, declared={declared_paths}")
+    return {"parent_id": parent["id"], "candidate_id": candidate["id"],
+            "parent_sha256": digest(parent), "candidate_sha256": digest(candidate),
+            "changed_paths": actual, "before": before, "after": after}
+
+
+def assert_noop_parity(parent_decisions, control_decisions):
+    """Check saved policy decisions with all intended interventions disabled.
+
+    Engines supply dated decisions including target, rebalance and relevant state.
+    Exact parity is appropriate for identical inputs/code paths; a deliberately
+    different numerical implementation needs its own documented tolerance check.
+    """
+    for trace in (parent_decisions, control_decisions):
+        if not isinstance(trace, list) or not trace:
+            raise ValueError("No-intervention parity needs nonempty decision traces")
+        for row in trace:
+            if not isinstance(row, dict) or not {"date", "target", "rebalance"} <= row.keys():
+                raise ValueError("Decisions require date, target and rebalance")
+        digest(trace)  # Reject nonfinite data rather than accepting matching NaNs.
+        dates = [row["date"] for row in trace]
+        if any(not isinstance(d, str) for d in dates) or dates != sorted(set(dates)):
+            raise ValueError("Decision dates must be unique and chronological")
+    if digest(parent_decisions) != digest(control_decisions):
+        raise ValueError("No-intervention control does not reproduce parent decisions")
+    return {"ok": True, "decisions": len(parent_decisions),
+            "decision_sha256": digest(parent_decisions)}
+
+
 def check_file(path, *, require_implementation=False):
     path = Path(path).resolve()
     spec = validate(json.loads(path.read_text()), require_implementation=require_implementation)
@@ -163,9 +237,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("spec", type=Path)
     parser.add_argument("--require-implementation", action="store_true")
+    parser.add_argument("--parent", type=Path, help="Check declared intervention.paths against this exact parent")
     args = parser.parse_args()
     try:
-        print(json.dumps(check_file(args.spec, require_implementation=args.require_implementation)))
+        receipt = check_file(args.spec, require_implementation=args.require_implementation)
+        if args.parent:
+            check_file(args.parent, require_implementation=args.require_implementation)
+            candidate = json.loads(args.spec.read_text())
+            parent = json.loads(args.parent.read_text())
+            receipt["revision"] = revision_receipt(parent, candidate,
+                                                   candidate.get("intervention", {}).get("paths"))
+        print(json.dumps(receipt))
     except (ValueError, TypeError, OSError) as error:
         parser.exit(1, f"Strategy definition is not ready: {error}\n")
 

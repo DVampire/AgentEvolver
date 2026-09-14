@@ -15,8 +15,12 @@ Sections: [page contract](#page-contract), [information hierarchy](#visible-info
 Deliver **one continuous document at one report URL**. Overview, Factor Observatory,
 Strategy Atelier, research history and definitions all occupy the normal page flow and
 remain present together. Readers can inspect the visualization by scrolling; the Agent reads its JSON artifacts. Do not put factors and strategies on separate routes,
-tabs, page switches, modal-only views or collapsed sections. Train, validation and test
+tabs, page switches, modal-only views or collapsed sections. Training fit, training rolling-score and final-test
 are labelled adjacent columns or consecutive sections, not mutually exclusive tabs.
+For the two-part study, internal fitting/rolling-score evidence uses split=train, with the
+window and account scope in labels/definitions and dynamic window IDs in charts. The legacy
+validation label is for historical three-part archives, not a new independent dataset.
+No fixed years, fold count or session count belongs in an adapter.
 
 Provide a compact sticky table of contents with in-page anchors. Links from a factor to a
 consumer strategy scroll to its inline definition/evidence; they do not replace the page.
@@ -31,7 +35,9 @@ export. Reset clears local investigation filters without replacing any report se
 Save both responsibilities in each round's versioned JSON results. Generate the continuous
 page from a selected completed snapshot; unfinished sections remain explicitly pending.
 Include completed screen results without requiring full qualification artifacts for every
-row. Label depth, pending evidence and the snapshot's as-of time. Publish the useful bundled
+row. Label depth, pending evidence and the snapshot's as-of time. Build inventories from
+verified worker receipts, including complete trials not yet collected into a round summary.
+Distinguish this immutable snapshot phase from the actual run's current stopped/running state. Publish the useful bundled
 view first; ready factor/strategy revisions do not wait for custom controls or UI extensions.
 Reuse one adapter for the actual engine schema and update it only for changed fields or a
 concrete defect. The eventual report still covers the required research results and charts.
@@ -41,7 +47,7 @@ latest result. Report iteration does not require a new browser session or deploy
 Publication is a progress milestone, not a research stopping rule. Show preliminary eligibility,
 submission readiness and final acceptance separately. Keep the frozen attempt's failure visible
 when research continues, alongside current exploratory activity and unsupported strategy claims.
-If confirmation awaits new data, state that dependency; do not relabel later validation results
+If confirmation awaits new data, state that dependency; do not relabel later training results
 as a replacement passing test. Show resource usage, any actual limits and the next hypothesis or evidenced stop
 reason. Follow the [completion decision](research-workflow.md#completion-decision) when deciding whether work ends.
 Show its evidence and counterevidence by quality dimension, remaining investigations and the
@@ -52,12 +58,12 @@ resource interruption need separate labels; a large return or candidate count ca
 
 | Section | Always-visible content |
 | --- | --- |
-| Study overview | Stock, source/coverage/quality, split timeline, prospective objectives/benchmarks/tradeoffs, as-of time, counts by execution/selection state, validation-selected strategy, final gates and next question. Separate engineering readiness from market results. |
-| Factor inventory | Every proposed and executed factor with ID/version, readable formula, rationale, lookback, availability, direction/horizon, train and per-fold validation IC/RankIC, primary mean RankIC, coverage, non-overlapping count, redundancy and admission/rejection reason. Mark unexecuted rows pending, with no invented performance. |
+| Study overview | Stock, source/coverage/quality, split timeline, prospective objectives/benchmarks/tradeoffs, as-of time, counts by execution/selection state, train-selected strategy, final gates and next question. Separate engineering readiness from market results. |
+| Factor inventory | Every proposed and executed factor with ID/version, readable formula, rationale, lookback, availability, direction/horizon, train and per-window training score IC/RankIC, primary mean RankIC, coverage, non-overlapping count, redundancy and admission/rejection reason. Mark unexecuted rows pending, with no invented performance. |
 | Factor evidence | Inline fitted-definition details and the predictive/coverage/stability charts below; selected-factor diagnostics after the joint final test only. Connect admitted versions to the strategies that use them. |
-| Strategy inventory | Every candidate/version, exact factor composition, readable entry/exit/sizing/rebalance/risk rules, train and validation performance, costs, completed trips, failed gates and selection reason. Readers can answer what it actually trades without reading source code. |
+| Strategy inventory | Every candidate/version, exact factor composition, readable entry/exit/sizing/rebalance/risk rules, fit and rolling-score performance, costs, completed trips, failed gates and selection reason. Readers can answer what it actually trades without reading source code. |
 | Strategy evidence | Selected strategy and baseline curves, aligned split/fold metrics, costs, exposure, drawdown episodes, trades, parameter comparisons and factor ablations. Final test shows only the frozen strategy and predeclared scenarios. |
-| Research decisions | Chronological hypothesis → experiment → baseline/candidate metric changes → diagnosis → decision → next experiment; include rejected, errored and blocked trials, budgets and validation usage. |
+| Research decisions | Chronological hypothesis → experiment → baseline/candidate metric changes → diagnosis → decision → next experiment; include rejected, errored and blocked trials, budgets and actual result observations. |
 | Research routes | Information and combination/holding mechanisms, linked versions, behavioral similarities, each shortlist diagnosis, measured factor-only/policy-only/joint changes, park/reject reasons and next question. Compare prospective claims separately in the same document. |
 | Definitions and evidence | Plain-language metric definitions, units, denominators, scope, uncertainty, execution assumptions, source rights, result identities, limitations and permitted JSON/CSV exports. |
 
@@ -72,7 +78,9 @@ constant-weight benchmark as rebalanced rather than initial-allocation buy-and-h
 Show a pending required calendar comparison explicitly; never fill its gaps or calculate
 missing market metrics in the renderer. Confidence captions state whether the interval
 conditions on a selected fixed candidate or accounts for a broader fitting/search procedure.
-Show exact parent/version links and strategy-specific factor roles. Use the metric contract's
+Show exact parent/version links and strategy-specific factor roles. Display numerical
+parameters directly from the archived spec, alongside its qualitative explanation; do not
+copy values from prose or reconstruct a control's settings from a parent description. Use the metric contract's
 role-specific evidence for supporting factors; directional IC charts apply to predictive roles.
 Explain role-inapplicable metrics instead of filling supporting-factor rows with unavailable
 predictive statistics. Show factor-role evidence, exact consumer contribution and complete
@@ -80,7 +88,11 @@ strategy eligibility separately; a failed consumer must not erase promising fact
 Preserve return/risk/cost tradeoffs and parent deltas, including missed upside. Distinguish
 new mechanisms from revisions, parameter controls and invalid definitions in the counts.
 Use compact comparison tables rather than replacing definitions/results with only counts,
-ranking badges or generic "signal quality" scores. Before test reveal, its section says
+ranking badges or generic "signal quality" scores. Export the study's prior test-exposure disclosure in a hash-bound source record and pass
+`test_history: {source, pointer}` to the adapter, resolving an object with `prior_exposure`
+(previously_exposed/no_known_exposure/unknown). The adapter displays the resulting limitation
+separately from this run's access state; absence is unknown, never proof of unseen data.
+Before this run's test reveal, its section says
 sealed/pending and explains prerequisites; no test metrics or bars are shipped in HTML,
 JavaScript, JSON, downloads or network responses. After reveal the official result is fixed.
 
@@ -94,22 +106,22 @@ Display uncertainty method/support where applicable, not unexplained error bars.
 
 | Chart and question | Axes and series | Required conventions |
 | --- | --- | --- |
-| Factor fold bars: is predictiveness stable? | x = candidate (grouped by validation fold); y = oriented primary RankIC, unitless, with each fold and the equal-fold mean identified. | Zero baseline; positive and negative bars; explicit horizon/direction and counts. The frozen admission threshold applies to the mean, not every bar. An undefined fold is a labelled gap, not zero. |
+| Factor fold bars: is predictiveness stable? | x = candidate (grouped by training score window); y = oriented primary RankIC, unitless, with each fold and the equal-fold mean identified. | Zero baseline; positive and negative bars; explicit horizon/direction and counts. Show any prospectively chosen criterion with its exact scope; there is no universal IC cutoff. An undefined fold is a labelled gap, not zero. |
 | Factor horizon lines: how quickly does the signal decay? | x = label horizon in trading sessions; y = oriented IC/RankIC; distinguish statistic and fold with labelled series or separate aligned plots. | Fixed research horizon grid and zero baseline; mark the training-selected primary horizon. Do not select a new horizon from the final-test chart. |
 | Rolling RankIC lines: when is the factor unstable? | x = latest included label's exit date; y = trailing oriented RankIC for selected factors. | Display window/minimum support and fold boundaries; break at insufficient data/gaps. Explain that the statistic becomes known at label exit, not signal time. |
 | Quantile response bars: are higher scores followed by higher returns? | x = training-fitted low-to-high factor bins; y = mean gross h-session forward return (%); counts and dependence-aware intervals in tooltips/table. | Zero baseline; medians and top-minus-bottom difference alongside. Empty/tied bins visible. This is conditional label response, not a compounded tradable long-short curve. |
-| Coverage bars and redundancy matrix: is evidence usable/complementary? | x = factor/fold, y = available/paired/eligible counts or explicitly labelled coverage %; matrix axes = exact factor versions, cells = Spearman factor correlation. | Show missingness and denominator; label signed coefficients and the absolute cutoff. Pair counts accompany correlations; undefined cells remain undefined. |
-| Equity lines: does the strategy add value after costs? | x = actual scored sessions; y = growth of common starting capital (default indexed to 100); lines = net strategy, zero-cost replay, matched net buy-and-hold and cash. | Separate aligned train, validation and test plots with the same series colors and labelled scales. Show initial value, costs and terminal liquidation; never concatenate all splits into a claimed unseen curve. Label validation fold resets/composite gaps. |
+| Coverage bars and redundancy matrix: is evidence usable/complementary? | x = factor/fold, y = available/paired/eligible counts or explicitly labelled coverage %; matrix axes = exact factor versions, cells = Spearman factor correlation. | Show missingness and denominator; label signed coefficients and any prospectively chosen decision criterion. Pair counts accompany correlations; undefined cells remain undefined. |
+| Equity lines: does the strategy add value after costs? | x = actual scored sessions; y = growth of common starting capital (default indexed to 100); lines = net strategy, zero-cost replay, matched net buy-and-hold and cash. | Separate aligned training fit, rolling-score and final-test plots with the same series colors and labelled scales. Show initial value, costs and terminal liquidation; never concatenate all splits into a claimed unseen curve. Label training score window resets/composite gaps. |
 | Drawdown lines/areas: how deep and long are losses? | x = same sessions as equity; y = drawdown %, at or below zero, for net strategy and benchmark. | Include initial capital in peaks; aligned time axes and peak/trough/recovery markers; optional shared brush. Gate/table maximum drawdown uses positive loss magnitude. Mark ongoing episodes unrecovered. |
 | Return bars: which periods contribute? | x = calendar month/year, y = compounded net period return %, grouped strategy/benchmark. | Zero baseline, partial-period and split/fold labels; never sum daily returns. Optional heatmap supplements rather than replaces the readable period table. |
 | Exposure and cost attribution: what caused the drag? | x = session for actual/target exposure (%); separate period bars for commission/slippage (currency or explicitly labelled bps of initial capital). | Do not overlay currency and percentages on an unlabelled axis. Show actual weights versus prior-close targets, turnover definition and fill count; gross/net replay difference is not automatically sum of fees. |
 | Cost stress bars: does it survive the declared scenarios? | x = frozen cost scenario; y = net total return %; adjacent labelled table for net Sharpe, drawdown and costs. | Default/stress scenario boundaries and zero baseline; rerun the frozen policy without tuning. No sliders that launch new test experiments. |
-| Ablation/parameter bars: what actually helps? | x = named research variant; y = delta in one specified validation metric versus the full/fixed baseline; separate plots for return percentage points, Sharpe and drawdown. | Same scored dates/cost/refit scope; show every tested variant, paired uncertainty if valid and trial IDs. An omitted factor's whole-strategy delta is not per-trade causal PnL attribution. |
+| Ablation/parameter bars: what actually helps? | x = named research variant; y = delta in one specified training score metric versus the full/fixed baseline; separate plots for return percentage points, Sharpe and drawdown. | Same scored dates/cost/refit scope; show every tested variant, paired uncertainty if valid and trial IDs. An omitted factor's whole-strategy delta is not per-trade causal PnL attribution. |
 | Route refinement bars: did the factor or strategy revision help? | x = named parent/candidate comparison, y = candidate-minus-parent delta in one metric with its own units. Separate factor role utility, net strategy performance and risk changes. | Show parent and candidate versions/values, exact bindings, matched scopes and regression explanations. Lower drawdown is a negative raw delta. Never aggregate incompatible units into a generic improvement score. |
 | Behavioral diversity matrix: are policies doing different things? | Rows/columns = strategy versions; separate cells for return correlation, target-exposure correlation and active-session overlap. | Use the metric contract's aligned samples, definitions and null states. Pair with mechanisms and fold/regime behavior; small correlation alone is not proof of discovery. |
 | Trade distribution bars: is success concentrated? | x = frozen net episode-PnL or holding-session bins; y = completed round-trip count, with zero-PnL boundary and sample size. | Explain bin edges, completed versus open inventory, median/tails and wins/losses. Adds/resizes do not create extra trips; link bars to rows in the trade ledger. |
 
-Keep official train/validation/test summary columns visible simultaneously; local brushing
+Keep official train/test summary columns visible simultaneously; local brushing
 can show a separate "selected interval — descriptive" summary, never overwrite official
 gates. Compare like with like: same dates, price basis, horizon and cost scenario. Unavailable
 benchmark/metric evidence is labelled, not omitted to improve apparent relative performance.
@@ -227,7 +239,7 @@ In legacy definitions, `baseline: true` permits an empty factor binding list. Ne
 derive the flag from their explicit research role as described below. Controls still need
 exact rules and computed metrics; they are not mined strategies.
 Only executed candidates carry measured metrics. An evaluated training factor can support
-an exploratory training strategy, but validation eligibility still requires actual admission.
+an exploratory training strategy, but final eligibility still requires actual admission.
 A failed factor cannot be silently consumed as an admitted factor.
 
 For staged reports, put the snapshot's as-of time in `summary`, its stage in `record.phase`,
@@ -324,7 +336,7 @@ environments' research contracts and the agent's evidence-based review responsib
 ### Metric and chart references
 
 Every metric gives `label`, `definition` (formula, denominator, horizon/fold/scenario),
-`unit`, `split` (train/validation/test), `source`, `pointer` (JSON pointer), and a `reason`
+`unit`, `split` (train/test; validation remains readable for historical reports), `source`, `pointer` (JSON pointer), and a `reason`
 if the resolved value is null. Unit `percent` stores a fraction (0.12 displays as 12%).
 Use ratio, USD, sessions or observations for other units. A test-labelled field/chart is
 rejected while sealed. Ensure sources/pointers themselves never smuggle test under train.
@@ -368,7 +380,7 @@ Use mint for emphasis/success, amber for pending/qualified and red for failures;
 line styles and signs must also distinguish states. Choose layout and typography within
 this theme in the detailed plan. Use
 a clear editorial hierarchy, readable chart labels, generous space around interpretation
-and compact comparison tables. Keep factor/strategy identity and train/validation/test
+and compact comparison tables. Keep factor/strategy identity and train/test
 semantics consistent throughout. Color is supplemented by names, line styles and signs.
 Avoid decorative plots, tiny axes, giant empty cards and repeated tiles without analysis.
 

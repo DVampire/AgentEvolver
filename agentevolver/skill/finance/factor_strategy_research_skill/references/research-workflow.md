@@ -12,9 +12,10 @@ Sections: [records](#planning-and-records), [chronology](#protocol-and-chronolog
 ## Planning and records
 
 Use the shared plan module's `index.md` and `plan.md`. Design supporting files as useful;
-only those two are framework defaults. Each experiment starts from supplied inputs and
-built-in capabilities, without importing previous experiments' plans, generated components,
-data, candidates or results. Preserve this experiment's history across turns and retries.
+only those two are framework defaults. Start fresh research records and candidate definitions
+from supplied inputs. Preserve supplied historical test-exposure disclosures across sessions;
+a new run cannot turn already inspected observations into new confirmation. Verified built-in
+utilities may be reused under the capability contract. Preserve this run's history across retries.
 
 Keep the index brief: task/study paths, current pool, latest evaluated research revision,
 next ready experiment, resources, test-exposure state and exact lookup paths. Separate
@@ -36,7 +37,7 @@ plan/
   research/reviews/                # readiness, completion and capability evidence
 workspace/research/
   catalog.json                     # ID/version -> definitions, results and reports
-  trials.jsonl                     # append-only attempts and validation exposure
+  trials/                          # worker-owned requests, results and observation events
   data/<snapshot-id>/              # source receipt, data and checks
   factors/F001/v001/               # spec, generated code and compile receipt
   strategies/S001/v001/            # spec.json, policy code and bindings
@@ -54,7 +55,10 @@ gets a new ID; a revision retains lineage. An evaluation binds candidate version
 folds, fitted policy, engine, metric contract and costs. Changing those creates a new
 assessment, not necessarily a new candidate definition. Never bind to `latest`.
 
-Record trial starts before execution and terminal status/result paths afterward, including
+Use the [worker receipt contract](experiment-integrity.md#completion-belongs-to-the-worker):
+planned, dispatched, computed and observed are separate facts. Completion is written by
+the worker and recoverable without an agent-side collect or round summary. Record research
+reviews and selection separately. Reconcile completed results after workers stop, including
 errors and rejections. Reuse successful calculations with identical bindings; retries remain
 visible but do not count as discoveries or reset exposure. Retry only failed dependencies.
 
@@ -102,7 +106,9 @@ State explicit absence where a rule is unused. Long notes may supplement the str
 design. A new independent hypothesis may lack prior numerical evidence; never fabricate it.
 Use `design.objective` to reference the prospective comparison standard and tradeoffs;
 `mechanism`, `combination`, `fit_policy` and `rules` describe how this route differs from
-its peers. These existing fields suffice; no extra mandatory planning files are needed.
+its peers. These fields describe the research without prescribing a model. Use executable configuration
+as the source for displayed parameters. Follow the [parent/intervention checks](experiment-integrity.md#exact-parent-and-intervention)
+for derived comparisons; description text and implementation hashes do not prove causal attribution.
 
 ```bash
 python {skill_dir}/scripts/strategy_spec.py /absolute/strategies/S001/v001/spec.json
@@ -134,9 +140,9 @@ preserves the archived definition from the hash-bound source in analysis.json.
 
 Before scoring, fix a versioned, hashed contract for source/adjustment basis, calendar/dates,
 fit/score boundaries, labels, execution/costs, metric definitions, factor-role qualification,
-comparison policy and evidence standards. Bind both engines and results to it. Honor study
-constraints; additional roles or criteria must be prospective new versions, not changes that
-rescue a failed claim. Use the [objective contract](metrics-and-evaluation.md#prospective-objectives-and-comparisons)
+comparison policy and evidence standards. Bind both engines and results to it. Honor user data/execution constraints. The agent chooses thresholds, windows, models and
+statistical evidence methods with training-based reasons. Additional roles or criteria are
+prospective new research versions, not changes that rescue an old failed claim. Use the [objective contract](metrics-and-evaluation.md#prospective-objectives-and-comparisons)
 to define benefit, utility, benchmarks and acceptable sacrifices. Different permitted claims
 can coexist, but do not compare their utilities as one ranking or relabel a failed route.
 Preserve the study's final-selection policy and test budget. There is no universal return
@@ -144,17 +150,22 @@ target or automatic search-count gate.
 
 Use inclusive exchange-local session boundaries, translating provider range semantics.
 Verify required completed sessions through the fixed cutoff; missing bars are acquisition
-gaps, not permission to shorten the study. Hash accepted train/validation snapshots. For
+gaps, not permission to shorten the study. Hash accepted train snapshots. For
 deferred test acquisition, fix source identity/revision policy now and bind the actual file
 hash after retrieval; never fabricate a hash or silently replace data.
 
-Fit on strictly earlier observations. Purge labels crossing fold boundaries and apply the
-study's session gap for the actual label/execution horizon. Record fit/score timestamps after
+Use two top-level partitions when the study specifies train/test: every discovery, fit,
+optimization and selection stays inside train. The agent designs internal chronological
+fit/score windows; their number and dates are not hardcoded. Bind both environments,
+comparisons and reports to the [shared validated plan](experiment-integrity.md#one-chronological-plan).
+Fit on strictly earlier observations. Purge labels not available by the fit cutoff and
+choose the session gap for the actual label/execution availability. Record fit/score timestamps after
 exclusions and warm-up. Past bars can warm features without being scored twice. Fit direction,
 horizon, cutpoints, scaling, imputation, feature selection and policy weights only within the
 allowed training prefix; never preprocess the full dataset or shuffle time-series samples.
-Predeclared expanding refits may use earlier validation years, with that policy disclosed.
-Validation is reused tuning data: retain all trials/looks and account for selection effects.
+Predeclared refits may use earlier training score windows, with that policy disclosed.
+All internal score windows reused for selection remain training evidence. Retain actual
+trials/observations and selection effects; rolling evaluation does not eliminate adaptive overfitting.
 
 Separate label/fit isolation from the investable account calendar using the
 [accounting scope contract](metrics-and-evaluation.md#portfolio-accounting-and-scope).
@@ -182,7 +193,7 @@ policy search. Record the distinguishing combination, fitting and holding choice
 design; sample materially different planned policies in the pilot so its engine does not
 hard-code one mapping, number of factors or default holding horizon.
 
-Acquire and verify local train/validation OHLCV through the native Connector before numerical
+Acquire and verify local train OHLCV through the native Connector before numerical
 research. Build the two Environments' evaluation path for representative planned candidates:
 factor computation, causal fitting, signals/orders/accounting and compact source-bound JSON.
 Check relevant hand-computable fixtures, the [concurrent execution contract](data-and-environments.md#batch-execution-and-result-summaries)
@@ -206,29 +217,20 @@ contribution review and selection in the same round. A global marginal-IC leader
 apply [role-specific qualification](metrics-and-evaluation.md#roles-and-qualification-scope).
 Exploratory consumer tests can establish that evidence, but do not imply eligibility.
 
-For Signal Foundry, roughly ten initial strategies, about 100 cumulative factor definitions
-and 20–30 distinct strategy hypotheses guide exploration. Adapt the schedule and size to
-findings; these are neither minimum passing counts nor ceilings. Different strategies can
-use overlapping factor sets from one shared library. Factor count follows the mechanism:
-four, five or more distinct inputs are welcome; two or three is not a ceiling or an optimum.
-For example, one strategy may bind F001–F005 and another F001/F003/F006–F009, all at exact
-versions, with different weights, interactions and holding rules. Shared inputs count once
-in the factor inventory, while consumer tests remain strategy-specific. All fitting is past-only.
-Count proposed/evaluated mechanisms, versions, parameter variants, controls and errors separately. Explain scope
-shortfalls without creating filler trials.
+Choose exploration breadth, batch size and active-pool size from evidence, behavioral diversity,
+expected information and cost. There are no universal candidate counts, route quotas or
+structure/parameter ratios. Different policies may share exact factor versions; input count
+follows the mechanism and the study's multi-factor scope. Count proposed/evaluated mechanisms,
+formula revisions, parameter variants, controls and errors separately, without filler trials.
 
-After the initial screen, default to **3–5 active strategy routes**, following the study's
-working-pool target when supplied. Select by measured promise, distinct behavior and a
-specific improvement hypothesis. Prioritize joint factor/policy refinement of these routes;
-versions and controls do not occupy new route slots. Keep fewer if evidence does not justify
-three, rather than padding with weak or duplicate candidates. Additional ideas can receive
-cheap screening and replace parked/weaker routes; record the replacement reason instead of
-continually expanding deep evaluation across every historical candidate.
+Retain routes with measured promise or a specific falsifiable improvement hypothesis. Versions
+and controls do not occupy new route slots. New ideas may receive cheap screening and replace
+weaker routes; record reasons instead of expanding deep evaluation across every past candidate.
 
 ### Staged evaluation and route scheduling
 
 Choose evaluation depth explicitly in the request/receipt. This changes work allocation,
-not the study's thresholds, chronology, costs or final evidence requirements.
+not chronology, costs or the prospective evidence standard for an already scored comparison.
 
 | Depth | Evidence and next decision |
 | --- | --- |
@@ -293,6 +295,19 @@ change other strategies' historical bindings. Publish a revised shared factor as
 version, compare its effects on chosen consumers, and record each consumer's keep/replace
 decision independently; improvement in one policy does not upgrade all of them.
 
+Optimize the complete policy mechanism. Distinguish changes to information/formulas, role
+assignment, combination relationships, combination fitting, holding/exit and allocation from
+parameter calibration. Decide from the diagnosis, not a fixed optimization sequence or quota.
+A threshold sweep can assess calibration or stability; repeated formula/threshold changes do
+not resolve a shared combination or holding failure merely by increasing version counts.
+
+Treat [combination fitting](experiment-integrity.md#combination-fitting-is-a-strategy-operation)
+as an explicit optional strategy operation. A context factor can condition an event factor;
+a joint model can retain information discarded by independent ranks; a persistent signal can
+use a stateful holding/exit rule. These are hypotheses to compare, not required architectures.
+Fit weights, interactions and preprocessing inside each allowed training prefix and bind
+serialized state. Simple fixed rules remain valid candidates when supported by evidence.
+
 Keep factor discovery open throughout refinement. For promising routes investigate both
 factor and policy limitations, rather than only permuting one leader's thresholds. Choose
 changes with a falsifiable benefit; do not force a pointless revision to satisfy a counter.
@@ -333,11 +348,22 @@ additional stocks and a stock-search application are outside this single-stock b
 Before final test, review the exact candidate against the prospective evidence standard.
 Use saved result IDs and include counterevidence; unknown is not passed.
 Explain the strongest alternative account of the apparent benefit, such as lower exposure,
-one favorable period or selection on repeatedly reused validation. Link its existing
+one favorable period or selection on repeatedly reused training score windows. Link its existing
 comparison, or identify the decision-changing check still needed. Being the only eligible
 candidate is not itself evidence against these explanations. Keep formal gate verdicts
 separate from the strength and scope of the research conclusion; do not invent new numeric
 thresholds at this review or require all diagnostic intervals to exclude zero.
+
+Make the prospective standard decidable before its comparison: identify the claim, metric,
+comparison, scope, uncertainty/support method and action for missing or inconclusive evidence.
+The agent chooses numerical criteria where useful and explains their basis; no universal IC,
+correlation, confidence level or interval-bound rule is supplied. Qualitative judgments cite
+measured evidence and counterevidence. Explicit user constraints remain binding. Revised
+criteria are new research versions, never retroactive passes; freeze the final standard before test.
+Save a readiness decision table with measured values, exact result references and
+pass/fail/inconclusive verdicts. Any required fail or inconclusive verdict means not ready;
+completion of diagnostics and willingness to spend the test attempt cannot override it.
+Exploratory pool membership remains available to unready candidates with useful next work.
 
 | Dimension | Review |
 | --- | --- |
@@ -345,7 +371,7 @@ thresholds at this review or require all diagnostic intervals to exclude zero.
 | Exploration | Distinct evaluated alternatives, each shortlist disposition, factor/policy revision evidence or reasons to defer, actual coverage versus guidance. |
 | Robustness | Fold/regime consistency, parameter neighborhoods, concentration and uncertainty appropriate to the claim. |
 | Feasibility | Cash/order reconciliation, costs/stress, turnover/exposure and sufficient labels/trades. |
-| Selection effects | Complete trials/validation looks; claims calibrated to search and uncertainty. |
+| Selection effects | Complete trials and actual result observations; claims calibrated to search and uncertainty. |
 | Next work | Most useful remaining experiments and their expected information/cost; not an exhaustive inventory. |
 | Delivery | Reproducible results, source-bound JSON/report and truthful data/capability status. |
 
@@ -357,8 +383,8 @@ insufficient, choose a useful next experiment or an honest negative/inconclusive
 ## Final evaluation
 
 Freeze factors, fitting policy, strategy, engines, costs, comparison standard and data
-identities together. Predeclare any pre-test refit and purge overlapping labels. Write the
-exposure marker before test retrieval and bind the snapshot before scoring. Evaluate the
+identities together. Predeclare any pre-test refit and purge overlapping labels. Use the [shared final-access operation](experiment-integrity.md#one-frozen-final-operation):
+write the exposure marker before test retrieval and bind the snapshot before scoring. Evaluate the
 frozen bundle once for both factor and strategy report sections, with only predeclared
 benchmarks/scenarios. Test diagnostics cannot select factors or replacements.
 
@@ -369,7 +395,7 @@ leave test unexposed and record why final evaluation was not performed. Never su
 candidate solely to fill the final panel or present missing test evidence as support.
 
 A failed/inconclusive test neither forces further work nor automatically closes research.
-Use the completion judgment. Useful later train/validation revisions remain exploratory;
+Use the completion judgment. Useful later train revisions remain exploratory;
 new confirmation requires genuinely unused observations under a prospective protocol, not
 repeated selection on the exposed period or silently changed task dates/symbols.
 

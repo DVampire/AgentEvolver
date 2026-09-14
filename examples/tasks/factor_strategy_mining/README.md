@@ -6,16 +6,16 @@ independent of the implementation framework and can be used with different resea
 ## Signal Foundry
 
 [The project brief](signal_foundry/task.html) asks for joint strategy and factor research
-on one stock. Start with roughly ten diverse strategies and the factors each needs; evaluate
-factor diagnostics, complete trading policies and their contributions together. Select a
-working pool of normally 3–5 strategy routes by evidence, diversity and improvement potential,
-then prioritize joint factor/rule refinement. Keep fewer if quality is insufficient; screen
-new hypotheses to replace weaker routes. Different strategies may use different factor sets.
+on one stock. Design complete mechanisms: factor roles, combinations and their fitting,
+entry, holding, exit, sizing and risk. Evaluate their evidence together and revise the
+component implicated by the diagnosis. Parameter calibration and stability checks support
+these mechanisms. They do not replace factor-combination or policy research.
 
-About 100 evaluated factor definitions and 20–30 distinct strategy hypotheses are cumulative
-exploration references across rounds, not candidate minimums, a required first batch, a passing
-quota or a search ceiling. Parameter-only variants and renamed formulas remain trials without increasing
-mechanism coverage. Review every shortlisted route and preserve failed revisions.
+The researcher chooses batch sizes, active routes, thresholds and statistical methods from
+training evidence and expected information/cost. No fixed research counts or numerical
+admission thresholds are prescribed. Different strategies may use different factor sets;
+conditional/group inputs need evidence for their actual use, not universal standalone IC
+passes. Preserve failed claims, exact versions and all declared changes in matched controls.
 
 Deliver **one continuous report page** with both factor and strategy evidence visible through
 scrolling and in-page anchors. JSON files retain definitions, numeric results, pool decisions,
@@ -29,18 +29,25 @@ operation, separate stage pages or mandatory publication sequence is part of the
 - `study.json`: market scope, dates, execution assumptions, factor-role qualification,
   exploration guidance and the domain evidence standard.
 
-The v11 study uses **TSLA** daily observations over the trailing ten-year window
-**2016-09-12 through 2026-09-11**. Training covers 2016-09-12–2020-12-31,
-validation covers 2021–2023, and final test covers 2024-01-01 through the cutoff.
-Acquire train/validation first and defer test acquisition until the frozen final evaluation.
-The evaluation policy distinguishes statistical fold scores from continuous-account results.
-Before qualification, compare the shortlisted strategy and benchmarks under both declared
-paths, preserving fit/label isolation and explaining gaps, account transitions and annualization.
-Declare the selection scope before scoring; a secondary comparison cannot rescue failed gates.
-Trial counts and fixed-candidate confidence intervals do not establish search-adjusted evidence.
-Completion follows evidence-based research judgment, without fixed CAGR/Sharpe finish
-targets or trial/round/patience ceilings. The researcher repeatedly discovers and refines factors and strategies,
-reviews every shortlisted route and justifies completion against research quality.
+The v13 study uses **TSLA** daily observations over **2016-09-12 through 2026-09-11**.
+**Train: 2016-09-12–2023-12-31. Test: 2024-01-01–2026-09-11.** Discovery, fitting and
+selection all occur in train, with agent-designed chronological rolling windows. Factor
+and combination fits respect actual outcome availability at each cutoff. Both environments,
+comparisons and reports consume the same plan; there are no fixed calendar-year folds.
+
+Acquire train first. Freeze the selected complete strategy, fitted states/refit policy,
+benchmarks and evidence standard before final test. This historical test was already viewed
+in earlier project experiments; study.json preserves that exposure. A new run does not create
+unseen confirmation. Interpret any new result on it as a historical diagnostic.
+
+Distinguish rolling fold-reset scores from continuous-account results, with matching
+benchmarks, costs and declared fitting/account transitions. Agent-designed uncertainty and
+support criteria are recorded before their comparisons; failed required evidence cannot be
+rescued by changing the standard afterward. No fixed 95% interval-bound requirement remains.
+
+Worker receipts record actual completion before agent-side collection. Planned requests are
+not observations, and stopping reconciles finished results independently of round summaries.
+Report snapshot state separately from the current run's completion/interruption state.
 
 The researcher decides whether to continue from evidence, recent improvement history and
 the expected information/cost of the next experiment. Supported objectives or repeated
@@ -56,8 +63,8 @@ observations for confirmation. An evidenced negative/inconclusive conclusion may
 research without claiming a successful strategy. If no candidate qualifies, test can remain
 unexposed; the report explains why. A failed test alone does not decide whether to continue.
 
-Every experiment starts independently with fresh records and implementations. Repeating
-historical data does not provide independent confirmation on new market observations.
+Every experiment starts with fresh research records. Supplied prior-exposure disclosures
+remain binding; repeating historical data does not provide independent new confirmation.
 
 [Running and implementation guide](../../../docs/demos/factor_strategy_mining.md).
 

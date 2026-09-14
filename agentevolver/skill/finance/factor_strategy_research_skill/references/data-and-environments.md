@@ -63,8 +63,8 @@ This proxy convention follows the adjustment-ratio method in the maintained
 not an assertion that the upstream data is certified as-traded history. Preserve the client
 version or inspected source revision and the exact normalization method in the snapshot.
 
-The report presents research performance and strict data qualification separately. All numeric
-gates are still calculated on the declared research basis with unchanged dates/costs/thresholds.
+The report presents research performance and strict data qualification separately. All evidence is calculated on the declared research basis with unchanged user dates/costs
+and the prospective standard for that comparison.
 Passing those gates does not turn unmet strict-source requirements into a pass. If the study
 does not authorize a fallback, keep its original requirements and request a scope/source change.
 
@@ -84,7 +84,7 @@ factor/strategy trials against the same missing snapshot: record proposals as pe
 representative prerequisite check. Research budgets count evaluations, not renamed blocked
 proposals; retain all attempted calls in the operational record. Failed numerical evaluations
 remain in the trial ledger, even when repaired or rejected. Do not erase retries or
-validation looks from this experiment's search history.
+result observations from this experiment's search history.
 
 Implement the source-independent numerical engines while data access is being resolved,
 within the remaining budget. Their missing implementation is not an external prerequisite.
@@ -146,7 +146,7 @@ exchange sessions match exactly. Calendar dates may be holidays: construct the c
 padding around request bounds, then select sessions inside the requested interval. Do not
 treat January 1 or a weekend endpoint as an invalid request or missing trading session.
 Exercise a changed interval, holiday bounds, empty/partial responses and disk-read failures.
-For this study, request only train/validation during research; download test after freeze.
+For this study, request only train during research; download test after freeze.
 
 Reuse `expected_sessions(start, end, calendar)` from `scripts/check_snapshot.py` in generated
 engines (copy and pin this script with the component). It returns exchange-local ISO dates
@@ -173,8 +173,11 @@ currency, query/version and actions alongside the bars and inspect their semanti
 
 ## Two stateful environments
 
-Read [metrics-and-evaluation.md](metrics-and-evaluation.md) before implementing numerical
-operations. Both environments bind the same versioned metric contract, export definitions,
+Read [metrics-and-evaluation.md](metrics-and-evaluation.md) and the
+[executable integrity contract](experiment-integrity.md) before implementing numerical operations.
+Integrate its shared window plan, fitted-row checks, exact control/parity checks and durable
+worker receipts in the actual actions. No hardcoded calendar years, fold counts or copied
+parent defaults may stand in for their bound inputs. Both environments bind the same versioned metric contract, export definitions,
 candidate/result identities, per-fold and aggregate values, series, counts, gate verdicts and
 explicit null reasons. Their artifacts feed the continuous report described in
 [reports.md](reports.md); factor and strategy outputs do not require separate website routes.
@@ -192,8 +195,8 @@ must come from native accounting, not a report-side interpolation of fold return
 | Responsibility | Factor environment | Strategy environment |
 | --- | --- | --- |
 | Inputs | Versioned market snapshot, protocol, open causal factor specification and declared role | Same snapshot/protocol, exact strategy-specific factor bindings/roles, qualification receipts and open strategy specification |
-| State | Fitted transforms, fold definitions, factor trials, library and rejection reasons | Frozen factor bindings, orders/positions/cash, strategy trials and exposure ledger |
-| Operations | Bind study, describe schema, evaluate training, validate bounded candidates, compare, admit, export report artifacts | Bind study/library, simulate training, validate, compare/ablate, freeze submission, finalize once, export ledgers/reports |
+| State | Fitted transforms, shared train-window plan, factor trials, library and rejection reasons | Frozen factor bindings and optional combination fits, orders/positions/cash, strategy trials and exposure ledger |
+| Operations | Bind study, describe schema, evaluate training, score train rolling windows, compare, qualify claims, export report artifacts | Bind study/library, simulate train rolling windows, compare/ablate, optionally fit combinations, freeze submission, finalize once, export ledgers/reports |
 | Output | Exact formulas/fitted versions/parents, role-specific metrics, coverage and fold/conditional diagnostics, scoped admission evidence and result paths | Exact trading rules/factor bindings/parents, net/gross/benchmark series, risk/cost metrics, gates, paired comparisons and artifact paths |
 
 These are interface requirements, not a fixed action-name list. Follow the real Environment
@@ -203,7 +206,10 @@ an error does not mark the native call failed. Include manifests and use call-sc
 instances with durable artifacts as described below. Do not assume a registered environment is
 in env_names: the demo permits evolved Environment actions through the shared capability router.
 
-Bind immutable snapshot, protocol and engine versions before evaluating. For deferred test
+Bind immutable snapshot, shared train-window plan, protocol and engine versions before evaluating.
+Both engines check all loaded research dates against train before reading values, and actual
+fitted feature/target availability against the plan. Ordinary calls cannot read test. A
+separate frozen final action reuses the accounting core with its pinned test/refit schedule. For deferred test
 acquisition, freeze the query contract first and bind the downloaded hash in a one-time receipt
 after submission freeze, before computing metrics; never fabricate an unavailable hash.
 Normalize the effective warm-up, horizon, gap and cost settings at binding; later research,
@@ -214,7 +220,7 @@ receipt must fail before reading data or changing exposure; it must name the pre
 operation instead of returning only a missing internal filename.
 Finalization accepts
 one frozen bundle covering BOTH environments and the factor library. The factor environment
-must not have an independent early test-reveal action. Store trial IDs, validation counts and
+must not have an independent early test-reveal action. Store trial IDs, observed-result counts and
 the test-attempt marker durably before evaluation; concurrent or retried calls must not reset
 them. Same submission may read the cached final result; changed submissions are refused.
 
@@ -295,8 +301,12 @@ claim the observer is nonblocking.
 Use the scoped engineering checks below for concurrency and recovery. Reuse their receipts
 for unchanged implementations instead of repeating them at every research round.
 
-Persist each trial start before execution, then its terminal status, semantic cache key,
-result ID/path/hash and actionable error. Successful candidates survive a partially failing
+Wrap each numerical worker in the integrity helper
+[TrialRecords.execute](experiment-integrity.md#completion-belongs-to-the-worker). Persist
+planned, dispatched, computed and observed states separately; a staged request is not a
+data look. Worker completion includes the semantic request, result ID/path/hash and output
+hashes before the action returns. Reconcile existing receipts independently of agent-side
+collection or a completed round summary, and after worker shutdown before final status. Successful candidates survive a partially failing
 batch; return counts and per-item statuses, explicitly marking partial failure. Never turn
 an error into a zero score, abort unrelated candidates or replay the entire successful batch
 after one failure. A factor failure blocks its dependent strategies, not other routes.
@@ -379,7 +389,7 @@ replacement alternatives and all historical results available.
 
 Export route/family identities, attempted mechanism coverage, role and consumer admission,
 paired factor/strategy revisions and route-review evidence for submission readiness. Share
-complete trial and validation-look records across both responsibilities. Support adjustable
+complete trial and actual result-observation records across both responsibilities. Support adjustable
 batches, changed definitions and repeated rounds. Engines calculate and export evidence;
 they do not decide whether research must continue. The Agent applies the workflow's
 [completion decision](research-workflow.md#completion-decision), including reasoned stagnation.

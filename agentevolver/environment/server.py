@@ -449,9 +449,9 @@ class EnvironmentManagerServer(BaseModel):
     async def _announce_live_view(self, name: str, ctx: EnvironmentContext) -> None:
         """Announce this environment's live-view endpoint on change (idempotent)."""
         try:
-            env = await self.get(name, ctx=ctx)
-            if env is None:
-                return
+            # The context manager checks whether a view exists and binds it inside
+            # an invocation. A direct get() here is outside that lifetime and fails
+            # for call-scoped numerical evaluators after their action has finished.
             view = await self._ensure_context_manager().live_view(name, ctx)
             if view is None:
                 return
