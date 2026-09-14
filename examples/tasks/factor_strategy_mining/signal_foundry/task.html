@@ -113,6 +113,12 @@
     Sharpe, Sortino, Calmar, maximum drawdown, trade count, win rate, payoff/profit factor and
     cost sensitivity with definitions and null states. Include fold/regime results, parameter
     stability, uncertainty, factor ablations and all unsuccessful candidates.</p>
+<p>Distinguish results on statistical scoring windows from a continuous investment account.
+    For strategies considered for final qualification, show both the strategy and its benchmarks
+    over the full declared calendar as well as the fold results, following study.json. Explain
+    excluded periods, annual resets, model updates and annualization. Identify whether each
+    benchmark holds initial shares or rebalances a target weight; show average exposure and
+    missed upside alongside drawdown protection.</p>
 </requirements>
 
 <constraints data-format="html" id="iteration">
@@ -127,6 +133,11 @@
     meet final qualification. For every retained strategy, diagnose whether to
     revise its factors, trading rules or their interaction; measure useful changes or explain
     why further work on that route is not worthwhile.</p>
+<p>Turn a retained route's main weakness into a comparison that can distinguish its causes.
+    For example, determine whether sparse participation comes from entry filters, holding time
+    or risk sizing before adding another filter. State what the result would change, and use
+    the measured outcome to retain, revise or park the route. Similar formulas using the same
+    data are not additional information sources.</p>
 <p>Subsequent rounds prioritize joint improvement of the retained strategies and their factors.
     Screen worthwhile new hypotheses to replace weaker or parked routes. Aim for about
     100 evaluated factor definitions and 20–30 distinct strategy
@@ -150,6 +161,11 @@
     work. No fixed return target, candidate count, patience counter or exhaustive search is
     required. Before final evaluation, justify the selected candidate through its mechanism,
     factor contributions, robustness, costs and uncertainty against prospective criteria.</p>
+<p>Explain the strongest counterevidence even if only one candidate meets the formal criteria.
+    Separate uncertainty about a fixed selected strategy from uncertainty created by searching
+    and repeatedly using validation. A complete trial history is not a correction for that
+    search, and a point pass is not proof of a stable effect. Preserve the supplied thresholds
+    and distinguish exploratory findings from independent confirmation.</p>
 <p>Complete the research only with a defensible assessment supported by reproducible evidence:
     clear mechanisms, diverse investigated alternatives, individual candidate reviews,
     fold/regime and parameter stability, realistic execution costs, adequate sample support,

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "study_id": "signal-foundry-tsla-daily-v10",
+  "study_id": "signal-foundry-tsla-daily-v11",
   "market": {
     "symbol": "TSLA",
     "exchange_calendar": "XNAS",
@@ -66,6 +66,13 @@
       "cash",
       "same_stock_buy_and_hold_total_return"
     ]
+  },
+  "evaluation_policy": {
+    "accounting_scopes": "Before scoring, distinguish fold-reset statistical scores from a continuous account over the declared split calendar. Declare the primary selection scope, refit effective dates, position and policy-state transitions, terminal liquidation and annualization denominators.",
+    "boundary_isolation": "Preserve the minimum 21-session fit/score gap and purge crossing labels in each scope. A continuous account uses eligible past-only fits, with an earlier fit cutoff or a previously available model until a scheduled refit. Never backfill excluded dates using a later fitted model or insert artificial zero returns.",
+    "calendar_comparison": "Before qualifying a shortlisted strategy, compute both the fold-reset and continuous-calendar candidate/benchmark paths under prospectively declared rules; explain excluded-window sensitivity. Secondary results cannot override failed primary gates. Freeze corresponding final scenarios before the single final evaluation.",
+    "benchmark_semantics": "Distinguish holding initial shares from daily target-weight rebalancing. For a risk/timing claim plausibly explained by lower exposure, compare a simple training-determined or prospectively fixed risk/exposure-controlled hold allocation before qualification.",
+    "selection_uncertainty": "Separate fixed-candidate uncertainty from uncertainty in fitting and search. Reused validation and related trials are not independent confirmation; no corrected significance is implied by recording trial counts. Review core-factor and incremental-effect uncertainty without retrospectively changing numeric thresholds."
   },
   "research_policy": {
     "completion_basis": "evidence_based_researcher_judgment",

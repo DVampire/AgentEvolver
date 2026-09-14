@@ -63,6 +63,15 @@ resource interruption need separate labels; a large return or candidate count ca
 
 Use a compact comparison table for all candidates and readable inline detail for selected
 comparisons; long expressions may wrap.
+
+For the selected route, put its benchmark definition, average exposure, active-session count,
+main counterevidence and confirmation status in the overview. Where the study requests both
+calendar-account and fold-reset results, show them side by side with separate scope names,
+actual date ranges, reset/exclusion rules and annualization denominators. Label a daily
+constant-weight benchmark as rebalanced rather than initial-allocation buy-and-hold.
+Show a pending required calendar comparison explicitly; never fill its gaps or calculate
+missing market metrics in the renderer. Confidence captions state whether the interval
+conditions on a selected fixed candidate or accounts for a broader fitting/search procedure.
 Show exact parent/version links and strategy-specific factor roles. Use the metric contract's
 role-specific evidence for supporting factors; directional IC charts apply to predictive roles.
 Explain role-inapplicable metrics instead of filling supporting-factor rows with unavailable

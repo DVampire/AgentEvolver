@@ -1,7 +1,7 @@
 ---
 name: factor_strategy_research_skill
 description: "Research stocks with one agent: acquire auditable data, jointly discover and refine diverse factors and multi-factor strategies, and publish one continuous evidence report."
-version: "1.10.0"
+version: "1.11.0"
 type: worker
 category: finance
 requirements: [cpu]
@@ -31,6 +31,8 @@ paths from the skill loader; keep detailed records on disk, not duplicated in li
 ## Research method
 
 1. Read the task/study; predeclare the benefit, comparison standard and allowed tradeoffs.
+   Distinguish the investable calendar/account path from statistical fold scoring using the
+   [accounting scope contract](references/metrics-and-evaluation.md).
    Design a batch of complete multi-factor hypotheses with distinct information and policy
    mechanisms: each strategy's factors, roles, combination, fitting and holding rules.
    Maintain concise `index.md` progress and links; put detailed designs and reviews on disk.
@@ -46,7 +48,9 @@ paths from the skill loader; keep detailed records on disk, not duplicated in li
    only when its answer changes the next edit, pool decision or readiness claim; avoid a full
    control matrix for rejected routes. Schedule useful factor/policy revisions and new
    mechanisms alongside ready evaluations. Analyze JSON; rounds and reports are checkpoints,
-   not barriers. Count tested research changes separately from implementation and controls.
+   not barriers. Make a retained route's main diagnosis select a discriminating comparison
+   and subsequent keep/revise/park decision. Count tested research changes separately from
+   implementation and controls.
 5. At research reviews, decide whether the next experiment is worthwhile. Stop when the
    objective is supported, or repeated ineffective improvements and low expected value
    justify a negative/inconclusive conclusion. No universal patience/count/return gate or

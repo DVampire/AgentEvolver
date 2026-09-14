@@ -87,7 +87,7 @@ and final test covers 2024-01-01–2026-09-11, with a minimum 21-session boundar
 The September cutoff includes only completed regular trading sessions; it does not request
 future September dates or unfinished daily bars. The cutoff stays fixed once the study starts.
 See [study.json](../../examples/tasks/factor_strategy_mining/signal_foundry/study.json).
-The v10 study starts with roughly ten joint strategy hypotheses and their required factors.
+The v11 study starts with roughly ten joint strategy hypotheses and their required factors.
 About 100 evaluated factor definitions and 20–30 distinct strategy hypotheses describe the
 cumulative exploration guidance. These are neither minimum counts, initial prerequisites nor search ceilings;
 benchmarks and parameter-only revisions do not count as distinct hypotheses. After screening,

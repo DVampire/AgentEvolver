@@ -182,6 +182,12 @@ Keep factor production/fitting and strategy target generation extensible: the pi
 percentile transform, threshold, sizing helper or holding horizon is one candidate policy,
 not an engine-wide rule. Bind candidate-specific fitting/state and prospective objective
 identities in results/cache keys so different combinations run through the same accounting.
+When the study requires both continuous-account and fold-reset evaluation, expose their
+distinct calendar, refit and account/state policies in requests and results. Include them
+in cache and freeze identities; neither path may silently reuse the other's result. Verify
+gap isolation, annual model transitions and position/capital carry across an excluded scoring
+window on a hand-computable fixture before using that operation. Full-calendar results
+must come from native accounting, not a report-side interpolation of fold returns.
 
 | Responsibility | Factor environment | Strategy environment |
 | --- | --- | --- |

@@ -55,12 +55,15 @@ tradeoffs in the exploratory pool (no peer better on every named dimension). Thi
 an eligibility waiver. Declare any cross-claim final-selection policy before scoring
 candidates; respect the study's final-test budget and never select by test performance.
 
-Keep the required cash/hold benchmarks. For a risk or timing claim, also consider a simple
-exposure/risk-controlled hold allocation to distinguish signal value from merely investing
-less. Fix its sizing on training or prospectively in the protocol, with matched dates and
-costs; never fit benchmark exposure to the candidate's realized validation path. Report
-missed upside and avoided losses by fold/regime. An optional control cannot replace the
-required benchmark or make a failed original objective pass.
+Keep the required cash/hold benchmarks. Before qualifying a risk or timing claim, compare a
+simple exposure/risk-controlled hold allocation when reduced investment is a plausible
+explanation of the benefit. Fix its sizing on training or prospectively in the protocol,
+with matched dates and costs; never fit benchmark exposure to the candidate's realized
+validation path. Name constant daily target rebalancing separately from buying an initial
+allocation and holding its shares. Report missed upside and avoided losses by fold/regime;
+low drawdown alone cannot distinguish timing skill from low exposure. The control cannot
+replace the required benchmark or make a failed original objective pass. It need not precede
+broad screening or become another full control matrix.
 
 ## Multi-factor strategy and contribution scope
 
@@ -172,6 +175,15 @@ open[t+1+h] / open[t+1] - 1. This is a gross predictive label, not a net trading
 Store both endpoints. Do not use close_t to open_t returns or let label endpoints cross
 the scored fold boundary. Available past bars may warm up features without becoming scores.
 
+Relate the primary label to the consumer's expected holding/decision mechanism before
+fitting direction or horizon. Different horizons can serve different roles, but admission
+at one horizon does not establish value at another. For a shortlisted mismatch, inspect the
+fixed diagnostic horizon grid and actual holding distribution, then choose a matched policy
+comparison if it can change the decision. Preserve same-horizon diagnostics alongside a
+refitted primary horizon so a changing measurement target is not mistaken for improvement.
+Treat a training-selected reversal of the economic story as a hypothesis to explain and
+test; do not silently replace the rationale while retaining its claim.
+
 Define eligible signal dates from the requested exchange calendar, lawful warm-up and
 label-boundary exclusions, before looking at candidate values. Missing prices/features
 inside that calendar remain missing in coverage counts. Report factor availability,
@@ -238,6 +250,22 @@ parameters, horizon/direction choices and validation submissions. Do not infer d
 confidence from the best of many trials. Only publish adjusted significance, effective sample
 size or Deflated Sharpe when the method and its inputs have been numerically verified.
 
+State what each interval conditions on: a fixed candidate, fitted states and observed
+folds, or an explicitly repeated fitting/selection procedure. A fixed-candidate block
+bootstrap does not account for the search that selected it. Trials and related versions
+are not independent experiments; recording their count is not a selection correction.
+At qualification, review uncertainty for the core factors and their incremental effects,
+not just the whole portfolio. A point pass with a wide interval is weak evidence, not a
+new automatic failure: apply the frozen criteria and explain its effect on the decision.
+Do not retrospectively tighten thresholds or require every exploratory factor to pass a CI gate.
+
+When independent evaluation of the search process is warranted and data permits, predeclare
+outer chronological evaluation with candidate generation/selection restricted to inner data.
+The researcher as well as the numerical fitter must not use outer outcomes before locking
+that fold's selection. Merely adding folds after inspecting all years is not independent
+validation. Otherwise label reused validation as exploratory and preserve the genuinely
+unexposed confirmation boundary; more resampling cannot manufacture new observations.
+
 ## Strategy identity: what is being traded?
 
 Use the [strategy definition archive](research-workflow.md#strategy-definition-archive) for
@@ -298,6 +326,24 @@ wealth-chain those returns from a common initial value. Do not concatenate absol
 equities from reset accounts, average fold Sharpes into pooled Sharpe, or include warm-up/gap
 days as artificial zero returns. Label the pooled series as a fold-reset composite with its
 gaps and scored-session annualization. Display the individual folds as well.
+
+A fold-reset composite is not continuous buy-and-hold or a continuous investment account.
+Before scoring, separately declare the trading calendar, fit/label eligibility, refit
+effective dates, account/state resets and which scope each objective uses. A statistical
+exclusion does not by itself prescribe closing positions or omitting market returns.
+Honor the study's full gap and label purging in every path: a continuous account may need
+an earlier fit cutoff or the previous eligible model until the next refit becomes available.
+Never apply a later fitted model backward to fill an excluded interval.
+
+When the study requests a full-calendar comparison, implement it before qualification for
+the shortlisted candidate and its matched benchmarks. Carry actual capital, positions and
+policy state under the prospectively declared update rule, record actual cash days, and
+liquidate only at its declared terminal boundary. Do not manufacture the curve by inserting
+zeros into a fold composite. Report both scopes with their actual dates, elapsed duration,
+scored-session counts and separately named annualizations. Summarize excluded windows and
+their observed benchmark returns; use them to explain scope sensitivity, not to move the
+windows after seeing results. A favorable secondary scope cannot override failed primary
+criteria. Predeclare any such final-test scenarios before the single frozen evaluation.
 
 The gross comparison is a separate zero-commission/zero-slippage replay of the same frozen
 signal and sizing policy. Its positions can differ when costs affect affordable sizing or

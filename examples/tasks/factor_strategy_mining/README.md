@@ -29,10 +29,15 @@ operation, separate stage pages or mandatory publication sequence is part of the
 - `study.json`: market scope, dates, execution assumptions, factor-role qualification,
   exploration guidance and the domain evidence standard.
 
-The v10 study uses **TSLA** daily observations over the trailing ten-year window
+The v11 study uses **TSLA** daily observations over the trailing ten-year window
 **2016-09-12 through 2026-09-11**. Training covers 2016-09-12–2020-12-31,
 validation covers 2021–2023, and final test covers 2024-01-01 through the cutoff.
 Acquire train/validation first and defer test acquisition until the frozen final evaluation.
+The evaluation policy distinguishes statistical fold scores from continuous-account results.
+Before qualification, compare the shortlisted strategy and benchmarks under both declared
+paths, preserving fit/label isolation and explaining gaps, account transitions and annualization.
+Declare the selection scope before scoring; a secondary comparison cannot rescue failed gates.
+Trial counts and fixed-candidate confidence intervals do not establish search-adjusted evidence.
 Completion follows evidence-based research judgment, without fixed CAGR/Sharpe finish
 targets or trial/round/patience ceilings. The researcher repeatedly discovers and refines factors and strategies,
 reviews every shortlisted route and justifies completion against research quality.

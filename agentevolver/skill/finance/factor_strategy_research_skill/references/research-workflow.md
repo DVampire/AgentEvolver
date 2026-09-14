@@ -156,6 +156,13 @@ allowed training prefix; never preprocess the full dataset or shuffle time-serie
 Predeclared expanding refits may use earlier validation years, with that policy disclosed.
 Validation is reused tuning data: retain all trials/looks and account for selection effects.
 
+Separate label/fit isolation from the investable account calendar using the
+[accounting scope contract](metrics-and-evaluation.md#portfolio-accounting-and-scope).
+State which scope controls selection and what full-calendar evidence the study requires.
+Check these conventions on a small fixture before broad scoring; implement secondary
+candidate comparisons when a route merits qualification. Do not make every candidate's
+deep calendar analysis a prerequisite for screening.
+
 ## Joint exploration
 
 ### Design the batch, then establish its numerical path
@@ -269,6 +276,15 @@ filters before adding another gate. Low return from a defensive allocation may m
 claim; compare sizing/holding alternatives under the declared objective rather than assuming
 more filters or larger positions improve the information signal.
 
+In the existing route record, connect the main diagnosis to a discriminating comparison:
+name plausible explanations, the changed component, the fixed parent/control, the measured
+quantity and how either outcome changes keep/revise/park. For sparse participation, this
+may separate entry filtering from holding or risk sizing; for a horizon mismatch, compare
+the corresponding label evidence and holding behavior. Use a bounded crossed comparison
+only if one change cannot distinguish the interaction. Repeatedly noting low exposure or
+weak IC without a decision is not refinement. If a comparison is not worthwhile, explain
+why from current evidence rather than imposing a minimum exposure or mandatory edit.
+
 Compare exact parent/candidate versions on matched dates, folds, costs and fitting policies.
 Hold the consumer fixed for compatible factor comparisons and factors fixed for policy
 comparisons; use small crossed comparisons when needed for interactions. Preserve gains,
@@ -294,6 +310,10 @@ Assess diversity at both design and behavior levels: information source/role, co
 fitting and holding mechanism; then aligned returns/exposures, entry overlap and fold/regime
 losses. Group close relatives and count formula changes, policy changes and new hypotheses
 separately. Undefined or low correlation alone does not establish a useful new mechanism.
+Different transforms of the same OHLCV inputs add mappings, not new information sources.
+When failures are shared, test the shared information or policy limitation before adding
+similar formulas. Broader sources or symbols require a study that permits them; a formula
+count shortfall does not justify expanding the task.
 
 Allocate work between unexplored mechanisms, promising revisions and resolving uncertainty.
 If many routes fail for the same reason, investigate that shared limitation before extending
@@ -312,6 +332,12 @@ additional stocks and a stock-search application are outside this single-stock b
 
 Before final test, review the exact candidate against the prospective evidence standard.
 Use saved result IDs and include counterevidence; unknown is not passed.
+Explain the strongest alternative account of the apparent benefit, such as lower exposure,
+one favorable period or selection on repeatedly reused validation. Link its existing
+comparison, or identify the decision-changing check still needed. Being the only eligible
+candidate is not itself evidence against these explanations. Keep formal gate verdicts
+separate from the strength and scope of the research conclusion; do not invent new numeric
+thresholds at this review or require all diagnostic intervals to exclude zero.
 
 | Dimension | Review |
 | --- | --- |
