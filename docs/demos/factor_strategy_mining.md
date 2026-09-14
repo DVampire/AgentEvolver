@@ -81,12 +81,13 @@ not independently judge financial validity or prove that the two implementations
 
 ## Default study and test integrity
 
-The provided example uses NVDA daily bars, train 2016–2020, expanding annual validation
-2021–2023 and final test 2024-01-01 through 2026-09-11, with a minimum 21-session boundary gap.
+The provided example uses TSLA daily bars over 2016-09-12–2026-09-11, a trailing ten-year
+window. Train covers 2016-09-12–2020-12-31, expanding annual validation covers 2021–2023,
+and final test covers 2024-01-01–2026-09-11, with a minimum 21-session boundary gap.
 The September cutoff includes only completed regular trading sessions; it does not request
 future September dates or unfinished daily bars. The cutoff stays fixed once the study starts.
 See [study.json](../../examples/tasks/factor_strategy_mining/signal_foundry/study.json).
-The v8 study starts with roughly ten joint strategy hypotheses and their required factors.
+The v9 study starts with roughly ten joint strategy hypotheses and their required factors.
 About 100 evaluated factor definitions and 20–30 distinct strategy hypotheses describe the
 cumulative exploration guidance. These are neither minimum counts, initial prerequisites nor search ceilings;
 benchmarks and parameter-only revisions do not count as distinct hypotheses. Pool size is

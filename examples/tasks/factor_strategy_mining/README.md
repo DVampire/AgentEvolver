@@ -28,10 +28,12 @@ operation, separate stage pages or mandatory publication sequence is part of the
 - `study.json`: market scope, dates, execution assumptions, factor-role qualification,
   exploration guidance and the domain evidence standard.
 
-The v8 study uses NVDA daily observations through **2026-09-11**, training in 2016–2020,
-validation in 2021–2023 and final test from 2024-01-01 through the cutoff. It replaces
-fixed CAGR/Sharpe finish targets and trial/round/patience ceilings with evidence-based
-research judgment. The researcher repeatedly discovers and refines factors and strategies,
+The v9 study uses **TSLA** daily observations over the trailing ten-year window
+**2016-09-12 through 2026-09-11**. Training covers 2016-09-12–2020-12-31,
+validation covers 2021–2023, and final test covers 2024-01-01 through the cutoff.
+Acquire train/validation first and defer test acquisition until the frozen final evaluation.
+Completion follows evidence-based research judgment, without fixed CAGR/Sharpe finish
+targets or trial/round/patience ceilings. The researcher repeatedly discovers and refines factors and strategies,
 reviews every shortlisted route and justifies completion against research quality.
 
 The researcher decides whether to continue from evidence, recent improvement history and

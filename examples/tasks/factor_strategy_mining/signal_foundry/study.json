@@ -1,13 +1,13 @@
 {
   "schema": 1,
-  "study_id": "signal-foundry-nvda-daily-v8",
+  "study_id": "signal-foundry-tsla-daily-v9",
   "market": {
-    "symbol": "NVDA",
+    "symbol": "TSLA",
     "exchange_calendar": "XNAS",
     "currency": "USD",
     "bar_frequency": "1Day",
     "session": "regular",
-    "start": "2016-01-01",
+    "start": "2016-09-12",
     "end": "2026-09-11",
     "completed_sessions_only": true,
     "volume_scope": "provider_reported_US_equity_volume",
@@ -30,7 +30,7 @@
   },
   "splits": {
     "train": [
-      "2016-01-01",
+      "2016-09-12",
       "2020-12-31"
     ],
     "validation": [
