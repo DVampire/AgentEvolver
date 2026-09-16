@@ -2,14 +2,16 @@
 
 # AgentEvolver
 
-### Multi-agent execution that evolves reusable capabilities and turns real runs into training data
+### Multi-agent collaboration and global evolution for complex work
 
-AgentEvolver is a **self-evolving multi-agent framework** for complex engineering and research tasks.
-A MetaAgent plans, delegates, and reviews the work. When execution reveals a verified capability gap,
-dedicated generator, evaluator, and optimizer agents can create or improve tools, skills, agents,
-connectors, environments, workflows, and memory components. In parallel, `trajectory` turns real
-executions into reward-annotated SFT/RL records, preserving the data foundation for future model
-training and feedback into the runtime.
+AgentEvolver is a **self-evolving multi-agent platform** for engineering and research.
+A shared Runtime coordinates agents and capability calls; a living Plan carries the goal,
+progress and next steps through long tasks. Agents can improve **eight kinds of reusable
+entities**—Tools, Skills, Agents, Connectors, Workflows, Memory, Environments and Plugins—
+with versioned candidates, evaluation evidence and subsequent use recorded along the way.
+
+Overview, Chat, Canvas, Code and Science bring that work into one project workspace.
+Execution trajectories also provide a data foundation for downstream SFT/RL training.
 
 [![License](https://img.shields.io/badge/license-MIT-5B6CFF.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg?logo=python&logoColor=white)](pyproject.toml)
@@ -17,15 +19,15 @@ training and feedback into the runtime.
 [![Docs](https://img.shields.io/badge/docs-online-20B2AA.svg)](https://dvampire.github.io/AgentEvolver/)
 
 **[Website](https://dvampire.github.io/AgentEvolver/)** ·
+**[Global evolution](#global-evolution-across-eight-entities)** ·
+**[Runtime & Plan](#runtime-and-plan)** ·
 **[Quick start](#quick-start)** ·
 **[How it works](#how-it-works)** ·
-**[Training data loop](#from-task-trajectories-to-end-to-end-training)** ·
-**[Fit and trade-offs](#fit-and-trade-offs)** ·
 **[Web workbench](#web-workbench)**
 
 中文：**[README_zh.md](README_zh.md)**
 
-<img src="docs/assets/arch.svg" alt="AgentEvolver architecture: a shared agent runtime, layered context, scoped capabilities, environments, deployment and evidence-based adoption" width="100%">
+<img src="docs/assets/arch.svg" alt="AgentEvolver architecture: shared Runtime, living Plan, layered context and reusable capability evolution" width="100%">
 
 </div>
 
@@ -33,70 +35,103 @@ training and feedback into the runtime.
 
 ## Understand it in one minute
 
-Most multi-agent frameworks answer one question: **How can several agents collaborate on the task in
-front of them?**
+AgentEvolver connects **task execution, reusable capability improvement and human inspection**.
+The MetaAgent can work directly with tools and delegate independent assignments to specialists.
+During planning, feedback and verification, agents examine whether a useful method can be
+improved and reused in an upcoming operation.
 
-AgentEvolver asks one more: **How can a capability gap discovered in this task become a reusable
-component for future tasks?**
-
-A typical run contains two deliberately separate paths:
-
-| Current task | Capability evolution |
+| Part of the system | What it contributes |
 | --- | --- |
-| The MetaAgent decomposes the goal and delegates to coding, general, browser, and review agents | Generator, evaluator, and optimizer agents run only after a check establishes a real capability gap |
-| Produces the code, report, experiment, or site requested by the user | Produces a tool, skill, agent, connector, environment, workflow, or memory component |
-| Prioritizes finishing the current task | Evaluates a new component before adoption, with rollback available |
-| Writes task files into an isolated session workspace | Writes reusable components into external `extension/`; the core package stays unchanged |
+| **Global evolution** | Improve and compose eight entity types, retaining versions and evidence for adoption decisions |
+| **Shared Runtime** | Coordinate agent lifecycles, messages, background work, resource access and shared budgets |
+| **Living Plan** | Keep the objective, progress, blockers and next action available throughout a long task |
+| **Shared workbench** | Inspect the work, edit project files and continue an analysis alongside agents |
 
-In the current release, online “self-evolution” happens first at the **runtime component layer**. An
-ordinary task does not update model weights, and agents do not receive unrestricted permission to
-rewrite the framework source. Model evolution is still part of the design: the system already captures
-trainable trajectories, with training, evaluation, model registration, and serving feedback planned as
-the next stage.
+A task can deliver code, a report or an experiment while also producing a reusable method.
+Which capabilities it can use or evolve depends on the selected configuration and permissions.
 
-> **Mental model:** AgentEvolver = a multi-agent task runtime + a versioned capability extension system + an SFT/RL data flywheel. Today the loop reaches trainable data; the goal is to close it with trained models serving agents again.
+## Global evolution across eight entities
 
-## What problem does it solve?
+**Global evolution covers the cooperating parts of the agent system.** A task may reveal a
+better reasoning method, a missing operation, an inefficient observation interface or a memory
+limitation. The agent selects the component type that fits the evidence and its intended consumer,
+then checks both that component and the work that depends on it.
 
-Complex tasks often fail because the system lacks a dependable method, not because the model cannot
-produce another answer. It may need a missing tool, a reusable procedure, a domain connector, or a
-reliable acceptance test. A longer prompt rarely prevents the same failure next time.
-
-AgentEvolver makes those methods first-class components:
-
-- **Orchestrate first.** The MetaAgent breaks down the goal, delegates through one runtime, and gathers and reviews results.
-- **Require evidence before evolving.** A first fixable mistake is retried. Evolution is reserved for a missing capability, repeated structural failure, or a measured quality ceiling.
-- **Persist the improvement.** New capabilities live in `extension/`, where they can be hot-loaded, versioned, compared, and rolled back without mutating the hand-written core.
-- **Make the process inspectable and trainable.** `trace` preserves raw observation events; `trajectory` projects runs into reward-annotated, step-level records for SFT/RL pipelines.
-
-## Core characteristics
-
-| Characteristic | What it means in practice |
+| Evolvable entity | What can improve |
 | --- | --- |
-| **Evidence-driven self-evolution** | Detect a gap → generate or optimize → evaluate under a read-only guard → compare with a baseline → adopt or roll back. “It looks better” is not validation. |
-| **Immutable core, mutable extensions** | Hand-written capabilities live in `agentevolver/`; evolved content lives in external `extension/`. Versions are archived and restorable. |
-| **One multi-agent runtime** | `spawn`, `send`, `ask`, `suspend/resume`, and `publish/subscribe` support delegation, progress, control, and escalation. |
-| **A step is a decision, not a wait** | A long command, a terminal send, or a delegated child can be started in the background and collected later by job id; reminders that come due are kept in the same registry. A step spent blocking is a decision the agent never got to make. |
-| **State that survives the call that made it** | A terminal keeps its shell between calls — a directory change, an activated environment, an ssh hop, a REPL. A continuable sub-agent keeps its own session and can be handed more work. An image the agent read is re-attached to later requests instead of vanishing with the step that read it. |
-| **Code mode** | Instead of one call per turn, the model can write a program whose calls are bridged back through a guarded dispatch, so a batch of tool work costs one turn. The program runs in its own interpreter, where no framework object is one `import` away from model-written code. |
-| **Plan mode** | A person can hold a run to reading and reasoning until they approve what it intends to do. The gate reads each capability's own `mutates` / `permission_mode` declaration and never its name; a capability that declares neither is refused. |
-| **Crash-safe continuation** | Structured, portable execution checkpoints are written atomically. After an interrupted run, both the browser and CLI show the recovered state and require an explicit resume-or-restart decision when automatic continuation is unsafe. |
-| **One approval and lifecycle surface** | Tools, connectors, and environment actions share the same side-effect classification and approval path; undeclared effects fail closed. A typed lifecycle Hook bus exposes prompt, session, task, capability, and rollout events without coupling them to the agent loop. |
-| **Project memory and live agent threads** | Project memory survives individual sessions, while delegated agents keep addressable runtime threads for direct messaging, progress, control, and follow-up work. Completed blocking agents release their driver and context resources promptly. |
-| **Progressive rollout and observability** | Extensions can run through shadow and canary stages with persisted health evidence and automatic rollback. Trace remains authoritative and can optionally export paired spans through OpenTelemetry. |
-| **Training-oriented data interface** | `TrajectoryHook` captures the effective context, reasoning and tool calls, observations, token use, and reward for every step; it exports OpenAI Chat SFT records and pluggable RL formats, including a built-in text-level VERL episode format. |
-| **Inspectable, HTML-native artifacts** | Prompts, dynamic workflows, task documents, memory reports, and step snapshots are used by the runtime and readable by people. |
-| **Budgets inside the agent context** | Step, token, and wall-time budgets appear as `NORMAL / TIGHT / CRITICAL`, helping agents converge before a hard limit is reached. |
-| **A prompt prefix a cache can keep** | The capability catalogs are frozen at their first render and placed ahead of the volatile agent state, with a cache breakpoint after them, so a component generated mid-session does not invalidate the conversation behind it. |
-| **Four views over one project** | Chat, Canvas, browser-based VS Code, and Science/Jupyter share a session workspace and Gateway protocol. |
-| **Layered safety boundaries** | Sandbox isolation, host-side egress policy, command-intent authorization, and crash cleanup address different risks. |
-| **Registry-driven extension surface** | Agents, tools, skills, environments, memory systems, and related components follow consistent registration, schema, and lifecycle conventions. |
+| **[Tool](agentevolver/tool/README.md)** | A bounded executable operation with a clear input/output contract |
+| **[Skill](agentevolver/skill/README.md)** | A reusable procedure, research method, design approach or verification checklist |
+| **[Agent](agentevolver/agent/README.md)** | Specialist behavior, reasoning, planning, decomposition and its associated prompt |
+| **[Connector](agentevolver/connector/README.md)** | Access to an external service or data source |
+| **[Workflow](agentevolver/workflow/README.md)** | Reusable sequencing, branching and coordination of capabilities |
+| **[Memory](agentevolver/memory/README.md)** | How knowledge and experience are retained, retrieved and reused |
+| **[Environment](agentevolver/environment/README.md)** | Observation, interaction, state and lifecycle handling in an execution environment |
+| **[Plugin](agentevolver/plugins/README.md)** | A cohesive service integration exposing related tools and shared resources |
 
-The model reaches most of this by calling tools itself: starting a job and collecting it
-later, opening a terminal and typing into it, backgrounding a sub-agent and picking its
-answer up, reading an image, searching
-what earlier runs tried. [`docs/tool-catalog.md`](docs/tool-catalog.md) is generated from
-the live registry and lists every one of them with its parameters and permission mode.
+For example, a Connector can supply data to an Agent, a Skill can guide its analysis, and a
+Workflow can coordinate repeated checks. Each useful change is evaluated against its own baseline;
+its dependent operations are then replayed to check the combined result. Later evidence can lead
+to another improvement of the retained version.
+
+Evolution candidates live in external `extension/` or session staging. Versions, comparison cases
+and actual call references support keep, rollback and unload decisions. Promotion makes a staged
+component available through shared extensions; later runs select capabilities through their own
+configuration. An Agent's prompt belongs with that Agent and is not a ninth entity type.
+
+Structural admission checks loading and schemas. Functional evaluation records a judgment about
+results, and subsequent use shows how a retained version behaves in real work. A candidate can be
+provisionally active before its functional evaluation; registration alone does not establish improvement.
+The [extension contract](agentevolver/extension/README.md) defines these boundaries.
+
+## Runtime and Plan
+
+### A shared execution Runtime
+
+The Runtime treats an agent as a managed logical process with its own state, mailbox and lifecycle.
+The same kernel also manages lightweight calls across component families, while each component
+owns its domain behavior. This supports collaboration patterns that can change with the task.
+
+| Mechanism | Why it matters |
+| --- | --- |
+| **Dispatch and messaging** | Delegate bounded assignments, send follow-up work, ask for help and collect results |
+| **Subscriptions and worker pools** | Publish an event to interested agents, or assign work to one available subscriber |
+| **Background jobs and persistent terminals** | Continue useful work while a command or child runs; retain shell state across calls |
+| **Shared budgets and inherited permissions** | Account for parent and child usage together and keep child actions within their grants |
+| **Resource coordination and cleanup** | Coordinate declared shared/exclusive access, stop child work and retain cleanup failures |
+| **Recovery with evidence** | Restore saved state and reconcile uncertain external effects before replaying work |
+
+See the [Runtime contract](agentevolver/runtime/README.md) for lifecycle and concurrency details.
+
+### A living Plan throughout the task
+
+The coordinator maintains a compact `plan/index.md` with the objective, progress, blockers,
+next action and links to detailed records. `plan/plan.md` holds the full plan. Runtime reads
+the current index into the live context, so it remains available after conversation compaction.
+Workers receive bounded assignments; the coordinator owns the shared plan and revises it as
+feedback and evidence arrive.
+
+Automatic planning and human review are separate options:
+
+- **`auto`**: maintain and revise the plan while executing; this is the MetaAgent launcher's default.
+- **`plan`**: restrict actions to permitted reading/reasoning until a person approves the plan.
+  The run must include `exit_plan_mode` in its available tools.
+- **`off`**: omit the planning context and automatic planning obligation.
+
+When evolution is enabled, the plan also tracks opportunities, the next consumer, comparisons and
+the distinct states of proposal, evaluation, adoption and use. See the [Plan contract](agentevolver/plan/README.md).
+
+## Supporting capabilities
+
+| Capability | What it adds |
+| --- | --- |
+| **Code Mode** | Express batches, loops and branches in a program whose capability calls pass through guarded dispatch |
+| **Layered context** | Separate stable instructions, compacted history, recent interactions and live state; keep detailed records available on demand |
+| **Trace and trajectories** | Inspect actual requests and action results, and export reward-annotated records for SFT/RL |
+| **Versioned extensions** | Archive reusable components and support evaluation, controlled promotion and rollback |
+| **Budgets and observability** | Expose remaining steps, tokens and time; retain execution records and optionally export OpenTelemetry spans |
+| **Shared project tools** | Work with files, a browser IDE, a Python kernel, environments and deployment previews through one Gateway |
+
+The [tool catalog](docs/tool-catalog.md) lists registered tools, their parameters and permission modes.
 
 ## Fit and trade-offs
 
@@ -150,6 +185,7 @@ chemistry, sandboxes, and benchmarks are opt-in:
 ```bash
 bash scripts/install.sh --extras browser
 bash scripts/install.sh --extras sandbox
+bash scripts/install.sh --extras science
 bash scripts/install.sh --extras all
 ```
 
@@ -157,19 +193,19 @@ See [`scripts/INSTALL.md`](scripts/INSTALL.md) for every option.
 
 ### 2. Configure a model
 
-Set the provider you actually use in `.env` at the repository root. The default configuration uses a
-Google model; select another one through config or `--cfg-options model_name=...`.
+The [default configuration](configs/meta_agent.py) selects an `llm_hub` model route.
+Set the address and key for your model gateway in `.env` at the repository root:
 
 ```bash
-GOOGLE_API_BASE='https://generativelanguage.googleapis.com'
-GOOGLE_API_KEY='...'
-
-# Or configure another provider
-ANTHROPIC_API_BASE='...'
-ANTHROPIC_API_KEY='...'
-OPENROUTER_API_BASE='...'
-OPENROUTER_API_KEY='...'
+LLM_HUB_API_BASE='https://your-model-gateway.example/v1'
+LLM_HUB_API_KEY='...'
 ```
+
+Other providers use their own variables, such as `GOOGLE_API_BASE` / `GOOGLE_API_KEY`,
+`ANTHROPIC_API_BASE` / `ANTHROPIC_API_KEY`, or `OPENROUTER_API_BASE` / `OPENROUTER_API_KEY`.
+Select a matching registered model with `--cfg-options model_name=...`; setting a provider key
+alone does not change the selected route. Provider configuration is described in the
+[model guide](agentevolver/model/README.md).
 
 Teams may manage secrets in Vault. The framework falls back to `.env` when Vault is not configured or
 reachable.
@@ -198,6 +234,10 @@ Common options:
 | `--task-file <path>` | Run a `.html` or `.md` task document |
 | `--config <path>` | Select a configuration; defaults to `configs/meta_agent.py` |
 | `--cfg-options key=value ...` | Override the model, budgets, or other config values for this run |
+| `--plan-mode auto / plan / off` | Choose automatic planning, an approval gate, or no planning context |
+
+The default configuration keeps a small resident set: MetaAgent, `code_agent` and basic execution
+capabilities. Select the skills, environments and evolution capabilities required by your task.
 
 Every run gets an isolated session. Work files, logs, task views, and memory reports are written under
 `output/<owner>/sessions/<session-id>/`.
@@ -227,6 +267,19 @@ scripts/run-in-sandbox.sh -- scripts/serve-ui.sh
 Open `http://127.0.0.1:5173`. The default Gateway is `ws://127.0.0.1:9876/ws`.
 When binding outside loopback, set `AGENTEVOLVER_GATEWAY_TOKEN` and restrict allowed browser origins.
 
+This command uses the base image built in step 4, including its Jupyter dependencies.
+The first Code launch builds the editor image and installs its default extensions, which can take
+several minutes. See the [IDE image guide](docker/vscode/README.md).
+
+For a host-based Gateway, install the optional backends in its Python environment:
+
+```bash
+python -m pip install -e '.[sandbox,science]'
+```
+
+Then follow the [local frontend instructions](frontend/README.md). Code still needs Docker and
+the local base image; Science uses the host Gateway's Python environment.
+
 ### 6. Verify the installation
 
 ```bash
@@ -239,7 +292,7 @@ also runs a quick verification pass.
 
 ## How it works
 
-### Task execution path
+### Task execution and capability improvement
 
 ```text
 User / Web UI
@@ -248,127 +301,109 @@ User / Web UI
 Gateway / Task Manager
       │
       ▼
-MetaAgent ── plan, decompose, delegate, review
+Coordinator ── MetaAgent / Website Builder / Game Builder
       │
-      ├── Code / General / Browser / Computer / Reviewer agents
-      │       └── Tools · Skills · Connectors · Environments · Workflows
+      ├── Living Plan: goal, progress, feedback and next action
       │
-      └── only when evidence establishes a capability gap
-              └── Generate / Evaluate / Optimize
-                        └── versioned extension/ → adopt or roll back
+      ├── Shared Runtime: direct work, delegation, messages and jobs
+      │       └── Scoped tools, skills, agents and other capabilities
+      │
+      └── Evidence-backed evolution opportunity
+              └── Shared self-evolution loop across eight entity types
+                      └── Candidate version → evaluate → decide → use again
 ```
 
-Runtime defines how messages move; Protocol defines what a conversation means. Each live agent is
-wrapped in its own inbox, pump task, state, and pending reply, so it can be invoked, paused, resumed,
-cancelled, or subscribed to.
+MetaAgent and the domain Builders share the agent lifecycle, Runtime and evolution policy.
+When the required capabilities are available, the working agent follows `self_evolving_skill`
+within its action loop to generate, optimize and evaluate reusable components.
 
 ### The self-evolution loop
 
-```text
-1. Decide          2. Generate or optimize   3. Evaluate          4. Keep or revert
-What is missing? → write into extension/   → compare to baseline → adopt or roll back
-Why is retry not    keep the core unchanged   preserve evidence     archive every version
-enough?
-```
+1. **Observe and choose.** Identify a reusable limitation or opportunity from planning,
+   execution, feedback or verification. Name the next consumer, the expected benefit and
+   a bounded comparison with the existing method.
+2. **Develop a candidate.** Select the appropriate entity type, improve an existing suitable
+   component where possible, and preserve baseline observations before registration.
+3. **Evaluate the version.** Register through structural admission, then compare behavior
+   using real calls. Tie the judgment to the candidate version and retained evidence.
+4. **Decide and reuse.** Keep a passing version, or explicitly roll back/unload it. Exercise
+   retained improvements in their intended operation and inspect the resulting work.
 
-Evolution should be triggered only by one of these signals:
+A first correction, a successful verification or an unfamiliar integration can reveal a
+useful opportunity. Repeated failure is not required. The agent still needs evidence, a
+concrete consumer and enough budget to evaluate the change and finish the task. Product
+edits and component counts alone do not demonstrate capability improvement.
 
-1. **Missing capability:** the task requires an operation that does not exist and cannot succeed by retrying existing capabilities;
-2. **Repeated structural failure:** the same failure recurs after explicit corrective guidance;
-3. **Measured quality ceiling:** the current method systematically misses a defined metric.
-
-A first fixable defect, transient failure, capability that was never enabled, or already-tight budget
-should lead to retrying, fixing configuration, or finishing the current task—not expanding the system.
+Tasks that explicitly require verified evolution also check version-specific evaluation and
+post-adoption use receipts before reporting success. A failed comparison or the absence of a
+credible opportunity remains an unmet outcome; it does not justify inventing a successful result.
 
 ### Extensions and versions
 
-- hand-written built-ins live under `agentevolver/<module>/default/`;
-- generated and optimized components live under external `extension/<module>/`;
-- `ExtensionManager` handles dynamic loading, registration, archiving, and rollback;
-- an already-registered component with `enable_evolving=False` cannot be overwritten by evolution;
-- Gateway sessions stage extension changes under their own output and require an explicit promotion into shared `extension/`.
+- Built-in capabilities live in the framework package; evolution artifacts live under external `extension/<type>/` or session staging.
+- `ExtensionManager` handles registration, admission, version archives and rollback.
+- An existing component with `enable_evolving=False` cannot be overwritten through evolution.
+- Gateway sessions stage changes separately and require explicit promotion into shared extensions.
+- Registration, functional evaluation, promotion and later use are distinct states, visible through their records.
 
-This design limits the mutation surface, but it **does not automatically prove that a new component is
-correct**. Tests, benchmarks, read-only evaluators, and human approval remain necessary in high-risk
-settings.
+See the [extension contract](agentevolver/extension/README.md) for evidence requirements and activation boundaries.
 
 ## From task trajectories to end-to-end training
 
-AgentEvolver does more than record what happened. It maintains a training-oriented projection of each
-run. `TrajectoryHook` consumes the agent lifecycle and aggregates an execution into a sequence of
-steps:
+`trace` retains execution observations; `TrajectoryHook` projects the run into a sequence of
+training-oriented steps:
 
 ```text
 s_t = (z_t, a_t, o_t, r_t)
 
-z_t  effective context actually sent to the model
+z_t  effective context sent to the model
 a_t  model reasoning and native tool calls
-o_t  result or error from each action
-r_t  reward backfilled by a benchmark or evaluator after the run
+o_t  action results or errors
+r_t  reward backfilled by a benchmark or evaluator
 ```
 
-Implemented today:
+Records preserve task identity, outcome, parent/subtask relationships and token usage. They persist
+to `<log_root>/trajectory/<task_id>.jsonl` and export through `export_sft()` or the pluggable
+`RLFormat` interface. The built-in VERL format provides text-level episodes; the training provider
+owns tokenization and masks.
 
-- capture each step's effective prompt, reasoning, tool calls, observations, and token usage by `task_id`;
-- preserve session/task identity, task outcome, success state, and parent/subtask metadata;
-- backfill a task-level reward after a benchmark or evaluator finishes, propagating it to every step;
-- persist to `<log_root>/trajectory/<task_id>.jsonl`;
-- export step-level OpenAI Chat SFT records through `export_sft()`, retaining reasoning and native `tool_calls` in the assistant target;
-- export RL episodes through the pluggable `RLFormat` interface. The built-in `VerlFormat` emits text-level `prompt / response / reward` fields; token ids and masks are intentionally left for a training provider that owns the tokenizer.
-
-The current data loop therefore reaches **real task → reward-annotated trajectory → SFT records / RL
-format episodes**. The next stage is to integrate training execution, checkpoints and model versions, offline
-and online evaluation, approval/promotion, and serving into the same system:
-
-```text
-Task execution
-   ↓
-Trajectory capture and reward backfill        ← implemented
-   ↓
-SFT / RL datasets and VERL-style export       ← implemented
-   ↓
-Training and checkpoint management            ← planned integration
-   ↓
-Benchmarking, comparison, model promotion     ← planned integration
-   ↓
-The new model serves agents again              ← planned integration
-   └──────────────────────────────────────→ produces the next trajectories
-```
-
-This is the fuller meaning of evolution in AgentEvolver: **component evolution gives the system new
-methods; model training internalizes successful behavior. Both are ultimately connected by the same
-tasks, evaluation signals, and data interfaces.** This repository already provides the capture and
-export foundation; it should not imply that the in-system trainer is complete today.
+The available path is **real task → reward-annotated trajectory → SFT records / RL episodes**.
+Training execution, model/checkpoint management, model evaluation and serving feedback remain
+integration work. Component evolution and training-data export do not imply that an ordinary task
+updates model weights. See the [trajectory contract](agentevolver/trajectory/README.md).
 
 ## Web workbench
 
 <div align="center">
 
-<a href="https://dvampire.github.io/AgentEvolver/ui.html"><img src="docs/assets/ui/01-overview.jpg" width="100%" alt="AgentEvolver Web workbench overview"></a>
+<a href="https://dvampire.github.io/AgentEvolver/ui.html?lang=en"><img src="docs/assets/ui/workbench-overview.png" width="100%" alt="AgentEvolver project overview with Plan, Runtime, eight evolvable entity types and project files"></a>
 
-**[Watch the 11-part feature tour](https://dvampire.github.io/AgentEvolver/ui.html)**
+**[Watch the 11-part feature tour](https://dvampire.github.io/AgentEvolver/ui.html?lang=en)**
 
 </div>
 
+Five views share one project and Gateway:
+
 | View | What it is for |
 | --- | --- |
-| **Chat** | Submit tasks, upload files, inspect live events, approve sensitive operations, cancel, and reconnect |
-| **Canvas** | Edit JSON flows with React Flow and execute them on the shared Workflow Runtime |
-| **Code** | Use VS Code in the browser to edit the exact same session workspace |
-| **Science** | Share a Jupyter kernel with the agent and inspect execution history, MIME output, and compute state |
-| **Machines** | Watch browser/desktop environments over noVNC or manage explicitly configured SSH hosts |
+| **Overview** | Read the plan summary and details; inspect Runtime activity, eight entity types, staged candidates, shared notes and files |
+| **Chat** | Submit tasks, attach files, follow activity, inspect steps, answer approval requests and control running work |
+| **Canvas** | Compose JSON flows visually and execute them on the shared Workflow Runtime |
+| **Code** | Open the project workspace in browser-based VS Code |
+| **Science** | Use the same project kernel as the agent's code interpreter, inspect outputs and compute state, or continue in JupyterLab |
 
-The conversation column carries what is true *now*, not only what was said: the goal the
-session is working toward sits above the thread and stays there while the transcript
-scrolls; a bar above it counts the background jobs and opens the list of what is still
-running or coming due; and the plan-mode control sits against the composer, because what
-it decides is what the next message will be allowed to do. From the same bar, any run in
-the conversation opens as a trajectory — every step with its reasoning, arguments, results
-and errors, wall time, token use, and the share of the prompt that was served from cache.
+A searchable project picker keeps sessions accessible. The sidebar also opens capability and model
+catalogs, Browser/Computer live views, configured remote machines, and connection settings.
+Candidate staging is displayed separately from evidence of functional improvement.
 
-The capability catalog, model manager, file editor, extension staging/promotion, and deployment status
-all use the same versioned Gateway protocol. See [`frontend/README.md`](frontend/README.md) and
-[`docs/canvas.md`](docs/canvas.md).
+The screenshot and eleven clips use a prepared sample project on a live Gateway, recorded on
+September 16, 2026. Science executes a real Python cell on synthetic data; the sample Runtime is
+idle. These are interface demonstrations. See the [recording guide](docs/assets/ui/README.md).
+
+Code requires Docker and the locally built base image; its editor image builds on first use.
+Science requires JupyterLab and ipykernel in the Gateway's Python environment. Setup instructions
+are in the [frontend guide](frontend/README.md). Canvas JSON flows have their own library;
+agent-authored HTML workflows are a separate interface described in the [Canvas guide](docs/canvas.md).
 
 ## Safety, budgets, and observability
 
@@ -377,7 +412,7 @@ all use the same versioned Gateway protocol. See [`frontend/README.md`](frontend
 | Layer | Responsibility |
 | --- | --- |
 | Sandbox | Isolate code, browser, or desktop environments; backends provide different capability and isolation levels |
-| Network policy | Task containers have no public route by default; allowed requests cross a Unix socket to a host-side relay that decides and records |
+| Network policy | Apply the selected backend's egress controls; container relay policies mediate and record permitted outbound requests |
 | Permission | Classify read, write, destructive, network, process, package-management, and related intent before Tool or Sandbox execution |
 | Lifecycle | A write-ahead container ledger cleans leaked resources; a shared port registry reduces service conflicts |
 
@@ -390,19 +425,15 @@ their threat model.
 - `constraint/` tracks step, token, and wall-time budgets and renders the remaining budget into agent context;
 - `trace/` persists structured events and streams them through the Gateway;
 - `trajectory/` projects runs into reward-annotated step records and exports OpenAI Chat SFT or RL formats such as VERL;
-- `session_manager` reads those trace logs back after a run ends, so an agent can search what an earlier run tried and read the steps around a hit;
+- [Session records](agentevolver/session/README.md) let an agent search earlier runs and read the steps around a matching result;
 - `memory/` maintains recent history, compacted working memory, todos, call paths, and final results;
-- `spill/` writes an oversized tool result to a file whole and puts the locator in the excerpt, so the part that did not fit can still be read;
+- `tool/spill/` writes an oversized tool result to a file whole and puts the locator in the excerpt, so the part that did not fit can still be read;
 - `benchmark/` provides entry points for AIME, GPQA, GSM8K, HLE, LeetCode, DeepWeb, ProgramBench, and related evaluations.
 
-Input tokens are the largest recurring cost, so the prompt is arranged for a cache: the
-capability catalogs are byte-identical on every step and are sent ahead of the volatile
-agent state, with the cache breakpoint after them. Measured on a real run, an orchestrator
-went from reading nothing back to 72,647 of about 98,800 input tokens per step served from
-cache once the prefix was warm. `agentevolver/model/types.py` and
-`agentevolver/agent/types.py` carry the reasoning, including why the entry lives for an
-hour and why a mid-session capability change is announced after the catalog rather than
-rewritten into it.
+The prompt separates a stable instruction/catalog prefix from changing task state to support
+provider prompt caching. Cache hits and savings depend on the model route and workload; inspect
+reported usage in the run records. Context construction is described in the
+[agent guide](agentevolver/agent/README.md).
 
 ## Extending the framework
 
@@ -430,6 +461,7 @@ A new hand-written component uses the matching registry decorator and is exporte
 | Dataset / Benchmark | `agentevolver.data` / `agentevolver.benchmark` |
 | Connector | discovered from `CONNECTOR.md`, managed by `connector_manager` |
 | Workflow | compiled from HTML by `WorkflowCompiler` and executed on the shared runtime |
+| Plugin | `plugin.py` + `PLUGIN.md`, managed by `plugin_manager` |
 
 Each module's own `README.md` is its contract: what it owns, its shape, and the rules for
 extending it.
@@ -462,7 +494,7 @@ Framework writes are resolved centrally through `agentevolver.paths`. The main w
 | [Website](https://dvampire.github.io/AgentEvolver/) | Positioning, architecture, characteristics, trade-offs, and quick start |
 | [Complete tutorial](https://dvampire.github.io/AgentEvolver/tutorial.html) | Thirteen chapters: mental model, installation, entry points, first run, output tree, extensions, SFT/RL trajectory export, Web UI, safety, evolution, and troubleshooting |
 | [Architecture guide](https://dvampire.github.io/AgentEvolver/architecture.html) | Runtime boundaries, event log projections, extension lifecycle, and the training-data flywheel |
-| [Module reference](https://dvampire.github.io/AgentEvolver/modules.html) | Searchable and expandable guide to all 48 modules, their runtime placement, public API, and source |
+| [Module reference](https://dvampire.github.io/AgentEvolver/modules.html) | Searchable guide to module responsibilities, runtime placement, public API, and source |
 | [Web UI tour](https://dvampire.github.io/AgentEvolver/ui.html) | Eleven short clips showing the workbench feature by feature |
 | [Contributor guide](https://dvampire.github.io/AgentEvolver/development.html) | Module contracts, verification gates, invariants, and safe extension patterns |
 | [`scripts/INSTALL.md`](scripts/INSTALL.md) | Installation, optional extras, Vault, and environment setup |
