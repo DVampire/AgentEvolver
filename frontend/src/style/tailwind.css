@@ -1,0 +1,4 @@
+/* Shared tokens live in theme.css; utility and handwritten components use the same palette. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

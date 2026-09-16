@@ -1,0 +1,805 @@
+"""Website-specific actors keep role routing and capability isolation deterministic."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from agentevolver.agent.actor.browser_agent import BrowserAgent
+from agentevolver.agent.actor.website_builder_agent import (
+    WebsiteBuilderAgent,
+)
+from agentevolver.agent.actor.website_user_agent import WebsiteUserAgent
+from agentevolver.deploy import deployment_manager
+from agentevolver.environment.default.browser.service import BrowserService
+from agentevolver.environment.default.job.environment import JobEnvironment
+from agentevolver.task.context import bind_manifest, render_manifest, without_private_paths
+from agentevolver.tool.default.adoption import AdoptionTool
+from agentevolver.tool.default.deployment.deploy import DeployTool
+
+
+def _visible(task, files):
+    """What the Builder sees: the manifest bound to staging, minus the private paths."""
+    bound = bind_manifest(task, files)
+    if bound is None:
+        return str(task)
+    before, explanation, manifest = bound
+    return render_manifest(
+        before, explanation, without_private_paths(manifest, manifest.get("private_attachment_roles", [])),
+    )
+
+
+def _task(manifest=None):
+    payload = manifest or {
+        "attachments": [
+            {"id": "brief", "role": "requirements", "source_path": "/source/site.html"},
+            {"id": "user-a", "role": "user_context", "source_path": "/source/p1.html"},
+            {"id": "user-b", "role": "user_context", "source_path": "/source/p2.html"},
+            {"id": "user-c", "role": "user_context", "source_path": "/source/p3.html"},
+        ],
+        "optimization_cycles": 5,
+        "private_attachment_roles": ["user_context"],
+    }
+    return (
+        "Build the scenario.\n\n"
+        "## runtime-input-manifest\n"
+        "Role-only attachment routing.\n"
+        f"{json.dumps(payload)}"
+    )
+
+
+def test_builder_rebinds_role_manifest_to_staged_files_without_reading_them():
+    staged = [f"/session/log/inputs/00{index}_input.html" for index in range(4)]
+    bound = _visible(_task(), staged)
+    manifest = json.loads(bound[bound.index("{") :])
+
+    assert [item["role"] for item in manifest["attachments"]] == [
+        "requirements",
+        "user_context",
+        "user_context",
+        "user_context",
+    ]
+    assert manifest["attachments"][0]["path"] == staged[0]
+    assert manifest["attachments"][0]["staged"] is True
+    assert all(
+        "path" not in item and item["routing"] == "runtime_private"
+        for item in manifest["attachments"][1:]
+    )
+    assert manifest["optimization_cycles"] == 5
+    assert manifest["paths_staged"] is True
+    assert "/source/p1.html" not in bound
+    assert staged[1] not in bound
+
+
+@pytest.mark.asyncio
+async def test_builder_mounts_job_without_opening_its_own_browser_session(tmp_path):
+    """Declared like any other agent's scope, so the router applies it every step.
+
+    It was a function reaching into `ctx.extra["environment_allowlist"]` before the first
+    prompt — the same write the router makes from `capability_allowlists`, only earlier
+    and by hand, and invisible to anything reading the agent's declaration.
+    """
+    from agentevolver.agent.loop.router import CapabilityRouter
+
+    builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
+    assert builder.capability_allowlists["environment"] == ["job"]
+
+    ctx = SimpleNamespace(extra={})
+    try:
+        await CapabilityRouter().schemas(builder, ctx)
+    except Exception:  # noqa: BLE001 - the roster needs managers; the scope write does not
+        pass
+    assert ctx.extra["environment_allowlist"] == ["job"]
+
+
+def test_builder_accepts_an_ordinary_task_without_a_manifest():
+    assert _visible("Build a portfolio.", ["brief.md"]) == "Build a portfolio."
+
+
+def test_builder_manifest_supports_task_defined_attachment_counts():
+    task = _task(
+        {
+            "attachments": [
+                {"id": "requirements", "role": "brief", "source_path": "/old/a"},
+                {"id": "brand", "role": "reference", "source_path": "/old/b"},
+            ]
+        }
+    )
+    bound = _visible(task, ["/staged/a", "/staged/b"])
+    manifest = json.loads(bound[bound.index("{") :])
+    assert [item["path"] for item in manifest["attachments"]] == [
+        "/staged/a",
+        "/staged/b",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_privately_bootstraps_one_browser_subscriber_per_user(tmp_path, monkeypatch):
+    requirement = tmp_path / "scenario.html"
+    requirement.write_text("<main>Public product requirement.</main>", encoding="utf-8")
+    personas = []
+    for index in range(1, 2):
+        path = tmp_path / f"persona_{index}.html"
+        path.write_text(f"<main>Private user {index} goal.</main>", encoding="utf-8")
+        personas.append(path)
+    # Generic subscribers remain supported outside the single-builder demo.
+    task = render_manifest("Build the public product", "Private routing", {
+        "attachments": [{"id": "site", "role": "requirements"},
+                        {"id": "person", "role": "user_context"}],
+        "private_attachment_roles": ["user_context"],
+        "subscribers": [
+            {"id": "person", "agent": "website_user_agent", "attachments": ["person"],
+             "brief": {"model": "provider/model", "subscription_topics": ["deployment.ready"],
+                       "task": "Revisit prior requested changes."}},
+            {"id": "judge", "agent": "browser_agent", "attachments": ["site"],
+             "brief": {"model": "provider/judge", "subscription_topics": ["deployment.ready"],
+                       "task": "Use a bounded, risk-based scope; a known failure cannot be excluded to obtain PASS."}},
+        ],
+        "deployment": {"required_releases": 6, "acceptance_subscriber": "judge"},
+    })
+    files = [str(requirement), *(str(path) for path in personas)]
+
+    calls = []
+
+    # Each subscriber is an ordinary dispatch now, so the brief is what carries the
+    # private half — and what this checks is that only one participant's persona is in it.
+    from agentevolver.runtime import kernel as runtime_kernel
+
+    async def dispatch(name, brief, **kwargs):
+        calls.append((name, brief))
+        return SimpleNamespace(pid=f"job-{len(calls)}")
+
+    monkeypatch.setattr(type(runtime_kernel), "dispatch",
+                        lambda self, name, brief, **kw: dispatch(name, brief, **kw))
+    builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
+    ctx = SimpleNamespace(extra={})
+    public, public_files = await builder.prepare_task(task, files, ctx)
+    assert "deployment_contract" not in ctx.extra.get("task_state", {})
+    status = await DeployTool()(action="status", ctx=ctx)
+    assert status.success and status.data["ready"] is False
+    contract = ctx.extra["task_state"]["deployment_contract"]
+
+    assert [name for name, _kwargs in calls] == [
+        "website_user_agent",
+        "browser_agent",
+    ]
+    for index, (_name, kwargs) in enumerate(calls[:1], start=1):
+        assert f"Private user {index} goal." in kwargs["task"]
+        assert all(
+            f"Private user {other} goal." not in kwargs["task"]
+            for other in range(1, 4)
+            if other != index
+        )
+        assert kwargs.get("files") is None
+        assert kwargs["subscription_topics"] == ["deployment.ready"]
+    assert "Public product requirement." in calls[1][1]["task"]
+    assert "bounded, risk-based scope" in calls[1][1]["task"]
+    assert "cannot be excluded to obtain PASS" in calls[1][1]["task"]
+    assert all("prior requested changes" in kwargs["task"] for _, kwargs in calls[:1])
+    assert "Private user" not in calls[1][1]["task"]
+    assert contract["subscriber_job_ids"] == ["job-1", "job-2"]
+    assert contract["collected_turns"] == {}
+
+    assert public_files == [str(requirement)]
+    assert ctx.extra["task_files"] == public_files
+    assert all(str(path) not in public for path in personas)
+    assert "provider/model" not in public
+    assert "provider/judge" not in public
+    assert "Private user" not in public
+    projected = json.loads(public[public.index("{"):])
+    assert status.data["subscription"]["acceptance_job_id"] == "job-2"
+    assert [row["job_id"] for row in projected["subscribers"]] == contract["subscriber_job_ids"]
+
+    # Re-entering task preparation must preserve subscribers and release history.
+    ctx.extra["task_state"]["deployment_release_history"].append({"source_revision": "revision-1"})
+    again = await builder.prepare_task(task, files, ctx)
+    assert again == (public, public_files)
+    assert len(calls) == 2
+    assert ctx.extra["task_state"]["deployment_release_history"] == [{"source_revision": "revision-1"}]
+
+
+@pytest.mark.asyncio
+async def test_invalid_website_acceptance_is_rejected_by_deploy_tool(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from agentevolver.runtime import kernel
+
+    persona = tmp_path / "persona.html"
+    persona.write_text("<main>A private goal.</main>")
+    manifest = {
+        "attachments": [{"id": "persona", "role": "user_context"}],
+        "subscribers": [{"id": "user", "agent": "website_user_agent",
+                         "brief": {"task": "Visit", "subscription_topics": ["deployment.ready"]},
+                         "attachments": ["persona"]}],
+        "deployment": {"required_releases": 1, "acceptance_subscriber": "missing"},
+    }
+    dispatch = AsyncMock(return_value=SimpleNamespace(pid="user-job"))
+    monkeypatch.setattr(type(kernel), "dispatch", lambda self, *a, **kw: dispatch(*a, **kw))
+    builder = WebsiteBuilderAgent(base_dir=str(tmp_path))
+    ctx = SimpleNamespace(extra={})
+
+    await builder.prepare_task(_task(manifest), [str(persona)], ctx)
+    result = await DeployTool()(action="status", ctx=ctx)
+    assert not result.success and "must name a declared subscriber" in result.message
+    assert "deployment_contract" not in ctx.extra["task_state"]
+
+
+@pytest.mark.parametrize(
+    "task,files,error",
+    [
+        (_task(), ["only-site"], "attachment count does not match"),
+        (
+            "x\n## runtime-input-manifest\nnot-json",
+            ["a", "b", "c", "d"],
+            "has no JSON object",
+        ),
+    ],
+)
+def test_builder_rejects_ambiguous_role_routing(task, files, error):
+    with pytest.raises(ValueError, match=error):
+        _visible(task, files)
+
+
+def test_website_user_is_browser_only_even_when_dispatch_omits_allowlists():
+    agent = WebsiteUserAgent(base_dir=".")
+    # A declaration now, not a method: "which capabilities may I see" is a property of
+    # the agent, and the router puts it where the capability managers look.
+    assert agent.capability_allowlists == {
+        "tool": ["done_tool"],
+        "skill": [],
+        "connector": [],
+        "plugin": [],
+        "workflow": [],
+    }
+    assert agent.env_names == ["browser_environment"]
+
+
+def test_browser_acceptance_is_browser_only_and_has_explicit_completion():
+    agent = BrowserAgent(base_dir=".")
+    # A declaration now, not a method: "which capabilities may I see" is a property of
+    # the agent, and the router puts it where the capability managers look.
+    assert agent.capability_allowlists == {
+        "tool": ["done_tool"],
+        "skill": [],
+        "connector": [],
+        "plugin": [],
+        "workflow": [],
+    }
+    assert agent.env_names == ["browser_environment"]
+
+
+def test_browser_native_diagnostics_aggregate_identical_events_losslessly():
+    service = BrowserService()
+    service._sessions["release"] = {
+        "diagnostics": {},
+        "diagnostic_seq": 0,
+    }
+    message = "TypeError: cannot read properties of undefined"
+    service._record_diagnostic("release", "pageerror", message, "https://site.test/")
+    service._record_diagnostic("release", "pageerror", message, "https://site.test/")
+
+    diagnostics = service.diagnostics("release")
+
+    assert diagnostics["total"] == 2
+    assert diagnostics["counts"] == {"pageerror": 2}
+    assert diagnostics["events"] == [
+        {
+            "type": "pageerror",
+            "message": message,
+            "url": "https://site.test/",
+            "count": 2,
+            "first_seq": 1,
+            "last_seq": 2,
+        }
+    ]
+
+
+def test_builder_prompt_requires_independent_preview_before_first_release():
+    path = Path(__file__).resolve().parents[1] / "agentevolver/prompt/default/website_builder_agent.html"
+    prompt = path.read_text()
+    verify = prompt[prompt.index("3. Verify:"):prompt.index("5. Co-design:")]
+    assert "including the first" in verify
+    assert "delegate one bounded acceptance task to `browser_agent`" in verify
+    assert "Publish only after `VERDICT: PASS`" in verify
+    assert "public gateway path, not its internal port" in verify
+    assert "Do not use its resident job for preview testing" in verify
+    text = " ".join(prompt.split())
+    for rule in ("including development smoke checks", "a local browser self-test is not a prerequisite",
+                 "Do not first build a second browser-testing stack",
+                 "They never replace independent preview acceptance",
+                 "do not silently switch to ad hoc CDP"):
+        assert rule in text
+
+
+def test_webapp_skill_routes_browser_checks_before_optional_scripts():
+    path = Path(__file__).resolve().parents[1] / "agentevolver/skill/web/webapp_testing_skill/SKILL.md"
+    source = path.read_text()
+    routing, scripts = source.split("## Scripted tests: a separate, conditional path", 1)
+    text = " ".join(routing.split())
+    for rule in ("already operate a browser environment", "mounted `browser_agent`",
+                 "version-pinned `release_url`", "Website User Agents supply preferences",
+                 "not a prerequisite to delegation", "blocker, not a pass"):
+        assert rule in text
+    assert "To test local web applications, write native Python Playwright scripts." not in source
+    assert "cannot satisfy a requirement for independent Browser Agent approval" in " ".join(scripts.split())
+    assert "Do not require `networkidle` for every application" in source
+    assert "Preserve test exit codes" in source
+
+
+@pytest.mark.asyncio
+async def test_browser_command_rejects_javascript_with_python_guidance(monkeypatch):
+    service = BrowserService()
+
+    async def page_for(_session_id):
+        return SimpleNamespace(context=object())
+
+    monkeypatch.setattr(service, "_page_for", page_for)
+    response = await service.command("const button = page.get_by_role('button', {name: /Save/});")
+
+    assert response.success is False
+    assert response.data["error"] == "wrong_command_language"
+    assert "Playwright Python" in response.message
+
+
+@pytest.mark.asyncio
+async def test_concurrent_browser_users_get_distinct_contexts_and_pages():
+    class Page:
+        def set_default_timeout(self, timeout):
+            assert timeout == 5000
+
+        def set_default_navigation_timeout(self, timeout):
+            assert timeout == 10000
+
+        def on(self, _event, _callback):
+            return None
+
+        async def goto(self, _url):
+            return None
+
+        async def close(self):
+            return None
+
+    class Context:
+        def __init__(self):
+            self.page = Page()
+
+        async def new_page(self):
+            return self.page
+
+        async def close(self):
+            return None
+
+    class Browser:
+        def __init__(self):
+            self.contexts = []
+
+        async def new_context(self, **_kwargs):
+            context = Context()
+            self.contexts.append(context)
+            return context
+
+    service = BrowserService()
+    browser = Browser()
+    service._browser = browser
+
+    first, second, third = await asyncio.gather(
+        service._page_for("user-1"),
+        service._page_for("user-2"),
+        service._page_for("user-3"),
+    )
+
+    assert len(browser.contexts) == 3
+    assert len({id(first), id(second), id(third)}) == 3
+    assert {id(service._sessions[user]["context"]) for user in ("user-1", "user-2", "user-3")} == {
+        id(context) for context in browser.contexts
+    }
+
+
+@pytest.mark.asyncio
+async def test_browser_refuses_a_backend_that_cannot_isolate_sessions():
+    class Browser:
+        async def new_context(self, **_kwargs):
+            raise NotImplementedError("shared CDP context only")
+
+    service = BrowserService()
+    service._browser = Browser()
+
+    with pytest.raises(RuntimeError, match="cannot create an isolated BrowserContext"):
+        await service._page_for("private-user")
+
+
+def test_full_job_output_read_acknowledges_one_subscriber_turn(monkeypatch):
+    from agentevolver.runtime import kernel
+
+    ref = SimpleNamespace(
+        alive=True,
+        busy=False,
+        turns=2,
+        mailbox=(),
+        turn_results={2: "Full participant report"},
+        turn_success={2: True},
+    )
+    monkeypatch.setattr(
+        kernel, "get", lambda pid: ref if pid == "user-job" else None
+    )
+    contract = {"subscriber_job_ids": ["user-job"], "collected_turns": {}}
+    ctx = SimpleNamespace(extra={"deployment_contract": contract})
+
+    assert (
+        JobEnvironment._record_subscriber_collection(
+            "user-job",
+            ctx,
+            full=False,
+        )
+        == 0
+    )
+    assert (
+        JobEnvironment._record_subscriber_collection(
+            "user-job",
+            ctx,
+            full=True,
+        )
+        == 2
+    )
+    assert contract["collected_turns"] == {"user-job": 2}
+
+
+
+def seed_acceptance(contract, release, **verdicts):
+    """Record per-(release, subscriber) acceptance, as the protocol now does.
+
+    Replaces seeding `turn_success[release]` on a fake process. Those were the same
+    number by accident: a subscriber's Nth turn was assumed to be about release N, so a
+    subscriber that failed once and was asked to verify a fix produced turn 2 and left
+    `turn_success[1]` false forever. See tests/test_release_acceptance.py.
+    """
+    table = contract.setdefault("release_acceptance", {}).setdefault(str(release), {})
+    for job_id, ok in verdicts.items():
+        table[job_id] = {"status": "accepted" if ok else "failed", "attempts": 1,
+                         "turn": release}
+    return contract
+
+
+def test_next_deploy_waits_until_every_subscriber_feedback_is_read(monkeypatch):
+    from agentevolver.runtime import kernel
+
+    ready = SimpleNamespace(
+        alive=True,
+        busy=False,
+        turns=1,
+        turn_success={1: True},
+        turn_results={1: "user feedback"},
+        mailbox=(),
+    )
+    acceptance = SimpleNamespace(
+        **{
+            **ready.__dict__,
+            "turn_results": {1: "VERDICT: PASS\nAll journeys passed."},
+        }
+    )
+    monkeypatch.setattr(
+        kernel,
+        "get",
+        lambda pid: acceptance if pid == "acceptance" else ready,
+    )
+    contract = {
+        "subscriber_job_ids": ["user-1", "acceptance"],
+        "collected_turns": {"user-1": 1},
+    }
+    seed_acceptance(contract, 1, **{"user-1": True, "acceptance": True})
+    ctx = SimpleNamespace(
+        extra={
+            "deployment_contract": contract,
+            "deployment_release_history": [{"release_number": 1}],
+        }
+    )
+
+    assert "acceptance" in deployment_manager.feedback_blocker(ctx)
+    contract["collected_turns"]["acceptance"] = 1
+    assert deployment_manager.feedback_blocker(ctx) == ""
+
+
+def test_next_release_does_not_require_an_evolution_decision(monkeypatch):
+    from agentevolver.runtime import kernel
+
+    ready = SimpleNamespace(
+        alive=True,
+        busy=False,
+        turns=1,
+        turn_success={1: True},
+        mailbox=(),
+    )
+    monkeypatch.setattr(kernel, "get", lambda _pid: ready)
+    contract = {
+        "subscriber_job_ids": ["user"],
+        "collected_turns": {"user": 1},
+        "evolution_decisions": [],
+    }
+    seed_acceptance(contract, 1, user=True)
+    ctx = SimpleNamespace(
+        extra={
+            "deployment_contract": contract,
+            "deployment_release_history": [{"release_number": 1}],
+        }
+    )
+
+    assert deployment_manager.feedback_blocker(ctx) == ""
+
+
+@pytest.mark.asyncio
+async def test_keep_decision_rejects_prose_instead_of_an_evaluation_report(monkeypatch):
+    from agentevolver.extension import extension_manager
+
+    component = SimpleNamespace(version="1.0.0")
+    manifest = SimpleNamespace(find=lambda module, name: component)
+    # Patch the class, not the singleton: restoring a bound method on the instance
+    # would shadow later tests' class-level patches and leak across test cases.
+    monkeypatch.setattr(type(extension_manager), "read_manifest", lambda self: manifest)
+    contract = {
+        "evolution_runs": [
+            {
+                "agent": "generate_agent",
+                "module": "skill",
+                "name": "adaptive_ui",
+                "version": "1.0.0",
+                "success": True,
+            },
+            {
+                "agent": "evaluate_agent",
+                "module": "skill",
+                "name": "adaptive_ui",
+                "version": "1.0.0",
+                "success": True,
+            },
+        ],
+        "evolution_decisions": [],
+    }
+    response = await AdoptionTool()(
+        action="record_decision",
+        release_number=1,
+        decision="keep",
+        module="skill",
+        name="adaptive_ui",
+        evidence="Repeated measured gap.",
+        evaluation="Candidate passed the baseline comparison.",
+        ctx=SimpleNamespace(
+            extra={
+                "deployment_contract": contract,
+                "deployment_release_history": [{"release_number": 1}],
+            }
+        ),
+    )
+
+    # Website-local success flags and a sentence of prose are not an evaluation. Keeping a
+    # candidate requires the structured, version-scoped `report` — the shape is what makes
+    # the claim checkable, and `evaluation="it passed"` is not that shape.
+    assert response.success is False
+    assert "version-scoped evaluation" in response.message
+    assert contract["evolution_decisions"] == []
+
+
+@pytest.mark.asyncio
+async def test_deploy_status_reports_release_feedback_collection(monkeypatch):
+    from agentevolver.runtime import kernel
+
+    ready = SimpleNamespace(
+        alive=True,
+        busy=False,
+        turns=1,
+        turn_success={1: True},
+        turn_results={1: "user feedback"},
+        mailbox=(),
+    )
+    acceptance = SimpleNamespace(
+        **{
+            **ready.__dict__,
+            "turn_results": {1: "VERDICT: PASS\nAll journeys passed."},
+        }
+    )
+    monkeypatch.setattr(
+        kernel,
+        "get",
+        lambda pid: acceptance if pid == "acceptance" else ready,
+    )
+    contract = {
+        "required_releases": 1,
+        "subscriber_job_ids": ["user-1", "acceptance"],
+        "acceptance_job_id": "acceptance",
+        "collected_turns": {"user-1": 1},
+    }
+    seed_acceptance(contract, 1, **{"user-1": True, "acceptance": True})
+    ctx = SimpleNamespace(
+        extra={
+            "deployment_contract": contract,
+            "deployment_release_history": [{"source_revision": "one", "fanout": 2}],
+        }
+    )
+    async def status():
+        result = await DeployTool()(action="status", ctx=ctx)
+        assert result.success  # Query success is separate from release readiness.
+        return result.data
+
+    assert "acceptance" in (await status())["reason"]
+    contract["collected_turns"]["acceptance"] = 1
+    assert (await status())["ready"] is True
+
+    acceptance.turn_results[1] = "VERDICT: FAIL\nCheckout is broken."
+    assert "did not pass" in (await status())["reason"]
+    # Turn 3 is a retry about release 1, not release 3.
+    acceptance.turn_results[3] = "VERDICT: PASS\nScoped retry passed."
+    contract["release_acceptance"]["1"]["acceptance"]["turn"] = 3
+    assert "not been collected" in (await status())["reason"]
+    contract["collected_turns"]["acceptance"] = 3
+    assert (await status())["ready"] is True
+
+
+
+
+def test_builder_requires_verification_at_the_exact_deployed_url():
+    prompt = (
+        Path(__file__).resolve().parents[1]
+        / "agentevolver"
+        / "prompt"
+        / "default"
+        / "website_builder_agent.html"
+    ).read_text(encoding="utf-8")
+
+    assert "exact URL and source revision" in prompt
+    assert "including any path prefix" in prompt
+    assert "Never substitute a direct source port" in prompt
+
+
+def test_website_demo_mounts_only_distinct_agents_tools_and_skills():
+    from mmengine import Config
+
+    cfg = Config.fromfile(
+        str(Path(__file__).resolve().parents[1] / "configs" / "website_evolution_demo.py")
+    )
+
+    assert cfg.agent_names == ["website_builder_agent"]
+    assert cfg.website_builder_agent.include_agents
+    assert "agent" not in cfg.website_builder_agent.capability_allowlists
+    assert "general_agent" not in cfg
+    assert cfg.website_builder_agent.env_names == ["job", "browser_environment"]
+    assert cfg.tool_names == [
+        "bash_tool",
+        "apply_patch_tool",
+        "inspect_tool",
+        "deploy_tool",
+        "done_tool",
+        "adoption_tool",
+    ]
+    assert cfg.skill_names == [
+        "frontend_ui_engineering_skill",
+        "webapp_testing_skill",
+        "self_evolving_skill",
+    ]
+
+
+def test_website_demo_model_roster_matches_agent_defaults_and_vision_catalog():
+    from mmengine import Config
+    from agentevolver.model.config import llm_hub_models
+
+    cfg = Config.fromfile(str(Path(__file__).resolve().parents[1] / "configs/website_evolution_demo.py"))
+    default = "llm_hub/gpt-6-astra"
+    agent_cfg = Config.fromfile(str(Path(__file__).resolve().parents[1] / "configs/agents/website_builder_agent.py"))
+    assert cfg.website_builder_agent.model_name == agent_cfg.website_builder_agent.model_name == default
+    assert cfg.model_name == default
+    assert set(cfg.model_roles.values()) == {default}
+    builder = WebsiteBuilderAgent(**cfg.website_builder_agent)
+    assert builder.use_plan and builder.compact_strategy == "text"
+    assert builder.compact_input_tokens == 100_000
+    assert builder.max_step == 10_000 and builder.max_token == 1_000_000_000
+    assert cfg.browser_environment.use_som is False
+    catalog = llm_hub_models(max_tokens=1, default_temperature=0.0, default_timeout=1.0)
+    specs = {entry["model_name"]: entry for group in catalog.values() for entry in group}
+    assert specs[default].get("supports_vision", True)
+    assert "browser_agent" not in cfg.agent_names and "website_user_agent" not in cfg.agent_names
+
+
+def test_website_builder_owns_product_engineering_directly():
+    prompt = (
+        Path(__file__).resolve().parents[1]
+        / "agentevolver"
+        / "prompt"
+        / "default"
+        / "website_builder_agent.html"
+    ).read_text(encoding="utf-8")
+
+    assert "Own product engineering end to end" in prompt
+    assert "Use `bash_tool` for local inspection, search, scaffolding, Git" in prompt
+    assert "use `apply_patch_tool` for authored source/configuration changes" in prompt
+    for redundant_worker in ("code_agent", "general_agent", "reviewer_agent"):
+        assert redundant_worker not in prompt
+
+
+def test_website_demo_separates_release_acceptance_from_user_codesign():
+    prompt_dir = Path(__file__).resolve().parents[1] / "agentevolver" / "prompt" / "default"
+    builder = (prompt_dir / "website_builder_agent.html").read_text(encoding="utf-8")
+    user = (prompt_dir / "website_user_agent.html").read_text(encoding="utf-8")
+    normalized_builder = " ".join(builder.split())
+
+    assert "Release acceptance and user co-design are separate evidence streams" in builder
+    assert "exact URL" in builder
+    assert "do not use them as the release test team" in normalized_builder
+    assert "collaboration goal" in user
+
+
+def test_website_task_manifest_has_no_participants(tmp_path):
+    from examples.run_website_evolution_demo import build_task_text
+    from agentevolver.task.context import parse_manifest
+
+    scenario = tmp_path / "scenario.html"
+    scenario.write_text("<main>Build a site.</main>")
+    task = build_task_text(scenario)
+    manifest = parse_manifest(task)[2]
+    assert manifest["subscribers"] == []
+    assert manifest["attachments"] == [{"id": "site_brief", "role": "requirements"}]
+    assert manifest["deployment"]["required_releases"] == 6
+    assert "acceptance_subscriber" not in manifest["deployment"]
+    assert manifest["run_policy"] == {"self_review": True}
+    assert manifest["evolution"] == {"require_verified_improvement": True}
+
+
+@pytest.mark.parametrize("scenario_name", ["arkbound_game", "commonspace_forum", "lumen_museum", "orbital_simulator"])
+def test_scenario_brief_reaches_builder_without_private_personas(scenario_name):
+    from agentevolver.task.context import load_task_document, parse_manifest
+    from examples.run_website_evolution_demo import SCENARIO_ROOT, build_task_text, parse_args, resolve_inputs
+
+    scenario = SCENARIO_ROOT / scenario_name
+    _, brief = resolve_inputs(parse_args(["--scenario-dir", str(scenario)]))
+    assert brief == scenario / "scenario.html"
+    assert not list(scenario.glob("persona_*.html"))
+    task = build_task_text(brief)
+    assert task.startswith(load_task_document(str(brief)).content)
+    # The launcher carries the product document and experiment settings, not a
+    # second set of behavioral instructions masquerading as user requirements.
+    product, explanation, manifest = parse_manifest(task)
+    assert product.strip() == load_task_document(str(brief)).content.strip()
+    assert explanation.strip() == "Experiment configuration; agent behavior follows its system prompt and skills."
+    assert manifest["evolution"]["require_verified_improvement"] is True
+    assert "observation_evidence_ids" not in task
+    assert "record_use" not in task
+
+
+def test_website_prompts_do_not_encode_one_demo_protocol():
+    prompt_dir = Path(__file__).resolve().parents[1] / "agentevolver" / "prompt" / "default"
+    text = "\n".join(
+        (prompt_dir / name).read_text(encoding="utf-8")
+        for name in ("website_builder_agent.html", "website_user_agent.html")
+    )
+    for fixed_demo_term in (
+        "V0",
+        "V1",
+        "V5",
+        "exactly five",
+        "website_evolution_demo",
+        "feedback_ledger.json",
+        "preference_ledger.json",
+    ):
+        assert fixed_demo_term not in text
+
+
+def test_codesign_closes_commitments_without_forcing_innovation():
+    prompts = Path(__file__).resolve().parents[1] / "agentevolver/prompt/default"
+    builder = (prompts / "website_builder_agent.html").read_text()
+    user = (prompts / "website_user_agent.html").read_text()
+    assert '"Accepted" means selected for this iteration' in builder
+    assert "a condition for reconsideration" in builder
+    assert "Reduce implementation breadth, not the idea's essential value" in builder
+    assert "implemented, technically verified and user-confirmed as separate states" in builder
+    assert "Do not implement every suggestion" in builder
+    assert "new version number or a cosmetic substitute" in user
+    assert "Missing required evidence remains unverified" in builder
+
+
+@pytest.mark.parametrize("option", ["--persona-brief", "--user-model", "--acceptance-model"])
+def test_single_builder_rejects_obsolete_participant_options(option):
+    from examples.run_website_evolution_demo import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args([option, "custom"])

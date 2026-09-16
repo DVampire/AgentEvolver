@@ -1,0 +1,6 @@
+{
+  "materials": ["materials/inquiry-requests.json"],
+  "evolution": {
+    "required_modules": ["skill", "agent", "connector"]
+  }
+}

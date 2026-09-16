@@ -1,0 +1,5 @@
+observation_id,place,observation,value,unit,confidence,revision
+G01,bright corner,observed direct light,2,hours,corrected time record; further observation needed,2
+G02,door route,clear width in sketch,78,cm,measured for demo,2
+G03,wall edge,available length,180,cm,measured for demo,2
+G04,existing containers,containers available,3,count,confirmed in demo,2

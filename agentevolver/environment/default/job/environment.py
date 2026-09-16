@@ -1,0 +1,501 @@
+"""Background work as somewhere the agent is, rather than three tools it must remember.
+
+A backgrounded shell command, a backgrounded terminal send, a dispatched sub-agent and a
+reminder raise the same three questions — is it done, what did it say, stop it — so one
+registry answers all four kinds. That part is `agentevolver.job` and is unchanged.
+
+What changed is how the agent learns any of it. As tools, the answer to "what am I still
+waiting on" arrived only when the agent thought to ask, and background work is exactly the
+kind that is easy to forget: it makes no noise, and a job that finished, failed or hung
+looks identical from the outside — like nothing at all.
+
+The same lesson was already learned here for half of it. `_deliver_due_reminders` says: *a
+reminder the agent has to remember to look for is not a reminder — `job_list_tool` could
+show them, but nothing pushed, so the agent saw a due reminder only if it happened to list
+its jobs, which is precisely the thing it set the reminder in order not to have to do.*
+Reminders got a push; running jobs did not. Now `get_state` renders both, every step.
+
+`list` stays as an action, for the same reason `terminal__read` stayed: the state is the
+live tail, and there is still a use for asking about the whole of it — finished jobs
+included — deliberately.
+"""
+
+import asyncio
+import json
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import ConfigDict, Field
+
+from agentevolver.environment.server import environment_manager
+from agentevolver.environment.types import Environment
+from agentevolver.job import job_manager
+from agentevolver.logger import logger
+from agentevolver.registry import ENVIRONMENT
+
+#: How many jobs the state will name before it stops. A session with fifty finished jobs
+#: should not spend the prompt on them every step; running work is what has to be visible,
+#: and `list` is the way to see everything.
+STATE_JOB_LIMIT = 12
+
+
+def _fail(message: str, **extra: Any) -> Dict[str, Any]:
+    return {"success": False, "message": message, **extra}
+
+
+def _ok(message: str, **extra: Any) -> Dict[str, Any]:
+    return {"success": True, "message": message, **extra}
+
+
+@ENVIRONMENT.register_module(force=True)
+class JobEnvironment(Environment):
+
+    """Everything this session started in the background, and the actions that control it."""
+    managed_sessions: bool = True
+    concurrent: bool = True  # Wait/observation must not reserve the controls needed to stop a job.
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    name: str = Field(default="job")
+    description: str = Field(
+        default="Background work this session started — a backgrounded command, a "
+        "backgrounded terminal send, a dispatched sub-agent, a reminder. What is "
+        "still running is shown every step; the actions collect output and stop "
+        "things."
+    )
+    metadata: Dict[str, Any] = Field(default={"has_vision": False})
+    enable_evolving: bool = Field(default=False)
+
+    def resource_claims(self, ctx, arguments, operation=""):
+        from agentevolver.runtime.invocation import ResourceClaim
+        if operation == "kill":
+            return (ResourceClaim(f"job:{arguments.get('job_id', '')}:control"),)
+        return ()
+
+    @staticmethod
+    def _session(ctx) -> str:
+        return str(getattr(ctx, "id", "") or "")
+
+    def _owned(self, ctx):
+        from agentevolver.runtime.invocation import owner_id
+        session = self._session(ctx)
+        if not session:
+            return []
+        return [value for value in job_manager.list(session)
+                if getattr(value, "owner_id", "") == owner_id(ctx) or (not getattr(value, "owner_id", "")
+                    and not (getattr(ctx, "extra", {}) or {}).get("process_pid"))]
+
+    def _resolve(self, job_id: str, ctx):
+        """The job, or a failure naming the ids that exist.
+
+        A bare "not found" leaves the agent guessing at a handle it is holding — usually
+        one it mistyped, or one from a session that has since been forgotten.
+
+        Two registries answer to a job id and only one used to be asked. A backgrounded
+        command is a `job_manager` entry; a sub-agent is a kernel process, and a parent
+        holding a pid a dispatch returned has every reason to read its output with the
+        same action. Asking only `job_manager` made every such read fail before reaching
+        the rest of this action — including `_record_subscriber_collection`, the ONLY
+        writer of `collected_turns`, which `deploy_tool`'s gate requires. A release
+        therefore could not be published no matter what its subscribers reported, and the
+        error the parent saw named background commands rather than the process it asked
+        about.
+        """
+        owner = self._session(ctx)
+        job = job_manager.get(job_id)
+        if job is not None and owner and job.session_id == owner:
+            from agentevolver.runtime.invocation import owner_id
+            if getattr(job, "owner_id", "") == owner_id(ctx) or (
+                    not getattr(job, "owner_id", "")
+                    and not (getattr(ctx, "extra", {}) or {}).get("process_pid")):
+                return job, None
+
+        process = self._as_job(job_id, owner, ctx)
+        if process is not None:
+            return process, None
+
+        known = [j.id for j in self._owned(ctx)]
+        return None, _fail(
+            f"No job {job_id!r}. This session has: {', '.join(known) if known else '(none)'}"
+        )
+
+    @staticmethod
+    def _as_job(job_id: str, owner: str, ctx=None):
+        """A kernel process, shaped like the job record this action reads.
+
+        Exactly the fields this action reads, each answered from the process's own
+        state rather than invented: a process has a state, a parent, a start time and an
+        error, and those map onto what the header prints. `truncated` is always False
+        because a turn result is a return value, not a captured stream that could have
+        been cut.
+
+        Access follows the process parent relationship or a trusted explicit grant.
+        Knowing a PID alone does not grant another Agent's process or output.
+        """
+        import time
+        from types import SimpleNamespace
+
+        from agentevolver.runtime import kernel
+
+        process = kernel.get(str(job_id))
+        if process is None or not owner:
+            return None
+        from agentevolver.runtime.invocation import owner_id
+        explicit_owner = (getattr(ctx, "extra", {}) or {}).get("process_pid")
+        caller = kernel.get(owner_id(ctx)) if ctx is not None else None
+        if caller is None and not explicit_owner:
+            candidates = [p for p in kernel.list() if p.session_id == owner]
+            caller = candidates[0] if len(candidates) == 1 else None
+        grants = (getattr(ctx, "extra", {}) or {}).get("deployment_contract", {})
+        explicitly_granted = str(job_id) in grants.get("subscriber_job_ids", ())
+        accessible = (not explicit_owner and process.session_id == owner) or (
+            caller is not None and (process.pid == caller.pid or
+                                    getattr(process, "parent_pid", "") == caller.pid))
+        if not accessible and not explicitly_granted:
+            return None
+        ended = process.ended_at or time.time()
+        return SimpleNamespace(
+            id=process.pid,
+            status=SimpleNamespace(
+                value=process.state.value,
+                is_final=not process.alive,
+            ),
+            exit_code=(
+                None if process.alive
+                else (1 if process.error else 0)
+            ),
+            session_id=process.session_id,
+            elapsed=max(0.0, ended - (process.started_at or ended)),
+            truncated=False,
+            error=process.error or "",
+        )
+
+    @staticmethod
+    def _record_subscriber_collection(job_id: str, ctx: Any, *, full: bool, turn=None) -> int:
+        from agentevolver.deploy import deployment_manager
+
+        return deployment_manager.collect_feedback(ctx, job_id, full=full, turn=turn)
+
+    # ------------------------------------------------------------------ actions
+    @environment_manager.action(
+        name="list",
+        read_only=True,
+        description=(
+            "Every background job this session started, newest first, with its state and "
+            "how long it has been running.\n\n"
+            "What is still running already arrives in `environment-state` each step, so "
+            "reach for this when you want what that does not carry: jobs that have already "
+            "finished, and the full listing when the state has been trimmed.\n\n"
+            "Elapsed time is the signal that separates working from hung — a job that has "
+            "printed nothing for minutes is telling you something its status alone does not."
+        ),
+    )
+    async def list(self, ctx=None, **kwargs: Any) -> Dict[str, Any]:
+        jobs = self._owned(ctx)
+        if not jobs:
+            # Not an error, and worth saying plainly: an empty listing after starting
+            # something is a real signal, and "no output" would read as a broken action.
+            return _ok("No background jobs in this session.")
+        running = sum(1 for j in jobs if not j.status.is_final)
+        # One clock for the listing and for the registry's own due-ness decisions:
+        # rendering "in 30s" from a different clock than the one that fires the reminder is
+        # how a listing shows work as pending after it has already fired.
+        now = job_manager.clock()
+        body = "\n".join(j.summary(now) for j in jobs)
+        return _ok(
+            f"{len(jobs)} job(s), {running} still running:\n{body}",
+            jobs=[j.model_dump(exclude={"handle", "output"}) for j in jobs],
+        )
+
+    @environment_manager.action(
+        name="output",
+        read_only=True,
+        description=(
+            "Read output without consuming it. Ordinary jobs default to the last 50 lines, "
+            "up to 12,000 characters; tail selects lines and full=true returns all retained "
+            "output. Agent reports stay complete by default; turn selects an exact subscriber "
+            "report. Read status and exit code, not output alone, to decide completion."
+        ),
+    )
+    async def output(
+        self,
+        job_id: str,
+        tail: Optional[int] = None,
+        turn: Optional[int] = None,
+        full: bool = False,
+        ctx=None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        if tail is not None and (tail < 1 or full):
+            return _fail("tail must be positive and cannot be combined with full=true")
+        job, failure = self._resolve(job_id, ctx)
+        if failure:
+            return failure
+
+        from agentevolver.runtime import kernel
+
+        ref = kernel.get(job_id)
+        effective_tail = tail if tail is not None else (50 if ref is None and not full else None)
+        if turn is not None:
+            if tail is not None:
+                return _fail("turn and tail are mutually exclusive")
+            if turn < 1:
+                return _fail("turn must be a positive integer")
+            if ref is None or turn not in ref.turn_results:
+                available = sorted((getattr(ref, "turn_results", None) or {}).keys())
+                return _fail(
+                    f"No completed turn {turn} for {job_id}; available: {available or '(none)'}"
+                )
+            text = ref.turn_results[turn]
+            diagnostics = (getattr(ref, "turn_diagnostics", None) or {}).get(turn)
+            if diagnostics:
+                text = (
+                    f"{text}\n\n[runtime diagnostics]\n"
+                    f"{json.dumps(diagnostics, ensure_ascii=False, sort_keys=True)}"
+                )
+        else:
+            text = job_manager.output(job_id, tail=effective_tail) or ""
+        # Subscriber reports are acceptance evidence. Never apply log tail defaults
+        # to them or mark a partial report as collected.
+        collected_turn = self._record_subscriber_collection(
+            job_id,
+            ctx,
+            full=effective_tail is None,
+            turn=turn,
+        )
+        header = f"{job.id} — {job.status.value}"
+        if job.status.is_final and job.exit_code is not None:
+            header += f" (exit {job.exit_code})"
+        header += f", {job.elapsed:.1f}s"
+        idle_after_turn = bool(
+            ref and ref.alive and ref.resident and not ref.busy and not len(ref.mailbox)
+        )
+        if idle_after_turn:
+            header += f" — IDLE AFTER TURN {ref.turns}, ready for a later event"
+        elif not job.status.is_final:
+            # Say it explicitly. Output that simply stops looks the same as a job that
+            # finished quietly, and an agent that reads it as finished stops collecting.
+            header += " — STILL RUNNING, call again for more"
+        if job.truncated:
+            header += " (earlier output dropped; the cap keeps the tail)"
+        if job.error:
+            header += f"\nerror: {job.error}"
+        if ref is None and not full:
+            if len(text) > 12_000:
+                text = "[Earlier characters omitted from this view.]\n" + text[-12_000:]
+            header += f"\n[Output view: last {effective_tail} lines, up to 12,000 characters; full=true reads all retained output.]"
+        return _ok(
+            f"{header}\n\n{text}" if text else f"{header}\n\n(no output yet)",
+            job_id=job_id,
+            status=job.status.value,
+            exit_code=job.exit_code,
+            collected_turn=collected_turn or None,
+            requested_turn=turn,
+            idle_after_turn=idle_after_turn,
+            # Stated as data as well as prose: a caller deciding whether to come
+            # back should not have to parse a header for it.
+            running=not job.status.is_final,
+        )
+
+    @environment_manager.action(
+        name="wait",
+        read_only=True,
+        description=(
+            "Wait efficiently for background work without spending model turns polling. "
+            "For long-lived sub-agents use condition='idle_after_turn'. Use "
+            "min_turns_by_job for different execution counts after retries; a release "
+            "number is not a job turn. min_turns is the fallback for unspecified jobs. "
+            "The call returns early if all "
+            "targets are ready, any target ends unexpectedly, or timeout expires."
+        ),
+    )
+    async def wait(
+        self,
+        job_ids: List[str],
+        condition: Literal["idle_after_turn", "finished"] = "idle_after_turn",
+        min_turns: int = 1,
+        timeout: float = 600.0,
+        min_turns_by_job: Optional[Dict[str, int]] = None,
+        ctx=None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Block one tool call on job state; never generate periodic model turns."""
+        from agentevolver.runtime import kernel
+
+        ids = list(dict.fromkeys(str(item) for item in job_ids if str(item).strip()))
+        if not ids or len(ids) > STATE_JOB_LIMIT:
+            return _fail(f"job_ids must contain 1–{STATE_JOB_LIMIT} unique job ids")
+        if condition not in {"idle_after_turn", "finished"}:
+            return _fail("condition must be 'idle_after_turn' or 'finished'")
+        if min_turns < 0:
+            return _fail("min_turns must be non-negative")
+        targets = dict(min_turns_by_job or {})
+        if set(targets) - set(ids) or any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in targets.values()
+        ):
+            return _fail("min_turns_by_job must map requested job ids to non-negative integers")
+        if timeout <= 0 or timeout > 3600:
+            return _fail("timeout must be greater than 0 and at most 3600 seconds")
+
+        for job_id in ids:
+            _, failure = self._resolve(job_id, ctx)
+            if failure:
+                return failure
+
+        def snapshots() -> tuple[List[Dict[str, Any]], bool, bool]:
+            rows: List[Dict[str, Any]] = []
+            all_ready = True
+            terminal_failure = False
+            for job_id in ids:
+                # Kernel jobs are snapshots, not live Job objects. Resolve again so
+                # completion, cancellation and removal cannot leave us waiting on
+                # the state copied before the child finished.
+                job, failure = self._resolve(job_id, ctx)
+                if failure:
+                    rows.append({"job_id": job_id, "ready": False, "error": failure["message"]})
+                    all_ready = False
+                    terminal_failure = True
+                    continue
+                ref = kernel.get(job.id)
+                row: Dict[str, Any] = {
+                    "job_id": job.id,
+                    "status": job.status.value,
+                    "ready": False,
+                    "turns": int(getattr(ref, "turns", 0) or 0),
+                    "required_turns": targets.get(job.id, min_turns),
+                    "alive": bool(ref and ref.alive),
+                    "busy": bool(ref and ref.busy),
+                    "queued": len(ref.mailbox) if ref is not None else 0,
+                }
+                if condition == "finished":
+                    row["ready"] = job.status.is_final
+                elif ref is None or not ref.resident:
+                    row["error"] = "idle_after_turn requires a live resident sub-agent"
+                    terminal_failure = True
+                elif not ref.alive or job.status.is_final:
+                    row["error"] = job.error or "sub-agent ended before reaching the requested turn"
+                    terminal_failure = True
+                else:
+                    row["ready"] = ref.turns >= row["required_turns"] and not ref.busy and not len(ref.mailbox)
+                all_ready = all_ready and bool(row["ready"])
+                rows.append(row)
+            return rows, all_ready, terminal_failure
+
+        started = asyncio.get_running_loop().time()
+        while True:
+            rows, ready, failed = snapshots()
+            elapsed = asyncio.get_running_loop().time() - started
+            if ready:
+                return _ok(
+                    f"All {len(rows)} job(s) reached {condition} after {elapsed:.1f}s.",
+                    condition=condition,
+                    min_turns=min_turns,
+                    timed_out=False,
+                    jobs=rows,
+                )
+            if failed:
+                return _fail(
+                    f"A job ended before all targets reached {condition}.",
+                    condition=condition,
+                    min_turns=min_turns,
+                    timed_out=False,
+                    jobs=rows,
+                )
+            remaining = timeout - elapsed
+            if remaining <= 0:
+                return _fail(
+                    f"Timed out after {timeout:.1f}s waiting for {condition}.",
+                    condition=condition,
+                    min_turns=min_turns,
+                    timed_out=True,
+                    jobs=rows,
+                )
+            await asyncio.sleep(min(0.2, remaining))
+
+    @environment_manager.action(
+        name="kill",
+        destructive=True,
+        description=(
+            "Stop a background job you no longer need, or one that is not going to "
+            "finish.\n\n"
+            "The whole process tree is signalled, not just the command that was typed — a "
+            "shell command is usually a shell that started the real work. Output printed "
+            "before the kill is kept, so this does not destroy what you already learned.\n\n"
+            "For a job watching a terminal, this stops the *watching*; the command keeps "
+            "running, and `terminal__signal` is what stops that."
+        ),
+    )
+    async def kill(self, job_id: str, ctx=None, **kwargs: Any) -> Dict[str, Any]:
+        job, failure = self._resolve(job_id, ctx)
+        if failure:
+            return failure
+        if job.status.is_final:
+            # Already over is not a failure — the agent's intent is satisfied either way,
+            # and reporting it as an error invites a retry loop against a dead process.
+            return _ok(
+                f"{job_id} had already {job.status.value} after {job.elapsed:.1f}s; "
+                f"nothing to stop. Its output is still readable with job__output.",
+                job_id=job_id,
+                status=job.status.value,
+            )
+
+        from agentevolver.runtime import kernel
+        process = kernel.get(str(job_id))
+        if process is not None:
+            await kernel.stop(process, force=True, reason="job__kill")
+            await kernel.wait(process)
+            return _ok(f"Stopped Agent process {job_id}.", job_id=job_id, status=process.state.value)
+        was_reminder = job.is_reminder and not job.deliveries
+        killed = await job_manager.kill_async(job_id)
+        if not killed:
+            return _fail(f"Could not stop {job_id}; inspect its state before retrying.", job_id=job_id)
+        logger.info(f"| 🧵 job__kill stopped {job_id}: {killed}")
+        if was_reminder:
+            # A reminder printed nothing, so "output before the kill is kept" would be an
+            # offer of nothing. What the agent needs to know is that it will not fire.
+            return _ok(
+                f"Cancelled {job_id}. It will not come due: {job.label[:80]}",
+                job_id=job_id,
+                status=job.status.value,
+            )
+        return _ok(
+            f"Stopped {job_id} after {job.elapsed:.1f}s. Output printed before the "
+            f"kill is kept — read it with job__output.",
+            job_id=job_id,
+            status=job.status.value,
+        )
+
+    # ------------------------------------------------------------------ state
+    async def get_state(self, ctx=None, **kwargs: Any) -> Dict[str, Any]:
+        """What is still outstanding, every step, without being asked.
+
+        The reason this is an environment. Background work is silent by construction: a
+        job that finished, one that failed and one that hung all look the same from
+        outside — like nothing at all — so the agent that started it has to remember, and
+        remembering is what it delegated the work to avoid.
+
+        Only unfinished work is rendered. A finished job has said everything it is going
+        to; its output stays readable through `output`, and its line here every step would
+        be prompt spent on something that is over. `list` is where the whole history is.
+        """
+        session = self._session(ctx)
+        try:
+            jobs = [j for j in self._owned(ctx) if not j.status.is_final]
+        except Exception as error:  # noqa: BLE001
+            logger.warning(f"| ⚠️ could not read job state: {error}")
+            return {"success": True, "state": f"[job state unavailable — {error}]"}
+
+        now = job_manager.clock()
+        shown = jobs[:STATE_JOB_LIMIT]
+        lines = [j.summary(now) for j in shown]
+        if len(jobs) > len(shown):
+            lines.append(f"... and {len(jobs) - len(shown)} more — job__list for all of them")
+        from agentevolver.deploy import deployment_manager
+
+        feedback = deployment_manager.feedback_context(ctx)
+        if feedback:
+            lines.append(feedback)
+        return {"success": True, "state": "\n".join(lines)}
+
+
+__all__ = ["JobEnvironment"]

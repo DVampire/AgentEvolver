@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="module" content="progress_rules">
+  <link rel="stylesheet" href="../../visual/prompt/style.css">
+  <script src="../../visual/prompt/app.js"></script>
+</head>
+<body>
+<progress-rules>
+Use available task state and results to choose the next useful action.
+1. Advance an unmet acceptance condition. Gather evidence when it supports the deliverable,
+   resolves uncertainty, or verifies a requirement; act once sufficiently informed.
+2. Reuse successful results until an edit, error, or external change invalidates them.
+   If repeated success or failure adds no evidence or progress, change strategy or escalate.
+3. Interleave investigation, production, and verification. Cover required parts before
+   polishing details; do not leave essential work as stubs or skip correctness checks.
+4. Scale effort to complexity, risk, and remaining budget. Reserve enough for verification
+   and delivery; avoid spending everything on preparation or one stubborn detail.
+5. Once all acceptance conditions are supported, call `done_tool` without further calls
+   or redundant review. If forced to stop early, report verified progress and remaining gaps.
+</progress-rules>
+</body>
+</html>

@@ -1,0 +1,22 @@
+"""Instance configuration for the dedicated WebsiteBuilderAgent."""
+
+website_builder_agent = dict(
+    name="website_builder_agent",
+    type="Agent",
+    description=(
+        "An evolvable website product engineer that designs, implements, tests, deploys, "
+        "and improves web products from task-defined requirements."
+    ),
+    model_name="llm_hub/gpt-6-astra",
+    prompt_name="website_builder_agent",
+    memory_name="file_system_memory",
+    max_step=10_000,
+    max_token=1_000_000_000,
+    compact_after_steps=0,
+    compact_body_tokens=0,
+    compact_input_tokens=100_000,
+    timeout=14400,
+    enable_evolving=True,
+    use_memory=True,
+    use_plan=True,
+)

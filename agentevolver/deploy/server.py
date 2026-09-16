@@ -1,0 +1,1548 @@
+"""Deployment Manager Server.
+
+``deployment_manager`` is the singleton entry point for the deployment subsystem.
+It runs one web service per *site* inside an isolated OpenSandbox container and
+binds it to a reachable URL, keeping a persisted registry of sites so they can be
+listed / re-deployed / stopped.
+
+Design (see ``agentevolver/deploy/types.py``): the manager is **framework-agnostic**. It
+only knows the generic lifecycle —
+
+    acquire sandbox → upload source → run build → start server (background)
+    → expose_port → health-check → record in registry
+
+The per-framework knowledge (image / build / start / health) lives in pluggable
+:class:`~agentevolver.deploy.types.Deployer` profiles registered under ``DEPLOYER``. Adding
+a new deployable target type is "register a new profile", never "edit this file".
+
+Like ``sandbox_manager`` this carries no versioning machinery — a deployment is
+infrastructure, not an evolvable component. Site handles live in-process (via
+``sandbox_manager``); the JSON registry persists metadata so sites survive a
+process restart as ``DETACHED`` records that ``redeploy`` can bring back.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import os
+import shlex
+import sys
+import time
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from urllib.parse import quote
+
+import httpx
+from pydantic import BaseModel, ConfigDict
+
+from agentevolver.deploy.types import (
+    Deployer,
+    DeploymentSpec,
+    DeployRequest,
+    HealthCheck,
+    SiteRecord,
+    SiteStatus,
+)
+from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
+from agentevolver.registry import DEPLOYER
+from agentevolver.sandbox import sandbox_manager
+from agentevolver.utils.file_utils import atomic_json_update
+
+ACCEPTANCE_TIMEOUT_S = 900.0
+
+# Directories skipped when uploading a host source tree into a container.
+_SKIP_DIRS = {
+    ".git",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".next",
+    ".cache",
+    "dist",
+    "build",
+    ".DS_Store",
+    ".godot",
+}
+_SANDBOX_KIND = "opensandbox"
+
+# How long a lazily-started older release keeps running after its last request. Long
+# enough to read a page and click through it; short enough that comparing six releases
+# does not leave six servers behind.
+_RELEASE_IDLE_S = 900.0
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class DeploymentManagerServer(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
+        self._sites: Dict[str, SiteRecord] = {}
+        # Last time each on-demand release was asked for, so idle ones can be reclaimed.
+        self._release_seen: Dict[str, float] = {}
+        self._release_locks: Dict[str, asyncio.Lock] = {}
+        # Site ids created or redeployed by this process. Global teardown must not stop
+        # a persisted deployment merely because another run loaded its registry record.
+        self._owned_sites: set[str] = set()
+        self._registry_path: Optional[str] = None
+        self._initialized = False
+        self._saved_sites = {}
+        self._registry_stamp = None
+
+    # --------------------------------------------------------------- lifecycle
+    # Task release policy, shared by all agents and deployment tools.
+
+    @staticmethod
+    def _task_state(ctx: Any) -> dict:
+        """Mutable task state survives conversions between agent and tool contexts."""
+        extra = getattr(ctx, "extra", None)
+        if not isinstance(extra, dict):
+            return {}
+        return extra["task_state"] if "task_state" in extra else extra
+
+    def prepare_task(self, ctx: Any) -> None:
+        """Bind deployment declarations when the deployment capability is called."""
+        manifest = (getattr(ctx, "extra", None) or {}).get("task_manifest") or {}
+        if "deployment" not in manifest:
+            return
+        subscribers = manifest.get("subscribers") or []
+        jobs = {entry["id"]: entry["job_id"] for entry in subscribers}
+        policy = self.validate_task_policy(manifest["deployment"], jobs)
+        if any(policy["topic"] not in entry.get("topics", []) for entry in subscribers):
+            raise ValueError("Every deployment subscriber must listen to its release topic")
+        self.configure_task(ctx, policy, jobs)
+
+    @staticmethod
+    def validate_task_policy(policy: Dict[str, Any], subscriber_ids) -> Dict[str, Any]:
+        """Validate declared release obligations before a deployment operation."""
+        if not isinstance(policy, dict):
+            raise ValueError("deployment policy must be an object")
+        required = policy.get("required_releases", 1)
+        if type(required) is not int or required < 1:
+            raise ValueError("required_releases must be a positive integer")
+        ids = list(subscriber_ids)
+        acceptance = str(policy.get("acceptance_subscriber") or "")
+        if acceptance and acceptance not in ids:
+            raise ValueError("acceptance_subscriber must name a declared subscriber")
+        topic = policy.get("topic", "deployment.ready")
+        if not isinstance(topic, str) or not topic.strip():
+            raise ValueError("deployment topic must be non-empty")
+        return {"topic": topic, "required_releases": required,
+                "acceptance_subscriber": acceptance}
+
+    def configure_task(self, ctx: Any, policy: Dict[str, Any], jobs: Dict[str, str]) -> dict:
+        """Bind declared release obligations to the actual runtime process IDs."""
+        policy = self.validate_task_policy(policy, jobs)
+        extra = self._task_state(ctx)
+        existing = extra.get("deployment_contract")
+        if isinstance(existing, dict):
+            if existing.get("policy") != policy or existing.get("subscriber_job_ids") != list(jobs.values()):
+                raise ValueError("Cannot replace an established deployment contract")
+            return existing
+        contract = {
+            "policy": policy, "topic": policy["topic"],
+            "required_releases": policy["required_releases"],
+            "acceptance_job_id": jobs.get(policy["acceptance_subscriber"], ""),
+            "subscriber_job_ids": list(jobs.values()), "collected_turns": {},
+        }
+        extra["deployment_contract"] = contract
+        extra["deployment_release_history"] = []
+        return contract
+
+    @staticmethod
+    def task_manifest(ctx: Any) -> dict:
+        """Public release bindings; mutable acceptance state stays with the manager."""
+        contract = DeploymentManagerServer._task_state(ctx).get("deployment_contract")
+        if not isinstance(contract, dict):
+            return {}
+        return {
+            "topic": contract.get("topic", "deployment.ready"), "automatic_deploy_publish": True,
+            "required_releases": contract["required_releases"],
+            "subscriber_job_ids": list(contract["subscriber_job_ids"]),
+            "acceptance_job_id": contract.get("acceptance_job_id", ""),
+            "collection": (
+                "After each deploy, wait with condition=idle_after_turn and the receipt's "
+                "subscriber_min_turns. Read every job__output at its actual completed turn "
+                "without tail before selecting the next change. Retries can give different "
+                "subscribers different turn numbers for the same release."
+            ),
+        }
+
+    @staticmethod
+    def record_preview(ctx: Any, preview: Dict[str, Any]) -> None:
+        contract = DeploymentManagerServer._task_state(ctx).get("deployment_contract")
+        if isinstance(contract, dict):
+            contract["latest_preview"] = dict(preview)
+
+    async def consume_preview(self, ctx: Any) -> None:
+        """Release a task's preview service after its source has been published."""
+        contract = DeploymentManagerServer._task_state(ctx).get("deployment_contract")
+        preview = contract.pop("latest_preview", None) if isinstance(contract, dict) else None
+        preview_id = (preview or {}).get("preview_site_id")
+        if preview_id:
+            try:
+                await self.stop_site(preview_id)
+            except Exception as error:  # noqa: BLE001 - publication already succeeded
+                logger.warning(f"| ⚠️ could not stop consumed preview {preview_id}: {error}")
+
+    def collect_feedback(self, ctx: Any, job_id: str, *, full: bool, turn=None) -> int:
+        """Acknowledge only a full, completed subscriber report actually read by its owner."""
+        from agentevolver.runtime import kernel
+
+        contract = DeploymentManagerServer._task_state(ctx).get("deployment_contract")
+        if not full or not isinstance(contract, dict) or job_id not in contract.get("subscriber_job_ids", []):
+            return 0
+        proc = kernel.get(job_id)
+        if proc is None or proc.turns < 1:
+            return 0
+        completed = int(proc.turns if turn is None else turn)
+        if completed < 1 or completed > proc.turns or completed not in proc.turn_results:
+            return 0
+        if turn is None and (proc.busy or len(proc.mailbox)):
+            return 0
+        collected = contract.setdefault("collected_turns", {})
+        collected[job_id] = max(int(collected.get(job_id) or 0), completed)
+        self.record_acceptance(ctx, job_id, success=bool(proc.turn_success.get(completed)), turn=completed)
+        return collected[job_id]
+
+    @staticmethod
+    def feedback_blocker(ctx: Any) -> str:
+        """Keep the release loop closed: observe feedback before publishing again.
+
+        Acceptance is keyed by (release, subscriber) and NOT by the subscriber's turn
+        number. Those were treated as the same thing — `turn_success[release_number]` —
+        on the assumption that a subscriber's Nth turn is always release N. A subscriber
+        that failed its first turn and was asked to try again produced turn 2, so
+        `turn_success[1]` stayed False for the rest of the run and no later release could
+        ever ship. Measured: 58 of 133 builder steps, 43% of the run, spent retrying
+        deploy and done against a gate that could not open.
+
+        Turn numbers are the runtime's own immutable record of how many times a process
+        ran. Which release a turn was *about* is a fact of this protocol, so this
+        protocol records it.
+        """
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = extra.get("deployment_contract")
+        history = extra.get("deployment_release_history")
+        if not isinstance(contract, dict) or not isinstance(history, list) or not history:
+            return ""
+
+        from agentevolver.task.self_review import blocker
+
+        pending_review = blocker(ctx, history[-1])
+        if pending_review:
+            return pending_review
+        release_number = len(history)
+        acceptance = DeploymentManagerServer._release_acceptance(contract, release_number)
+        subscribers = [str(job_id) for job_id in contract.get("subscriber_job_ids") or []]
+
+        pending, failed = [], []
+        for job_id in subscribers:
+            state = DeploymentManagerServer.acceptance_state(contract, release_number, job_id)
+            if state == "accepted":
+                continue
+            (failed if state == "failed" else pending).append(job_id)
+
+        if pending:
+            waited = DeploymentManagerServer._release_wait_seconds(contract, release_number)
+            if waited < ACCEPTANCE_TIMEOUT_S:
+                remaining = int(ACCEPTANCE_TIMEOUT_S - waited)
+                return (
+                    f"release {release_number} subscriber turns are not complete: "
+                    f"{', '.join(pending)} (waiting up to {remaining}s more)"
+                )
+            # Absent acceptance is a quality fact about the release, not a reason the
+            # deployment pipeline may never move again. It is recorded and the gate
+            # opens; the release history carries who never reported.
+            for job_id in pending:
+                acceptance[job_id] = {"status": "absent", "attempts": 0}
+            logger.warning(
+                f"| ⏳ release {release_number} proceeding without acceptance from "
+                f"{', '.join(pending)} after {int(waited)}s"
+            )
+
+        if failed:
+            return (
+                f"release {release_number} was rejected by {', '.join(failed)}. "
+                "Fix what they reported and ask the same subscriber to verify the fix "
+                "with send_message_tool; a passing retry replaces this verdict."
+            )
+
+        collected = dict(contract.get("collected_turns") or {})
+        unread = [
+            job_id for job_id in subscribers
+            if int(collected.get(job_id) or 0) < int((acceptance.get(job_id) or {}).get("turn") or 1)
+        ]
+        if unread:
+            return (
+                f"release {release_number} feedback must be read with job__output "
+                f"before another deploy: {', '.join(unread)}"
+            )
+        return ""
+
+    @staticmethod
+    def _release_acceptance(contract: Dict[str, Any], release_number: int) -> Dict[str, Any]:
+        """The per-subscriber acceptance record for one release, created on demand."""
+        table = contract.setdefault("release_acceptance", {})
+        return table.setdefault(str(release_number), {})
+
+    @staticmethod
+    def acceptance_state(
+        contract: Dict[str, Any], release_number: int, job_id: str
+    ) -> str:
+        """accepted / failed / absent / pending for one subscriber on one release."""
+        recorded = DeploymentManagerServer._release_acceptance(contract, release_number).get(job_id)
+        if isinstance(recorded, dict):
+            return str(recorded.get("status") or "pending")
+        return "pending"
+
+    @staticmethod
+    def record_acceptance(
+        ctx: Any, job_id: str, *, success: bool, turn: int
+    ) -> str:
+        """Record what a subscriber said about the CURRENT release.
+
+        Called wherever a subscriber's turn is collected. A later attempt overwrites an
+        earlier verdict for the same release, which is what makes a rejection something
+        a run can recover from rather than a terminal state.
+        """
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = extra.get("deployment_contract")
+        history = extra.get("deployment_release_history")
+        if not isinstance(contract, dict) or not isinstance(history, list) or not history:
+            return ""
+        release_number = len(history)
+        acceptance = DeploymentManagerServer._release_acceptance(contract, release_number)
+        previous = acceptance.get(str(job_id)) or {}
+        floor = (contract.get("release_turn_floor", {}).get(str(release_number)) or {}).get(str(job_id), 0)
+        # Re-reading an older result cannot acknowledge a newer release or undo a retry.
+        if int(turn) <= int(floor) or int(turn) <= int(previous.get("turn") or 0):
+            return str(previous.get("status") or "pending")
+        acceptance[str(job_id)] = {
+            "status": "accepted" if success else "failed",
+            "attempts": int(previous.get("attempts") or 0) + 1,
+            "turn": int(turn),
+        }
+        return acceptance[str(job_id)]["status"]
+
+    @staticmethod
+    def _release_wait_seconds(contract: Dict[str, Any], release_number: int) -> float:
+        """How long this release has been waiting for its first acceptance."""
+        started = contract.setdefault("release_wait_started", {})
+        key = str(release_number)
+        if key not in started:
+            started[key] = time.time()
+        return max(0.0, time.time() - float(started[key]))
+
+    @staticmethod
+    def preview_blocker(ctx: Any, site_id: str, revision: str) -> str:
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = extra.get("deployment_contract")
+        if not isinstance(contract, dict):
+            return ""
+        preview = contract.get("latest_preview")
+        if not isinstance(preview, dict):
+            return "preview the current workspace with deploy_tool action=preview first"
+        if preview.get("site_id") != site_id:
+            return f"latest preview belongs to site {preview.get('site_id')!r}, not {site_id!r}"
+        if not revision or preview.get("source_revision") != revision:
+            return "workspace source changed after preview; preview and verify the current revision again"
+        from agentevolver.task.self_review import blocker
+
+        return blocker(ctx, preview)
+
+    @staticmethod
+    async def publish_release(rec, *, action: str, ctx: Any, urls=None) -> Dict[str, Any]:
+        """Broadcast a successful release to this task tree's live subscribers."""
+        if ctx is None:
+            return {}
+        from agentevolver.runtime import kernel
+
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = (extra or {}).get("deployment_contract")
+        if not isinstance(contract, dict):
+            return {}
+        # ToolContext copies the ambient mapping but retains task_state by reference.
+        # Mutate the list in place so later tool calls and feedback reads see the receipt.
+        history = (extra or {}).get("deployment_release_history")
+        if not isinstance(history, list):
+            history = []
+            extra["deployment_release_history"] = history
+        release_number = len(history) + 1
+        topic = str(contract.get("topic") or "deployment.ready")
+        contract.setdefault("release_turn_floor", {})[str(release_number)] = {
+            str(job_id): int(getattr(kernel.get(str(job_id)), "turns", 0))
+            for job_id in contract.get("subscriber_job_ids") or []
+        }
+        # A task's feedback round is not the persistent site's artifact version.
+        payload = {
+            "release_number": release_number,
+            "version_number": rec.release_number,
+            "action": action,
+            "site_id": rec.site_id,
+            "runtime": rec.runtime,
+            "url": rec.url,
+            "source_revision": rec.source_revision,
+            "subscriber_min_turns": {
+                job_id: floor + 1
+                for job_id, floor in contract["release_turn_floor"][str(release_number)].items()
+            },
+            **(urls or DeploymentManagerServer.public_urls(rec)),
+            "deployed_at": rec.updated_at,
+        }
+        try:
+            sent, scoped, event = await kernel.publish_scoped(
+                topic,
+                topic,
+                payload,
+                ctx=ctx,
+                sender=str(getattr(ctx, "name", "") or "deploy_tool"),
+            )
+            receipt = {
+                **payload,
+                "event_id": event.id,
+                "topic": scoped.split("::", 1)[-1],
+                "fanout": sent,
+            }
+        except Exception as error:  # noqa: BLE001
+            logger.warning(f"| ⚠️ deployment.ready publication failed: {error}")
+            receipt = {
+                **payload,
+                "event_id": "",
+                "topic": topic,
+                "fanout": 0,
+                "error": str(error),
+            }
+        history.append(receipt)
+        return receipt
+
+    @staticmethod
+    def _release_blocker(ctx: Any) -> Optional[str]:
+        """Report an unmet release requirement; this never controls Agent termination."""
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = extra.get("deployment_contract")
+        if not isinstance(contract, dict):
+            return None
+        history = list(extra.get("deployment_release_history") or [])
+        required = int(contract.get("required_releases") or 0)
+        if len(history) < required:
+            return f"the task requires {required} releases; only {len(history)} succeeded"
+        revisions = {
+            str(item.get("source_revision") or "")
+            for item in history
+            if item.get("source_revision")
+        }
+        if len(revisions) < required:
+            return (
+                f"the task requires {required} materially distinct releases; only "
+                f"{len(revisions)} unique source revisions were deployed"
+            )
+        expected_fanout = len(contract.get("subscriber_job_ids") or [])
+        incomplete_fanout = [
+            item for item in history if int(item.get("fanout") or 0) != expected_fanout
+        ]
+        if incomplete_fanout:
+            return (
+                f"{len(incomplete_fanout)} release event(s) did not reach all "
+                f"{expected_fanout} subscribers"
+            )
+
+        # The same acceptance table the deploy operation reads, for the same reason: a
+        # subscriber's turn number is not the release it was about, and binding them
+        # made a first rejection appear permanent in later status reports.
+        from agentevolver.runtime import kernel
+
+        release_turn = len(history)
+        pending, failed = [], []
+        for pid in contract.get("subscriber_job_ids") or []:
+            state = DeploymentManagerServer.acceptance_state(contract, release_turn, str(pid))
+            if state in ("accepted", "absent"):
+                continue
+            (failed if state == "failed" else pending).append(str(pid))
+        if pending:
+            return (
+                f"release {release_turn} still awaits subscriber turn completion: "
+                f"{', '.join(pending)}"
+            )
+        if failed:
+            return (
+                "the latest co-design/acceptance turn did not finish successfully for: "
+                + ", ".join(failed)
+            )
+        acceptance_id = str(contract.get("acceptance_job_id") or "")
+        acceptance_records = DeploymentManagerServer._release_acceptance(contract, release_turn)
+        if acceptance_id:
+            acceptance = kernel.get(acceptance_id)
+            verdict_turn = int((acceptance_records.get(acceptance_id) or {}).get("turn") or 0)
+            acceptance_result = (
+                acceptance.turn_results.get(verdict_turn, "")
+                if acceptance is not None
+                else ""
+            )
+            first_line = next(
+                (line.strip().upper() for line in acceptance_result.splitlines() if line.strip()),
+                "",
+            )
+            if first_line != "VERDICT: PASS":
+                return (
+                    f"latest independent acceptance did not pass for release {release_turn}; "
+                    f"received {first_line or '(no verdict)'}"
+                )
+        collected = dict(contract.get("collected_turns") or {})
+        uncollected = [
+            str(job_id)
+            for job_id in contract.get("subscriber_job_ids") or []
+            if int(collected.get(str(job_id)) or 0) < int(
+                (acceptance_records.get(str(job_id)) or {}).get("turn") or 1
+            )
+        ]
+        if uncollected:
+            return f"release {len(history)} feedback has not been collected from: " + ", ".join(
+                uncollected
+            )
+        return None
+
+    def release_status(self, ctx: Any) -> Dict[str, Any]:
+        """Describe release readiness for a tool response, without ending any task."""
+        state = self._task_state(ctx)
+        contract = state.get("deployment_contract")
+        if not isinstance(contract, dict):
+            return {"configured": False, "ready": None,
+                    "reason": "No deployment policy is declared for this task."}
+        reason = self._release_blocker(ctx)
+        return {"configured": True, "ready": reason is None, "reason": reason,
+                "required_releases": contract["required_releases"],
+                "completed_releases": len(state.get("deployment_release_history") or []),
+                "subscription": self.task_manifest(ctx),
+                "feedback": self.feedback_context(ctx)}
+
+    def feedback_context(self, ctx: Any) -> str:
+        """Report unread feedback and the exact subscriber turns to collect.
+
+        The runtime reports facts and exact collection targets. It neither invents
+        participant feedback nor marks a report read merely because it is available.
+        """
+        from agentevolver.runtime import kernel
+
+        extra = DeploymentManagerServer._task_state(ctx)
+        contract = extra.get("deployment_contract")
+        history = extra.get("deployment_release_history") or []
+        if not isinstance(contract, dict) or not history:
+            return ""
+        release = len(history)
+        floors = (contract.get("release_turn_floor") or {}).get(str(release), {})
+        collected = contract.get("collected_turns") or {}
+        rows, targets = [], {}
+        for job_id in contract.get("subscriber_job_ids") or []:
+            job_id = str(job_id)
+            proc = kernel.get(job_id)
+            floor = floors.get(job_id)
+            completed = int(getattr(proc, "turns", 0))
+            # Never guess release N == turn N for a legacy contract without a floor.
+            target = int(floor) + 1 if floor is not None else None
+            if target is not None:
+                targets[job_id] = target
+            available = bool(
+                target is not None and completed >= target
+                and completed in (getattr(proc, "turn_results", None) or {})
+            )
+            read = available and int(collected.get(job_id) or 0) >= completed
+            busy = bool(proc and (proc.busy or len(proc.mailbox)))
+            rows.append({
+                "job_id": job_id, "required_turn": target,
+                "completed_turn": completed, "busy": busy,
+                "alive": bool(proc and proc.alive),
+                "feedback": "collected" if read else ("unread" if available else "pending"),
+                "read_turn": completed if available else None,
+            })
+        instructions = (
+            "Collect the full current-release report from every subscriber before choosing "
+            "or implementing the next iteration. Wait with job__wait(condition='idle_after_turn', "
+            "min_turns_by_job=the map below), then read job__output(job_id, turn=the actual "
+            "completed turn), without tail. Pending or unread feedback is not user confirmation. "
+            "If a job ended, read its available report and report the missing scope honestly."
+        )
+        return "<deployment-feedback>\n" + instructions + "\n" + json.dumps({
+            "release_number": release,
+            "source_revision": history[-1].get("source_revision"),
+            "release_url": history[-1].get("release_url") or history[-1].get("url"),
+            "min_turns_by_job": targets, "subscribers": rows,
+        }, ensure_ascii=False) + "\n</deployment-feedback>"
+
+    async def initialize(self, workspace_root: Optional[str] = None) -> None:
+        """Load the persisted site registry and register built-in profiles. Idempotent."""
+        if self._initialized:
+            return
+        import agentevolver.deploy.default  # noqa: F401  (registers built-in profiles with DEPLOYER)
+
+        # Deployed sites are project-global and outlive any single session, so the
+        # registry lives at ``output/.runtime/deploy`` (``P.DEPLOY``) rather
+        # than a per-session log root — this keeps every session and every restart
+        # looking at the same set of sites.
+        base = workspace_root or str(path_manager.get(P.DEPLOY, create=True))
+        os.makedirs(base, exist_ok=True)
+        self._registry_path = str(path_manager.resolve_under(base, "sites.json"))
+        self._load()
+        # After a restart the in-process sandbox handles are gone; re-probe each
+        # recorded site so ones still serving are reattached as RUNNING and the
+        # rest are marked DETACHED (redeployable).
+        await self._reconcile_on_start()
+        self._save()
+        self._initialized = True
+        logger.info(
+            f"| 🚀 Deployment manager ready (profiles: {await self.list_profiles()}; "
+            f"{len(self._sites)} site(s) in registry)"
+        )
+
+    async def _ensure_initialized(self) -> None:
+        if not self._initialized:
+            await self.initialize()
+
+    # --------------------------------------------------------------- discovery
+    async def list_profiles(self) -> List[str]:
+        import agentevolver.deploy.default  # noqa: F401
+
+        return sorted(DEPLOYER.module_dict.keys())
+
+    def _profile(self, runtime: str) -> Deployer:
+        cls = DEPLOYER.get(runtime)
+        if cls is None:
+            raise ValueError(
+                f"No deploy profile {runtime!r}. Available: {sorted(DEPLOYER.module_dict.keys())}"
+            )
+        return cls()
+
+    # --------------------------------------------------------------- backend selection
+    @staticmethod
+    def _container_runtime_available() -> bool:
+        """True if a Docker daemon (or remote host) is reachable — i.e. opensandbox can work."""
+        if os.environ.get("DOCKER_HOST"):
+            return True
+        return os.path.exists("/var/run/docker.sock")
+
+    def _backend_kind(
+        self,
+        request: Optional[DeployRequest] = None,
+        previous: Optional[SiteRecord] = None,
+    ) -> str:
+        """Pick the sandbox backend.
+
+        Precedence: the request's own ``backend`` (a per-deploy choice), then the backend
+        this ``site_id`` is already running on, then the ``DEPLOY_BACKEND`` env, then the
+        source's default. ``host`` = local, no container (lightweight/instant);
+        ``docker`` = direct Docker container; ``opensandbox`` = managed container;
+        ``auto`` = opensandbox when a
+        container runtime is available, else host.
+
+        A site keeps the substrate it was born on. ``site_id`` is a stable identity, and a
+        redeploy that silently moved between host and container changed the URL's shape
+        under whoever was already holding it and discarded whatever the server had written
+        since — for one live site that meant six releases split across two substrates
+        because a single optional argument stopped being passed. Moving is still possible,
+        but it now takes saying so.
+
+        A profile can declare a default backend (Godot needs its Docker image).
+        Otherwise the source decides the rest. Anything local — inline ``content``/``files``, or a
+        ``source_dir`` this agent just wrote in its own workspace — deploys on the host: a
+        container cannot isolate the machine from code the agent is already running
+        unsandboxed beside it, so the isolation would be nominal while the costs are real
+        (an opaque proxy URL, a build per deploy, a filesystem that resets each time). A
+        ``git_url`` is the genuinely different case: foreign code arriving over the
+        network, where the container earns its keep. That one still defaults to ``auto``.
+        """
+        choice = ""
+        if request is not None and request.backend:
+            choice = request.backend.lower().strip()
+        if not choice and previous is not None and previous.backend:
+            choice = previous.backend.lower().strip()
+        if not choice:
+            choice = (os.environ.get("DEPLOY_BACKEND") or "").lower().strip()
+        if not choice and request is not None:
+            choice = self._profile(request.runtime).default_backend or ""
+        if not choice:
+            foreign = request is not None and bool(request.git_url)
+            choice = "auto" if foreign else "host"
+        if choice in ("host", "local"):
+            return "host"
+        if choice == "docker":
+            return "docker"
+        if choice in ("sandbox", "opensandbox"):
+            return "opensandbox"
+        return "opensandbox" if self._container_runtime_available() else "host"
+
+    def _host_site_dir(self, site_id: str) -> str:
+        base = (
+            os.path.dirname(self._registry_path)
+            if self._registry_path
+            else str(path_manager.get(P.DEPLOY))
+        )
+        sites = path_manager.resolve_under(base, "sites")
+        site = path_manager.resolve_under(sites, site_id)
+        return str(path_manager.resolve_under(site, "app"))
+
+    def _release_dir(self, site_id: str, release: int) -> str:
+        """Where release ``n`` of ``site_id`` keeps its own copy of the source.
+
+        A release has to be a thing that exists, not just a number. The agent edits its
+        workspace in place, the staging tree is wiped on every redeploy, and the registry
+        holds one record per site — so before this, the moment release n+1 landed, every
+        earlier release's bytes were gone from the machine entirely. `--r<n>` could only
+        ever have answered for whatever was current.
+        """
+        base = (
+            os.path.dirname(self._registry_path)
+            if self._registry_path
+            else str(path_manager.get(P.DEPLOY))
+        )
+        sites = path_manager.resolve_under(base, "sites")
+        site = path_manager.resolve_under(sites, site_id)
+        releases = path_manager.resolve_under(site, "releases")
+        return str(path_manager.resolve_under(releases, f"r{int(release)}"))
+
+    def _archive_release(self, site_id: str, release: int, source_dir: str) -> str:
+        """Create an immutable source snapshot; never overwrite an earlier version."""
+        import shutil
+        import tempfile
+
+        destination = self._release_dir(site_id, release)
+        if os.path.isdir(destination):
+            archived = self._source_revision(DeployRequest(site_id=site_id, source_dir=destination))
+            incoming = self._source_revision(DeployRequest(site_id=site_id, source_dir=source_dir))
+            if archived != incoming:
+                raise ValueError(f"Refusing to overwrite archived {site_id} r{release}")
+            return destination
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        temporary = tempfile.mkdtemp(prefix=".snapshot-", dir=os.path.dirname(destination))
+        try:
+            shutil.copytree(
+                source_dir,
+                temporary,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(*_SKIP_DIRS),
+            )
+            os.rename(temporary, destination)
+        finally:
+            if os.path.isdir(temporary):
+                shutil.rmtree(temporary)
+        return destination
+
+    def _version_metadata(self, site_id: str, release: int) -> str:
+        archive = self._release_dir(site_id, release)
+        return str(path_manager.resolve_under(os.path.dirname(archive), f"r{int(release)}.json"))
+
+    def _record_version(self, record: SiteRecord) -> None:
+        """Pin the original recipe beside its source, outside the served directory."""
+        if self._split_release(record.site_id):
+            return
+        archive = self._release_dir(record.site_id, record.release_number)
+        if not os.path.isdir(archive):
+            return
+        if any(v["number"] == record.release_number for v in record.versions):
+            return
+        entry = dict(number=record.release_number, source_revision=record.source_revision,
+                     deployed_at=record.deployed_at, runtime=record.runtime,
+                     owner_session_id=record.request.get("owner_session_id"),
+                     stage=record.request.get("stage", "published"),
+                     url=f"/s/{quote(record.site_id, safe='')}--r{record.release_number}/")
+        atomic_json_update(self._version_metadata(record.site_id, record.release_number),
+                           lambda existing: existing or {**entry, "request": record.request})
+        record.versions.append(entry)
+        record.versions = self.version_history(record)
+
+    def version_history(self, record: SiteRecord) -> List[Dict[str, Any]]:
+        """Include legacy source archives without inventing deployment timestamps."""
+        versions = {v["number"]: v for v in record.versions}
+        root = os.path.dirname(self._release_dir(record.site_id, 1))
+        if os.path.isdir(root):
+            for name in os.listdir(root):
+                if not name.startswith("r") or not name[1:].isdigit():
+                    continue
+                number = int(name[1:])
+                if number in versions or not os.path.isdir(self._release_dir(record.site_id, number)):
+                    continue
+                versions[number] = dict(number=number, deployed_at=None, source_revision=None,
+                                        url=f"/s/{quote(record.site_id, safe='')}--r{number}/")
+        return [versions[number] for number in sorted(versions)]
+
+    @staticmethod
+    def _reserve_host_port(site_id: str, preferred: int) -> int:
+        """Register (and allocate) a host port for a host-backend site.
+
+        Goes through the central ``port_manager`` so the binding lands in
+        ``ports.json`` and is de-conflicted with everything else the framework
+        binds.  Only host-backend sites need this — container backends have their
+        own isolated port space.
+        """
+        from agentevolver.port import port_manager
+
+        return port_manager.register(f"deploy:{site_id}", preferred=preferred, type="host")["port"]
+
+    async def _reconcile_on_start(self) -> None:
+        """Re-probe recorded sites at startup to recover ones still serving.
+
+        A site's in-process sandbox handle does not survive a restart, but the
+        service itself (a detached host process or a container) often does.  For
+        each site that had a URL, probe it: reachable → RUNNING (reattached),
+        otherwise DETACHED (its stored request can ``redeploy`` it).
+        """
+        for rec in self._sites.values():
+            if rec.status in (SiteStatus.STOPPED, SiteStatus.FAILED):
+                continue
+            rec.status = (
+                SiteStatus.RUNNING if await self._url_reachable(rec.url) else SiteStatus.DETACHED
+            )
+
+    @staticmethod
+    async def _url_reachable(url: Optional[str]) -> bool:
+        """True if ``url`` answers an HTTP request within a short timeout."""
+        if not url:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=3.0, follow_redirects=True) as client:
+                resp = await client.get(url)
+            return resp.status_code < 500
+        except Exception:
+            return False
+
+    @staticmethod
+    def _release_host_port(record: SiteRecord) -> None:
+        if record.backend == "host":
+            from agentevolver.port import port_manager
+
+            port_manager.unregister(f"deploy:{record.site_id}")
+
+    # --------------------------------------------------------------- registry io
+    def _load(self) -> None:
+        if self._registry_path and os.path.exists(self._registry_path):
+            try:
+                with open(self._registry_path) as f:
+                    raw = json.load(f)
+                self._sites = {sid: SiteRecord(**rec) for sid, rec in raw.items()}
+                self._saved_sites = raw
+            except Exception as e:
+                logger.warning(f"| ⚠️ Could not load deploy registry: {e}")
+                self._sites = {}
+
+    def _save(self) -> None:
+        if not self._registry_path:
+            return
+        try:
+            payload = {sid: rec.model_dump() for sid, rec in self._sites.items()}
+            changed = {sid: value for sid, value in payload.items()
+                       if value != self._saved_sites.get(sid)}
+            atomic_json_update(
+                self._registry_path,
+                lambda current: {**current, **changed},
+                default={},
+            )
+            self._saved_sites = payload
+        except Exception as e:
+            logger.warning(f"| ⚠️ Could not persist deploy registry: {e}")
+
+    # --------------------------------------------------------------- spec resolution
+    def refresh(self) -> None:
+        """Read other deployers' changes without overwriting local in-flight edits."""
+        if not self._registry_path:
+            self._registry_path = str(path_manager.resolve_under(path_manager.get(P.DEPLOY), "sites.json"))
+        try:
+            stat = os.stat(self._registry_path)
+            stamp = (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+            if stamp == self._registry_stamp:
+                return
+            with open(self._registry_path) as stream:
+                raw = json.load(stream)
+            for sid, value in raw.items():
+                local = self._sites.get(sid)
+                # A deploy coroutine still owns this object while awaiting readiness.
+                # Reloading identical bytes would detach its subsequent RUNNING update.
+                if local is not None and local.model_dump() == value:
+                    continue
+                if local is None or local.model_dump() == self._saved_sites.get(sid):
+                    self._sites[sid] = SiteRecord(**value)
+                    self._saved_sites[sid] = value
+            self._registry_stamp = stamp
+        except (OSError, ValueError):
+            return
+
+    @staticmethod
+    def public_urls(record: SiteRecord) -> Dict[str, str]:
+        """One authority for public links; `record.url` remains the backend URL."""
+        base = os.environ.get("GATEWAY_PUBLIC_BASE", "").strip().rstrip("/")
+        if not base:
+            return {}
+        name = quote(record.site_id, safe="")
+        urls = {"site_url": f"{base}/s/{name}/"}
+        if record.release_number:
+            urls["release_url"] = f"{base}/s/{name}--r{record.release_number}/"
+        return urls
+
+    def _resolve_spec(self, request: DeployRequest) -> DeploymentSpec:
+        """Profile → base spec, then overlay request.port / request.env / request.overrides."""
+        spec = self._profile(request.runtime).make_spec(request)
+        ov = dict(request.overrides or {})
+        for field in ("image", "workspace_root", "build", "start", "timeout_minutes"):
+            if field in ov and ov[field] is not None:
+                setattr(spec, field, ov[field])
+        if "health" in ov and ov["health"]:
+            spec.health = (
+                HealthCheck(**ov["health"]) if isinstance(ov["health"], dict) else ov["health"]
+            )
+        if request.port:
+            spec.port = request.port
+        if request.env:
+            spec.env = {**spec.env, **request.env}
+        return spec
+
+    def _materialize_inline(self, request: DeployRequest) -> str:
+        """Write inline ``content`` / ``files`` to a host staging dir and return it.
+
+        This is the lightweight path: the caller ships the page/app in the request
+        instead of pointing at a host tree, and we turn it into a normal source dir so
+        the rest of the deploy flow (upload → build → start) is unchanged. ``files``
+        (a {relpath: text} map) wins over ``content`` (a single ``filename``); giving
+        both merges them, with ``content`` filling in ``filename`` if absent.
+        """
+        base = (
+            os.path.dirname(self._registry_path)
+            if self._registry_path
+            else str(path_manager.get(P.DEPLOY, create=True))
+        )
+        staging = str(
+            path_manager.resolve_under(path_manager.resolve_under(base, "staging"), request.site_id)
+        )
+        # A redeploy must not serve stale files from a previous materialization.
+        if os.path.isdir(staging):
+            import shutil
+
+            shutil.rmtree(staging, ignore_errors=True)
+        os.makedirs(staging, exist_ok=True)
+
+        files = dict(request.files or {})
+        if request.content is not None and request.filename not in files:
+            files[request.filename] = request.content
+        if not files:
+            raise ValueError("inline deploy needs non-empty content or files")
+        for rel, text in files.items():
+            # Keep writes inside the staging dir — reject path escapes from a relpath.
+            dest = os.path.normpath(os.path.join(staging, rel))
+            if os.path.commonpath((staging, dest)) != staging:
+                raise ValueError(f"unsafe inline file path: {rel!r}")
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "w", encoding="utf-8") as fh:
+                fh.write(text if isinstance(text, str) else str(text))
+        return staging
+
+    @staticmethod
+    def _source_revision(request: DeployRequest) -> str:
+        """Hash authored source so repeated deploys cannot masquerade as iterations."""
+        digest = hashlib.sha256()
+        if request.content is not None or request.files:
+            payload = {
+                "filename": request.filename,
+                "content": request.content,
+                "files": request.files or {},
+            }
+            digest.update(
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            )
+            return digest.hexdigest()
+        if request.source_dir and os.path.isdir(request.source_dir):
+            root = os.path.abspath(request.source_dir)
+            for current, dirs, files in os.walk(root):
+                dirs[:] = sorted(name for name in dirs if name not in _SKIP_DIRS)
+                for name in sorted(files):
+                    path = os.path.join(current, name)
+                    relative = os.path.relpath(path, root).replace(os.sep, "/")
+                    digest.update(relative.encode("utf-8"))
+                    digest.update(b"\0")
+                    try:
+                        with open(path, "rb") as handle:
+                            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                                digest.update(chunk)
+                    except OSError:
+                        digest.update(b"<unreadable>")
+                    digest.update(b"\0")
+            return digest.hexdigest()
+        if request.git_url:
+            digest.update(request.git_url.encode("utf-8"))
+            return digest.hexdigest()
+        return ""
+
+    def source_revision(self, request: DeployRequest) -> str:
+        """Public, side-effect-free source identity used by release gates."""
+        return self._source_revision(request)
+
+    # --------------------------------------------------------------- deploy
+    async def deploy(self, request: DeployRequest) -> SiteRecord:
+        """Build and start a site in a fresh container, bind it to a URL, and record it."""
+        await self._ensure_initialized()
+
+        # ``site_id`` is documented as a stable reuse key. Re-deploying that key must
+        # replace the old process; starting a second server beside it either leaks the
+        # first process or reports the old artifact healthy on the reused port.
+        self.refresh()
+        previous = self._sites.get(request.site_id)
+        # Decide the backend *before* materializing inline content — materialization sets
+        # source_dir, which would otherwise mask the "local source ⇒ host by default" rule.
+        backend = self._backend_kind(request, previous)
+        if backend == "host" and "PATH" not in request.env:
+            # Archive the executable search path that made this host recipe work.
+            # An absolute Python launcher need not itself have its bin directory on
+            # PATH (notably the gateway). Explicit caller PATH always wins.
+            request.env = {**request.env, "PATH": os.pathsep.join(dict.fromkeys([
+                os.path.dirname(sys.executable), *os.get_exec_path(),
+            ]))}
+
+        # Lightweight path: turn inline content/files into a source_dir the normal flow
+        # can upload. git_url and an explicit source_dir take precedence and skip this.
+        if (request.content or request.files) and not (request.source_dir or request.git_url):
+            request.source_dir = self._materialize_inline(request)
+
+        spec = self._resolve_spec(request)  # raises on bad profile / missing custom.start
+        source_revision = self._source_revision(request)
+
+        # Freeze source before stopping the live version or allocating resources.
+        # A failed/conflicting archive must not take a working site down.
+        pinned = self._split_release(request.site_id)
+        archived_source = ""
+        if pinned is not None:
+            release_number = pinned[1]
+        else:
+            release_number = int(getattr(previous, "release_number", 0) or 0)
+            recipe_changed = previous is not None and any(
+                (previous.request or {}).get(key) != request.model_dump().get(key)
+                for key in ("runtime", "env", "overrides", "backend")
+            )
+            if previous is None or previous.source_revision != source_revision or recipe_changed:
+                release_number += 1
+            if not request.git_url and request.source_dir and os.path.isdir(request.source_dir):
+                archived_source = self._archive_release(request.site_id, release_number, request.source_dir)
+
+        if previous is not None and previous.status not in {SiteStatus.STOPPED, SiteStatus.FAILED}:
+            await self.stop_site(request.site_id, include_versions=False)
+
+        # The host backend has no container filesystem, so run in a real host directory
+        # and write the server log beside it (containers keep a per-container /tmp log).
+        if backend == "host":
+            spec.workspace_root = self._host_site_dir(request.site_id)
+            log_path = str(
+                path_manager.resolve_under(
+                    os.path.dirname(spec.workspace_root),
+                    "server.log",
+                )
+            )
+            # Host sites share the machine's ports: if the requested one is taken, move to
+            # a free port and reflect it in the start command (literal port) and PORT env.
+            free = self._reserve_host_port(request.site_id, spec.port)
+            if free != spec.port:
+                logger.info(
+                    f"| 🖥️  port {spec.port} busy → using free port {free} for '{request.site_id}'"
+                )
+                spec.start = spec.start.replace(str(spec.port), str(free))
+                spec.port = free
+        else:
+            log_path = "/tmp/deploy_site.log"
+
+        # Expose the chosen port as $PORT so start commands using it (e.g. custom
+        # `... --port $PORT`) resolve, regardless of backend.
+        spec.env = {**spec.env, "PORT": str(spec.port),
+                    "BASE_PATH": f"/s/{quote(request.site_id, safe='')}/"}
+
+        rec = SiteRecord(
+            site_id=request.site_id,
+            runtime=spec.runtime,
+            status=SiteStatus.BUILDING,
+            port=spec.port,
+            image=spec.image,
+            backend=backend,
+            reuse_key=request.site_id,
+            release_number=release_number,
+            source_revision=source_revision,
+            created_at=self._sites.get(
+                request.site_id, SiteRecord(site_id=request.site_id, runtime=spec.runtime)
+            ).created_at
+            or _now(),
+            updated_at=_now(),
+            log_path=log_path,
+            request=request.model_dump(),
+            versions=list(previous.versions) if previous else [],
+        )
+        self._sites[request.site_id] = rec
+        self._owned_sites.add(request.site_id)
+        self._save()
+
+        try:
+            if backend == "host":
+                sandbox = await sandbox_manager.acquire(
+                    "host",
+                    reuse_key=request.site_id,
+                    env=spec.env,
+                    host_base=os.path.dirname(os.path.dirname(spec.workspace_root)),
+                )
+                logger.info(
+                    f"| 🖥️  '{request.site_id}': no container runtime → deploying on HOST (no isolation)"
+                )
+            elif backend == "docker":
+                sandbox = await sandbox_manager.acquire(
+                    "docker", reuse_key=request.site_id, image=spec.image,
+                    env=spec.env, network=True,
+                    publish_ports={spec.port: 0}, publish_host="127.0.0.1",
+                    timeout_minutes=spec.timeout_minutes,
+                )
+            else:
+                sandbox = await sandbox_manager.acquire(
+                    _SANDBOX_KIND,
+                    reuse_key=request.site_id,
+                    image=spec.image,
+                    env=spec.env,
+                    timeout_minutes=spec.timeout_minutes,
+                    network=True,
+                )
+            rec.resource_id = sandbox.resource_id
+            rec.updated_at = _now()
+            self._save()
+
+            # --- upload source ---------------------------------------------------
+            if request.git_url:
+                res = await sandbox.run_command(
+                    f"git clone {shlex.quote(request.git_url)} {shlex.quote(spec.workspace_root)}"
+                )
+                if not res.success:
+                    raise RuntimeError(f"git clone failed: {res.as_message()}")
+            else:
+                await sandbox.run_command(f"mkdir -p {shlex.quote(spec.workspace_root)}")
+                if request.source_dir:
+                    await self._upload_dir(sandbox, archived_source or request.source_dir, spec.workspace_root)
+
+            # --- build (fail-fast) -----------------------------------------------
+            for cmd in spec.build:
+                res = await sandbox.run_command(
+                    cmd, workspace_root=spec.workspace_root, timeout=1800
+                )
+                if not res.success or getattr(res, "exit_code", 0) not in (None, 0):
+                    raise RuntimeError(f"build step failed ({cmd!r}): {res.as_message()}")
+
+            # --- start server in the background ----------------------------------
+            start_cmd = (
+                f"nohup sh -c {shlex.quote(spec.start)} > {shlex.quote(rec.log_path)} 2>&1 &"
+            )
+            res = await sandbox.run_command(start_cmd, workspace_root=spec.workspace_root)
+            if not res.success:
+                raise RuntimeError(f"failed to launch start command: {res.as_message()}")
+            # Host process identity exists only after the background server starts.
+            rec.resource_id = sandbox.resource_id
+            rec.updated_at = _now()
+            self._save()
+
+            # --- bind URL + wait until ready -------------------------------------
+            url = await sandbox.expose_port(spec.port)
+            ready = await self._health(sandbox, spec, url)
+            if not ready:
+                tail = await self._log_tail(sandbox, rec.log_path)
+                raise RuntimeError(
+                    f"service did not become healthy within {spec.health.timeout_s}s. Log tail:\n{tail}"
+                )
+
+            rec.url = url
+            rec.status = SiteStatus.RUNNING
+            rec.error = None
+            rec.deployed_at = rec.updated_at = _now()
+            self._record_version(rec)
+            self._save()
+            logger.info(f"| 🌐 Site '{request.site_id}' ({spec.runtime}) deployed at {url}")
+            return rec
+        except Exception as e:
+            try:
+                released = await sandbox_manager.release(
+                    backend,
+                    reuse_key=request.site_id,
+                    resource_id=rec.resource_id,
+                )
+                if released:
+                    rec.resource_id = None
+                if released or rec.resource_id is None:
+                    self._owned_sites.discard(request.site_id)
+                    self._release_host_port(rec)
+            except Exception as cleanup_error:  # noqa: BLE001
+                logger.warning(f"| ⚠️ Deploy '{request.site_id}' failure cleanup: {cleanup_error}")
+            rec.status = SiteStatus.FAILED
+            rec.error = str(e)
+            rec.updated_at = _now()
+            self._save()
+            logger.error(f"| ❌ Deploy '{request.site_id}' failed: {e}")
+            return rec
+
+    async def _upload_dir(self, sandbox, source_dir: str, workspace_root: str) -> None:
+        src_root = os.path.abspath(source_dir)
+        if not os.path.isdir(src_root):
+            raise RuntimeError(f"source_dir not found: {source_dir}")
+        for root, dirs, files in os.walk(src_root):
+            dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+            for fname in files:
+                host_path = os.path.join(root, fname)
+                rel = os.path.relpath(host_path, src_root)
+                dest = f"{workspace_root}/{rel}".replace(os.sep, "/")
+                try:
+                    with open(host_path, "rb") as fh:
+                        await sandbox.write_file(dest, fh.read())
+                except Exception as e:
+                    raise RuntimeError(f"Failed uploading {rel}: {e}") from e
+
+    async def _health(self, sandbox, spec: DeploymentSpec, url: str) -> bool:
+        """Poll readiness. http → GET the exposed URL from the host (image-agnostic);
+        command → run a caller-supplied command in the container; none → ready at once."""
+        hc = spec.health
+        if hc.type == "none":
+            return True
+        # If the backend can tell us our launched server has died (e.g. failed to bind
+        # its port), stop immediately — otherwise a stale/other server on the same port
+        # could answer the probe and produce a false "healthy".
+        alive_check = getattr(sandbox, "launched_alive", None)
+        deadline = asyncio.get_event_loop().time() + hc.timeout_s
+        probe_url = url.rstrip("/") + hc.path
+        while asyncio.get_event_loop().time() < deadline:
+            if alive_check is not None and not alive_check():
+                logger.warning("| ⚠️ deploy: launched server process exited before becoming healthy")
+                return False
+            try:
+                if hc.type == "command" and hc.command:
+                    res = await sandbox.run_command(
+                        hc.command, workspace_root=spec.workspace_root, timeout=15
+                    )
+                    if res.success:
+                        return True
+                else:  # http
+                    async with httpx.AsyncClient(timeout=5.0) as client:
+                        resp = await client.get(probe_url)
+                        if resp.status_code < 500:  # any response = the server is up
+                            return True
+            except Exception:
+                pass
+            await asyncio.sleep(hc.interval_s)
+        return False
+
+    async def _log_tail(self, sandbox, log_path: str, lines: int = 40) -> str:
+        try:
+            res = await sandbox.run_command(f"tail -n {lines} {shlex.quote(log_path)}")
+            return res.as_message()
+        except Exception:
+            return "(no log available)"
+
+    # --------------------------------------------------------------- queries / ops
+    async def list_sites(self) -> List[SiteRecord]:
+        await self._ensure_initialized()
+        self.refresh()
+        return list(self._sites.values())
+
+    async def get_site(self, site_id: str) -> Optional[SiteRecord]:
+        await self._ensure_initialized()
+        self.refresh()
+        return self._sites.get(site_id)
+
+    async def check_site_health(self, site_id: str) -> Dict[str, Any]:
+        """One bounded HTTP probe of the registered backend; never resurrect a release.
+
+        This runs in the manager's network namespace. A Bash container's loopback
+        cannot reach host-published Docker ports. HTTP connectivity alone says
+        nothing about the remote user's tunnel, rendering, audio or gameplay.
+        """
+        rec = await self.get_site(site_id)
+        check = {
+            "site_id": site_id, "reachable": False, "checked_at": _now(),
+            "scope": "deployment_host", "status_code": None,
+            "limitation": "Backend HTTP only; gateway/client connectivity and gameplay are not verified.",
+        }
+        if rec is None or rec.status is not SiteStatus.RUNNING or not rec.url:
+            check["message"] = "No registered running service to probe; no deployment was started."
+            return check
+        check.update(internal_url=rec.url, release_number=rec.release_number)
+        try:
+            # Ignore ambient HTTP proxies for a local service and do not download
+            # response bodies (a service may return a stream or a large artifact).
+            async with httpx.AsyncClient(timeout=5.0, trust_env=False, follow_redirects=False) as client:
+                async with client.stream("GET", rec.url) as response:
+                    check.update(reachable=True, status_code=response.status_code)
+            check["message"] = (
+                f"Service responded from the deployment host: HTTP {check['status_code']} at {rec.url}. "
+                "This verifies connectivity only; an HTTP error is not application readiness."
+            )
+        except httpx.HTTPError as error:
+            check["message"] = f"Service probe failed from the deployment host: {error}"
+        return check
+
+    # -- name-addressed sites -------------------------------------------------
+
+    def resolve_port(self, name: str) -> Optional[int]:
+        """The port a site name answers on right now, or None.
+
+        Deliberately synchronous and lock-free: it is called per HTTP request by the
+        gateway's relay, and it reads one dict.
+
+        A site's PORT changes on every redeploy — the deployer asks for a free one — so
+        an address built from a port dies with the release that minted it. Every
+        participant in the website scenario is asked to come back to an ark they visited
+        before, and every one of them was handed a different URL each round instead. The
+        name is the stable identity; the port is an implementation detail behind it.
+
+        `<site>--r<n>` addresses one exact release, which is what an independent
+        acceptance worker needs: a verdict on "the current site" is not a verdict on the
+        release it was asked about.
+        """
+        record = self._serving_record(name)
+        return int(record.port) if record is not None and record.port else None
+
+    def _serving_record(self, name: str) -> Optional[SiteRecord]:
+        """Select one live identity for both URL resolution and backend recovery.
+
+        An idle archive server can leave a STOPPED record for the current release.
+        It must not shadow the stable site's live instance of those same bytes.
+        Older releases may only use their own backend, never the latest version.
+        """
+        record = self._sites.get(name)
+        if record is not None and record.status is SiteStatus.RUNNING and record.port:
+            return record
+        split = self._split_release(name)
+        if split:
+            current = self._sites.get(split[0])
+            if (current is not None and current.status is SiteStatus.RUNNING
+                    and current.port and current.release_number == split[1]):
+                return current
+        return None
+
+    @staticmethod
+    def _split_release(name: str) -> Optional[tuple]:
+        """``("echo-ark", 3)`` for ``"echo-ark--r3"``, else ``None``."""
+        if "--r" not in name:
+            return None
+        base, _, suffix = name.rpartition("--r")
+        if not base or not suffix.isdigit():
+            return None
+        return base, int(suffix)
+
+    def resolve_url(self, name: str) -> Optional[str]:
+        """The registered backend address, including container exposure/mapping."""
+        record = self._serving_record(name)
+        return record.url if record else None
+
+    async def ensure_release(self, name: str) -> Optional[int]:
+        """The port serving one pinned release, starting it from its archive if needed.
+
+        Concurrent first visits share one launch. Every visit refreshes the idle timer.
+
+        An archived release is served by deploying it as an ordinary site under its own
+        pinned name, so it reaches the visitor through the same relay as anything else
+        rather than a second serving path that could drift from the first. Older releases
+        stay stopped until somebody asks for one, and go back to being files afterwards.
+        """
+        split = self._split_release(name)
+        if split is None:
+            return None
+        async with self._release_locks.setdefault(name, asyncio.Lock()):
+            return await self._serve_release(name, *split)
+
+    async def _serve_release(self, name: str, base: str, release: int) -> Optional[int]:
+
+        await self._ensure_initialized()
+        current = self._sites.get(base)
+        if current is not None and int(getattr(current, "release_number", 0) or 0) == release:
+            if port := self.resolve_port(base):
+                return port
+
+        running = self.resolve_port(name)
+        if running:
+            self._release_seen[name] = time.time()
+            return running
+
+        archive = self._release_dir(base, release)
+        if not os.path.isdir(archive):
+            return None
+
+        # Reuse the release's own deploy request: its runtime and overrides are what made
+        # those bytes serveable, and re-deriving them here would be a second opinion about
+        # a site that already has one.
+        metadata_path = self._version_metadata(base, release)
+        if os.path.isfile(metadata_path):
+            with open(metadata_path) as handle:
+                stored = dict(json.load(handle)["request"])
+        else:
+            # Compatibility for archives created before recipe snapshots existed.
+            stored = dict((getattr(current, "request", None) or {}))
+        stored.update(
+            site_id=name,
+            source_dir=archive,
+            content=None,
+            files=None,
+            git_url=None,
+            backend=stored.get("backend") or "host",
+            port=None,
+        )
+        try:
+            await self.deploy(DeployRequest(**stored))
+        except Exception as exc:
+            logger.warning(f"| 📦 could not start release {release} of '{base}': {exc}")
+            return None
+        self._release_seen[name] = time.time()
+        await self._reap_idle_releases()
+        return self.resolve_port(name)
+
+    async def _reap_idle_releases(self) -> None:
+        """Stop pinned releases nobody has opened lately.
+
+        Only sites this manager started on demand are candidates — a release someone
+        deployed by that name themselves is theirs, not scratch space to reclaim.
+        """
+        now = time.time()
+        # A pinned release this process did not start is one a previous process left
+        # behind: the registry survives a restart but the last-seen times do not. Give it
+        # a first sighting now rather than reaping it on the spot, so it still gets a full
+        # idle window and a visitor mid-read is not cut off.
+        for name, rec in list(self._sites.items()):
+            if rec.status is SiteStatus.RUNNING and self._split_release(name):
+                self._release_seen.setdefault(name, now)
+
+        cutoff = now - _RELEASE_IDLE_S
+        for name, seen in list(self._release_seen.items()):
+            if seen > cutoff:
+                continue
+            self._release_seen.pop(name, None)
+            record = self._sites.get(name)
+            if record is None or record.status is not SiteStatus.RUNNING:
+                continue
+            try:
+                await self.stop_site(name)
+            except Exception as exc:
+                logger.warning(f"| 📦 could not stop idle release '{name}': {exc}")
+
+    def public_names(self) -> List[str]:
+        """Every name that currently resolves, for diagnostics and the 404 body."""
+        return sorted(
+            name for name, rec in self._sites.items()
+            if rec.status is SiteStatus.RUNNING and rec.port
+        )
+
+    def public_pages(self) -> List[Dict[str, Any]]:
+        """Read-only page index: no deployment requests, source files, or secrets."""
+        self.refresh()
+        return [{"name": record.site_id, "title": record.request.get("title") or record.site_id,
+                 "kind": record.request.get("kind") or "website", "status": record.status.value,
+                 "url": f"/s/{quote(record.site_id, safe='')}/",
+                 "created_at": record.created_at, "deployed_at": record.deployed_at,
+                 "updated_at": record.updated_at, "version": record.release_number,
+                 "versions": self.version_history(record)}
+                for record in self._sites.values()]
+
+    async def stop_site(self, site_id: str, *, include_versions: bool = True) -> SiteRecord:
+        await self._ensure_initialized()
+        rec = self._sites.get(site_id)
+        if rec is None:
+            raise ValueError(f"No such site {site_id!r}")
+        stopped = await sandbox_manager.release(
+            rec.backend or _SANDBOX_KIND,
+            reuse_key=site_id,
+            resource_id=rec.resource_id,
+        )
+        # An unreachable URL never proved a backend gone, so a stored handle kept a dead
+        # record unstoppable — and therefore unrebuildable, since deploy stops first.
+        # Absence has to be demonstrated instead of assumed: a backend that can inspect
+        # its own identity says whether the process is really gone, and only that answer
+        # clears the handle. Backends that cannot inspect still refuse, as before.
+        unverified = bool(rec.resource_id) and not await sandbox_manager.resource_absent(
+            rec.backend or _SANDBOX_KIND, resource_id=rec.resource_id or "",
+        )
+        if not stopped and (unverified or await self._url_reachable(rec.url)):
+            raise RuntimeError(
+                f"Site {site_id!r} still has a live or unverified backend identity; "
+                "refusing to report a false stop"
+            )
+        rec.status = SiteStatus.STOPPED
+        rec.url = None
+        rec.resource_id = None
+        self._owned_sites.discard(site_id)
+        self._release_host_port(rec)
+        rec.updated_at = _now()
+        self._save()
+        logger.info(f"| 🛑 Site '{site_id}' stopped")
+
+        # Explicit shutdown includes archive servers; replacing the latest version does
+        # not interrupt readers comparing previously published versions.
+        if include_versions and self._split_release(site_id) is None:
+            for pinned in self._pinned_releases_of(site_id):
+                try:
+                    await self.stop_site(pinned)
+                except Exception as exc:
+                    logger.warning(f"| 📦 could not stop pinned release '{pinned}': {exc}")
+        return rec
+
+    def _pinned_releases_of(self, site_id: str) -> List[str]:
+        """Names of the running ``<site_id>--r<n>`` archives, if any."""
+        return [
+            name for name, rec in list(self._sites.items())
+            if rec.status is SiteStatus.RUNNING
+            and (self._split_release(name) or (None,))[0] == site_id
+        ]
+
+    async def redeploy(self, site_id: str) -> SiteRecord:
+        """Tear down and rebuild a site from its stored request (new URL likely)."""
+        await self._ensure_initialized()
+        rec = self._sites.get(site_id)
+        if rec is None or not rec.request:
+            raise ValueError(f"No redeployable request stored for site {site_id!r}")
+        request = DeployRequest(**rec.request)
+        await self.stop_site(site_id, include_versions=False)
+        return await self.deploy(request)
+
+    def restoration_request(self, record: SiteRecord) -> DeployRequest:
+        """Restart the published bytes, even if the author's working tree changed."""
+        request = DeployRequest(**record.request)
+        if not self._split_release(record.site_id) and record.release_number:
+            archive = self._release_dir(record.site_id, record.release_number)
+            if os.path.isdir(archive):
+                request = request.model_copy(update={"source_dir": archive, "git_url": None})
+        return request
+
+    async def cleanup(self) -> None:
+        """Reclaim this run's resources, keeping published URLs restorable by the gateway.
+
+        Host descendants die with their launcher, so skipping cleanup cannot transfer
+        their ownership. DETACHED hands the persisted recipe/archive to the durable
+        gateway; an explicit stop remains STOPPED and must not revive automatically.
+        """
+        for site_id in list(self._owned_sites):
+            rec = self._sites.get(site_id)
+            if rec is None:
+                self._owned_sites.discard(site_id)
+                continue
+            try:
+                released = await sandbox_manager.release(
+                    rec.backend or _SANDBOX_KIND,
+                    reuse_key=site_id,
+                    resource_id=rec.resource_id,
+                )
+                if released:
+                    rec.status = (SiteStatus.DETACHED
+                                  if rec.request and rec.request.get("stage", "published") == "published"
+                                  and rec.status is SiteStatus.RUNNING else SiteStatus.STOPPED)
+                    rec.url = None
+                    rec.resource_id = None
+                    rec.updated_at = _now()
+                    self._owned_sites.discard(site_id)
+                    self._release_host_port(rec)
+            except Exception as e:
+                logger.warning(f"| ⚠️ Error releasing site '{site_id}': {e}")
+        self._save()
+
+
+# Global deployment manager instance.
+deployment_manager = DeploymentManagerServer()

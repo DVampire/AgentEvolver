@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="name" content="swebench_verified_resolution">
+  <meta name="description" content="Resolve a real GitHub issue in a Python codebase by editing it into a patch">
+  <meta name="version" content="1.0.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../../agentevolver/visual/task/style.css">
+  <script src="../../agentevolver/visual/task/app.js" defer></script>
+</head>
+<body>
+
+<div class="task">
+
+<objective>
+Resolve a real software-engineering issue in the Python project `{repository}`.
+
+You are given a checkout of the repository at a specific base commit and the text of an
+issue. Edit the code IN PLACE so the issue is fixed. Your deliverable is not a file you
+write out — it is the change itself: whatever you edit in the repository is collected as a
+git patch and scored by a hidden test suite. Make the smallest correct change that resolves
+the issue and does not break existing behaviour.
+</objective>
+
+<requirements>
+### The issue
+
+{problem_statement}
+</requirements>
+
+<notes>
+### Environment
+
+- The repository is at `/testbed`: it is checked out at the base commit, and its package is
+  installed **editable** into the active conda env (`testbed`), so edits you make under
+  `/testbed` take effect when you run Python or the test suite. Always `cd /testbed` first —
+  the bash tool may start in a different directory.
+- Edit files directly with the shell (`sed`, a heredoc, `patch`, an editor). There is no
+  separate file tool — `bash_tool` is how you read, search, and change the code.
+- **The network is off** by design. You cannot fetch the upstream fix, browse the issue
+  online, clone another copy, or install new packages — everything you need is already in
+  the image. Attempting it is both futile and against the rules.
+- **You do NOT have the tests that score you.** The hidden target tests, the test changes
+  that define resolution, and the reference fix are deliberately absent from this
+  environment. Do not go looking for them. Reason about the fix from the issue text and the
+  existing code — that is the whole task.
+- The repository's OWN existing tests are yours to run, as often as you like, for free —
+  use `git log`, `grep`, and `python -m pytest &lt;path&gt;` to understand the code and check your
+  change locally before spending a grader eval. Because the install is editable, a local
+  `pytest` reflects your edits.
+</notes>
+
+<plan>
+### How to work
+
+- Read first. Find the code the issue is about (`grep`, `git log`, read the files named in
+  the issue). Understand the current behaviour before changing it.
+- Make a focused change that resolves the issue. Prefer editing existing code over adding
+  new files; match the codebase's style (this is Django/sympy/sphinx/matplotlib/… — follow
+  the surrounding conventions).
+- Run the repository's own tests locally (free) to catch regressions early.
+- Commit as you go (`git add -A && git commit`) — your committed and uncommitted edits are
+  both collected, but committing keeps your work legible.
+- Do NOT rewrite unrelated code, reformat the whole file, or change behaviour the issue did
+  not ask about — a change that breaks a previously-passing test costs you.
+</plan>
+
+<acceptance>
+### Local verification
+
+Verify with available repository tests or your own checks. Finish with your best submission
+and report any unverified behavior. Hidden evaluation runs only after your process exits;
+you cannot request it or use its feedback to revise your answer.
+</acceptance>
+
+</div>
+</body>
+</html>

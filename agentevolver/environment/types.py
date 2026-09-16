@@ -1,0 +1,372 @@
+"""Environment Context Protocol (ECP) Types
+
+Core type definitions for the Environment Context Protocol.
+"""
+
+import uuid
+from enum import Enum
+from typing import Any, Callable, Dict, Literal, Optional, Type, Union
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from agentevolver.dynamic import dynamic_manager
+from agentevolver.session import BaseContext
+
+
+class EnvironmentContext(BaseContext):
+    """Context passed into environment manager and individual environment instances."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    id: str = Field(default="", description="Unique identifier for this environment call.")
+    name: str = Field(default="", description="Name of the environment being called.")
+    action: str = Field(default="", description="Name of the action being invoked.")
+    workspace_root: Optional[str] = Field(default=None, description="Working directory for environment operations.")
+    input: Dict[str, Any] = Field(default_factory=dict, description="Input payload passed to the action.")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this environment context.")
+
+
+class EnvironmentView(BaseModel):
+    """A live-view endpoint the frontend connects to directly to watch an environment.
+
+    The heavy media stream flows browser ↔ endpoint (e.g. a websockify VNC socket),
+    never through the agent/gateway — this descriptor only advertises where to look.
+
+    ``type``:
+      ``vnc``    — ``url`` is a websockify WebSocket a noVNC client renders on a canvas.
+      ``iframe`` — ``url`` is an http(s) page embedded directly in an iframe.
+    New environments implement :meth:`Environment.live_view` to return one of these.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    session_id: str = Field(default="", description="Session this view belongs to (set by the manager).")
+    env_name: str = Field(default="", description="Environment that owns this view.")
+    owner_id: str = Field(default="", description="Process or explicit resource scope owning this view.")
+    type: str = Field(default="vnc", description="vnc | iframe")
+    url: str = Field(description="Endpoint the frontend connects to / embeds.")
+    label: str = Field(default="", description="Human-readable label for the view.")
+    password: Optional[str] = Field(default=None, description="VNC password, when the RFB server requires one.")
+
+
+class Environment(BaseModel):
+    """Base abstract class for ECP environments"""
+    
+    name: str = Field(description="The name of the environment.")
+    description: str = Field(description="The description of the environment.")
+    metadata: Dict[str, Any] = Field(description="The metadata of the environment.")
+    enable_evolving: bool = Field(default=False, description="Whether the environment may be evolved (self-optimized)")
+    concurrent: bool = Field(default=False, description="Independent actions are reentrant; shared mutable resources must still be declared")
+    max_concurrency: Optional[int] = Field(default=None, ge=1)
+    concurrency_group: str = Field(default="", description="Optional shared runtime capacity group across environments")
+    state_scope: Literal["owner", "call", "shared"] = Field(default="owner", description="Instance lifetime: owner session, independent call, or shared backend")
+    managed_sessions: bool = Field(default=False, description="Implementation already maintains owner-indexed sessions")
+
+    def resource_claims(self, ctx, arguments, operation=""):
+        from agentevolver.runtime.invocation import ResourceClaim, owner_id
+        if self.concurrent or self.state_scope == "call":
+            return ()
+        scope = owner_id(ctx) if self.state_scope == "owner" else "shared"
+        return (ResourceClaim(f"environment:{self.name}:{scope}"),)
+
+    def backend_key(self, owner: str) -> str:
+        """Private external resource identity for this definition and owner.
+
+        Multiplexed backends use it for container reuse, not as a durable artifact ID.
+        Two configured instances must not silently attach to the same desktop.
+        """
+        from hashlib import sha256
+        return sha256(f"{self.name}:{id(self)}:{owner}".encode()).hexdigest()
+
+    permission_mode: str = Field(
+        default="workspace_write",
+        description="Permission mode for environment actions with host-side effects.",
+    )
+    
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True, 
+        extra="allow"
+    )
+    
+    def __init_subclass__(cls, **kwargs):
+        """Automatically register Environment subclasses"""
+        super().__init_subclass__(**kwargs)
+        # No need to manually track classes here - we'll use __subclasses__() in initialize()
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.state_scope == "call" and self.managed_sessions:
+            raise ValueError("Call-scoped environments cannot manage persistent sessions")
+        # Initialize actions dictionary for this instance
+        self.actions: Dict[str, ActionConfig] = {}
+        
+        # Register all actions marked with @environment_manager.action decorator
+        for attr_name in dir(type(self)):
+            if attr_name.startswith('_'):
+                continue
+            declared = getattr(type(self), attr_name)
+            if callable(declared) and hasattr(declared, '_action_name'):
+                attr = getattr(self, attr_name)
+                action_name = attr._action_name
+                if action_name not in self.actions:
+                    action_config = ActionConfig(
+                        env_name=self.name,
+                        name=action_name,
+                        description=getattr(attr, '_action_description', ''),
+                        function=attr,
+                        metadata=getattr(attr, '_action_metadata', {})
+                    )
+                    # function_calling, text, and args_schema are computed on-demand via properties
+                    self.actions[action_name] = action_config
+    
+    async def get_state(self, ctx: Optional["EnvironmentContext"] = None,
+                        **kwargs: Any) -> Dict[str, Any]:
+        """What is true in this environment right now, rendered into the prompt each step.
+
+        `ctx` and `**kwargs` are part of the signature because the caller passes them:
+        `EnvironmentContextManager.get_state` always calls
+        ``instance.get_state(ctx=...)``. Declaring `get_state(self)` here — which it did
+        — meant the base class disagreed with its only caller, and the six built-ins
+        agreed with the caller instead. An evolved environment then wrote
+        ``def get_state(self)``, matching this class, and raised `TypeError` on every
+        single step. The framework produced a component that obeyed the contract and
+        could not run.
+
+        `**kwargs` rather than `ctx` alone so a subclass may take an argument of its own
+        — `ssh` takes `host` — without the caller having to know which subclass it holds.
+
+        Returns a mapping; `{"success": True, "state": ""}` is how an environment says
+        it has nothing to show, and is cheaper than raising.
+        """
+        raise NotImplementedError("Get state method not implemented")
+
+    async def live_view(self, ctx: "EnvironmentContext") -> Optional[EnvironmentView]:
+        """Return a live-view endpoint the frontend can watch, or None.
+
+        Override to expose a stream the frontend connects to directly (e.g. a
+        headful browser's noVNC/websockify socket).  Returning ``None`` (the
+        default) means this environment has no live view.  Called by the manager
+        after each action, so it should be cheap and idempotent — return the
+        stable endpoint, not a fresh one each call.
+        """
+        return None
+
+
+class ECPErrorCode(Enum):
+    """ECP error codes"""
+    INVALID_REQUEST = -32600
+    METHOD_NOT_FOUND = -32601
+    INVALID_PARAMS = -32602
+    INTERNAL_ERROR = -32603
+    ENVIRONMENT_NOT_FOUND = -32001
+    ACTION_NOT_FOUND = -32002
+    ACTION_EXECUTION_ERROR = -32003
+
+
+class ECPError(BaseModel):
+    """ECP error structure"""
+    code: ECPErrorCode
+    message: str
+    data: Optional[Dict[str, Any]] = None
+
+
+class ECPRequest(BaseModel):
+    """ECP request structure"""
+    id: Union[str, int] = Field(default_factory=lambda: str(uuid.uuid4()))
+    method: str
+    params: Optional[Dict[str, Any]] = None
+
+
+class ECPResponse(BaseModel):
+    """ECP response structure"""
+    id: Union[str, int]
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[ECPError] = None
+
+
+class ECPNotification(BaseModel):
+    """ECP notification structure"""
+    method: str
+    params: Optional[Dict[str, Any]] = None
+
+class ActionConfig(BaseModel):
+    """Action configuration (equivalent to MCP tool)"""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    env_name: str = Field(description="The name of the environment this action belongs to")
+    name: str = Field(description="The name of the action")
+    description: str = Field(description="The description of the action")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the action")
+    version: str = Field(default="1.0.0", description="Version of the action")
+    
+    function: Optional[Callable] = Field(default=None, description="The function implementing the action")
+    code: Optional[str] = Field(default=None, description="The source code of the action")
+    
+    # Default representations
+    args_schema: Optional[Type[BaseModel]] = Field(default=None, description="Default args schema (BaseModel type)")
+    function_calling: Optional[Dict[str, Any]] = Field(default=None, description="Default function calling representation")
+    text: Optional[str] = Field(default=None, description="Default text representation")
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Dump the model to a dictionary, recursively serializing nested Pydantic models."""
+        
+        result = {
+            "env_name": self.env_name,
+            "name": self.name,
+            "description": self.description,
+            "metadata": self.metadata,
+            "version": self.version,
+            
+            "function": f"<{self.function.__name__}>",
+            "code": self.code,
+            
+            "args_schema": dynamic_manager.serialize_args_schema(self.args_schema) if self.args_schema else None,
+            "function_calling": self.function_calling,
+            "text": self.text,
+        }
+        
+        return result
+    
+    @classmethod
+    def model_validate(cls, data: Dict[str, Any]) -> 'ActionConfig':
+        """Validate the model from a dictionary."""
+        env_name = data.get("env_name")
+        name = data.get("name")
+        description = data.get("description")
+        metadata = data.get("metadata")
+        version = data.get("version")
+        
+        code = data.get("code")
+        function = None
+        
+        args_schema = dynamic_manager.deserialize_args_schema(data.get("args_schema"))
+        function_calling = data.get("function_calling")
+        text = data.get("text")
+        
+        return cls(env_name=env_name,
+            name=name,
+            description=description,
+            metadata=metadata,
+            version=version,
+            function=function,
+            code=code,
+            args_schema=args_schema,
+            function_calling=function_calling,
+            text=text
+        )
+
+class EnvironmentConfig(BaseModel):
+    """Environment configuration"""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(description="The name of the environment")
+    description: str = Field(description="The description of the environment")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the environment")
+    rules: str = Field(description="The rules of the environment")
+    #: Absolute path to ENVIRONMENT.md, the way a plugin carries ``manifest_path``.
+    #: The roster names the file so an agent can read the part it was not given.
+    manifest_path: str = Field(default="", description="Absolute path to ENVIRONMENT.md")
+    version: str = Field(default="1.0.0", description="Version of the environment")
+    enable_evolving: bool = Field(default=False, description="Whether the environment may be evolved (self-optimized)")
+    permission_mode: str = Field(default="workspace_write")
+    
+    cls: Optional[Type[Environment]] = Field(default=None, description="The class of the environment")
+    config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the environment")
+    instance: Optional[Any] = Field(default=None, description="The instance of the environment")
+    code: Optional[str] = Field(default=None, description="Source code for dynamically generated environment classes (used when cls cannot be imported from a module)")
+    
+    actions: Dict[str, ActionConfig] = Field(default_factory=dict, description="Dictionary of actions available in this environment")
+    
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Dump the model to a dictionary, recursively serializing nested Pydantic models."""
+        result = {
+            "name": self.name,
+            "description": self.description,
+            "metadata": self.metadata,
+            "rules": self.rules,
+            "manifest_path": self.manifest_path,
+            "version": self.version,
+            "enable_evolving": self.enable_evolving,
+            "permission_mode": self.permission_mode,
+            
+            "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
+            "config": self.config,
+            "instance": None,
+            "code": self.code,
+            
+            "actions": {name: action_config.model_dump() for name, action_config in self.actions.items()},
+        }
+        
+        return result
+    
+    @classmethod
+    def model_validate(cls, data: Dict[str, Any]) -> 'EnvironmentConfig':
+        """Validate the model from a dictionary."""
+        
+        name = data.get("name")
+        description = data.get("description")
+        metadata = data.get("metadata")
+        rules = data.get("rules")
+        version = data.get("version")
+        enable_evolving = data.get("enable_evolving", False)
+        permission_mode = data.get("permission_mode", "workspace_write")
+        
+        cls_ = None
+        code = data.get("code")
+        if code:
+            class_name = dynamic_manager.extract_class_name_from_code(code)
+            if class_name:
+                try:
+                    cls_ = dynamic_manager.load_class(
+                        code, 
+                        class_name=class_name,
+                        base_class=Environment,
+                        context="environment"
+                    )
+                except Exception:
+                    cls_ = None
+            else:
+                cls_ = None
+        else:
+            cls_ = None
+            
+        config = data.get("config")
+        instance = data.get("instance", None)
+        
+        actions = {name: ActionConfig.model_validate(action_config) for name, action_config in data.get("actions", {}).items()}
+        
+        # If cls_ is loaded, restore function references for actions from the class
+        if cls_ is not None:
+            for action_name, action_config in actions.items():
+                # First try direct attribute access (most common case where action_name == method_name)
+                if hasattr(cls_, action_name):
+                    attr = getattr(cls_, action_name)
+                    if hasattr(attr, '_action_name') and getattr(attr, '_action_name') == action_name:
+                        action_config.function = attr
+                        continue
+        
+        return cls(name=name,
+            description=description,
+            metadata=metadata,
+            rules=rules,
+            version=version,
+            enable_evolving=enable_evolving,
+            permission_mode=permission_mode,
+            cls=cls_,
+            config=config,
+            instance=instance,
+            code=code,
+            actions=actions
+            )
+    
+class ScreenshotInfo(BaseModel):
+    """Screenshot information"""
+    transformed: bool = Field(default=False, description="Whether the screenshot has been transformed")
+    screenshot: str = Field(default="Screenshot base64")
+    screenshot_path: str = Field(default="Screenshot path")
+    screenshot_description: str = Field(default="Screenshot description")
+    transform_info: Optional[Dict[str, Any]] = Field(default=None, description="Transform information")
+
+class EnvironmentState(BaseModel):
+    """Environment state"""
+    state: str = Field(default="State", description="The state of the environment")
+    extra: Optional[Dict[str, Any]] = Field(default=None, description="The extra information of the state")

@@ -1,0 +1,149 @@
+"""HookManagerServer — thin server wrapper around HookContextManager.
+
+Parallels AgentManagerServer / agentevolver/agent/server.py.
+All logic lives in HookContextManager; this class just owns the singleton
+instance and exposes a stable public API.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Type  # Dict/Any kept for register() signature
+
+from agentevolver.hook.context import HookConfig, HookContextManager
+from agentevolver.hook.types import Hook, HookEvent, HookResult
+from agentevolver.logger import logger
+
+
+class HookManagerServer:
+    """Singleton server for hook registration and dispatch.
+
+    Parallels AgentManagerServer: stores a HookContextManager and delegates
+    every method to it.  Call ``await hook_manager.initialize()`` once at
+    startup before any hooks are dispatched.
+    """
+
+    def __init__(self) -> None:
+        self.hook_context_manager: Optional[HookContextManager] = None
+
+    # ------------------------------------------------------------------
+    # Initialization
+    # ------------------------------------------------------------------
+
+    async def initialize(self, hook_names: Optional[List[str]] = None) -> None:
+        """Discover and instantiate hooks from the HOOK registry.
+
+        Args:
+            hook_names: If provided, only load hooks whose snake_case class
+                        name is in this list. None loads all discovered hooks.
+        """
+        self.hook_context_manager = HookContextManager()
+        await self.hook_context_manager.initialize(hook_names=hook_names)
+        logger.info("| ✅ Hook manager server initialized")
+
+    def _require_manager(self) -> HookContextManager:
+        """Return the underlying manager, raising if the server was never initialized.
+
+        Raises:
+            RuntimeError: If ``initialize()`` has not been called yet.
+        """
+        if self.hook_context_manager is None:
+            raise RuntimeError(
+                "HookManagerServer has not been initialized. "
+                "Call `await hook_manager.initialize()` first."
+            )
+        return self.hook_context_manager
+
+    # ------------------------------------------------------------------
+    # Registration
+    # ------------------------------------------------------------------
+
+    async def register(
+        self,
+        hook_cls: Type[Hook],
+        config: Optional[Dict[str, Any]] = None,
+    ) -> HookConfig:
+        """Register (or replace) a hook class.
+
+        Args:
+            hook_cls: Hook subclass to register.
+            config:   Optional init kwargs passed to the constructor.
+
+        Returns:
+            HookConfig of the newly registered hook.
+        """
+        return await self._require_manager().register(hook_cls, config=config)
+
+    def unregister(self, name: str) -> None:
+        """Remove a hook from the registry by name."""
+        self._require_manager().unregister(name)
+
+    # ------------------------------------------------------------------
+    # Query
+    # ------------------------------------------------------------------
+
+    async def get(self, name: str) -> Optional[Hook]:
+        """Return the live Hook instance registered under ``name``."""
+        return await self._require_manager().get(name)
+
+    async def get_info(self, name: str) -> Optional[HookConfig]:
+        """Return the HookConfig registered under ``name``."""
+        return await self._require_manager().get_info(name)
+
+    def list(self) -> List[str]:
+        """Return a list of registered hook names, sorted by priority."""
+        if self.hook_context_manager is None:
+            return []
+        return self.hook_context_manager.list()
+
+    # ------------------------------------------------------------------
+    # Dispatch — mirrors AgentManagerServer.__call__
+    # ------------------------------------------------------------------
+
+    async def __call__(
+        self,
+        name: str,
+        input: dict,
+        ctx=None,
+        **kwargs,
+    ) -> HookResult:
+        """Dispatch to the hook registered under ``name``.
+
+        Args:
+            name:  Registered hook name (e.g. ``"trace_hook"``).
+            input: Event payload dict. ``"event"`` key is required.
+            ctx:   Any context with an ``.id`` attribute.
+
+        Returns:
+            HookResult (ALLOW if no hook is registered under ``name``).
+        """
+        if self.hook_context_manager is None:
+            if kwargs.get("required"):
+                # The built-in plan guard is usable before optional hook discovery.
+                # It still consults the real plan state; no permissive test-only bypass.
+                if name == "plan_mode_hook":
+                    from agentevolver.hook.default.plan_mode import PlanModeHook
+                    from agentevolver.hook.types import HookContext
+
+                    return await PlanModeHook().handle(HookContext(
+                        id=getattr(ctx, "id", ""), name=name, input=input,
+                        extra=dict(getattr(ctx, "extra", {}) or {}),
+                    ))
+                return HookResult.block(f"Required policy {name!r} is unavailable")
+            return HookResult.allow()
+        return await self.hook_context_manager(name, input, ctx=ctx, **kwargs)
+
+    async def emit(
+        self,
+        event: HookEvent | str,
+        payload: Optional[Dict[str, Any]] = None,
+        *,
+        ctx=None,
+    ) -> HookResult:
+        """Broadcast a lifecycle event to subscribed hooks in priority order."""
+        if self.hook_context_manager is None:
+            return HookResult.allow()
+        return await self.hook_context_manager.emit(event, payload, ctx=ctx)
+
+
+# Global singleton — import this everywhere
+hook_manager = HookManagerServer()

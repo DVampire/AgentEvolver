@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signal Foundry — Factor and Strategy Research Workbench</title>
+  <link rel="stylesheet" href="../../../../agentevolver/visual/task/style.css">
+  <script src="../../../../agentevolver/visual/task/app.js" defer></script>
+</head>
+<body>
+
+<div class="task">
+
+<objective data-format="html" id="mission">
+<header>
+<p>Project brief · Research workbench · From factors to strategies</p>
+<h1>Signal Foundry</h1>
+<p>Turn a stock's price and volume history into explainable factors, testable trading
+    hypotheses and a beautiful visual report whose conclusions can be inspected.</p>
+</header>
+
+<h2>Mission and research scope</h2>
+<p>Create a research system with an attractive visual report for a stock, discovering useful factors
+    and jointly improving them with testable trading strategies across diverse research
+    hypotheses. Factor discovery remains open throughout strategy research. The two areas form
+    one continuous report page, with clear conclusions and evidence that readers can explore
+    by scrolling, without switching pages or tabs between the stages.</p>
+<p>The accompanying study.json specifies the stock, dates, trading assumptions, research
+    quality requirements and evaluation scope. The default study uses TSLA daily OHLCV
+    over the trailing ten-year window specified in study.json, ending at the fixed
+    completed-session cutoff.
+    Detailed implementation choices remain open.</p>
+<p>The user must be able to answer: What did we download? Why might this factor work?
+    Which evidence admitted or rejected it? How did it change a strategy? What survives
+    costs, another market regime and the frozen final evaluation and its disclosed prior exposure?</p>
+</objective>
+
+<requirements data-format="html" id="data">
+<h2>A trustworthy data foundation</h2>
+<p>Base the research on real, lawfully accessible stock prices and trading volume, with
+    the corporate actions and trading-session information needed to interpret them. Readers
+    should be able to identify the source, actual coverage and adjustment assumptions, and
+    understand any missing data or access limitation. This study researches one stock;
+    a multi-stock selection product is outside its scope.</p>
+<p>Retain raw prices and volume, split and dividend records, provider/feed identity,
+    retrieval time, dataset hashes and a data-quality report. Detect duplicate bars, missing
+    sessions, invalid OHLC ranges and inconsistent adjustments. A single-venue volume feed,
+    fabricated data or a short convenience sample cannot silently replace the requested study.</p>
+<p>Use lawfully accessible public historical data to complete the research. If verified
+    as-traded prices or consolidated volume are unavailable, the study permits a documented
+    adjusted-price research proxy. Preserve provider fields, adjustment rules and limitations.
+    Show strict data qualification separately as unmet where necessary; this does not block
+    factor evaluation, strategy research or numerical reports on the declared public-data basis.
+    Never present proxy fills as verified historical executions or weaken the declared evidence standard.</p>
+<p>Distinguish measured data quality from assumptions. Unavailable history must remain
+    visible as a limitation rather than being replaced by fabricated observations.</p>
+</requirements>
+
+<requirements data-format="html" id="factors">
+<h2>Factor discovery and the Factor Observatory</h2>
+<p>Design strategy hypotheses and the factors needed by each hypothesis together. Evaluate
+    factors for their declared roles and their contribution to those strategies, while retaining
+    a reusable versioned factor library. Each conclusion must come from
+    reproducible calculations on the specified observations.</p>
+<p>Explore distinct economic hypotheses, invent new ones from observed evidence, and revise
+    promising factors when strategy research exposes a weakness or opportunity. Trend
+    persistence, shock recovery and conditional risk are examples, not a fixed catalog.
+    Investigate different mechanisms and uses rather than only variations of one formula.
+    Give every candidate an ID, formula, units, lookback, availability time, prediction horizon,
+    intended role, direction where applicable, rationale and falsification condition.
+    Parameter variations count as trials, not new mechanisms.
+    Select directions and transformations on training observations only.</p>
+<p>Show every proposed and evaluated factor in the report's factor section, distinguishing
+    pending, blocked and failed evaluations from admitted or rejected research candidates.
+    Readers must see which factors were mined, their formulas and how well each performed.
+    Include a sortable candidate table,
+    time-series IC and RankIC for return-prediction hypotheses, role-appropriate measurements
+    for other uses, and by-horizon/fold results, rolling stability, conditional response curves,
+    coverage and missingness, uncertainty, regime behavior, redundancy clusters and admission
+    reasons. Define metrics before use. A single stock has no daily cross-sectional IC.
+    Show insufficient evidence explicitly instead of inventing confidence or passing a factor.</p>
+<p>The factor library grows with the research. Preserve expressions, parent versions, fitted
+    state, code/data versions and role-specific qualification evidence. Each strategy chooses
+    its own relevant factor versions; sharing is possible but not compulsory. Show which
+    strategies benefited from a factor revision and which did not. Qualification for one use
+    does not imply suitability for every strategy. Rejected versions cannot reappear as
+    eligible simply because a strategy needs them.</p>
+</requirements>
+
+<requirements data-format="html" id="strategies">
+<h2>Strategy mining and the Strategy Atelier</h2>
+<p>Construct executable multi-factor strategy hypotheses with their required factors, and evaluate
+    their returns, risks, costs and factor contributions in the same research round. Readers
+    should be able to trace a strategy back to its factor evidence
+    and understand how signals lead to positions, trades and profit or loss.</p>
+<p>Every formal candidate must combine at least two distinct, meaningfully used factors.
+    Choose the number, roles and interactions for the hypothesis rather than using the same
+    pair everywhere. Single-factor policies are diagnostic controls, not candidate strategies;
+    show them separately and exclude them from candidate counts, the working pool and final selection.
+    Evaluate suitable reduced-factor controls to explain each factor's contribution.
+    Explore multiple distinct trading hypotheses, with their own relevant factors and
+    signal-to-position logic. A common factor set, renamed policy or different position size
+    does not by itself demonstrate diverse strategy discovery.
+    Specify entry, exit, sizing, rebalance timing, neutral states and regime rules. Use the
+    declared long-or-cash execution model. Measure the incremental value of each factor with
+    ablations and compare against cash and holding the same stock. Rank candidates using prospective objectives on chronological rolling windows within train,
+    with risk, costs, uncertainty and complexity considered together.</p>
+<p>List all strategy candidates with their exact factor composition, readable trading rules,
+    actual evaluation state, results and selection/rejection reasons. Show labelled training fit,
+    training rolling-score and final-test evidence together on the same page, with gross/net equity, benchmark
+    comparison, drawdown and recovery, monthly/yearly returns, exposure, turnover, transaction
+    costs, trade distributions and traceable orders. Report CAGR, annualized volatility,
+    Sharpe, Sortino, Calmar, maximum drawdown, trade count, win rate, payoff/profit factor and
+    cost sensitivity with definitions and null states. Include fold/regime results, parameter
+    stability, uncertainty, factor ablations and all unsuccessful candidates.</p>
+<p>Distinguish results on statistical scoring windows from a continuous investment account.
+    For strategies considered for final qualification, show both the strategy and its benchmarks
+    over the full declared calendar as well as the fold results, following study.json. Explain
+    excluded periods, annual resets, model updates and annualization. Identify whether each
+    benchmark holds initial shares or rebalances a target weight; show average exposure and
+    missed upside alongside drawdown protection.</p>
+</requirements>
+
+<constraints data-format="html" id="iteration">
+<h2>Research loop and the final evaluation</h2>
+<p>Design diverse complete strategy hypotheses and the factors each needs, and evaluate them
+    inside train. Choose the initial batch and active pool size from information value,
+    behavioral diversity, available evidence and resource cost. First compare valid core
+    results, costs, activity and behavior; reserve deeper uncertainty and contribution studies
+    for decisions that warrant them. For each retained route, diagnose whether to change its
+    information, factor roles, combination or fitting, holding/exit, or allocation mechanism.</p>
+<p>Research factor combinations and the complete strategy, including conditional relationships
+    and optional training-fitted combinations. Thresholds, weights and holding periods are
+    chosen from train to implement and test a mechanism. Parameter searches do not substitute
+    for fixing an information or policy failure. No fixed model list, trial quota or ratio of
+    structural to parameter experiments is prescribed.</p>
+<p>Turn a retained route's main weakness into a comparison that can distinguish its causes.
+    For example, determine whether sparse participation comes from entry filters, holding time
+    or risk sizing before adding another filter. State what the result would change, and use
+    the measured outcome to retain, revise or park the route. Similar formulas using the same
+    data are not additional information sources.</p>
+<p>Subsequent rounds prioritize useful factor, combination and strategy improvements.
+    Screen new mechanisms when they can resolve a shared limitation or replace a weak route.
+    Preserve failed candidates and exact versions; renamed formulas and parameter-only
+    changes remain trials without increasing mechanism coverage. Controls inherit the actual
+    parent configuration and declare all changes. Verify identical decisions with interventions
+    disabled before attributing a single component's contribution.</p>
+<p>Retain machine-readable results and decisions for every round, with stable candidate,
+    version, evaluation and round identities. A discoverable index links factor definitions,
+    strategy bindings, metrics, comparisons, pool decisions and the next proposed experiments.
+    Keep completed historical records intact. Record planned, dispatched, computed, observed and
+    reviewed work separately. Completion survives missing round summaries; reconcile finished
+    results after workers stop. The report displays these same results and its snapshot date.</p>
+<p>Use two top-level datasets: train for all discovery, fitting, optimization and selection,
+    and test for the frozen final evaluation. Design chronological rolling fit/score windows
+    inside train from data availability and the strategy mechanism, without fixed year or fold
+    counts. Purge unavailable target outcomes from every fit, including combination fitting.
+    Internal rolling scores reused during research remain training evidence.</p>
+<p>The researcher chooses numerical thresholds, horizons, support criteria and statistical
+    methods with training-based reasons. Record each standard before its comparison; changes
+    are new research, not retroactive passes. Freeze the selected factors, complete strategy,
+    fitting policy and interpretation standard before final access. The current historical
+    test has been viewed in earlier project experiments, as disclosed in study.json; reserving
+    it from this run does not make it independent new confirmation.</p>
+<p>The researcher decides when to continue or stop. Continue when a concrete next experiment
+    has worthwhile expected information or improvement value. Completion may follow supported
+    research objectives, or repeated ineffective improvements and low expected value from more
+    work. No fixed return target, candidate count, patience counter or exhaustive search is
+    required. Before final evaluation, justify the selected candidate through its mechanism,
+    factor contributions, robustness, costs and uncertainty against prospective criteria.</p>
+<p>Explain the strongest counterevidence even if only one candidate meets the formal criteria.
+    Separate uncertainty about a fixed selected strategy from uncertainty created by searching
+    and repeatedly using training score windows. A complete trial history is not a correction for that
+    search, and a point pass is not proof of a stable effect. Preserve the prospective criteria for each comparison
+    and distinguish exploratory findings from independent confirmation.</p>
+<p>Choose uncertainty and evidence methods appropriate to the claim, dependence and sample
+    support; this study prescribes no universal IC, correlation or confidence-level gate.
+    Save measured evidence and pass/fail/inconclusive judgments for required criteria before
+    final access. An inconclusive result is not support, and a failed criterion cannot be
+    waived to spend the test attempt.</p>
+<p>Complete the research only with a defensible assessment supported by reproducible evidence:
+    clear mechanisms, diverse investigated alternatives, individual candidate reviews,
+    fold/regime and parameter stability, realistic execution costs, adequate sample support,
+    explicit search effects and an honest interpretation of final-test results. Address
+    counterevidence rather than relying on one attractive statistic. A supported negative
+    or inconclusive finding may close the investigation; explain the scope tested and why
+    further work is not worthwhile, without claiming all useful strategies have been ruled
+    out. If no candidate qualifies, preserve the unexposed test and state why it was not run.
+    Completed research and a supported trading strategy are different outcomes.</p>
+<p>A failed final result may lead to further exploratory work on train.
+    Preserve the frozen result: repeatedly tuning on the exposed test cannot produce fresh
+    confirmation. New confirmatory claims require genuinely unused observations under a
+    prospectively fixed protocol. If time, resources or access prevent useful progress,
+    label the research interrupted or blocked and retain unfinished questions. Each experiment
+    starts independently; its trial history remains intact and known historical test exposure is retained across runs.</p>
+</constraints>
+
+<interface data-format="html" id="experience">
+<h2>A research workbench worth exploring</h2>
+<p>Design a premium analytical interface: disciplined typography, calm surfaces, deliberate
+    spacing, deep-green backgrounds, layered green surfaces, mint emphasis, light text,
+    amber uncertainty and red losses. Use a
+    coherent visual direction and an investigative layout rather than interchangeable KPI cards.</p>
+<p>Use one continuous page for the overview, factor inventory and evidence, strategy inventory
+    and evidence, research decisions and metric definitions. A table of contents may scroll
+    to sections; it must not replace them with another page or a hidden tab. Local sorting,
+    filtering and chart comparisons should preserve the surrounding investigation. All factor
+    and strategy summary rows should be available by default.</p>
+<ul>
+<li>A study overview connects source provenance, the chronological split timeline,
+      research progress and separate engineering/research acceptance states.</li>
+<li>A Factor Observatory lets a visitor filter candidates, compare horizons and folds,
+      inspect a formula and trace selection into a strategy.</li>
+<li>A Strategy Atelier links factor composition, ablations, equity/drawdown charts,
+      trade markers, fold comparisons and a readable, downloadable trade ledger.</li>
+<li>Aligned charts and saved trade/exposure tables explain major drawdowns. Tooltips or
+      optional descriptive filters may aid reading without changing official scores.</li>
+<li>Cost-sensitivity charts compare predeclared, computed scenarios; displayed controls
+      cannot overwrite the accepted result or initiate test optimization.</li>
+<li>An experiment lineage view links hypotheses, rejected trials, versions and artifacts.
+      Show research routes, strategy-specific factor bindings and before/after evidence for
+      factor and strategy refinements, including each shortlisted route's next step or closure.
+      Visitors can download the permitted metric tables, a compact structured analysis summary
+      and a reproducibility manifest.</li>
+<li>Every line or bar chart states its question, axes, units, series, time range, aggregation
+      and sample support. Show baselines, uncertainty where justified, missing values and a
+      readable conclusion. Definitions, charts, tables and downloads must agree.</li>
+<li>The final-test panel stays unavailable until the final evaluation. Test values must
+      not be accessible through other report views or downloads beforehand.</li>
+</ul>
+<p>Provide readable charts, a responsive layout and useful loading, pending and failed states.
+    The report is a visualization of saved JSON results: HTML supplies the page structure and
+    JavaScript loads the data for display. Research analysis consumes the JSON directly and
+    does not depend on browser interaction or reading HTML. Publish a useful integrated
+    snapshot and retain prior report versions; report releases are not research iterations.</p>
+</interface>
+
+<acceptance data-format="html" id="acceptance">
+<h2>Delivery and acceptance evidence</h2>
+<ul>
+<li>A working joint factor/strategy research workflow that can evaluate new hypotheses
+      and revisions on the specified stock and reproduce its conclusions.</li>
+<li>Real data provenance, frozen protocol, factor library, strategy specifications,
+      trial history, deterministic checks and reproducible JSON metrics, with a discoverable
+      versioned index and per-round selection decisions.</li>
+<li>One detailed, continuous report page showing which factors and strategies were explored,
+      what their definitions are and how they performed, including rejected candidates.
+      Both stages remain readable without changing pages or tabs. Displayed metrics and
+      chart values reconcile with exported records, with usable scroll navigation and interactions.</li>
+<li>Explicit research decision and evidence for every quality dimension, supported or unsupported
+      strategy claims, test exposure, counterevidence, remaining investigations, limitations and
+      reproduction instructions. Distinguish completed research from resource interruption.</li>
+</ul>
+<p>This is historical research software. Do not place orders, promise future profit,
+    purchase data subscriptions or claim independent evaluation from self-review.</p>
+</acceptance>
+
+</div>
+
+</body>
+</html>

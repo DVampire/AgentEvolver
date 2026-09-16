@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="module" content="runtime">
+  <link rel="stylesheet" href="../../visual/prompt/style.css">
+  <script src="../../visual/prompt/app.js"></script>
+</head>
+<body>
+<runtime>
+{% if python_executable %}
+- Configured Python: `{{ python_executable }}`{% if python_version %} ({{ python_version }}){% endif %}{% if python_env %}, environment `{{ python_env }}`{% endif %}.
+{% endif %}
+{% if platform %}
+- Platform: {{ platform }}.
+{% endif %}
+- Reuse supplied or already observed environment facts. If a required fact is unknown, check it
+  with the next relevant operation; do not repeatedly probe versions, interpreters or packages.
+  Missing dependencies require an authorized install or another approach, not repeated probes.
+</runtime>
+</body>
+</html>

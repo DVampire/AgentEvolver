@@ -1,0 +1,16 @@
+meta_agent = dict(
+    name = "meta_agent",
+    type = "Agent",
+    description = "Orchestrator that decomposes tasks, dispatches sub-agents concurrently, reacts to results, and evolves capabilities itself — writing, registering and evaluating a component — when one is missing or a sub-agent underperforms.",
+    model_name = "google/gemini-3.1-pro-preview",
+    prompt_name = "meta_agent",
+    memory_name = "file_system_memory",
+    max_step = 50,
+    max_token = 100_000_000,
+    compact_after_steps = 0,
+    compact_body_tokens=0,
+    compact_input_tokens=100000,
+    timeout = 7200,
+    enable_evolving = False,
+    use_memory = True,
+)

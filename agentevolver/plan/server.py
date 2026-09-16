@@ -1,0 +1,471 @@
+"""PlanManagerServer — who is in plan mode, and what an action in plan mode may do.
+
+Two halves that are deliberately kept apart.
+
+The **state** half is a per-run flag. It is small enough to be obvious and is held
+in memory, session-local, like the job registry: plan mode is a stance a person
+takes toward a run in progress, and it means nothing once that run is over.
+
+The **decision** half, :func:`action_is_allowed`, is a pure function over what a
+capability *declared* about itself. It never looks at the capability's name.
+Classifying by name is how the predecessor of ``repeat_tool.py`` went wrong — a name
+is not a behaviour, and a gate acting on a mislabel acts irreversibly. So the rule
+here reads two declared fields and nothing else, and anything that declares neither
+is refused rather than guessed at: in a gate, the unknown case is the one that has
+to be safe.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from typing import Any, Callable, Dict, List, Optional
+
+from agentevolver.capability import MOUNTED_TYPES
+from agentevolver.capability import mounted_type as capability_type_entry
+from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
+from agentevolver.plan.types import PlanMode, PlanState, _now
+from agentevolver.utils import Singleton
+from agentevolver.utils.file_utils import atomic_write_text
+
+#: What the model is told when the gate turns an action away. Carries the way out,
+#: because a refusal that does not say how to stop being refused produces an agent
+#: that retries the same call until its budget is gone.
+PLAN_MODE_NOTICE = (
+    "You are in plan mode: a person has asked to approve your approach before you "
+    "change anything. Keep reading, searching and reasoning — those are unaffected — "
+    "and when you know what you intend to do, call `exit_plan_mode` with the complete "
+    "plan. Nothing that changes state runs until they approve it."
+)
+
+#: Capabilities the gate never turns away, whatever they declare. Each is either the
+#: way out of plan mode, the way to talk to the person holding it, or the way to end
+#: a run — and blocking any of those leaves the agent with no legal move at all.
+ALWAYS_ALLOWED = frozenset({"exit_plan_mode", "ask_user_question", "done_tool"})
+
+#: Capability types whose members can be judged from a ``permission_mode``
+#: declaration. A type absent here — an agent dispatch, a workflow — is refused
+#: outright: its effects are whatever the thing it runs does, and that is not
+#: knowable from a declaration.
+#:
+#: Read off :data:`MOUNTED_TYPES` rather than listed again, because a list here
+#: is a second answer to a question that table already answers — and the way a new
+#: capability type quietly arrives judgeable-by-omission or refused-by-omission
+#: depending on which of the two someone remembered to edit.
+_JUDGEABLE_TYPES = frozenset(entry.type for entry in MOUNTED_TYPES if entry.judgeable)
+
+
+def action_is_allowed(capability_type: str, name: str,
+                      declaration: Optional[Dict[str, Any]]) -> bool:
+    """Whether an action may run while plan mode is active.
+
+    Allowed when the capability declared it does not mutate (``mutates is False``)
+    or that it is ``read_only``. Both are the capability's own claim about itself,
+    written next to the code that knows.
+
+    Refused otherwise, including when there is no declaration to read. A tool with
+    no ``mutates`` field has not said it is safe, it has said nothing — and
+    ``bash_tool`` is exactly that tool. Treating silence as permission would let the
+    one capability that can do anything through the gate that exists to hold it.
+    """
+    if name in ALWAYS_ALLOWED:
+        return True
+    if capability_type == "capability_search":
+        from agentevolver.agent.context.capabilities import SEARCH_NAME
+
+        return name == SEARCH_NAME
+    if capability_type not in _JUDGEABLE_TYPES or not declaration:
+        return False
+    if declaration.get("mutates") is False:
+        return True
+    return declaration.get("permission_mode") == "read_only"
+
+
+async def declaration_of(capability_type: str, name: str) -> Optional[Dict[str, Any]]:
+    """What a capability says about its own effects, or ``None`` if nothing can be read.
+
+    ``None`` covers a type with no registry to ask, a name that is not registered,
+    and a manager that has not been initialized. All three mean the same thing to
+    the gate — nothing was declared — so they are not distinguished here.
+    """
+    entry = capability_type_entry(capability_type)
+    if entry is None or not entry.judgeable:
+        return None
+    try:
+        info = await entry.manager().get_info(name)
+    except Exception as exc:  # noqa: BLE001 — an unreadable declaration is no declaration
+        logger.debug(f"| Plan gate could not read {capability_type} {name!r}: {exc}")
+        return None
+    if info is None:
+        return None
+    return {
+        "mutates": getattr(info, "mutates", None),
+        "permission_mode": getattr(info, "permission_mode", None),
+    }
+
+
+#: Stable instructions; the agent installs these separately from the document.
+AUTO_MODE_NOTICE = (
+    "Keep one plan.md at the exact plan-context path, outside the deliverable. "
+    "For multi-step work, record the goal, constraints/assumptions, approach, steps/status "
+    "and observable acceptance checks before implementation; a single-step task needs no plan. "
+    "Before implementing a change from feedback or a worker report, cite its source, "
+    "separate observations from proposals, address material needs or justify deferrals, "
+    "and name the next action/check. Update completed steps and evidence after meaningful "
+    "work; preserve open commitments. Distinguish implemented, technically verified and "
+    "user-confirmed. Link detailed evidence; workers report results without duplicate plans."
+)
+
+# Trigger and procedure policy lives in evolution_rules; this is its plan record.
+EVOLUTION_PLAN_NOTICE = (
+    "Keep a compact 'Evolution opportunities' section near the top of plan.md, using the "
+    "shared self-evolution rules at planning, feedback and verification boundaries. "
+    "Record each opportunity's stable ID, evidence/cause, concrete consumer, expected "
+    "benefit, existing capability/discovery, bounded baseline and reuse/regression checks, "
+    "status and next action. Track process ID, candidate/registered version, executed "
+    "evaluation, keep/rollback/unload and actual use; keep proposed, running, evaluated, "
+    "adopted and used distinct. Launch qualifying work now; never duplicate active work. "
+    "A deferral needs a concrete dependency/conflict/permission/resource constraint and "
+    "retry condition. Reassess on new evidence and before finishing, preserve unresolved "
+    "entries through compaction, close experiments and link lengthy evidence. No quotas, "
+    "invented gaps or per-step rewrites."
+)
+
+PLAN_BRIEF_MAX_CHARS = 2_000  # Legacy plan.md projection only.
+PLAN_INDEX_MAX_CHARS = 2_000
+
+PLAN_INDEX_NOTICE = (
+    "The shared plan directory defines only index.md and plan.md. Keep index.md as the "
+    "single live summary, at most 2,000 characters total: current objective, progress, "
+    "blockers, next action and links with short summaries/status for important records. "
+    "Keep the detailed plan in plan.md, without duplicating the live summary. "
+    "Choose headings, additional files and subdirectories to suit the task, using relevant "
+    "skills for domain guidance; no extra document types or directory layout are required. "
+    "Read and write at the exact paths supplied by plan-context. A workspace-only patch "
+    "tool cannot reach the sibling plan directory via ../plan; use a file-writing tool "
+    "that supports the plan root (bash_tool in the default setup). "
+    "Use relative Markdown links within this directory. Update the relevant document and "
+    "index entry after meaningful progress, not after each tool call. Keep superseded "
+    "detail on disk instead of growing the live index. Only index.md is projected "
+    "automatically; read linked files before relying on their summaries. Preserve original "
+    "evidence references and distinguish observed results from plans or claims. Runtime "
+    "does not scan documents, generate summaries or verify status claims. The existing "
+    "review gate still applies to document-writing tools."
+)
+
+
+def plan_brief(text: str) -> str:
+    """Project the authored Brief, never an arbitrary excerpt of the full plan.
+
+    Older documents get a heading index and an explicit missing-status notice. This
+    fallback locates details without inventing progress or sending the document body.
+    Fenced examples cannot accidentally supply headings or terminate the Brief.
+    """
+    if not text.strip():
+        return "No plan.md exists yet. Create plan.md for detail and index.md for the Brief."
+    lines = text.splitlines()
+    headings = []
+    fence = ""
+    for index, line in enumerate(lines):
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if marker:
+            value = marker.group(1)
+            if not fence:
+                fence = value
+            elif value[0] == fence[0] and len(value) >= len(fence):
+                fence = ""
+            continue
+        if fence:
+            continue
+        heading = re.match(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$", line)
+        if heading:
+            headings.append((index, len(heading.group(1)), heading.group(2)))
+    brief = next((h for h in headings if h[2].casefold() == "brief"), None)
+    if brief:
+        start, level, _ = brief
+        end = next((i for i, depth, _ in headings if i > start and depth <= level), len(lines))
+        body = "\n".join(lines[start + 1:end]).strip()
+        if not body:
+            body = "Legacy Brief is empty. Read plan.md and author the progress index in index.md."
+    else:
+        body = (
+            "No legacy ## Brief section exists. Progress is not inferred. Read plan.md and add "
+            "a concise progress index to index.md. Document headings (line numbers):\n"
+            + "\n".join(f"- L{i + 1}: {title}" for i, _, title in headings[:20])
+        )
+    if len(body) > PLAN_BRIEF_MAX_CHARS:
+        notice = "\n[Brief truncated; read plan.md for omitted status and move a concise Brief to index.md.]"
+        body = body[:PLAN_BRIEF_MAX_CHARS - len(notice)].rsplit("\n", 1)[0] + notice
+    return body
+
+
+def plan_path(session_id: str = "", *, owner: str = ""):
+    """Where a run's plan lives. One answer, so agent and reader open the same file.
+
+    Both arguments are for asking about a *different* run — a UI listing another
+    session's plan. Omitted, or naming the bound run, `path_manager` answers about this
+    one, overrides included: whether a call is about the current session is its rule to
+    know, not something each caller works out again.
+    """
+    return path_manager.get(P.SESSION_PLAN, owner=owner, session_id=session_id)
+
+
+def read_plan(session_id: str = "", *, owner: str = "") -> str:
+    """The plan as it stands, or empty. Missing is the ordinary case, not an error."""
+    try:
+        path = plan_path(session_id, owner=owner)
+        return path.read_text(encoding="utf-8") if path.is_file() else ""
+    except (OSError, ValueError) as error:                            # noqa: BLE001
+        logger.warning(f"| ⚠️ Could not read plan.md: {error}")
+        return ""
+
+
+def plan_index_path(session_id: str = "", *, owner: str = ""):
+    """Resolve beside the authoritative plan, including session path overrides."""
+    return plan_path(session_id, owner=owner).with_name("index.md")
+
+
+def read_plan_index(session_id: str = "", *, owner: str = "") -> str:
+    """Read only the bounded authored index; never crawl linked documents."""
+    path = plan_index_path(session_id, owner=owner)
+    legacy_fallback = False
+    try:
+        with path.open(encoding="utf-8") as stream:
+            text = stream.read(PLAN_INDEX_MAX_CHARS + 1)
+    except FileNotFoundError:
+        legacy_fallback = True
+        legacy = read_plan(session_id, owner=owner)
+        if not legacy:
+            return "No index.md yet. Create its Brief and document links when planning multi-step work."
+        text = ("Legacy plan.md Brief (index.md is missing). Move this summary into index.md "
+                "at the next meaningful plan update.\n" + plan_brief(legacy))
+    except (OSError, UnicodeError) as error:
+        logger.warning(f"| ⚠️ Could not read document index: {error}")
+        return "Document index is unreadable. Inspect index.md before relying on its contents."
+    if len(text) > PLAN_INDEX_MAX_CHARS:
+        notice = (
+            "\n[Legacy Brief truncated; read plan.md and author a concise index.md.]"
+            if legacy_fallback else
+            "\n[Index truncated; read index.md for remaining entries and shorten its live summary.]"
+        )
+        prefix = text[:PLAN_INDEX_MAX_CHARS - len(notice)]
+        # Never advertise a partially cut Markdown link as an actual locator.
+        text = (prefix.rsplit("\n", 1)[0] if "\n" in prefix else "") + notice
+    return text.strip() or "Document index is empty. Add a concise Brief and links for records worth retaining."
+
+
+def write_plan(text: str, session_id: str = "", *, owner: str = "") -> bool:
+    """Put this run's plan on disk. False if it could not be written.
+
+    Returns rather than raises because every caller is a step that has already
+    succeeded at the thing that mattered — a plan was approved, or the agent revised
+    it — and failing that step over a filesystem error would discard the approval.
+    """
+    try:
+        path = plan_path(session_id, owner=owner)
+        atomic_write_text(path, text)
+        return True
+    except (OSError, ValueError) as error:                            # noqa: BLE001
+        logger.warning(f"| ⚠️ Could not write plan.md: {error}")
+        return False
+
+
+class PlanManagerServer(metaclass=Singleton):
+    """Holds which runs are in plan mode, and what was approved to leave it."""
+
+    def __init__(self) -> None:
+        self._states: Dict[str, PlanState] = {}
+        #: Called with each new state. The gateway subscribes so a UI can follow the
+        #: gate; anything else that needs to know can too.
+        self._listeners: List[Callable[[PlanState], None]] = []
+
+    def _listener_list(self) -> List[Callable[[PlanState], None]]:
+        """The subscriber list, created on demand.
+
+        `Singleton` hands back an instance built before this field existed, so `__init__`
+        does not run again for it and a plain attribute would be missing on exactly the
+        long-lived instance everything shares.
+        """
+        listeners = getattr(self, "_listeners", None)
+        if listeners is None:
+            listeners = []
+            self._listeners = listeners
+        return listeners
+
+    def subscribe(self, listener: Callable[[PlanState], None]) -> None:
+        """Hear about every plan-state change, whoever made it."""
+        self._listener_list().append(listener)
+
+    def unsubscribe(self, listener: Callable[[PlanState], None]) -> None:
+        listeners = self._listener_list()
+        if listener in listeners:
+            listeners.remove(listener)
+
+    def _announce(self, state: PlanState) -> None:
+        """Tell every listener the gate moved.
+
+        Announcing here rather than at the call sites is the point. Only the gateway's
+        own `plan.set` used to publish, so a plan the *agent* got approved through
+        `exit_plan_mode` opened the gate silently — the person had just approved it and
+        the bar still read "plan mode on". A state that changes without saying so is a
+        UI that lies, and the way to stop that recurring is to make the transition
+        responsible for it instead of each caller remembering.
+
+        A listener that raises must not stop the transition: the gate has already moved,
+        and refusing to finish because a subscriber failed would leave the caller
+        believing it had not.
+        """
+        for listener in tuple(self._listener_list()):
+            try:
+                listener(state)
+            except Exception as error:                              # noqa: BLE001
+                logger.warning(f"| ⚠️ Plan listener failed: {error}")
+
+    def state(self, session_id: str) -> PlanState:
+        """This run's plan state. A run nobody put in plan mode is not in it."""
+        return self._states.get(session_id) or PlanState(session_id=session_id)
+
+    def active(self, session_id: str) -> bool:
+        """Whether the gate is shut. Only ever true under `PlanMode.PLAN`."""
+        return self.state(session_id).active
+
+    def mode(self, session_id: str) -> PlanMode:
+        """Which stance this run is under. `AUTO` for a run nobody has set."""
+        return self.state(session_id).mode
+
+    def context(
+        self, session_id: str, *, enabled: bool = False, evolution_enabled: bool = False,
+        include_rules: bool = True,
+    ) -> str:
+        """Read the current task index for the live layer, outside foldable history.
+
+        Coordinators opt in to automatic planning. A worker gets no automatic plan
+        obligation; an explicitly active review gate still explains its way out.
+        Read from disk on every call so edits and feedback-driven revisions are visible
+        after history compaction as well as on the next ordinary step.
+        """
+        from html import escape
+
+        state = self.state(session_id)
+        if state.mode is PlanMode.OFF or (not enabled and not state.active):
+            return ""
+        path = plan_path(session_id)
+        index_path = plan_index_path(session_id)
+        documents = read_plan_index(session_id)
+        notice = PLAN_MODE_NOTICE if state.active else ""
+        if include_rules:
+            notice += "\n" + self.instructions(enabled=enabled, evolution_enabled=evolution_enabled)
+        if os.environ.get("AGENTEVOLVER_EXEC_CONTAINER", "").strip():
+            notice += (
+                "\nThis is an agent-side file, not mounted in the task shell. "
+                "Use read_file_tool/write_file_tool at this exact path for the plan; "
+                "use bash_tool for the peer repository."
+            )
+        notice += "\nProgress and document summaries only. Read linked files for details; document links resolve from the plan directory."
+        return (
+            f'<plan-context mode="{state.mode.value}" '
+            f'active="{str(state.active).lower()}" path="{escape(str(path), quote=True)}">\n'
+            f"{notice}\n\n"
+            f'<plan-index path="{escape(str(index_path), quote=True)}" '
+            f'root="{escape(str(path.parent), quote=True)}">\n'
+            f"{escape(documents)}\n</plan-index>\n</plan-context>"
+        )
+
+    @staticmethod
+    def instructions(*, enabled: bool = False, evolution_enabled: bool = False) -> str:
+        """Stable planning obligations, independent of the mutable plan document."""
+        if not enabled:
+            return ""
+        body = AUTO_MODE_NOTICE + "\n\n" + PLAN_INDEX_NOTICE
+        if evolution_enabled:
+            body += "\n\n" + EVOLUTION_PLAN_NOTICE
+        return '<planning-rules>\nWhen plan-context is active, follow these rules.\n' + body + '\n</planning-rules>'
+
+    def set_mode(self, session_id: str, mode: PlanMode) -> PlanState:
+        """Move a run between stances.
+
+        `PLAN` shuts the gate through `enter`, so that transition has one implementation
+        rather than two that can drift. `OFF` and `AUTO` both open it: leaving plan mode
+        by changing the mode is not an approval, and `approved_plan` is cleared so
+        nothing downstream can read a mode change as consent.
+        """
+        if mode is PlanMode.PLAN:
+            return self.enter(session_id)
+        state = self.state(session_id)
+        state.mode = mode
+        state.active = False
+        state.approved_plan = ""
+        self._states[session_id] = state
+        logger.info(f"| 📋 Plan mode for {session_id}: {mode.value}")
+        self._announce(state)
+        return state
+
+    def enter(self, session_id: str) -> PlanState:
+        """Close the gate on a run.
+
+        Any previous approval is cleared. Re-entering plan mode is a person saying
+        they want to approve the *next* thing, and carrying the last plan forward
+        would let a second round of work inherit consent given for the first.
+        """
+        state = PlanState(session_id=session_id, mode=PlanMode.PLAN,
+                          active=True, entered_at=_now())
+        self._states[session_id] = state
+        logger.info(f"| 📋 Plan mode on for {session_id}")
+        self._announce(state)
+        return state
+
+    def approve(self, session_id: str, plan: str) -> PlanState:
+        """Open the gate, recording the plan a person agreed to."""
+        state = self.state(session_id)
+        state.active = False
+        state.approved_plan = plan
+        state.approved_at = _now()
+        self._states[session_id] = state
+        # To disk as well as to the field. Under `PLAN` the gate refuses
+        # `write_file_tool`, so the agent cannot put its own plan on disk — the approval
+        # is the only moment it can happen, and a plan the person approved and then
+        # could not re-read is a review that left no record.
+        write_plan(plan, session_id)
+        logger.info(f"| 📋 Plan approved for {session_id} ({len(plan)} chars)")
+        self._announce(state)
+        return state
+
+    def leave(self, session_id: str) -> PlanState:
+        """Open the gate without an approval — the person called it off.
+
+        Distinct from :meth:`approve` because ``approved_plan`` stays empty: nothing
+        downstream should be able to read a cancelled plan mode as an agreed plan.
+
+        Lands in `AUTO` rather than `OFF`. Calling off a review is a person saying they
+        do not need to approve *this*, which is not the same as saying they want no plan
+        at all — and `AUTO` is what the run would have been in had nobody touched it.
+        """
+        state = self.state(session_id)
+        state.mode = PlanMode.AUTO
+        state.active = False
+        self._states[session_id] = state
+        logger.info(f"| 📋 Plan mode off for {session_id}")
+        self._announce(state)
+        return state
+
+    def forget(self, session_id: str) -> None:
+        self._states.pop(session_id, None)
+
+
+plan_manager = PlanManagerServer()
+
+__all__ = [
+    "AUTO_MODE_NOTICE",
+    "PlanManagerServer",
+    "plan_path",
+    "read_plan",
+    "plan_index_path",
+    "read_plan_index",
+    "write_plan",
+    "plan_manager",
+    "action_is_allowed",
+    "declaration_of",
+    "PLAN_MODE_NOTICE",
+    "ALWAYS_ALLOWED",
+]

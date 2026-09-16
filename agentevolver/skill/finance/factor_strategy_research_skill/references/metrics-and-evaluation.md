@@ -1,0 +1,534 @@
+# Metrics and evaluation contract
+
+Read this with the [research workflow](research-workflow.md#protocol-and-chronology) before implementing either
+environment or inspecting candidate performance. It defines the numerical and diagnostic
+contract; [reports.md](reports.md) defines its presentation. The supplied study owns dates,
+budgets and explicit user constraints. The agent chooses research thresholds and evidence
+methods from train with reasons. The conventions below define calculations, not universal
+acceptance values. Version choices before their comparisons and never change a denominator,
+window or benchmark to rescue an existing result. These instructions are a specification to implement and verify, not a built-in engine.
+
+Sections: [shared contract](#one-contract-reproducible-results),
+[objectives and comparisons](#prospective-objectives-and-comparisons),
+[factor definitions and diagnostics](#factor-identity-what-was-actually-mined),
+[strategy rules and performance](#strategy-identity-what-is-being-traded),
+[iteration decisions](#evaluation-drives-the-next-experiment),
+[numerical checks](#numerical-acceptance-before-market-interpretation).
+
+## One contract, reproducible results
+
+Persist a versioned metric contract with IDs, formulas, units, valid input conditions,
+sampling frequency, aggregation, null reasons and numerical tolerances. Both environments
+export computed results using it; the report renders those results without independently
+reimplementing financial formulas. Include the contract hash in result and cache identities.
+Every official score binds the candidate/version, fitted state, data, engine, split/fold,
+scored interval and cost scenario. Display rounding never determines a gate or a ranking.
+
+Store fractional returns/coverage/drawdown as decimals (0.12 = 12%), correlations and
+ratios as unitless values, costs as currency and/or explicitly named basis points
+(1 bp = 0.0001), dates as exchange sessions, and durations as trading sessions. Distinguish
+percent changes from percentage-point differences. JSON contains finite numbers or null,
+never NaN/Infinity, a fabricated zero, or strings in numeric fields.
+
+Every metric includes status and a reason when not measured: pending, blocked, error,
+insufficient_sample, undefined or sealed. A measured value can separately pass or fail a
+criterion. A valid zero is different from an unavailable value. Report the requested,
+eligible, observed and actually scored counts, exclusions and date ranges. Missing required
+market observations fail data readiness; they are not silent zero-return days.
+
+Gate records contain criterion ID, metric ID/result ID, scope, value, operator, threshold,
+verdict and explanation. Preserve every failed gate. Undefined required evidence yields
+an inconclusive gate; any failed gate prevents passing, as does any inconclusive required gate.
+An operational error or pending source check is not an evaluated market hypothesis.
+
+## Prospective objectives and comparisons
+
+Before scoring, connect each strategy's `design.objective` to a protocol-defined claim:
+the benefit, baseline, primary metric/utility, its coefficients and allowed return/risk/cost
+tradeoffs. Follow supplied requirements; fill unspecified choices with a reasoned research
+design. Do not silently give every mechanism one scalar utility, risk-aversion coefficient
+or trade-count threshold just because the pilot used it.
+
+Return enhancement, downside protection and trading efficiency are possible distinct claims.
+A defensive claim states the return sacrifice it allows; a return claim still measures
+drawdown and costs. Compare within the declared claim and retain useful nondominated
+tradeoffs in the exploratory pool (no peer better on every named dimension). This is not
+an eligibility waiver. Declare any cross-claim final-selection policy before scoring
+candidates; respect the study's final-test budget and never select by test performance.
+
+Keep the required cash/hold benchmarks. Before qualifying a risk or timing claim, compare a
+simple exposure/risk-controlled hold allocation when reduced investment is a plausible
+explanation of the benefit. Fix its sizing on training or prospectively in the protocol,
+with matched dates and costs; never fit benchmark exposure to the candidate's realized
+training score path. Name constant daily target rebalancing separately from buying an initial
+allocation and holding its shares. Report missed upside and avoided losses by fold/regime;
+low drawdown alone cannot distinguish timing skill from low exposure. The control cannot
+replace the required benchmark or make a failed original objective pass. It need not precede
+broad screening or become another full control matrix.
+
+## Multi-factor strategy and contribution scope
+
+Use the workflow's [evaluation depths](research-workflow.md#staged-evaluation-and-route-scheduling).
+Numerical correctness and causal data boundaries apply at every depth. Broad screening can
+omit expensive resampling and contribution matrices, with those checks explicitly pending;
+point metrics alone never establish final eligibility. Add uncertainty when it can resolve
+a selection/iteration decision, and complete the frozen required checks before submission.
+
+Formal strategies combine multiple distinct factors, with open roles and combination methods.
+Assess the joint policy as well as its inputs: a high marginal IC does not establish incremental
+value and a low marginal IC does not rule out a useful state filter or interaction. Declare
+the role and its evaluation target before inspecting results; apply the role-specific rules below.
+
+Measure full-policy results on common chronological windows inside train first. For promising routes,
+compare useful remove/replace/neutralize-factor controls and, where relevant, interaction or
+combination-rule alternatives under matched fitting, costs and scored dates. Distinguish a
+fixed-policy input intervention from a refitted reduced model; label which question each asks.
+An input intervention diagnoses the unchanged policy; it is not a tested optimized policy.
+When its answer identifies an edit, evaluate that revised candidate next. Avoid testing
+every input of every rejected route just to complete a matrix. Inspect the saved signal and
+position traces first; zero activity or an obvious unreachable condition may already explain
+the failure. Use one targeted control where needed to disambiguate, then revise or park.
+Before attribution, verify the [exact parent settings and no-intervention parity](experiment-integrity.md#exact-parent-and-intervention)
+through the actual comparison code. All changed parameters, bindings, fitting and code belong
+in its receipt. Joint changes are allowed, but not interpreted as an isolated factor effect.
+Save factor availability/variation, actual executed input IDs, paired objective/risk/cost deltas
+and their uncertainty. Inspect redundancy and inactive branches; a listed factor with no use
+or an identical/affine copy is not evidence of a multi-factor mechanism. Redesign or qualify
+the conclusion when contribution is unsupported; never invent a positive effect.
+
+Archive reduced policies as ablations with control_for pointing to the full candidate. They
+may contain one, several or zero factors; cash/buy-and-hold are benchmarks. Controls do not
+enter the candidate pool or become the selected submission. If a reduction motivates a
+useful strategy revision, register a separate candidate version with parent/control lineage,
+an executable definition and a prospective comparison; fit only on training and reevaluate
+its exact bindings and contribution evidence. Do not transfer the control's qualification or
+count this as a new mechanism. A reduced multi-factor candidate can qualify normally; a
+single-factor reduction remains ineligible where the study requires multiple factors.
+Preserve its economic evidence without padding it with a noncontributing second factor.
+Role/binding validation checks structure; executed contribution tests establish actual use.
+
+### Executed opportunity diagnostics
+
+For shortlisted event-entry policies, connect the forecast to the actual trade condition.
+Use the saved signal/order/position traces to compare unconditional factor evidence with
+returns following the frozen entry condition, at the policy's actual holding and exit rule.
+Report trigger counts, distinct inventory episodes, conditional net payoff, downside tails,
+holding duration and maximum invested weight by the already declared folds/regimes. Average
+exposure can hide full-capital event bets. Renewals and overlapping windows are dependent,
+not additional independent trades; use the declared dependence-aware uncertainty method.
+
+When positive marginal IC does not translate into conditional net payoff, distinguish entry
+selection, score combination and exit/sizing with a targeted train-defined control. Use that
+answer to choose the next revision; another threshold sweep is not evidence of a new source
+of predictability. Show exceptional-episode concentration when material, but ex-post deletion
+of winning trades is a sensitivity diagnostic, not an executable alternative or a universal
+top-k rejection gate. A concentration concern needs a stated consequence for the claim and
+readiness, not just a warning paragraph.
+
+## Factor identity: what was actually mined?
+
+Keep every candidate/version, including rejected ones. A row records:
+
+- ID, parent versions, hypothesis family, short name, economic hypothesis and falsification condition.
+- Declared role, target metric/label, qualification scope and exact consuming strategy versions.
+- Exact executable expression and readable formula; input fields/adjustment basis, units,
+  lookback, warm-up, availability time and fitted transformations.
+- Training-selected direction where meaningful, primary target horizon, secondary diagnostic horizons,
+  fitted-state IDs by fold and the predeclared refit policy.
+- Trial/result IDs, actual execution state and eligibility decision with failed criteria.
+- Consuming strategy IDs and exact factor versions; never bind a strategy to an unnamed
+  latest factor. A proposed formula is not an evaluated or admitted factor.
+
+Use separate execution states (proposed, running, evaluated, error, blocked) and selection
+states (pending, admitted, rejected, inconclusive). Show both. An engineering fixture must
+carry a synthetic scope and cannot appear in the real-data candidate leaderboard.
+
+### Roles and qualification scope
+
+Use `return_prediction` for directional-return hypotheses. Other role labels are open to
+the researcher, subject to explicit study constraints. Before scoring a new claim, declare
+individual, conditional or group scope, target availability/horizon, utility or loss, reference,
+support/uncertainty method and decision criteria with a training-based justification. Numeric
+cutoffs are optional research choices; do not invent a universal standalone-IC requirement.
+Additional metrics do not change an already evaluated candidate's claim.
+
+Examples below clarify evaluation choices, not a mandatory factor/strategy catalog:
+
+| Intended use | Factor evidence | Consumer evidence |
+| --- | --- | --- |
+| Predict return direction/magnitude | IC/RankIC, coverage, window/horizon stability and redundancy under the declared evidence standard. | Executable baseline and incremental net benefit with the route's trading rules. |
+| Estimate future risk | Compare a causal risk estimate with realized future variation on declared next-open horizons. For variance forecasts, QLIKE = mean(log(v_hat) + realized_variance / v_hat), with positive v_hat and a numerical floor selected on training only; compare to a training-fitted risk baseline. | Paired risk-sizing ablation; predeclare risk utility and return/cost guardrails. Lower forecast loss alone is not strategy qualification. |
+| Identify a conditional state | Predeclare the future outcome that makes the state useful. For a binary event, Brier = mean((predicted_probability - event_indicator)^2), with train-fitted probability baseline; or define conditional effects and support for every state. | Compare the same policy with and without conditioning; count inactive sessions and assess missed gains as well as avoided losses. |
+| Improve trading efficiency | Causal estimate of a declared future cost/turnover-relevant outcome with a specified baseline. Daily OHLCV cannot certify intraday spreads or fills. | Paired net/stressed performance, traded notional and missed-opportunity comparison under unchanged execution assumptions. |
+
+Use coverage and non-overlapping support on each role's declared label intervals; categorical
+states need per-state counts and undefined states cannot pass. Compute future labels only
+for scoring, never as factor inputs. Report incompatible diagnostics as `not_applicable`
+with a reason and show the relevant measured role evidence rather than an all-null table.
+
+For role admission, evaluate the actual claim and its exact consumer. Individual forecast
+claims require their forecast comparison; a conditional/group claim can instead be qualified
+by its declared interaction or conditional evidence, without a standalone predictive pass. Keep three decisions separate: role evidence, contribution to this
+consumer, and whole-strategy eligibility. Define improvement as baseline loss minus candidate
+loss, or candidate benefit minus baseline. Factor forecast-loss improvement and strategy
+utility are different quantities; name both and show their raw values and paired uncertainty.
+Apply the prospectively chosen evidence standard and any explicit study guardrails in their
+declared scope. High correlation does not automatically mean uselessness; low correlation
+does not establish complementarity. Assess residual information, behavior and complexity. A risk benefit may trade return for protection only within
+prospectively allowed limits; neither demand improvement in every metric nor change the
+utility after a failure. An incomplete comparison means pending, not admitted.
+
+To avoid circular admission, an unqualified supporting factor can be used in an explicitly
+exploratory consumer comparison. Eligibility requires support for the declared individual/conditional/group claim and the
+consumer, not an automatic conjunction of standalone directional-factor passes. Scope that qualification to the exact factor/strategy versions,
+bindings and fitted policy. Record the admission receipt separately from the candidate's
+implementation hash, so issuing a receipt does not change the compared strategy. A new
+consumer needs a new check; a changed factor does not inherit its parent's qualification.
+
+For joint candidates, weak marginal IC does not by itself establish that every conditional
+or multi-factor use is useless. Declare a conditional state, interaction/group construction,
+label and comparison policy before scoring that hypothesis. Fit any states, weights and
+cutpoints on training only; report conditional support, inactive/opportunity costs and
+matched consumer ablations. Record a joint claim against the exact group and consumer; context inputs need not each
+become independently predictive factors. A composite predictive expression can also be a
+separately versioned factor with its own prospective evidence standard. Preserve failed constituent claims; do not retroactively
+admit them, change roles, or let a profitable aggregate override missing qualification.
+Keep exploration open through research-only consumers while that evidence is pending.
+Preserve promising interactions in the exploratory pool when the study permits further
+research. Do not use the final role-admission conjunction as a prerequisite for creating
+their next versions, or relabel an old failed role after seeing consumer gains.
+
+### Labels, samples and causality
+
+For a daily factor x_t available after close t, the default h-session label enters at
+open t+1 and exits at open t+1+h. Compute the total return of a unit investment using
+the same split/dividend convention as the portfolio engine. Without actions it is
+open[t+1+h] / open[t+1] - 1. This is a gross predictive label, not a net trading strategy.
+Store both endpoints. Do not use close_t to open_t returns or let label endpoints cross
+the scored fold boundary. Available past bars may warm up features without becoming scores.
+
+Relate the primary label to the consumer's expected holding/decision mechanism before
+fitting direction or horizon. Different horizons can serve different roles, but admission
+at one horizon does not establish value at another. For a shortlisted mismatch, inspect the
+fixed diagnostic horizon grid and actual holding distribution, then choose a matched policy
+comparison if it can change the decision. Preserve same-horizon diagnostics alongside a
+refitted primary horizon so a changing measurement target is not mistaken for improvement.
+Treat a training-selected reversal of the economic story as a hypothesis to explain and
+test; do not silently replace the rationale while retaining its claim.
+
+Define eligible signal dates from the requested exchange calendar, lawful warm-up and
+label-boundary exclusions, before looking at candidate values. Missing prices/features
+inside that calendar remain missing in coverage counts. Report factor availability,
+label availability and valid paired observations separately; never improve coverage by
+dropping a candidate's failed values from the denominator.
+
+Default factor coverage is finite factor values / eligible signal dates. Also report
+paired coverage = finite factor-and-label pairs / eligible dates. A data-quality failure
+cannot pass admission on factor coverage alone. Show each fold and pooled counts; pooled
+coverage is the ratio of summed counts, not the average of differently sized folds.
+
+### Factor metrics
+
+| Metric ID | Definition and interpretation |
+| --- | --- |
+| `ic` | Pearson correlation of x_t and its h-session label across aligned dates within one stock/fold. Center both vectors and divide their dot product by their centered norms. |
+| `rank_ic` | Pearson correlation of the average-tie ranks of x and its label (Spearman). Report raw and training-oriented values; oriented IC/RankIC uses the direction fitted on the allowed training window. Never take an absolute IC as evidence of a usable direction. |
+| `primary_rolling_rank_ic` | Equal-weight mean of the specified training score windows' oriented RankIC at the training-selected primary horizon/policy. Require finite evidence in every fold; no skipping a bad/undefined fold. Also show pooled RankIC, explicitly labelled as a different statistic. |
+| `positive_rolling_windows` | Number of specified folds with oriented primary RankIC strictly greater than zero, with the total expected fold count alongside it. A zero/undefined fold is not positive. |
+| `nonoverlapping_label_count` | Within each fold and fixed horizon, start at the first eligible label, retain the next eligible interval whose entry is at or after the previous retained exit, and continue chronologically. Count valid retained pairs without shifting the anchor to improve results. Sum counts across folds; also show each fold. This is a sample-count diagnostic, not proof of independence or a computed effective sample size. |
+| `rolling_rank_ic` | Same oriented correlation in a trailing window of signal dates, labelled by the latest label exit/availability date. Choose and explain the window and support from training dependence, horizon and data availability; never span fold boundaries or plot it as information known at the earlier signal date. Null where support is insufficient. |
+| `quantile_response` | Mean gross h-session label in each bin of training-fitted factor cutpoints with an agent-chosen binning justified by support, plus median, pair count and uncertainty. Quantile labels run from low to high expected return. Keep duplicate cutpoints/empty bins visible; do not force ties into fake equal-size groups. |
+| `top_minus_bottom_response` | Top-bin mean label minus bottom-bin mean label, in return percentage points. This describes conditional outcomes, not an executable long-short return, Sharpe or compounded PnL. |
+| `max_abs_factor_correlation` | Maximum absolute Spearman correlation with another retained factor on aligned training score factor values, without future labels in the alignment rule. Report pair counts and the matrix. Freeze the correlation method if the study specifies another one. Undefined redundancy cannot certify complementarity. |
+
+For IC, fewer than two finite pairs, constant inputs or a numerically degenerate denominator
+yield null with a reason. The study's minimum evidence can be stricter. Preserve per-fold
+direction and horizon if the predeclared policy refits them using expanding past-only data;
+the primary score then evaluates that policy, not the best horizon selected after inspecting training scores.
+Report the same fixed diagnostic horizon grid for candidates; inspecting an extra horizon
+to change selection consumes a new recorded training selection decision within the study budget.
+
+Use these metrics as evidence for the declared claim. The agent may set justified numeric
+criteria for coverage, stability, support or redundancy before comparison; the method does
+not prescribe universal values or a fixed number of positive windows. Show undefined windows
+and denominators rather than skipping them. Compare co-consumed inputs separately from
+alternative versions being considered for replacement. An empty peer set has no pairwise
+evidence; an undefined correlation cannot establish complementarity. Preserve failed
+individual claims even when a separately evaluated conditional/group use is supported.
+
+### Uncertainty and robustness
+
+Report paired sample counts, non-overlapping counts, fold dispersion and fit/rolling-score
+degradation before making a confidence claim. Overlapping labels are dependent. Choose an uncertainty method appropriate to dependence, the estimand and available training
+support. A time-series block bootstrap is one option, not a mandatory universal method.
+When used, predeclare block selection, seed, repetitions, confidence level and support;
+justify block lengths from dependence and outcome overlap and assess sensitivity. Record
+the method's assumptions and limitations, including fitting/selection conditioned on. For a block-based method, insufficient blocks means unavailable
+uncertainty. Independent-row resampling and default correlation p-values are not sufficient
+for these overlapping financial labels. A percentile interval is not automatically a valid
+null-hypothesis p-value or a multiple-testing correction.
+
+Show performance by past-only-defined regime and each declared rolling window, including counts and
+failed hypotheses. Freeze regime thresholds on training data. Track all tested formulas,
+parameters, horizon/direction choices and training score observations. Do not infer discovery
+confidence from the best of many trials. Only publish adjusted significance, effective sample
+size or Deflated Sharpe when the method and its inputs have been numerically verified.
+
+State what each interval conditions on: a fixed candidate, fitted states and observed
+folds, or an explicitly repeated fitting/selection procedure. A fixed-candidate block
+bootstrap does not account for the search that selected it. Trials and related versions
+are not independent experiments; recording their count is not a selection correction.
+At qualification, review uncertainty for the core factors and their incremental effects,
+not just the whole portfolio. A point pass with a wide interval is weak evidence, not a
+new automatic failure: apply the frozen criteria and explain its effect on the decision.
+Do not retrospectively tighten thresholds or require every exploratory factor to pass a CI gate.
+
+When independent evaluation of the search process is warranted and data permits, predeclare
+outer chronological evaluation with candidate generation/selection restricted to inner data.
+The researcher as well as the numerical fitter must not use outer outcomes before locking
+that fold's selection. Merely adding folds after inspecting all years is not independent
+validation. Otherwise label reused training scores as exploratory and preserve the genuinely
+unexposed confirmation boundary; more resampling cannot manufacture new observations.
+
+## Strategy identity: what is being traded?
+
+Use the [strategy definition archive](research-workflow.md#strategy-definition-archive) for
+the required name, description, full design, version and change metadata. Validate and pin
+that spec before evaluating; keep numerical results and selection state separately.
+For every strategy/version show hypothesis family, parent IDs, factor IDs/roles and exact
+expressions, qualification receipts, combination/weights, fitted
+parameters, entry and exit conditions, target size, rebalance schedule, missing/neutral
+signal behavior, regime/risk rules, next-open execution and costs. Supply readable pseudocode
+that explains how a dated factor observation becomes a target, order, fill and realized PnL.
+An opaque strategy name or factor-weight list alone is insufficient.
+
+Include cash, matched buy-and-hold and suitable single-factor controls alongside joint
+candidates. Controls support attribution; a completed global single-factor screening stage
+is not a prerequisite for exploratory combinations.
+Keep strategy-specific factor sets and compare each shortlisted route with its own parent
+and the shared benchmarks, not only the global leader. Use [joint exploration](research-workflow.md#joint-exploration)
+to allocate factor revisions, strategy revisions and new mechanisms.
+List all tried strategies, eligibility and reasons, not only the winning curve. Label the
+train-selected version independently from whether final test passed. Test contains only
+the frozen strategy, selected factor diagnostics and predeclared benchmark/cost scenarios.
+
+### Portfolio accounting and scope
+
+The default daily strategy is long-or-cash without leverage/shorts. A completed close's
+signal can first trade at the next tradable open; daily OHLC alone cannot establish intrabar
+stop execution. Freeze dividend entitlement/payment timing. If exact payment records are
+unavailable, declare and verify a consistent total-return convention and its approximations;
+never credit both adjusted-price returns and separate dividend cash.
+
+Let E_0 be initial capital and E_t the reconciled marked equity after session t, with the
+declared terminal liquidation included in the final value. Use cash plus shares times raw
+mark prices, explicit actions, cash accrual, fees and adverse slippage. Daily r_t = E_t/E_(t-1)-1.
+Zero-position days remain in the calendar with their actual cash return. An order/mark failure
+does not shorten the scored interval. For Signal Foundry, K = 252 scored sessions/year and
+cash/Sharpe reference rates come from study.json, rather than hidden engine defaults.
+
+Those explicit action rules apply to verified raw-price accounting. When the study authorizes
+the documented adjusted-price proxy, use consistently adjusted OHLC for fills and marks,
+fractional proxy units, and zero additional split/dividend credits. Preserve original action
+records for provenance only. Freeze this accounting mode in result/cache identities and
+label its performance as proxy research, with strict data qualification reported separately.
+The same return/risk formulas, chronology, costs and statistical gates still apply.
+
+For a reference open p, slippage fraction s and commission fraction c, the default buy
+fill is p*(1+s) and sell fill is p*(1-s). Commission is c*abs(shares_traded)*fill_price;
+debit buys and credit sells after commission. Enforce affordability including fees and
+freeze fractional-share/lot rounding. Slippage cost is abs(fill_price-p)*abs(shares_traded),
+already embedded in cash accounting. Apply splits before that session's trading; dividend
+entitlement and cash timing follow the explicit action convention. Predetermine the final
+liquidation timestamp; a final close signal cannot cause a retroactive fill at that day's open.
+
+Evaluate each training fit, rolling-score window and final-test scope with explicit initial holdings/capital,
+first executable open and terminal mark/fill. The default fold replay starts flat and
+liquidates at its declared end. Pooled training score metrics concatenate the non-overlapping
+daily fold return vectors in order, including each fold's entry/liquidation costs, and
+wealth-chain those returns from a common initial value. Do not concatenate absolute currency
+equities from reset accounts, average fold Sharpes into pooled Sharpe, or include warm-up/gap
+days as artificial zero returns. Label the pooled series as a fold-reset composite with its
+gaps and scored-session annualization. Display the individual folds as well.
+
+A fold-reset composite is not continuous buy-and-hold or a continuous investment account.
+Before scoring, separately declare the trading calendar, fit/label eligibility, refit
+effective dates, account/state resets and which scope each objective uses. A statistical
+exclusion does not by itself prescribe closing positions or omitting market returns.
+Honor the study's full gap and label purging in every path: a continuous account may need
+an earlier fit cutoff or the previous eligible model until the next refit becomes available.
+Never apply a later fitted model backward to fill an excluded interval.
+
+When the study requests a full-calendar comparison, implement it before qualification for
+the shortlisted candidate and its matched benchmarks. Carry actual capital, positions and
+policy state under the prospectively declared update rule, record actual cash days, and
+liquidate only at its declared terminal boundary. Do not manufacture the curve by inserting
+zeros into a fold composite. Report both scopes with their actual dates, elapsed duration,
+scored-session counts and separately named annualizations. Summarize excluded windows and
+their observed benchmark returns; use them to explain scope sensitivity, not to move the
+windows after seeing results. A favorable secondary scope cannot override failed primary
+criteria. Predeclare any such final-test scenarios before the single frozen evaluation.
+
+The gross comparison is a separate zero-commission/zero-slippage replay of the same frozen
+signal and sizing policy. Its positions can differ when costs affect affordable sizing or
+risk rules; identify this convention. Gross minus net terminal equity is not necessarily
+the cash sum of fees. Export actual commissions and adverse slippage relative to reference
+execution prices from the net ledger separately. Stress scenarios rerun the fixed policy
+with the prescribed cost multiplier and no refitting.
+
+### Strategy metrics
+
+Here N is the number of scored daily returns, std uses sample ddof=1, rf_t is the daily
+Sharpe reference, and d_t = r_t-rf_t. Convert a specified effective annual reference Rf to
+(1+Rf)^(1/K)-1 per session. Use the same reference for all compared strategies and benchmarks.
+
+| Metric ID | Formula / convention |
+| --- | --- |
+| `net_total_return` | E_N/E_0 - 1, equivalently product(1+r_t)-1. |
+| `net_cagr` | (E_N/E_0)^(K/N)-1; scored-session annualization, explicitly labelled. It is not arithmetic mean return times K. |
+| `annualized_volatility` | std(r, ddof=1) * sqrt(K). |
+| `net_sharpe` | mean(d) / std(d, ddof=1) * sqrt(K). Report daily inputs/counts; conventional square-root annualization does not remove serial dependence. |
+| `sortino` | sqrt(K) * mean(r-m) / sqrt(mean(min(r-m, 0)^2)), with daily minimum acceptable return m explicitly frozen (default: rf). The downside mean includes all N sessions, not just losing days. |
+| `drawdown` / `max_drawdown` | D_t = E_t / max(E_0,...,E_t)-1. Plot D_t at or below zero; the gate uses positive max_drawdown = -min(D_t). |
+| `calmar` | net_cagr / max_drawdown using the same scope and the positive loss denominator. |
+| `recovery_sessions` | Sessions from an equity peak to the first return to that peak; also show peak-to-trough and trough-to-recovery. An ongoing drawdown is unrecovered with elapsed duration, not a fabricated recovery date. |
+| `monthly_return` / `yearly_return` | product(1+r_t)-1 inside each calendar bucket. Label partial periods and fold boundaries; never sum daily percentages or stitch train/test into one claimed OOS history. |
+| `exposure` | Actual marked stock value / total marked equity. Report daily series, mean, maximum and invested-session fraction; distinguish actual weights from the previous-close decision target. |
+| `turnover` | Daily sum of absolute reference-price traded notionals / equity immediately before that session's trading; show cumulative and K/N annualized turnover. Buying 100% then selling 100% counts about 2, not 1; use the actual changing equity denominator. Splits are not trades. |
+| `commission_cost` / `slippage_cost` | Sum actual commission currency and adverse fill-versus-reference price difference times absolute shares, respectively. Show currency and basis points of initial capital, plus each period/order. Do not subtract slippage twice when it is embedded in fills. |
+| `completed_round_trips` | Count flat-to-positive-to-flat inventory episodes. Adds/partial reductions are fills in the same episode; a still-open episode is not completed. Terminal liquidation closes an episode when required. |
+| `win_rate` / `payoff_ratio` | Fraction of completed episodes with strictly positive net PnL (zero is not a win); mean positive PnL / absolute mean negative PnL, respectively. PnL includes allocated fees, slippage and attributable dividends. |
+| `profit_factor` | Sum positive completed-episode net PnL / absolute sum negative completed-episode net PnL; not win rate or average payoff. |
+| `active_return` / `information_ratio` | a_t = strategy net r_t - matched benchmark net r_t; show difference in total return separately in percentage points. Information ratio = sqrt(K)*mean(a)/std(a,ddof=1). |
+| `sharpe_advantage` | Strategy net Sharpe minus matched buy-and-hold net Sharpe on exactly the same scored sessions. This comparison is distinct from information ratio and CAGR outperformance; it is a gate only when the prospective study/protocol specifies one. |
+| `stressed_net_return` | Recomputed net_total_return under the study's frozen stress multiplier; use a rerun, not scaling the headline return. |
+
+List completed-episode net PnL, holding sessions and entry/exit timestamps. Reconcile total
+equity change with closed/open inventory PnL, dividends and cash accrual without double
+counting; episode PnL definitions must agree with the position/cash ledger. Show the number
+of fills separately from round trips, including final liquidation costs.
+
+Fewer than two returns invalidates sample volatility/Sharpe. Zero dispersion/downside/risk
+or no losing trades makes the corresponding ratio undefined (null with its denominator
+reason), not a passing infinity. With no completed trades, trade ratios are null. Fewer
+than the study's required sessions/trades fails that gate even when some metrics are finite.
+Nonpositive equity is an insolvency/accounting outcome, not a silently omitted return.
+Apply conservative null handling to all undefined formulas, including empty quantile bins.
+
+For Signal Foundry, these metrics inform the prospective evidence standard and
+[readiness review](research-workflow.md#readiness-review); they are not fixed CAGR/Sharpe stopping gates.
+Compare benefit, risk/cost, fold/regime behavior and uncertainty together. Apply the study's
+explicit factor-role qualification rules and any constraints a different study supplies.
+Export eligibility, readiness measurements and the researcher's interpretation separately,
+with exact scope and artifact references. Missing support or contradictory evidence cannot
+be replaced by a good point estimate. A renderer or environment does not make a subjective
+quality decision merely by counting passed metrics. Final evidence uses the standard frozen
+before reveal and remains separate from training readiness.
+
+### Diversity and paired revision metrics
+
+On matched training score sessions, report Pearson correlation of net return series and
+Spearman correlation of target exposure series, with pair counts. A constant series yields
+null, never zero. Active-session overlap is |A intersect B| / |A union B| for sessions with
+positive target exposure; entry overlap uses dates that change from flat to positive. Both
+are null if the union is empty. Fix any numerical exposure tolerance in the metric contract.
+Report factor correlations separately; strategy similarity cannot be inferred from factor
+names. Use behavioral similarities alongside economic definitions, not as standalone proof
+of diversity. Parameter and affine variants do not increase distinct-hypothesis counts.
+
+For revisions, export parent value, candidate value and candidate-minus-parent delta in
+each named metric's original units, with the same split/folds, dates, costs and refit policy.
+Drawdown reduction therefore has a negative raw delta; show direction explicitly. Do not
+combine unlike metrics into an unexplained improvement score. Add the declared role utility
+as a separate metric and record regressions, support and gate changes.
+
+### Working-pool selection
+
+Assess a joint candidate's factor diagnostics, complete policy and contribution evidence
+together. Pool membership means a worthwhile next investigation, not a passed final gate.
+Use the [objective contract](#prospective-objectives-and-comparisons), fold/regime consistency,
+support, cost sensitivity, complexity and behavioral similarity. Preserve uncertainty and
+failed criteria. Factor-role passes remain library evidence even when the consumer fails;
+an alternative consumer requires a fresh comparison, not inherited qualification.
+
+Use evidence and a concrete, falsifiable improvement hypothesis to retain a route within
+the workflow's small active pool. Do not pad the pool or take only the highest Sharpe rows. Group near-identical
+behaviors and retain meaningful alternatives; weaker but distinct routes may merit a
+bounded diagnostic. Rejected routes keep their result IDs and reasons. For each retained
+route, save the next useful change, its fixed comparison controls and falsification condition,
+or why to park it. Consider new mechanisms alongside revisions; choose allocation by expected
+information and cost rather than a mandatory batch fraction.
+
+## Evaluation drives the next experiment
+
+Before each market evaluation write a hypothesis, parent IDs, intended change, expected
+metric movement, falsification condition, scope and remaining budget. Afterward save a
+compact diagnosis with result IDs, baseline/candidate values and paired differences, gate
+failures, uncertainty, cost and one explicit decision: repair, reject, retain, combine,
+return to factor discovery, continue exploratory research, freeze or stop with a reason from
+the research protocol. Link the full record from index.md. Report
+errors separately from low performance; fix invalid accounting before interpreting returns.
+
+| Observed fit/rolling-score evidence | Bounded next investigation |
+| --- | --- |
+| Low coverage, a constant factor, impossible IC or delayed data | Inspect inputs, formula warm-up, timestamps and label alignment; repair and rerun fixtures before another financial claim. |
+| Training IC strong but rolling-score IC weak or sign unstable | Inspect fold/regime and search breadth; reject overfit variants or test a simpler economic hypothesis. Never flip the sign on the evaluated score window to relabel failure as success. |
+| Positive IC but high redundancy | Compare exact expressions and aligned pair correlations; retain a simpler/stabler representative or propose an economically different input, not another name. |
+| Predictive factor, weak net strategy | Inspect train-selected orientation, forecast versus holding horizon, discarded score magnitude and inactive gains. Compare a justified change in combination or holding rules with factors fixed before assuming another factor is needed. |
+| Gross works, net/stress fails | Attribute fees/slippage and turnover; test a predeclared small change in rebalance cadence or entry hysteresis on research splits. Keep required costs unchanged. |
+| High return but poor drawdown, fold stability or benchmark advantage | Diagnose actual exposure and losing intervals; try a bounded causal risk/regime hypothesis. A bull-market equity curve alone is insufficient. |
+| Combination improves nothing over one factor | Compare input interventions and, where interactions make them misleading, a separately labelled train-refitted reduced policy. Measure the joint interaction under matched dates/costs; preserve failed constituent claims and the multi-factor eligibility rules. |
+| Better Sharpe/drawdown but weak benchmark utility | Compare avoided losses with missed upside and an appropriately predeclared exposure control. Diagnose sizing, exit or combination losses against the original claim; do not rename the strategy defensive after seeing the result. |
+| Risk/state factor has weak directional IC | Evaluate its prospectively declared role and matched consumer ablation. Preserve a failed predictive version; a different-role proposal is a new counted trial, never automatic admission. |
+| Most candidates reuse one mechanism | Compare actual information, fitting, combination and holding choices. Investigate the shared failure and test a materially different mapping or information hypothesis when worthwhile; new names and thresholds do not broaden coverage. |
+| Too few trades or labels | Apply the study's support rules. For unspecified minima, predeclare support appropriate to the holding/decision horizon; a slow allocation policy and a short event policy need different evidence. Report insufficiency without manufacturing trips from resizes or treating overlapping labels as independent. |
+| Eligible strategy misses submission targets or robustness checks | Keep test unexposed. Compare the readiness dimensions and choose a useful next experiment or a justified unsupported conclusion; reducing position size alone may not resolve the weaknesses. |
+| Repeated training-search stagnation | Compare meaningful attempts and alternative mechanisms. The Agent may stop when further work has low expected value, documenting evidence and scope limitations; no fixed patience counter or exhaustive search is required. |
+| Runtime resource limit | Save partial research, unmet quality items and the next hypothesis as interrupted. An unavailable next trial cannot make an unready candidate ready or certify completion. |
+| Failed or inconclusive final test | Preserve the frozen result. Use the completion review to choose worthwhile exploratory work or a justified negative/inconclusive ending. Later revisions need unused data for confirmation; test failure alone does not decide whether to continue. |
+
+For parameter stability and ablations, predeclare small research-only comparisons, show every
+variant and charge the appropriate trial/observation record. Refit trainable parts only on
+the permitted training data. Compare the same eligible dates and use the predeclared dependence-aware method for paired
+utility differences if estimating uncertainty. Never introduce ablations as extra post-reveal test
+selection opportunities. Do not optimize chart aesthetics as a substitute for research progress.
+
+## Numerical acceptance before market interpretation
+
+Verify applicable cases through the actual environment operations and exported artifacts.
+Follow the [operation-scoped checks](data-and-environments.md#engineering-evidence-before-financial-claims):
+causality/accounting before screening, added diagnostics before use, and finalization before
+test access. Reuse unaffected receipts; this list is not a new full audit for every round.
+
+- Factor [1,2,3,4] and labels [0.01,0.02,0.03,0.04] give Pearson/Spearman 1;
+  reversed order gives -1; a constant input gives null. Ties [1,1,2,3] rank as [1.5,1.5,3,4].
+- A close-t signal with opens 100 at t+1 and 110 at t+2 has h=1 label +10% absent actions;
+  changing prices after a feature's availability must not change that feature.
+- Fold RankICs [0.10,-0.02,0.04] give primary mean 0.04 and two positive folds; one null
+  fold makes the primary mean undefined, rather than averaging the other two.
+- Equity [100,110,99] gives returns [0.10,-0.10], net total return -1%, drawdowns
+  [0,0,-0.10] and positive maximum drawdown 10%. CAGR is 0.99^(252/2)-1 under K=252;
+  its extreme short-sample annualization is not evidence of a reliable annual forecast.
+- Net episode PnLs [20,-10,0] give three trips, win rate 1/3, payoff 2 and profit factor 2.
+  Splitting the winning episode into three fills does not increase the trip count.
+- A zero-position account at zero cash/reference rate has zero return and drawdown,
+  zero trips, undefined Sharpe/Sortino/Calmar/trade ratios and cannot pass sample/trade gates.
+- Reconcile split/dividend, next-open fills, partial resizes, both-side fees, adverse
+  slippage and terminal liquidation against an independent hand-computable cash ledger.
+- Check a null/failed gate, a threshold equality using the actual study operator, and
+  displayed rounding near a threshold; only unrounded values drive acceptance.
+
+Also test prefix/future perturbation, missing prices, split boundaries, identical-replay
+cache hits, changed-definition cache invalidation and a final-result reread without another
+test exposure. Synthetic successes verify engineering only. The report must reconcile a
+chart point, metric row, gate and exported record for the same real result identity.
+
+## Primary references
+
+- [Bailey and López de Prado, The Deflated Sharpe Ratio](https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf): selection bias and non-normality when judging the best of many trials; any implementation needs verified inputs and assumptions.
+- [SciPy Spearman correlation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.spearmanr.html): rank correlation, constant-input behavior and limitations of the default p-value.
+- [William Sharpe, The Sharpe Ratio](https://web.stanford.edu/~wfsharpe/art/sr/sr.htm): differential returns, variability and interpretation across time periods.
+- [arch time-series bootstraps](https://bashtage.github.io/arch/bootstrap/timeseries-bootstraps.html): stationary, circular and moving-block resampling for dependent observations.
+
+Accounting, aggregation and display choices above are this method's declared conventions;
+these sources do not establish profitability, independence or sufficient research evidence.

@@ -1,0 +1,12 @@
+! Xft settings for the agent's desktop.
+!
+! The screen is virtual and read by a model as much as by a person, so this favours
+! sharpness over the softening that helps on a physical panel: full hinting rather than
+! slight, and no subpixel order — RGB subpixel rendering paints colour fringes that are
+! real artefacts in a screenshot, and nothing here is a real LCD anyway.
+Xft.dpi:        96
+Xft.antialias:  true
+Xft.hinting:    true
+Xft.hintstyle:  hintfull
+Xft.rgba:       none
+Xft.lcdfilter:  lcddefault

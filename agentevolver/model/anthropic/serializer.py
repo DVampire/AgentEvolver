@@ -1,0 +1,629 @@
+from typing import overload, Any, List, Union, Optional, Type
+import base64
+import os
+
+from typing import Optional, List, Dict, Any, Union
+from pydantic import BaseModel
+
+from agentevolver.model.types import CACHE_TTL, split_cached_prefix
+from agentevolver.message.types import (
+    AssistantMessage,
+    CompactionMessage,
+    ContentPartImage,
+    ContentPartRefusal,
+    ContentPartText,
+    HumanMessage,
+    Message,
+    SystemMessage,
+    ToolMessage,
+    ToolCall,
+)
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agentevolver.tool.types import Tool
+
+from agentevolver.utils import assemble_workspace_path, decode_file_base64
+
+try:
+    from anthropic import transform_schema
+except ImportError:
+    transform_schema = None
+
+
+class AnthropicChatSerializer:
+    """
+    Serializer for converting between custom message types and Anthropic messages API format.
+    
+    Anthropic API format:
+    - system: string (top-level field, not in messages)
+    - messages: list of {"role": "user"|"assistant", "content": [...]}
+    - content for user: list of {"type": "text"|"image", ...}
+    - content for assistant: list of {"type": "text"|"tool_use", ...}
+    - images: {"type": "image", "source": {"type": "base64", "media_type": "...", "data": "..."}}
+    """
+
+    @staticmethod
+    def _serialize_content_part_text(part: ContentPartText) -> dict[str, Any]:
+        return {"type": "text", "text": part.text}
+
+    @staticmethod
+    def _normalize_media_type(media_type: str) -> str:
+        """Normalize media type to Anthropic-supported formats.
+        
+        Anthropic only supports: 'image/jpeg', 'image/png', 'image/gif', 'image/webp'
+        """
+        media_type = media_type.lower().strip()
+        
+        # Map common variations to supported types
+        if media_type in ['image/jpeg', 'image/jpg']:
+            return 'image/jpeg'
+        elif media_type == 'image/png':
+            return 'image/png'
+        elif media_type == 'image/gif':
+            return 'image/gif'
+        elif media_type == 'image/webp':
+            return 'image/webp'
+        else:
+            # Default to jpeg for unknown types
+            return 'image/jpeg'
+
+    @staticmethod
+    def _serialize_content_part_image(part: ContentPartImage) -> dict[str, Any]:
+        """Serialize image content part for Anthropic API.
+        
+        Anthropic expects: {"type": "image", "source": {"type": "base64", "media_type": "...", "data": "..."}}
+        Anthropic only supports: 'image/jpeg', 'image/png', 'image/gif', 'image/webp'
+        """
+        image_url = part.image_url.url
+        
+        # Handle data URLs (base64 encoded)
+        if image_url.startswith("data:"):
+            # Extract media type and base64 data from data URL
+            # Format: data:image/jpeg;base64,<base64_data>
+            header, data = image_url.split(",", 1)
+            media_type = "image/jpeg"  # default
+            if "image/" in header:
+                extracted_type = header.split("image/")[1].split(";")[0]
+                media_type = AnthropicChatSerializer._normalize_media_type(f"image/{extracted_type}")
+            return {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": data,
+                }
+            }
+        elif image_url.startswith("file://"):
+            # File path - read and encode to base64
+            file_path = image_url[7:]
+            if not os.path.isabs(file_path):
+                file_path = assemble_workspace_path(file_path)
+            if os.path.exists(file_path):
+                # Read file and encode to base64
+                with open(file_path, "rb") as f:
+                    image_data = f.read()
+                base64_data = base64.b64encode(image_data).decode("utf-8")
+                # Guess media type from file extension
+                import mimetypes
+                guessed_type, _ = mimetypes.guess_type(file_path)
+                if not guessed_type or not guessed_type.startswith("image/"):
+                    media_type = "image/jpeg"  # default
+                else:
+                    media_type = AnthropicChatSerializer._normalize_media_type(guessed_type)
+                return {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": base64_data,
+                    }
+                }
+        elif os.path.exists(image_url):
+            # Direct file path
+            with open(image_url, "rb") as f:
+                image_data = f.read()
+            base64_data = base64.b64encode(image_data).decode("utf-8")
+            import mimetypes
+            guessed_type, _ = mimetypes.guess_type(image_url)
+            if not guessed_type or not guessed_type.startswith("image/"):
+                media_type = "image/jpeg"  # default
+            else:
+                media_type = AnthropicChatSerializer._normalize_media_type(guessed_type)
+            return {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": base64_data,
+                }
+            }
+        elif os.path.exists(assemble_workspace_path(image_url)):
+            # Relative file path
+            file_path = assemble_workspace_path(image_url)
+            with open(file_path, "rb") as f:
+                image_data = f.read()
+            base64_data = base64.b64encode(image_data).decode("utf-8")
+            import mimetypes
+            guessed_type, _ = mimetypes.guess_type(file_path)
+            if not guessed_type or not guessed_type.startswith("image/"):
+                media_type = "image/jpeg"  # default
+            else:
+                media_type = AnthropicChatSerializer._normalize_media_type(guessed_type)
+            return {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": base64_data,
+                }
+            }
+        elif image_url.startswith(("http://", "https://")):
+            # Remote URL — the Anthropic API fetches it server-side.
+            return {
+                "type": "image",
+                "source": {
+                    "type": "url",
+                    "url": image_url,
+                }
+            }
+        else:
+            raise ValueError(f"Unsupported image source for Anthropic API: {image_url}")
+
+    @staticmethod
+    def _serialize_user_content(
+        content: Union[str, List[Union[ContentPartText, ContentPartImage]]],
+    ) -> List[dict[str, Any]]:
+        """Serialize content for user messages (text and images allowed).
+        
+        Anthropic requires content to always be an array, even for text-only messages.
+        """
+        serialized_parts: List[dict[str, Any]] = []
+        
+        if isinstance(content, str):
+            # Convert string to text content block
+            if content:
+                serialized_parts.append({"type": "text", "text": content})
+        else:
+            # Process content parts
+            for part in content:
+                if part.type == 'text':
+                    serialized_parts.append(AnthropicChatSerializer._serialize_content_part_text(part))
+                elif part.type == 'image_url':
+                    serialized_parts.append(AnthropicChatSerializer._serialize_content_part_image(part))
+        
+        return serialized_parts
+
+    @staticmethod
+    def _serialize_assistant_content(
+        content: Optional[Union[str, List[ContentPartText]]],
+    ) -> List[dict[str, Any]]:
+        """Serialize content for assistant messages (text only, tool_use handled separately).
+        
+        Anthropic requires content to always be an array, even for text-only messages.
+        """
+        serialized_parts: List[dict[str, Any]] = []
+        
+        if content is None:
+            return serialized_parts
+        
+        if isinstance(content, str):
+            # Convert string to text content block
+            if content:
+                serialized_parts.append({"type": "text", "text": content})
+        else:
+            # Process content parts
+            for part in content:
+                if part.type == 'text':
+                    serialized_parts.append(AnthropicChatSerializer._serialize_content_part_text(part))
+        
+        return serialized_parts
+
+    @staticmethod
+    def _serialize_tool_call(tool_call: ToolCall) -> dict[str, Any]:
+        """Serialize tool call for Anthropic API.
+        
+        Anthropic expects: {"type": "tool_use", "id": "...", "name": "...", "input": {...}}
+        """
+        import json
+        try:
+            input_data = json.loads(tool_call.function.arguments) if isinstance(tool_call.function.arguments, str) else tool_call.function.arguments
+        except json.JSONDecodeError:
+            input_data = {}
+        
+        return {
+            "type": "tool_use",
+            "id": tool_call.id,
+            "name": tool_call.function.name,
+            "input": input_data,
+        }
+
+    @overload
+    @staticmethod
+    def serialize(message: HumanMessage) -> dict[str, Any]: ...
+
+    @overload
+    @staticmethod
+    def serialize(message: SystemMessage) -> dict[str, Any]: ...
+
+    @overload
+    @staticmethod
+    def serialize(message: AssistantMessage) -> dict[str, Any]: ...
+
+    @staticmethod
+    def _cache_split(text: str):
+        """Split a user turn just before the first live-state block, for a cache breakpoint.
+
+        Mirrors the LLM Hub and OpenRouter serializers. The stable prefix is the capability
+        catalog **and the task** (and any inherited context), byte-identical every step; the
+        first thing that changes is `<constraints>` (the live budget), so the breakpoint goes
+        right before it and the task rides inside the cached prefix instead of being re-read
+        each step. Falls back to the end of `<capability-context>` when no `<constraints>`
+        block is rendered, and returns ``None`` when neither marker is present (a turn with
+        no catalog must not get a breakpoint: one placed after content that changes each step
+        caches nothing and spends a cache write to find out).
+        """
+        return split_cached_prefix(text)
+
+    @staticmethod
+    def serialize(message: Message) -> dict[str, Any]:
+        """Serialize a custom message to an Anthropic message format."""
+        if isinstance(message, CompactionMessage):
+            state = (message.provider_state or {}).get("anthropic") or {}
+            # The Anthropic SDK includes unset optional fields as ``None`` in
+            # ``model_dump()``. Some compatible relays validate compaction blocks
+            # strictly and reject those null extension fields as extra input.
+            blocks = [
+                {key: value for key, value in dict(block).items() if value is not None}
+                for block in state.get("compaction_blocks") or []
+            ]
+            if blocks:
+                # A Claude compaction block is assistant protocol state. Replaying it as
+                # user prose would lose the API's rule that everything before the block
+                # is ignored. Keep the returned block intact and only add the supported
+                # cache annotation on our copy.
+                if message.cache:
+                    blocks[-1]["cache_control"] = {
+                        "type": "ephemeral", "ttl": CACHE_TTL
+                    }
+                return {"role": "assistant", "content": blocks}
+
+        if isinstance(message, HumanMessage):
+            text = message.content if isinstance(message.content, str) else None
+            split = (
+                (text, "") if text is not None and message.cache
+                else AnthropicChatSerializer._cache_split(text)
+                if text is not None and message.context_layer is None
+                else None
+            )
+            if split is not None:
+                stable, rest = split
+                content = [{'type': 'text', 'text': stable,
+                            'cache_control': {'type': 'ephemeral', 'ttl': CACHE_TTL}}]
+                if rest.strip():
+                    content.append({'type': 'text', 'text': rest})
+            else:
+                content = AnthropicChatSerializer._serialize_user_content(message.content)
+            result: dict[str, Any] = {
+                'role': 'user',
+                'content': content,
+            }
+            return result
+
+        elif isinstance(message, SystemMessage):
+            # System messages are handled separately (top-level system field)
+            # Return None or empty dict to indicate it should be extracted
+            content = message.content
+            if isinstance(content, str):
+                return {'role': 'system', 'content': content}
+            elif isinstance(content, list):
+                # Extract text from content parts
+                text_parts = []
+                for part in content:
+                    if isinstance(part, ContentPartText):
+                        text_parts.append(part.text)
+                return {'role': 'system', 'content': ' '.join(text_parts)}
+            else:
+                return {'role': 'system', 'content': str(content)}
+
+        elif isinstance(message, AssistantMessage):
+            # Extended-thinking blocks are provider-owned protocol state. Anthropic
+            # requires them to be passed back complete and unmodified, before the
+            # visible text/tool_use blocks from that assistant turn.
+            state = (message.provider_state or {}).get("anthropic") or {}
+            content_parts = [dict(block) for block in state.get("thinking_blocks") or []]
+            content_parts.extend(
+                AnthropicChatSerializer._serialize_assistant_content(message.content)
+            )
+            result: dict[str, Any] = {'role': 'assistant'}
+            
+            # Add tool calls to content array
+            if message.tool_calls:
+                for tool_call in message.tool_calls:
+                    content_parts.append(AnthropicChatSerializer._serialize_tool_call(tool_call))
+            if message.cache:
+                # Signed/redacted thinking is opaque provider state: Anthropic requires
+                # it to be replayed byte-for-byte and strict relays reject cache_control
+                # on those blocks. Put the rolling breakpoint on the last ordinary
+                # assistant block only. A thinking-only turn has no legal breakpoint.
+                for block in reversed(content_parts):
+                    if block.get("type") in {"text", "tool_use"}:
+                        block["cache_control"] = {
+                            "type": "ephemeral", "ttl": CACHE_TTL
+                        }
+                        break
+            
+            # Content is always an array (may be empty)
+            result['content'] = content_parts
+            
+            return result
+
+        elif isinstance(message, ToolMessage):
+            # Anthropic has no `tool` role: a result is a `tool_result` block carried by
+            # a *user* message, paired to the call by `tool_use_id`. `is_error` is passed
+            # through rather than folded into the text, so a failure stays a failure the
+            # model can see rather than prose it has to interpret.
+            block: dict[str, Any] = {
+                "type": "tool_result",
+                "tool_use_id": message.tool_call_id,
+                "content": message.content,
+            }
+            if message.is_error:
+                block["is_error"] = True
+            if message.cache:
+                block["cache_control"] = {"type": "ephemeral", "ttl": CACHE_TTL}
+            return {'role': 'user', 'content': [block]}
+
+        else:
+            raise ValueError(f'Unknown message type: {type(message)}')
+
+    @staticmethod
+    def serialize_messages(messages: List[Message]) -> tuple[Optional[str], List[dict[str, Any]]]:
+        """
+        Serialize messages to Anthropic format.
+        
+        Returns:
+            Tuple of (system_message, messages_list)
+            system_message: Optional string for system prompt (extracted from SystemMessage)
+            messages_list: List of message dicts (excluding SystemMessage)
+        """
+        system_message = None
+        anthropic_messages: List[dict[str, Any]] = []
+
+        # Anthropic ignores message history before a native compaction block.
+        # A history-only fold did not include fixed user references, so replay those
+        # after the block. This wire ordering must not change the logical envelope.
+        for index, message in enumerate(messages):
+            if (isinstance(message, CompactionMessage)
+                    and message.compaction_scope == "history"
+                    and (message.provider_state.get("anthropic") or {}).get("compaction_blocks")):
+                prefix = messages[:index]
+                if any(not isinstance(item, (SystemMessage, HumanMessage)) for item in prefix):
+                    raise ValueError("History checkpoint must follow only fixed references")
+                messages = [
+                    *[item for item in prefix if isinstance(item, SystemMessage)],
+                    message,
+                    *[item for item in prefix if not isinstance(item, SystemMessage)],
+                    *messages[index + 1:],
+                ]
+                break
+        
+        for message in messages:
+            if isinstance(message, SystemMessage):
+                # Extract system message
+                serialized = AnthropicChatSerializer.serialize(message)
+                if serialized.get('content'):
+                    if system_message is None:
+                        system_message = serialized['content']
+                    else:
+                        system_message += "\n" + serialized['content']
+            else:
+                # Serialize user/assistant messages
+                serialized = AnthropicChatSerializer.serialize(message)
+                # Anthropic expresses tool results as user blocks. Coalesce adjacent
+                # turns of the same role so parallel results remain one valid reply.
+                if (
+                    anthropic_messages
+                    and anthropic_messages[-1].get("role") == serialized.get("role")
+                    and isinstance(anthropic_messages[-1].get("content"), list)
+                    and isinstance(serialized.get("content"), list)
+                ):
+                    anthropic_messages[-1]["content"].extend(serialized["content"])
+                else:
+                    anthropic_messages.append(serialized)
+
+        # As a block list rather than a bare string, so it can carry a breakpoint: the
+        # system prompt is fixed for a whole session and is the one part of the request
+        # guaranteed to be worth caching.
+        if system_message:
+            system_message = [{'type': 'text', 'text': system_message,
+                               'cache_control': {'type': 'ephemeral', 'ttl': CACHE_TTL}}]
+
+        return system_message, anthropic_messages
+
+    @staticmethod
+    def serialize_tools(tools: List["Tool"]) -> List[Dict[str, Any]]:
+        """
+        Serialize tools for Anthropic API calls. Convert Tool instances to Anthropic tools format.
+        
+        Anthropic tools format:
+        [
+            {
+                "name": "...",
+                "description": "...",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {...},
+                    "required": [...]
+                }
+            }
+        ]
+        
+        Args:
+            tools: List of Tool instances
+            
+        Returns:
+            List of Anthropic tools format dicts
+        """
+        formatted_tools = []
+        for tool in tools:
+            # Accept a Tool-like instance (carries .function_calling) OR a raw
+            # OpenAI-style function_calling dict. Avoid isinstance(Tool) — Tool is
+            # only imported under TYPE_CHECKING here, and native tool assembly passes
+            # schema-only Tool shims / dicts.
+            fc = tool if isinstance(tool, dict) else getattr(tool, "function_calling", None)
+            if not fc:
+                continue
+            function_def = fc.get("function", {})
+            formatted_tools.append({
+                "name": function_def.get("name") or getattr(tool, "name", ""),
+                "description": function_def.get("description") or getattr(tool, "description", ""),
+                "input_schema": function_def.get("parameters") or {"type": "object", "properties": {}},
+            })
+
+        # The tool catalog is stable for a run and usually large. Anthropic permits a
+        # breakpoint on a tool definition; one on the last tool caches the whole list.
+        if formatted_tools:
+            formatted_tools[-1]["cache_control"] = {
+                "type": "ephemeral", "ttl": CACHE_TTL
+            }
+
+        return formatted_tools
+    
+    @staticmethod
+    def serialize_response_format(
+        response_format: Union[Type[BaseModel], BaseModel, Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Format response_format to Anthropic's output_format parameter.
+        
+        Anthropic uses output_format with beta API:
+        - Requires beta API: client.beta.messages.create()
+        - Requires betas parameter: ['structured-outputs-2025-11-13']
+        - Format: {"type": "json_schema", "schema": {...}}
+        - CRITICAL: Anthropic has strict schema requirements, optimized here to reduce complexity
+        
+        Args:
+            response_format: BaseModel class, instance, or dict
+            
+        Returns:
+            Dictionary containing output_format configuration:
+            - type: "json_schema"
+            - schema: JSON schema (optimized to reduce complexity and resolve references)
+        """
+        if isinstance(response_format, dict):
+            # Dict format - check if it's already in output_format format
+            if "type" in response_format and "schema" in response_format:
+                return response_format
+            elif "type" in response_format and "json_schema" in response_format:
+                json_schema_obj = response_format["json_schema"]
+                schema = json_schema_obj.get("schema", {})
+                return {
+                    'type': 'json_schema',
+                    'schema': schema
+                }
+            else:
+                return {
+                    'type': 'json_schema',
+                    'schema': response_format
+                }
+
+        model_class = response_format if isinstance(response_format, type) else type(response_format)
+        if not issubclass(model_class, BaseModel):
+            raise ValueError(f"Unsupported response_format type: {type(response_format)}")
+
+        # Use Anthropic's transform_schema if available, but we'll still apply our transform
+        # to ensure $defs are resolved and optional fields are simplified
+        if transform_schema is not None:
+            schema = transform_schema(model_class)
+        else:
+            schema = model_class.model_json_schema()
+        
+        defs = schema.pop("$defs", {})  # Remove $defs to avoid appearing in the final result
+
+        def transform(obj: Any) -> Any:
+            if not isinstance(obj, dict):
+                return obj
+            
+            # Expand all references to ensure full inlining
+            if "$ref" in obj:
+                ref_path = obj["$ref"]
+                if ref_path.startswith("#/$defs/"):
+                    def_name = ref_path.split("/")[-1]
+                    if def_name in defs:
+                        return transform(defs[def_name])
+                return {"type": "object", "additionalProperties": True}
+            
+            # Handle Union structures (anyOf, oneOf, allOf) - used for handling Optional fields
+            for k in ["anyOf", "oneOf", "allOf"]:
+                if k in obj:
+                    items = obj[k]
+                    non_null = [i for i in items if isinstance(i, dict) and i.get("type") != "null"]
+                    if len(non_null) == 1:
+                        # Retain original object's description and title
+                        result = transform(non_null[0])
+                        if isinstance(result, dict):
+                            if "description" in obj and "description" not in result:
+                                result["description"] = obj["description"]
+                            if "title" in obj and "title" not in result:
+                                result["title"] = obj["title"]
+                        return result
+                    else:
+                        return {
+                            "type": "object",
+                            "description": obj.get("description", "Simplified Object"),
+                            "additionalProperties": True 
+                        }
+
+            # Handle objects
+            if obj.get("type") == "object" or "properties" in obj:
+                props = obj.get("properties", {})
+                required = obj.get("required", [])
+                new_props = {}
+                new_required = []
+                
+                for k, v in props.items():
+                    new_props[k] = transform(v)
+                    if k in required:
+                        new_required.append(k)
+                
+                # For Dict[str, Any] types (no properties or empty properties), retain additionalProperties: True
+                # Otherwise, set to False (strict mode)
+                if not new_props and obj.get("additionalProperties") is True:
+                    additional_props = True
+                else:
+                    additional_props = False
+                
+                result = {
+                    "type": "object",
+                    "properties": new_props,
+                    "required": new_required,
+                    "additionalProperties": additional_props
+                }
+                # Retain metadata such as description and title
+                if "description" in obj:
+                    result["description"] = obj["description"]
+                if "title" in obj:
+                    result["title"] = obj["title"]
+                return result
+
+            # Handle arrays
+            if obj.get("type") == "array":
+                result = {
+                    "type": "array",
+                    "items": transform(obj.get("items", {}))
+                }
+                # Retain metadata such as description and title
+                if "description" in obj:
+                    result["description"] = obj["description"]
+                if "title" in obj:
+                    result["title"] = obj["title"]
+                return result
+
+            # For other types, retain all fields (including description, title, etc.)
+            return obj
+
+        return {
+            'type': 'json_schema',
+            'schema': transform(schema)
+        }

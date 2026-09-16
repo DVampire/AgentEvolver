@@ -1,0 +1,6 @@
+{
+  "materials": ["materials/voyage-briefs.json"],
+  "evolution": {
+    "required_modules": ["skill", "agent", "connector"]
+  }
+}

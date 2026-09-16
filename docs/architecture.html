@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Architecture — AgentEvolver</title>
+<meta name="description" content="Source-aligned AgentEvolver architecture: process kernel, shared agent loop, four context layers, durable plans, multimodal environments, deployment and version-scoped capability adoption.">
+<meta name="theme-color" content="#07100e">
+<link rel="stylesheet" href="assets/theme.css"><link rel="stylesheet" href="assets/site.css"><link rel="stylesheet" href="assets/chrome.css"><link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+</head><body><a class="skip-link" href="#main">Skip to content</a>
+<nav data-ae-nav="architecture"></nav><script src="assets/chrome.js"></script>
+<header class="page"><div class="wrap"><span class="eyebrow">Architecture</span>
+<h1 data-i18n="title">A shared loop.<br><span class="grad">Explicit boundaries.</span></h1>
+<div class="lede"><p data-i18n="lede">The runtime schedules processes. The Agent thinks and acts. Context assembly, capability dispatch, durable records and extension adoption each have an owner. Domain Builders use these same mechanisms.</p></div></div></header><div class="wrap shell"><aside><div class="grp">
+<a href="#layers"><span data-i18n="nav_layers">System map</span></a>
+<a href="#door"><span data-i18n="nav_door">Entry & processes</span></a>
+<a href="#loop"><span data-i18n="nav_loop">Agent execution</span></a>
+<a href="#context"><span data-i18n="nav_context">Context & plans</span></a>
+<a href="#log"><span data-i18n="nav_log">Records & deployment</span></a>
+<a href="#evolve"><span data-i18n="nav_evolve">Capability evolution</span></a>
+<a href="#safety"><span data-i18n="nav_safety">Controls & limits</span></a>
+</div></aside><main id="main"><section id="layers"><h2><span class="num">01</span><span data-i18n="map_h">System map</span></h2>
+<p data-i18n="map_p">A task can enter through a CLI launcher or the Web UI. A configured Agent may work alone or dispatch children when its roster and permissions allow it. MetaAgent is an Agent with delegation capabilities; it is not a mandatory extra process around every Builder.</p>
+<figure><a href="assets/arch.svg" data-diagram-link target="_blank" rel="noopener"><img src="assets/arch.svg" width="2400" height="1350" data-diagram-image alt="AgentEvolver system architecture"></a><figcaption><span data-i18n="map_cap">The logical layout connects task orchestration, actor agents, runtime communication, the capability ecosystem, evolution and supporting infrastructure. Arrow colors distinguish communication, capability use, version changes and evidence feedback.</span></figcaption></figure><div class="diagram-downloads"><a href="assets/arch.svg" data-diagram-link>SVG ↗</a><a href="assets/arch.pptx" data-diagram-ppt download>PowerPoint ↓</a><a href="https://github.com/DVampire/AgentEvolver/blob/main/docs/diagrams/README.md"><span data-i18n="map_source">Diagram sources</span></a></div></section>
+<section id="door"><h2><span class="num">02</span><span data-i18n="entry_h">Entry and process ownership</span></h2>
+<p data-i18n="entry_p">The Web UI sends versioned commands through the Gateway WebSocket. HTTP views, terminals, environment streams and published sites use the Gateway’s corresponding proxy routes. CLI launchers can start the runtime directly and register their monitor through the deployment service.</p>
+<p data-i18n="prepare_p">The base <code>Agent.prepare_task</code> binds task text, files and public manifest declarations. Runtime owns process creation, mailboxes, signals, parent/child relationships, topics and exit cleanup. Task and session managers own the persistent task and workspace identities.</p>
+<pre><code>NEW → RUNNING ⇄ IDLE
+        ↕        ↕
+        SUSPENDED
+          ↓
+       STOPPING → EXITED</code></pre>
+<p data-i18n="process_p">One-shot work exits with a report. Resident subscribers can remain idle between assignments. Local assignment limits and the shared root/descendant budget ledger are separate: delegation does not reset the total run budget.</p>
+<p><a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/runtime/kernel.py"><code>agentevolver/runtime/kernel.py</code></a> · <a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/runtime/process.py"><code>agentevolver/runtime/process.py</code></a></p></section>
+<section id="loop"><h2><span class="num">03</span><span data-i18n="loop_h">The shared think–act loop</span></h2>
+<p data-i18n="loop_p">Agent preparation installs the system prompt, task anchor and allowed capability surface. Each step collects current state, checks budgets and context pressure, asks the model, then routes its actions. Lifecycle hooks expose the same boundaries to tracing and other observers.</p>
+<pre><code>process safe point
+  → current state + budget guards
+  → context assembly / history compaction when needed
+  → ModelManager request
+  → ToolRouter + ActionExecutor
+  → observations + complete conversation turn</code></pre>
+<p data-i18n="tools_p">Managers supply capability discovery and schemas; the router enforces scope and dispatches calls. Environments return state and, when configured, images through the shared context path. A Builder does not need a separate screenshot-message pipeline.</p>
+<p data-i18n="game_p">For the Docker Godot demo, the base execution container and Godot container mount the same workspace paths. Bash edits project files; the Godot environment imports, launches and interacts with the game. Deployment creates a separate browser playtest with its own saves.</p>
+<p><a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/agent/loop/agent.py"><code>agentevolver/agent/loop/agent.py</code></a><br><a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/agent/loop/router.py"><code>agentevolver/agent/loop/router.py</code></a></p></section>
+<section id="context"><h2><span class="num">04</span><span data-i18n="context_h">Context, plans and memory</span></h2>
+<p data-i18n="context_p"><code>ContextAssembler</code> owns request layout. Stable material leads the request so appending a turn or refreshing an observation does not rewrite the earlier prefix. Cache behavior still depends on the selected provider and request.</p>
+<div class="context-layers">
+<div class="context-layer"><b>fixed</b><p data-i18n="layer_fixed">System instructions, task anchors and stable references.</p></div>
+<div class="context-layer"><b>checkpoint</b><p data-i18n="layer_checkpoint">The current compacted history summary; provider-native state when selected and supported.</p></div>
+<div class="context-layer"><b>recent</b><p data-i18n="layer_recent">Complete assistant/tool turns and delivered user or runtime events.</p></div>
+<div class="context-layer"><b>live</b><p data-i18n="layer_live">Current plan index, budgets, errors, reminders and environment observations.</p></div>
+</div>
+<p data-i18n="planning_p">Planning-enabled coordinators keep <code>plan/index.md</code> and <code>plan/plan.md</code>. Only the bounded index and document locators are automatically projected into live context. The detailed plan and any evaluations, designs or playtest notes are read on demand. Skills can suggest a directory layout; the generic module requires only these two files.</p>
+<p data-i18n="fold_p">History compaction keeps recent complete turns and preserves a source archive for disk-backed threads. Fixed instructions and automatic live projections are outside its input. Explicit tool reads of a plan are ordinary history. Session-scoped actor notes provide a separate durable index; they are not silently shared between sessions or actors.</p>
+<p data-i18n="threshold_p">The website and game demos configure a 100,000-input-token compaction trigger. This estimates the full request, including cached input, schemas and images; it is not “compact every 100,000 tokens spent.” Cumulative token limits, step limits and context capacity are different controls.</p>
+<p><a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/agent/context/assembler.py"><code>agentevolver/agent/context/assembler.py</code></a><br><a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/plan/server.py"><code>agentevolver/plan/server.py</code></a> · <a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/memory/README.md"><code>agentevolver/memory/README.md</code></a></p></section>
+<section id="log"><h2><span class="num">05</span><span data-i18n="records_h">Records and product access</span></h2>
+<p data-i18n="records_p">Trace stores structured execution events. Run and request viewers project those records into human-readable steps, errors, usage and context diagnostics. Checkpoints restore supported conversation state; they do not reconstruct running OS jobs or engine processes.</p>
+<p data-i18n="deploy_p"><code>deploy_tool</code> delegates publication and lifecycle to the deployment manager. Websites and Godot previews have stable site URLs through the Gateway; archived releases have pinned URLs. CLI run monitors are registered at port 9876, with product links in their deployments view.</p>
+<p data-i18n="trajectory_p">Trajectory is a training-oriented projection: model context, actions, observations and usage, with optional reward backfill and SFT / RL export. A dataset export is not a training execution or automatic model promotion.</p>
+<p><a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/visual/README.md"><code>agentevolver/visual/README.md</code></a> · <a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/deploy/README.md"><code>agentevolver/deploy/README.md</code></a> · <a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/trajectory/README.md"><code>agentevolver/trajectory/README.md</code></a></p></section>
+<section id="evolve"><h2><span class="num">06</span><span data-i18n="evolve_h">A versioned capability, with evidence</span></h2>
+<p data-i18n="evolve_p">The shared evolution rules and <code>self_evolving_skill</code> guide an agent from observations to an experiment. Signals include a concrete opportunity for a better reusable method, a structural failure or a measured quality/cost limitation. A missing product feature alone does not establish a missing system capability.</p>
+<ol class="step-list">
+<li><strong data-i18n="ev_observe_h">1. Observe and establish a baseline</strong><span data-i18n="ev_observe_p">Inspect available capabilities. Record the actual need, relevant call evidence, intended consumer and a measurable comparison.</span></li>
+<li><strong data-i18n="ev_author_h">2. Author the appropriate component</strong><span data-i18n="ev_author_p">Use a skill, tool, agent/prompt, workflow, environment, memory, connector or plugin. Author outside the core and preserve the baseline.</span></li>
+<li><strong data-i18n="ev_register_h">3. Register a separate candidate</strong><span data-i18n="ev_register_p"><code>adoption_tool</code> performs registration through ExtensionManager. Structural admission checks loading, construction and schemas in isolation; the returned candidate version identifies what to evaluate.</span></li>
+<li><strong data-i18n="ev_evaluate_h">4. Evaluate that version</strong><span data-i18n="ev_evaluate_p">Execute baseline/candidate comparison and independent reuse or regression cases, with cost. Record real call IDs and observed results. A successful structural probe is not functional evaluation.</span></li>
+<li><strong data-i18n="ev_adopt_h">5. Record and carry out the decision</strong><span data-i18n="ev_adopt_p">Keep requires a passing version-scoped report. Otherwise record rollback or unload and execute that operation. Registration may make a candidate provisionally available; it is not a quality certificate.</span></li>
+<li><strong data-i18n="ev_use_h">6. Use the adopted version</strong><span data-i18n="ev_use_p">Verify the actual consumer result. Tasks requiring verified improvement also require <code>record_use</code> after keep, with subsequent real-work call receipts. Loading a skill without executing its method is insufficient.</span></li>
+</ol><div class="card why"><p data-i18n="self_review">Evaluation is authored by the agent doing the work. Runtime validates version identity and evidence provenance; it does not independently prove semantic quality. An honest unsuccessful experiment remains unsuccessful.</p></div>
+<p><a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/prompt/module/evolution_rules.html"><code>agentevolver/prompt/module/evolution_rules.html</code></a><br><a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/tool/default/adoption.py"><code>agentevolver/tool/default/adoption.py</code></a> · <a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/extension/server.py"><code>agentevolver/extension/server.py</code></a></p></section>
+<section id="safety"><h2><span class="num">07</span><span data-i18n="controls_h">Controls and limits</span></h2>
+<div class="rows">
+<div class="card"><h3 data-i18n="ct_scope_h">Scope and permissions</h3><p data-i18n="ct_scope_p">Capability rosters and action policy govern what can run. Evolution does not grant new privileges.</p></div>
+<div class="card"><h3 data-i18n="ct_plan_h">Planning modes</h3><p data-i18n="ct_plan_p">Auto planning maintains records without an approval gate. Explicit plan mode restricts actions until approval; off omits the automatic planning obligation.</p></div>
+<div class="card"><h3 data-i18n="ct_budget_h">Shared budgets</h3><p data-i18n="ct_budget_p">Local limits and the root/descendant ledger account for work. Unknown provider usage remains unknown, not zero cost.</p></div>
+<div class="card"><h3 data-i18n="ct_isolation_h">Isolation and lifecycle</h3><p data-i18n="ct_isolation_p">Sandbox guarantees depend on the selected backend and mounts. Runtime cleanup and deployment lifecycles own their respective resources.</p></div>
+</div><p><a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/permission/README.md"><code>agentevolver/permission/README.md</code></a> · <a href="https://github.com/DVampire/AgentEvolver/blob/main/agentevolver/runtime/process.py"><code>agentevolver/runtime/process.py</code></a></p></section></main></div><ae-footer></ae-footer><script src="assets/architecture.js"></script><script src="assets/site.js"></script></body></html>

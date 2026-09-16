@@ -1,0 +1,217 @@
+---
+name: plan
+description: "Holds a run to reading and reasoning until a person approves what it intends to do, so an approach is agreed before it is carried out rather than after."
+version: 1.0.0
+type: module
+category: infrastructure
+requirements: []
+metadata: {}
+---
+# Plan
+
+Maintains coordinator plans and, when requested, holds execution for human review.
+
+| Path | Responsibility |
+|---|---|
+| `types.py` | `PlanState` — whether the gate is closed, and what was approved to open it |
+| `server.py` | `plan_manager` (per-run state) and `action_is_allowed` (the gate's rule) |
+
+The gate itself is `agentevolver/hook/default/plan_mode.py`, which runs on
+`PRE_ACTION`; the way out is `exit_plan_mode` in `agentevolver/tool/default/`.
+
+## Coordinator planning
+
+`MetaAgent`, `WebsiteBuilderAgent` and `GameBuilderAgent` enable `use_plan` by default. Code, browser,
+website-user and other leaf workers leave it disabled. A worker receives a bounded
+assignment and returns evidence; its coordinator owns planning and replanning.
+
+`PlanManagerServer.context()` reads only the session's `plan/index.md` into the live
+layer, with a shared limit of 2,000 characters for Brief and document entries together.
+`index.md` is the single summary: goal/current milestone, compact progress, blockers,
+next action, and links to important records with a short summary and authored status.
+`plan.md` contains the detailed plan; do not maintain another Brief in it.
+
+The framework defines only these two filenames. It does not scaffold a tree or require
+additional files, headings or document categories. Relevant skills can suggest a layout;
+the agent chooses and revises it to suit the task, creating extra records only when useful.
+
+```text
+plan/
+  index.md   # Compact live summary and links
+  plan.md    # Detailed plan
+```
+
+A minimal `index.md` can be plain Markdown:
+
+```markdown
+Current objective: finish the first deliverable.
+Progress: implementation complete; verification pending.
+Next: check the outstanding acceptance requirements.
+[Detailed plan](plan.md): approach, work items and verification steps.
+```
+
+The agent can add concise links to any other records it creates. Those records' names,
+formats, contents and locations within the directory are task decisions, not framework
+conventions. The index reader does not require `## Brief` or `## Documents` headings.
+
+Relative document links resolve from the plan directory. Authors use the existing file
+or Bash tools; there is no new document tool, automatic directory crawler, model summarizer,
+or per-step rewrite requirement. Update the relevant document and index entry together
+after meaningful progress. Keep older detail on disk, outside the bounded live index.
+Long indexes are visibly truncated at a line boundary; the full index path remains available.
+Statuses are authored claims, not runtime certification. Preserve original evidence
+references; a summary never replaces the underlying observations or execution receipts.
+
+For old runs without `index.md`, runtime temporarily projects the legacy `plan.md` Brief
+and asks the agent to move that summary into the index at its next meaningful update.
+This fallback writes nothing. Once an index exists, runtime no longer reads the full plan
+for live context, even if an obsolete Brief remains there. Missing, empty and unreadable
+indexes have explicit notices; document content and progress are never invented.
+
+Automatic plan projections do not become conversation turns and are not sent to either
+native or text history compaction. Real user feedback and tool interactions (including
+explicit file reads) remain history. Explicit thread resume removes legacy tagged plan
+snapshots from recent turns and the standalone user messages in Responses checkpoints;
+it preserves opaque compaction items, other dialogue, tool results and source archives.
+Stable planning instructions are installed
+once in the fixed layer through `PlanManagerServer.instructions()`. The plan is the
+coordinator's working document, not a separate model or an execution engine.
+
+PathManager owns `P.SESSION_PLAN` and `P.SESSION_PLAN_DIR`. The `plan/` directory is
+beside `workspace/`, with agent-side write permission. Plans stay outside the business
+repository and its submitted patch. Workspace overrides and child worktrees do not
+relocate the coordinator's plan.
+
+The plan belongs to the coordinator runtime, not the execution environment. When Bash
+runs in a peer container, the plan context retains its agent-side path and the agent uses
+`read_file_tool`/`write_file_tool` there. Both SWE Pro configurations mount these tools.
+Those benchmark peers do not mount the plan directory. GameBuilder's owned base container
+does mount it at the canonical path, so Bash can author the index and documents directly.
+No benchmark preparation or grading step needs to know about these records.
+The plan manager reads index updates into the next request and
+persists approved plans at the same path. Workspace translation through
+`path_manager.execution_path()` remains only for execution paths.
+
+Game continuation copies the complete plan directory. It updates old workspace/plan
+prefixes in `plan.md` and `index.md`; relative document links remain valid. Other records
+retain their historical evidence identity. A copied evaluation is not a verification
+of the new run.
+
+- `auto`: maintain the plan before multi-step work and revise it before acting on
+  new feedback. The agent writes it with its normal workspace tools. No approval gate.
+- `plan`: the existing effect gate waits for human approval through `exit_plan_mode`.
+  Approval writes the plan to disk. Keep that tool mounted when using this mode.
+- `off`: omit the planning context and automatic planning obligation.
+
+Meta and website demo launchers default to `auto`. This is a planning instruction,
+not a semantic guarantee that every suggestion was implemented. A useful plan records
+goals, constraints, design choices, step status and acceptance checks. Each feedback
+round records source/participant, turn and release, observed needs versus proposals,
+accepted/deferred changes and reasons, the next experiment, and its evidence.
+Implementation, technical verification and user confirmation remain separate states.
+Workers do not maintain copies of this document.
+
+When `use_plan` and the shared evolution policy are enabled, the planning instructions also
+requires an **Evolution opportunities** section near the top of `plan.md`. This applies
+to Meta and Builder through the shared agent loop; it adds no automatic plan obligation
+to leaf workers and is omitted in `off` mode. An explicitly active review gate still
+applies: describing an experiment does not authorize executing it before approval.
+Policy availability comes from the system prompt's scoped capability roster and
+permissions; `enable_evolving` describes target mutability, not this permission.
+
+Each concrete opportunity has a stable ID, source evidence, reusable operation or
+method, intended consumer/next use, expected benefit, inspected capabilities or next
+discovery step, smallest experiment and baseline/reuse checks, and a status/next action
+with rationale. Replanning preserves unresolved entries. A qualifying opportunity is dispatched
+immediately with `run_in_background=true` while independent product work continues. Its plan
+entry records the returned task/process ID and actual status rather than a future schedule.
+Generation, evaluation and adoption remain sequential within the branch; dependent consumers
+wait, and active branches must be collected and closed before the parent finishes. Deferral
+requires a concrete prerequisite, write conflict, permission or resource constraint and a retry
+condition. The entry records candidate version, evaluation, adoption and actual use separately.
+No qualifying opportunity is a valid recorded assessment.
+
+Self-verification is an explicit discovery boundary: after meaningful local tests,
+debugging, browser checks or final review, separate the product/setup problem from what
+the result teaches about the agent's implementation or verification method. A passing
+check or a first correction can justify a bounded experiment; a different check or operation
+in the same project can be its next consumer. Link the observation, method change and
+comparison in the opportunity entry, and revisit an early “none identified” assessment
+when new evidence arrives. Benchmark discovery uses solver-visible inputs and local
+checks; hidden grading stays outside this loop. A manual diagnosis or a candidate's local
+evaluation is not an official benchmark result.
+
+For example, a browser result that serializes an entire scene may justify investigating
+a bounded observation operation: cite the failed call, identify the next browser check
+as consumer, compare useful diagnostic coverage and output size, and test an independent
+page before adoption. This is an illustration, not a required capability or a prefilled
+plan. The coordinator authors the assessment from its run's evidence. Runtime projects
+the instructions and latest Brief; it does not semantically validate these decisions,
+force an evolution quota, or treat a written opportunity as verified evolution.
+
+Website Builder also projects current-release feedback status every step. Deployment
+receipts carry `subscriber_min_turns`, and `job__wait(min_turns_by_job=...)` waits for
+each subscriber's own execution count. A retry does not renumber the product release.
+Read each returned completed turn in full with `job__output`, without `tail`.
+The first full read records the current plan's content hash. If the plan is unchanged
+on subsequent steps, the Builder sees an explicit reminder to replan before edits.
+This detects an unchanged document; it does not grade the plan or certify user satisfaction.
+
+Keep the current plan concise. Detailed feedback and historical evidence can live in
+linked files. The projection is bounded to 16,000 characters and explicitly asks
+the coordinator to read the complete file when that limit is exceeded.
+
+
+## Why it exists
+
+Review after the fact is not review. An agent that has already rewritten six files
+presents a person with a diff and a sunk cost, and the only cheap answer is yes. The
+expensive disagreements — wrong approach, wrong file, wrong assumption about what
+the task meant — are all visible in the plan and all invisible in the diff.
+
+So plan mode moves the decision earlier: the agent explores, says what it means to
+do, and cannot do it until someone says go.
+
+## What it is not
+
+Not a permission system and not a sandbox. Plan mode is one flag with one rule, set
+by a person for a particular stretch of work. Anything that must hold whatever the
+agent or the person does — network policy, filesystem confinement, credentials —
+belongs in the sandbox and the permission mode, which do not read this state.
+
+Not persistent. A run in plan mode that ends is not in plan mode when it is
+restored; the flag is a stance toward work in progress.
+
+## The contract
+
+- **The gate reads declarations, never names.** An action runs while plan mode is
+  active if its capability declared `mutates: False` or `permission_mode:
+  "read_only"`. `action_is_allowed` never sees a name except to check the small
+  always-allowed set, because a name is not a behaviour — the mistake that
+  `hook/default/repeat_tool.py` documents at length.
+
+- **Silence is a refusal.** A capability that declared neither field is blocked.
+  `bash_tool` is exactly that capability, and reading "nothing declared" as "safe"
+  would let the one tool that can do anything through the gate that exists to hold
+  it. The cost is real: a read-only capability that never declared itself is
+  blocked too, and the fix is for it to declare.
+
+- **Something is always legal.** `exit_plan_mode`, `ask_user_question` and
+  `done_tool` run whatever they declare. Between them the agent can always propose,
+  ask, or stop; a gate with no legal move produces an agent that burns its budget
+  discovering that.
+
+- **A block is explained to the model, not just logged.** The refusal carries
+  `PLAN_MODE_NOTICE`, which names `exit_plan_mode` as the way out. A refusal that
+  does not say how to stop being refused produces the same call, again.
+
+- **Approval is a person's, and only for this plan.** `approve()` records the plan
+  verbatim; `enter()` clears any previous approval, so a second round of work cannot
+  inherit consent given for the first. `leave()` opens the gate with no approval
+  recorded, so a cancelled plan mode never reads as an agreed plan.
+
+## Known gaps
+
+- Only tools, skills, connectors and environments can be judged. A sub-agent
+  dispatch or a workflow run is refused outright, because its effects are whatever
+  the thing it runs does and no declaration can cover that.

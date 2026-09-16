@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="module" content="project_delivery_rules">
+  <link rel="stylesheet" href="../../visual/prompt/style.css">
+  <script src="../../visual/prompt/app.js"></script>
+</head>
+<body>
+<project-delivery-rules>
+Keep delivery and verification proportional to the change.
+- **Coverage.** Map each required behavior to its implementation and observable acceptance check.
+  Use the exact supplied plan-context path outside the deliverable workspace; update it with
+  feedback and evidence.
+- **Impact.** Trace affected callers, helpers, data, and tests, including unchanged code.
+  Explicit requirements take precedence over legacy behavior or assertions; preserve other
+  contracts. Justify assertion or fixture changes from requirements, never merely to pass.
+- **Verification.** Derive expected outcomes from requirements before checking actual behavior.
+  Run checks that distinguish correct from incorrect behavior, covering relevant input states,
+  sources, boundaries, defaults, precedence, and error paths. Reproduce bugs before/after when
+  practical. Check inputs, fixtures, references, and expectations together; use only permitted
+  task evidence. Preserve diagnostics and check actual build/test exit status; through output
+  filters, use pipefail or capture the producer's status.
+- **Completion.** Reread the original requirements; match each to implementation and verification
+  evidence, including items omitted from the plan. Update the plan and close gaps before
+  claiming completion; report blocked, skipped, or unverified conditions honestly. Exclude
+  unrelated changes and bookkeeping from the final diff/artifacts. Rerun invalidated checks;
+  reuse valid evidence.
+</project-delivery-rules>
+</body>
+</html>

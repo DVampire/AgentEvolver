@@ -1,0 +1,1278 @@
+"""ExtensionManager — loads hot-pluggable extensions from a flat `extension/` tree.
+
+Framework code lives in `src/` (immutable). Evolved/generated components live outside
+`src/`, under a flat working tree:
+
+    extension/
+    ├── manifest.json                 # active set: name -> active version + file
+    ├── tool/<name>.py                # active source (normal, flat paths)
+    ├── agent/<name>.py
+    ├── prompt/<name>.html
+    ├── skill/<name>/SKILL.md
+    ├── environment/<name>/{environment.py + ENVIRONMENT.md}
+    ├── plugin/<name>/{plugin.py + PLUGIN.md + tools/}
+    ├── connector/<name>/CONNECTOR.md
+    ├── workflow/<name>.html
+    └── .versions/<module>/<name>/<version>.<ext>   # archive: every version coexists
+
+Authoring writes the flat active file; ExtensionManager archives each registered
+version into `.versions/` so multiple versions of the same component coexist on disk,
+and records the active version per component in `manifest.json`. Rollback copies an
+archived version back over the active file and re-registers.
+
+It is deliberately thin: loading is delegated to `dynamic_manager`, registration to
+each `*_manager`, and per-component version numbering to `version_manager`.
+"""
+
+import asyncio
+import hashlib
+import json
+import os
+import shutil
+import sys
+import tempfile
+from inspect import isawaitable
+from pathlib import Path
+from typing import Awaitable, Callable, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+
+# Six tables describing the same nine module types stood here, written out by hand. They
+# are the capability table's own fields now, because a seventh copy elsewhere had already
+# gone wrong in a way none of these did: `ProjectSandbox`'s list of promotable modules
+# stopped at six, so a generated workflow, plugin or memory could be registered and never
+# promoted. Restating a fact is how the copies drift; deriving it is how they cannot.
+from agentevolver.capability.types import COMPONENT_TYPES, STORED_TYPES
+from agentevolver.extension.rollout import (
+    RolloutController,
+    RolloutObservation,
+    RolloutPolicy,
+)
+from agentevolver.extension.types import Manifest, ManifestComponent
+from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
+from agentevolver.utils import get_extension_root
+from agentevolver.utils.file_utils import atomic_json_update, file_lock
+
+# All modules the extension tree may carry — the eight components plus `prompt`.
+_MODULES = [entry.type for entry in STORED_TYPES]
+# Modules whose components are class-based (loaded via dynamic_manager).
+_CLASS_MODULES = {entry.type for entry in STORED_TYPES if entry.class_based}
+# Active-file extension per module ("" => the component is a directory).
+_EXT = {entry.type: ("" if entry.directory else entry.suffix) for entry in STORED_TYPES}
+# Directory-type modules: the active component is a directory holding a manifest file.
+_DIR_MODULES = {entry.type for entry in STORED_TYPES if entry.directory}
+# What the evolution agents can create, improve and judge: everything installable
+# except a prompt, which is not evolved on its own — an agent's registration hook
+# takes a prompt-only change as part of that agent.
+EVOLVABLE_MODULES = tuple(entry.type for entry in COMPONENT_TYPES)
+_MANIFEST_FILE = {entry.type: entry.manifest for entry in STORED_TYPES if entry.manifest}
+# For directory-type class modules, the Python class lives in this file inside the dir.
+_CLASS_ENTRY = {entry.type: entry.entry for entry in STORED_TYPES if entry.entry}
+
+_ARCHIVE = ".versions"
+
+ExtensionChangeListener = Callable[[Dict[str, str]], Awaitable[None] | None]
+
+
+class ExtensionManagerServer(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    base_dir: str = Field(default="", description="Root directory of the extension tree")
+    _change_listeners: set[ExtensionChangeListener] = PrivateAttr(default_factory=set)
+    _rollouts: RolloutController = PrivateAttr(default_factory=RolloutController)
+    _rollout_configs: Dict[str, object] = PrivateAttr(default_factory=dict)
+    _capability_revision: int = PrivateAttr(default=0)
+    _probing: bool = PrivateAttr(default=False)
+    _checked: set = PrivateAttr(default_factory=set)
+
+    async def check(self, module: str, abspath: str, config=None) -> str:
+        """Run admission in an OS-isolated interpreter before any live import.
+
+        This evaluates loading, construction and callable contracts, not task quality.
+        Input is a content-addressed copy; no inherited environment credentials, host
+        network, writable repository or live registries enter the probe. Explicit
+        caller config is passed through and must not contain secrets. Absence of isolation
+        fails closed. All eight families use the same boundary.
+        """
+        if module not in EVOLVABLE_MODULES:
+            return abspath
+        source = Path(abspath).absolute()
+        paths = sorted(source.rglob("*")) if source.is_dir() else [source]
+        if source.is_symlink() or any(path.is_symlink() for path in paths):
+            raise ValueError("Candidate admission does not accept symlinks")
+        if source.name in {"", ".", ".."}:
+            raise ValueError("Candidate must have a concrete artifact name")
+        digest = hashlib.sha256((module + "\0" + source.name).encode())
+        files = {}
+        for path in paths:
+            if "__pycache__" in path.parts or path.suffix == ".pyc":
+                continue  # Only source is admitted, never stale executable bytecode.
+            if path.is_file():
+                relative = str(path.relative_to(source)) if source.is_dir() else source.name
+                files[relative] = path.read_bytes()
+                digest.update(relative.encode() + b"\0" + files[relative] + b"\0")
+        if not files:
+            raise ValueError("Candidate is empty")
+        digest.update(json.dumps(config or {}, sort_keys=True).encode())
+        key = digest.hexdigest()
+        # Beside the machine's other caches, never inside the component library. This was
+        # `{base_dir}/.checked/{key}`, so every admission dropped a hashed directory into
+        # the tracked `extension/` tree — noise in `git status` that had to be cleaned by
+        # hand, and a cache living in the very directory whose contents it certifies.
+        # Keyed by content digest, so it is shared across extension trees by construction.
+        root = path_manager.get(P.ADMISSION) / key
+        candidate = root / source.name
+        if root.parent.is_symlink() or root.is_symlink() or candidate.is_symlink():
+            raise ValueError("Candidate cache must not contain symlink roots")
+        if key in self._checked:
+            cached = sorted(candidate.rglob("*")) if source.is_dir() else [candidate]
+            cached_files = {str(path.relative_to(candidate)) if source.is_dir() else source.name
+                            for path in cached if path.is_file()}
+            intact = candidate.exists() and cached_files == set(files) and not any(path.is_symlink() for path in cached) and all(
+                (candidate / relative if source.is_dir() else candidate).is_file()
+                and (candidate / relative if source.is_dir() else candidate).read_bytes() == content
+                for relative, content in files.items()
+            )
+            if intact:
+                return str(candidate)
+            self._checked.discard(key)
+        helper = shutil.which("bwrap")
+        if sys.platform != "linux" or helper is None:
+            raise RuntimeError("Isolated extension admission requires Linux bubblewrap; refusing live import")
+        root.parent.mkdir(parents=True, exist_ok=True)
+        # Construct from the exact bytes hashed above, not a second read of mutable input.
+        from agentevolver.utils.file_utils import atomic_write_text
+
+        # Never overwrite paths inside an old candidate: an imported component may
+        # have changed them into links. Build a fresh tree, then publish atomically.
+        with tempfile.TemporaryDirectory(prefix=".stage-", dir=root.parent) as staging:
+            staged_root = Path(staging) / "snapshot"
+            staged_root.mkdir()
+            staged = staged_root / source.name
+            for relative, content in files.items():
+                target = staged / relative if source.is_dir() else staged
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            async with file_lock(root):
+                if root.exists():
+                    from agentevolver.utils import make_id
+                    # Preserve prior evidence instead of deleting it on rejection.
+                    root.rename(root.with_name(key + ".previous-" + make_id()))
+                staged_root.rename(root)
+        with tempfile.TemporaryDirectory(prefix="admission-") as temporary:
+            repo = Path(__file__).resolve().parents[2]
+            argv = [helper, "--die-with-parent", "--unshare-all", "--new-session"]
+            for system in ("/usr", "/bin", "/lib", "/lib64", sys.prefix):
+                if Path(system).exists():
+                    argv.extend(["--ro-bind", system, system])
+            argv += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
+                     "--ro-bind", str(repo / "agentevolver"), "/code/agentevolver",
+                     "--ro-bind", str(repo / "configs"), "/code/configs",
+                     "--ro-bind", str(root), "/candidate",
+                     "--bind", temporary, "/result", "--chdir", "/tmp"]
+            payload = json.dumps({"module": module, "path": "/candidate/" + source.name,
+                                  "config": config or {}})
+            code = "from agentevolver.extension.server import admission_probe; admission_probe()"
+            argv += ["--", sys.executable, "-c", code, payload]
+            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp/home", "PYTHONPATH": "/code",
+                   "PYTHONDONTWRITEBYTECODE": "1", "AGENTEVOLVER_HOME": "/tmp/state",
+                   "AGENTEVOLVER_EXTENSION_ROOT": "/tmp/extensions"}
+            process = await asyncio.create_subprocess_exec(
+                *argv, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            try:
+                output, _ = await asyncio.wait_for(process.communicate(), timeout=60)
+            except BaseException:
+                if process.returncode is None:
+                    process.kill()
+                await process.wait()
+                raise
+            atomic_write_text(root / "probe.log", output.decode("utf-8", "replace"))
+            if process.returncode:
+                raise ValueError(f"Isolated admission failed (exit {process.returncode}); see {root / 'probe.log'}")
+            result = json.loads((Path(temporary) / "result.json").read_text())
+            atomic_write_text(root / "result.json", json.dumps({**result, "digest": key, "module": module}))
+        self._checked.add(key)
+        return str(candidate)
+
+    def __init__(self, base_dir: Optional[str] = None, **kwargs):
+        super().__init__(**kwargs)
+        self.base_dir = os.path.abspath(base_dir) if base_dir else get_extension_root()
+        os.makedirs(self.base_dir, exist_ok=True)
+
+    def set_base_dir(self, base_dir: str) -> None:
+        """Select the configured project's durable extension directory."""
+        self.base_dir = os.path.abspath(base_dir)
+        os.makedirs(self.base_dir, exist_ok=True)
+        self._rollouts = RolloutController()
+        self._rollout_configs.clear()
+        self._checked.clear()
+        self._capability_revision += 1
+
+    def subscribe(self, listener: ExtensionChangeListener) -> None:
+        """Receive hot-extension lifecycle changes after a component is live."""
+        self._change_listeners.add(listener)
+
+    @property
+    def capability_revision(self) -> int:
+        """Monotonic generation of the live extension-backed capability registry."""
+        return self._capability_revision
+
+    def unsubscribe(self, listener: ExtensionChangeListener) -> None:
+        self._change_listeners.discard(listener)
+
+    async def _notify_change(
+        self, action: str, module: str, name: str, *, version: Optional[str] = None
+    ) -> None:
+        # Agent native-schema catalogs are intentionally cached per run. Bump before
+        # listeners so the very next model turn can rebuild once and call the component
+        # that just became live (or stop offering one that was rolled back/unloaded).
+        self._capability_revision += 1
+        change = {"action": action, "module": module, "name": name}
+        if version:
+            change["version"] = version
+        for listener in tuple(self._change_listeners):
+            try:
+                result = listener(change)
+                if isawaitable(result):
+                    await result
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    f"| ❌ ExtensionManager: change listener failed for {module}:{name}: {exc}",
+                    exc_info=True,
+                )
+
+    # ------------------------------------------------------------------
+    # Paths
+    # ------------------------------------------------------------------
+    def module_dir(self, module: str) -> str:
+        return str(path_manager.resolve_under(self.base_dir, module))
+
+    def stage_path(self, module: str, filename: str) -> str:
+        """Absolute path of the flat active file/dir a generator should write to."""
+        mdir = self.module_dir(module)
+        os.makedirs(mdir, exist_ok=True)
+        return str(path_manager.resolve_under(mdir, filename))
+
+    def _archive_dir(self, module: str, name: str) -> str:
+        archive = path_manager.resolve_under(self.base_dir, _ARCHIVE)
+        module_dir = path_manager.resolve_under(archive, module)
+        return str(path_manager.resolve_under(module_dir, name))
+
+    def _manifest_path(self) -> str:
+        return str(path_manager.resolve_under(self.base_dir, "manifest.json"))
+
+    def _rollout_path(self) -> str:
+        return str(path_manager.resolve_under(self.base_dir, ".rollouts.json"))
+
+    def record_decision(self, *, report: dict, run_id: str, decision: str, evidence: str) -> dict:
+        """Persist a generic, version-bound adoption audit; never install implicitly.
+
+        The caller authenticates the completed evaluation run. This record identifies
+        an evaluator judgment; admission and tool rollout remain separate guarantees.
+        """
+        from agentevolver.extension.types import ComponentEvaluation
+
+        evaluation = ComponentEvaluation.model_validate(report)
+        if not run_id or not evidence.strip() or decision not in {"keep", "rollback", "unload"}:
+            raise ValueError("Decision requires a run ID, evidence, and a valid outcome")
+        if evaluation.version not in self.list_component_versions(evaluation.module, evaluation.name):
+            raise ValueError("Evaluated candidate has no archived version")
+        if decision == "keep":
+            active = self.read_manifest().find(evaluation.module, evaluation.name)
+            if active is None or active.version != evaluation.version:
+                raise ValueError("Cannot keep a different or inactive candidate version")
+            if evaluation.verdict != "pass":
+                raise ValueError("Keep requires a passing, grounded evaluation")
+        record = {"run_id": run_id, "decision": decision, "evidence": evidence,
+                  "evaluation": evaluation.model_dump(), "evidence_kind": "evaluator_judgment"}
+        path = path_manager.resolve_under(self.base_dir, ".evaluations.json")
+        def append(records):
+            if record not in records:
+                records.append(record)
+            return records
+        atomic_json_update(path, append, default=[], recover_corrupt=False)
+        return record
+
+    # ------------------------------------------------------------------
+    # Manifest
+    # ------------------------------------------------------------------
+    def read_manifest(self) -> Manifest:
+        path = self._manifest_path()
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return Manifest.model_validate_json(f.read())
+        return Manifest()
+
+    def _write_manifest(self, manifest: Manifest) -> None:
+        """Durably replace the manifest; readers never observe partial JSON."""
+        path = self._manifest_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".manifest-", suffix=".tmp", dir=os.path.dirname(path))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write(manifest.model_dump_json(indent=2))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+    async def restore_manifest(self, manifest: Manifest) -> None:
+        """Atomically restore and reload a previously captured active set."""
+        async with file_lock(self._manifest_path()):
+            self._write_manifest(manifest)
+        await self.reload()
+
+    # ------------------------------------------------------------------
+    # Cold start
+    # ------------------------------------------------------------------
+    async def initialize(self) -> Manifest:
+        """Load + register the active extension set.
+
+        Prefers the manifest (loads each component at its recorded active version);
+        falls back to scanning the flat module dirs on a fresh install. Call after the
+        component managers have initialized their built-ins, so extensions layer on top.
+        """
+        manifest = self.read_manifest()
+        if manifest.components:
+            loaded: List[ManifestComponent] = []
+            for comp in manifest.components:
+                abspath = str(path_manager.resolve_under(self.base_dir, comp.file))
+                if not os.path.exists(abspath):
+                    logger.warning(f"| ⚠️ ExtensionManager: active file missing for {comp.module}:{comp.name} ({abspath}); skipping.")
+                    continue
+                try:
+                    self._ensure_archived(comp.module, comp.name, abspath, comp.version)
+                    await self._load_component(comp.module, abspath, comp.name, version=comp.version, config=None)
+                    loaded.append(comp)
+                except Exception as e:
+                    logger.error(f"| ❌ ExtensionManager: failed to load {comp.module}:{comp.name}: {e}")
+            # A failed load is not an uninstall. Keep accepted version pointers
+            # so the next start cannot fall back to scanning unapproved flat files.
+            logger.info(f"| ✅ ExtensionManager: loaded {len(loaded)} active extension components.")
+            await self._restore_rollouts()
+            return Manifest(components=loaded)
+
+        # Fresh install: scan flat dirs and register whatever is present.
+        manifest = await self._scan_and_load()
+        await self._restore_rollouts()
+        return manifest
+
+    async def _scan_and_load(self) -> Manifest:
+        manifest = Manifest()
+        for module in _MODULES:
+            mdir = self.module_dir(module)
+            if not os.path.isdir(mdir):
+                continue
+            ext = _EXT[module]
+            for entry in sorted(os.listdir(mdir)):
+                if entry.startswith(".") or entry == "__init__.py":
+                    continue
+                abspath = os.path.join(mdir, entry)
+                if module in _DIR_MODULES:
+                    if not (os.path.isdir(abspath) and os.path.exists(os.path.join(abspath, _MANIFEST_FILE[module]))):
+                        continue
+                elif not (entry.endswith(ext) and os.path.isfile(abspath)):
+                    continue
+                try:
+                    name = await self._load_component(module, abspath, None, version=None, config=None)
+                    comp = self._record(module, name, abspath, manifest)
+                    self._ensure_archived(module, name, abspath, comp.version)
+                except Exception as e:
+                    logger.error(f"| ❌ ExtensionManager: failed to load {module}:{entry}: {e}")
+        self._write_manifest(manifest)
+        if manifest.components:
+            logger.info(f"| ✅ ExtensionManager: discovered + loaded {len(manifest.components)} extension components.")
+        else:
+            logger.info("| 📦 ExtensionManager: no extension components found.")
+        return manifest
+
+    # ------------------------------------------------------------------
+    # Authoring: hot-add / evolve a single component
+    # ------------------------------------------------------------------
+    async def add_component(
+        self, module: str, abspath: str, config: Optional[dict] = None,
+    ) -> str:
+        # Allocation and archiving are one transaction across processes. The manifest
+        # lock inside the transaction remains separate from this admission lock.
+        async with file_lock(os.path.join(self.base_dir, ".admission.lock")):
+            return await self._add_component(module, abspath, config)
+
+    async def _add_component(
+        self, module: str, abspath: str, config: Optional[dict] = None,
+    ) -> str:
+        """Register an already-written flat active file, archive its version, update the manifest.
+
+        Returns the registered component name. The version is assigned by the owning
+        manager (via version_manager), so re-adding an existing component evolves it.
+
+        Admission is deterministic and cannot be disabled: the live registry entry and
+        every model-facing schema must be valid before the manifest commits. Functional
+        quality belongs to evaluation and measured rollout, not to an LLM call inside
+        this storage transaction.
+        """
+        # add_component is the evolution-write entry point, so it enforces the
+        # enable_evolving gate: overwriting an already-registered *frozen* entity is
+        # refused here (rollback / reload / startup load do not pass this flag).
+        name, version, admitted = await self._load_component(
+            module, abspath, None, version=None, config=config, return_version=True, enforce_evolvable=True
+        )
+        # The manifest still holds the previous accepted version. Loading necessarily
+        # makes the candidate live in its owning registry, so any rejection below must
+        # restore this version (or unload a brand-new component).
+        _prev = self.read_manifest().find(module, name)
+        prev_version = _prev.version if _prev else None
+
+        try:
+            await self._validate_candidate(module, name)
+        except Exception as error:
+            await self._reject_candidate(module, name, prev_version, error)
+
+        # Serialize the manifest read-modify-write so parallel add_component calls
+        # (e.g. concurrent component evolution) don't lose each other's updates.
+        try:
+            async with file_lock(self._manifest_path()):
+                manifest = self.read_manifest()
+                comp = self._record(module, name, abspath, manifest, version=version)
+                # STRICT archive: guarantee a rollback target BEFORE committing the manifest.
+                self._ensure_archived(module, name, admitted, comp.version)
+                self._write_manifest(manifest)
+        except Exception as e:
+            logger.error(
+                f"| ❌ ExtensionManager: add {module}:{name} not committed ({e}); "
+                "restoring the previous accepted state."
+            )
+            await self._reject_candidate(module, name, prev_version, e)
+        logger.info(f"| ➕ ExtensionManager: added {module}:{name} v{comp.version}")
+
+        if prev_version is not None:
+            await self._begin_rollout(module, name, prev_version, comp.version)
+
+        await self._notify_change(
+            "registered" if prev_version is None else "evolved",
+            module,
+            name,
+            version=comp.version,
+        )
+        return name
+
+    async def _validate_candidate(self, module: str, name: str) -> None:
+        """Validate one loaded candidate without a model or external service.
+
+        The owning manager already performs type-specific parsing and construction while
+        loading. Admission adds the shared invariants: the candidate must remain reachable
+        through that manager, and every callable schema must satisfy the canonical
+        capability contract and serialize as strict JSON.
+        """
+        from agentevolver.capability import CapabilitySchema, SchemaSource
+        from agentevolver.capability.types import stored_type
+
+        entry = stored_type(module)
+        if entry is None:
+            raise ValueError(f"unknown stored component type: {module}")
+        manager = entry.manager()
+        getter = getattr(manager, "get_info", None) or getattr(manager, "get", None)
+        if getter is None:
+            raise TypeError(f"{module} manager exposes no component lookup")
+        info = getter(name)
+        if isawaitable(info):
+            info = await info
+        if info is None:
+            raise LookupError(
+                f"candidate is not registered after load: {module}:{name}"
+            )
+
+        project = getattr(manager, "function_callings", None)
+        if not callable(project):
+            return
+        projected = project([name])
+        if isawaitable(projected):
+            projected = await projected
+
+        schemas = []
+        for item in projected or []:
+            if not isinstance(item, (list, tuple)) or not item:
+                raise TypeError(f"invalid callable projection for {module}:{name}")
+            raw = item[0]
+            if not isinstance(raw, dict) or raw.get("type") != "function":
+                raise TypeError(f"invalid function schema for {module}:{name}")
+            function = raw.get("function")
+            if not isinstance(function, dict) or not function.get("name"):
+                raise TypeError(f"function schema has no name for {module}:{name}")
+            parameters = function.get("parameters")
+            if not isinstance(parameters, dict):
+                raise TypeError(
+                    f"function schema has no parameter object for {module}:{name}"
+                )
+            schema = CapabilitySchema(
+                name=str(function["name"]),
+                description=str(function.get("description") or function["name"]),
+                parameters=parameters,
+                strict=parameters.get("additionalProperties") is False,
+                source=SchemaSource.INFERRED,
+            )
+            schemas.append(schema.as_function_calling())
+        json.dumps(schemas, ensure_ascii=False)
+
+    async def _reject_candidate(
+        self,
+        module: str,
+        name: str,
+        previous_version: Optional[str],
+        cause: Exception,
+    ) -> None:
+        """Restore the accepted registry state and raise the admission failure."""
+        try:
+            if previous_version is not None:
+                await self.rollback(module, name, previous_version)
+            elif not await self._unload_component(module, name):
+                raise RuntimeError("candidate could not be unregistered")
+        except Exception as restore_error:
+            raise RuntimeError(
+                f"{module}:{name} admission failed ({cause}); CRITICAL: restoring the "
+                f"previous state also failed ({restore_error})"
+            ) from restore_error
+        raise ValueError(
+            f"{module}:{name} rejected during deterministic admission: {cause}"
+        ) from cause
+
+    @staticmethod
+    def _rollout_key(module: str, name: str) -> str:
+        return f"{module}:{name}"
+
+    def _rollout_policy(self) -> RolloutPolicy:
+        try:
+            from agentevolver.config import config
+
+            extension = getattr(config, "extension", {}) or {}
+            values = extension.get("rollout", {}) if isinstance(extension, dict) else {}
+            return RolloutPolicy.model_validate(values or {})
+        except Exception as error:
+            logger.warning(f"| ⚠️ Invalid extension rollout policy; using defaults: {error}")
+            return RolloutPolicy()
+
+    async def _begin_rollout(
+        self, module: str, name: str, baseline_version: str, candidate_version: str,
+    ) -> None:
+        # Only Tool has a call-local version execution path today. Rolling another
+        # component back into shadow would make its validated candidate permanently
+        # unreachable because no invocation boundary could collect evidence for it.
+        if module != "tool":
+            logger.info(
+                f"| ✅ ExtensionManager: {module}:{name} v{candidate_version} stays "
+                "active after admission (measured rollout is currently tool-only)"
+            )
+            return
+        key = self._rollout_key(module, name)
+
+        # Admission validates the newly loaded candidate. Shadow/canary must then begin
+        # with the baseline actually serving normal traffic; leaving the
+        # candidate globally registered while reporting phase=shadow would invert the
+        # safety contract. The candidate remains archived and can be promoted atomically.
+        await self.rollback(module, name, baseline_version)
+
+        revert, activate = self._rollout_callbacks(
+            module, name, baseline_version, candidate_version,
+        )
+
+        self._rollouts.begin(
+            key, baseline_version, candidate_version, revert, self._rollout_policy(),
+            activate=activate,
+        )
+        await self._persist_rollouts()
+        logger.info(
+            f"| 🌓 ExtensionManager: rollout {key} v{baseline_version} → "
+            f"v{candidate_version} entered shadow"
+        )
+
+    def _rollout_callbacks(
+        self, module: str, name: str, baseline_version: str, candidate_version: str,
+    ):
+        """Bind durable rollout state to this process's activation operations."""
+        async def revert(reason: str) -> None:
+            await self.rollback(module, name, baseline_version)
+            try:
+                from agentevolver.extension.journal import journal
+                journal.fill_gating(
+                    module, name, "reverted",
+                    attribution={f"rollout:{reason}": False},
+                )
+            except Exception as error:  # observational only
+                logger.error(f"| ⚠️ Could not journal rollout rollback: {error}")
+
+        async def activate() -> None:
+            await self.rollback(module, name, candidate_version)
+            try:
+                from agentevolver.extension.journal import journal
+                journal.fill_gating(
+                    module, name, "promoted",
+                    attribution={"rollout:thresholds_passed": True},
+                )
+            except Exception as error:  # observational only
+                logger.error(f"| ⚠️ Could not journal rollout promotion: {error}")
+
+        return revert, activate
+
+    async def _persist_rollouts(self) -> None:
+        """Merge this process's rollout snapshots into the project state atomically."""
+        snapshots = self._rollouts.dump()
+        path = self._rollout_path()
+
+        def merge(current):
+            durable = dict(current or {})
+            durable.update(snapshots)
+            return durable
+
+        await asyncio.to_thread(atomic_json_update, path, merge, default={})
+
+    async def _restore_rollouts(self) -> None:
+        """Recover non-ephemeral rollout metrics and rebind activation callbacks."""
+        path = self._rollout_path()
+        try:
+            with open(path, "r", encoding="utf-8") as stream:
+                states = json.load(stream)
+        except (OSError, ValueError):
+            return
+        for key, raw in dict(states or {}).items():
+            try:
+                module, name = str(key).split(":", 1)
+                state = dict(raw or {})
+                baseline = str(state["baseline_version"])
+                candidate = str(state["candidate_version"])
+                revert, activate = self._rollout_callbacks(
+                    module, name, baseline, candidate,
+                )
+                self._rollouts.restore(state, rollback=revert, activate=activate)
+            except Exception as error:
+                logger.warning(f"| ⚠️ Could not restore rollout {key}: {error}")
+
+    async def rollout_tool_config(self, name: str, version: str):
+        """Return a call-local ToolConfig for an archived version.
+
+        Version history is the fast path in a live process.  After a restart only the
+        active baseline is registered, so the candidate class is reconstructed from
+        ``.versions`` and paired with a copy of the baseline's runtime configuration.
+        Neither path mutates the global registry.
+        """
+        key = f"tool:{name}:{version}"
+        cached = self._rollout_configs.get(key)
+        if cached is not None:
+            return cached
+
+        from agentevolver.tool.server import tool_manager
+
+        context = tool_manager._ensure_context_manager()
+        historical = await context.get_version_info(name, version)
+        if historical is not None and historical.instance is not None:
+            self._rollout_configs[key] = historical
+            return historical
+
+        current = await tool_manager.get_info(name)
+        if current is None:
+            raise LookupError(f"No active tool config for rollout candidate {name!r}")
+        archived = os.path.join(self._archive_dir("tool", name), f"{version}{_EXT['tool']}")
+        if not os.path.isfile(archived):
+            raise FileNotFoundError(archived)
+
+        archived = await self.check("tool", archived, dict(getattr(current, "config", {}) or {}))
+
+        from agentevolver.dynamic import dynamic_manager
+
+        cls = dynamic_manager.load_class_from_path(
+            archived,
+            base_class=self._base_class("tool"),
+            context="tool",
+            module_name=f"ext.rollout.tool.{name}_{str(version).replace('.', '_')}",
+        )
+        cls.__source_file__ = archived
+        instance = cls(**dict(getattr(current, "config", {}) or {}))
+        if hasattr(instance, "initialize"):
+            result = instance.initialize()
+            if isawaitable(result):
+                await result
+        candidate = current.model_copy(deep=False)
+        candidate.version = str(version)
+        candidate.cls = cls
+        candidate.instance = instance
+        candidate.path = archived
+        candidate.permission_mode = instance.permission_mode
+        candidate.mutates = instance.mutates
+        candidate.call_timeout_seconds = instance.call_timeout_seconds
+        self._rollout_configs[key] = candidate
+        return candidate
+
+    def rollout_status(self, module: str, name: str) -> Optional[Dict[str, object]]:
+        rollout = self._rollouts.get(self._rollout_key(module, name))
+        return rollout.status() if rollout else None
+
+    def select_rollout_version(
+        self, module: str, name: str, traffic_key: str,
+    ) -> Optional[str]:
+        """Deterministically route one session according to the current rollout phase."""
+        return self._rollouts.select_version(
+            self._rollout_key(module, name), traffic_key,
+        )
+
+    async def record_shadow_observation(
+        self,
+        module: str,
+        name: str,
+        baseline: RolloutObservation | Dict,
+        candidate: RolloutObservation | Dict,
+    ) -> Dict[str, object]:
+        rollout = await self._rollouts.record_shadow(
+            self._rollout_key(module, name),
+            baseline if isinstance(baseline, RolloutObservation) else RolloutObservation.model_validate(baseline),
+            candidate if isinstance(candidate, RolloutObservation) else RolloutObservation.model_validate(candidate),
+        )
+        await self._persist_rollouts()
+        return rollout.status()
+
+    async def record_canary_observation(
+        self,
+        module: str,
+        name: str,
+        candidate: RolloutObservation | Dict,
+    ) -> Dict[str, object]:
+        rollout = await self._rollouts.record_canary(
+            self._rollout_key(module, name),
+            candidate if isinstance(candidate, RolloutObservation) else RolloutObservation.model_validate(candidate),
+        )
+        await self._persist_rollouts()
+        return rollout.status()
+
+    async def unload(self, module: str, name: str) -> bool:
+        """Unregister an active component and drop it from the manifest (archive kept)."""
+        ok = await self._unload_component(module, name)
+        async with file_lock(self._manifest_path()):
+            manifest = self.read_manifest()
+            manifest.remove(module, name)
+            self._write_manifest(manifest)
+        if ok:
+            await self._notify_change("unregistered", module, name)
+        return ok
+
+    async def deactivate_all(self) -> None:
+        deactivated: List[ManifestComponent] = []
+        async with file_lock(self._manifest_path()):
+            manifest = self.read_manifest()
+            for comp in list(manifest.components):
+                if await self._unload_component(comp.module, comp.name):
+                    deactivated.append(comp)
+            self._write_manifest(Manifest())
+        for comp in deactivated:
+            await self._notify_change("unregistered", comp.module, comp.name)
+        logger.info("| 🧹 ExtensionManager: deactivated all extensions.")
+
+    async def reload(self) -> Manifest:
+        """Re-load + re-register the active set (e.g. after editing flat files)."""
+        manifest = self.read_manifest()
+        for comp in manifest.components:
+            abspath = str(path_manager.resolve_under(self.base_dir, comp.file))
+            if os.path.exists(abspath):
+                try:
+                    await self._load_component(comp.module, abspath, comp.name, version=comp.version, config=None)
+                    await self._notify_change("reloaded", comp.module, comp.name, version=comp.version)
+                except Exception as e:
+                    logger.error(f"| ❌ ExtensionManager: reload failed for {comp.module}:{comp.name}: {e}")
+        return manifest
+
+    # ------------------------------------------------------------------
+    # Versioning: list / read / diff / rollback
+    # ------------------------------------------------------------------
+    def read_component_version(self, module: str, name: str, version: str) -> Dict[str, str]:
+        """Return the archived source of a version as ``{relative_path: text}``.
+
+        Single-file modules (tool/agent/prompt) return one entry; directory modules
+        (skill/environment/connector) return one entry per file in the archived dir.
+        """
+        ext = _EXT[module]
+        path = os.path.join(self._archive_dir(module, name), f"{version}{ext}")
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"No archived {module}:{name} version '{version}' at {path}")
+        out: Dict[str, str] = {}
+        if os.path.isdir(path):
+            for root, _dirs, files in os.walk(path):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    rel = os.path.relpath(fp, path)
+                    try:
+                        out[rel] = open(fp, encoding="utf-8").read()
+                    except Exception:
+                        out[rel] = "<binary or unreadable>"
+        else:
+            # Single-file module: use a version-independent key (the component's canonical
+            # filename) so the same logical file aligns across versions in a diff — the
+            # archived filename is "<version><ext>", which would otherwise differ per version.
+            key = f"{name}{ext}"
+            try:
+                out[key] = open(path, encoding="utf-8").read()
+            except Exception:
+                out[key] = "<binary or unreadable>"
+        return out
+
+    def diff_versions(self, module: str, name: str, version_a: str, version_b: Optional[str] = None) -> str:
+        """Unified source diff between two archived versions.
+
+        ``version_b`` defaults to the currently active version (from the manifest), so
+        ``diff(module, name, old)`` shows what the live version changed relative to ``old``.
+        """
+        import difflib
+
+        if version_b is None:
+            comp = self.read_manifest().find(module, name)
+            version_b = comp.version if comp else version_a
+        a = self.read_component_version(module, name, version_a)
+        b = self.read_component_version(module, name, version_b)
+        chunks: List[str] = []
+        for rel in sorted(set(a) | set(b)):
+            if rel not in a:
+                chunks.append(f"+++ added in {version_b}: {rel}")
+                continue
+            if rel not in b:
+                chunks.append(f"--- removed in {version_b}: {rel}")
+                continue
+            d = list(difflib.unified_diff(
+                a[rel].splitlines(keepends=True), b[rel].splitlines(keepends=True),
+                fromfile=f"{version_a}/{rel}", tofile=f"{version_b}/{rel}",
+            ))
+            if d:
+                chunks.append("".join(d))
+        return "\n".join(chunks) if chunks else f"(no differences between v{version_a} and v{version_b})"
+
+    def list_component_versions(self, module: str, name: str) -> List[str]:
+        adir = self._archive_dir(module, name)
+        if not os.path.isdir(adir):
+            return []
+        ext = _EXT[module]
+        out = []
+        for entry in os.listdir(adir):
+            if module in _DIR_MODULES:
+                if os.path.isdir(os.path.join(adir, entry)):
+                    out.append(entry)
+            elif entry.endswith(ext):
+                out.append(entry[: -len(ext)] if ext else entry)
+        return sorted(out)
+
+    async def rollback(self, module: str, name: str, version: str, config: Optional[dict] = None) -> str:
+        """Restore an archived version over the active file and re-register it."""
+        ext = _EXT[module]
+        archived = os.path.join(self._archive_dir(module, name), f"{version}{ext}")
+        if not os.path.exists(archived):
+            raise FileNotFoundError(f"No archived {module}:{name} version '{version}' at {archived}")
+
+        # Determine the active flat destination (reuse the manifest's file if known).
+        comp = self.read_manifest().find(module, name)
+        if comp:
+            dest = str(path_manager.resolve_under(self.base_dir, comp.file))
+        else:
+            dest = os.path.join(self.module_dir(module), f"{name}{ext}")
+
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        if module in _DIR_MODULES:
+            if os.path.exists(dest):
+                shutil.rmtree(dest)
+            shutil.copytree(archived, dest)
+        else:
+            shutil.copyfile(archived, dest)
+
+        loaded = await self._load_component(module, dest, name, version=version, config=config)
+        async with file_lock(self._manifest_path()):
+            manifest = self.read_manifest()
+            self._record(module, loaded, dest, manifest, version=version)
+            self._write_manifest(manifest)
+        logger.info(f"| ⏪ ExtensionManager: rolled back {module}:{name} to v{version}")
+        await self._notify_change("rolled_back", module, loaded, version=version)
+        return loaded
+
+    # ------------------------------------------------------------------
+    # Internal: manifest record + archive
+    # ------------------------------------------------------------------
+    def _record(self, module: str, name: str, abspath: str, manifest: Manifest, version: Optional[str] = None) -> ManifestComponent:
+        rel = os.path.relpath(abspath, self.base_dir)
+        if version is None:
+            existing = manifest.find(module, name)
+            version = existing.version if existing else "1.0.0"
+        comp = ManifestComponent(module=module, name=name, version=version, file=rel)
+        manifest.upsert(comp)
+        return comp
+
+    def _ensure_archived(self, module: str, name: str, abspath: str, version: str) -> None:
+        """Copy the active file into the version archive. STRICT: raises if the archive
+        cannot be produced — a live version with no archived copy has no rollback target,
+        so ``add_component`` treats an archiving failure as fatal rather than silent."""
+        ext = _EXT[module]
+        adir = self._archive_dir(module, name)
+        os.makedirs(adir, exist_ok=True)
+        dest = os.path.join(adir, f"{version}{ext}")
+        source, archive = Path(abspath), Path(dest)
+        if source.absolute() == archive.absolute():
+            if not source.exists():
+                raise FileNotFoundError(source)
+            return
+
+        def content(path):
+            entries = sorted(path.rglob("*")) if path.is_dir() else [path]
+            if path.is_symlink() or any(entry.is_symlink() for entry in entries):
+                raise ValueError("Version archives cannot contain symlinks")
+            return {str(entry.relative_to(path)) if path.is_dir() else "": entry.read_bytes()
+                    for entry in entries if entry.is_file()
+                    and "__pycache__" not in entry.parts and entry.suffix != ".pyc"}
+
+        expected = content(source)
+        if archive.exists() or archive.is_symlink():
+            if archive.is_dir() != source.is_dir() or content(archive) != expected:
+                raise ValueError(f"Archived {module}:{name} v{version} is immutable; assign a new version")
+            return
+        # Copy to a sibling first. Neither cancellation nor a failed copy publishes
+        # a partial archive, and an existing version is never silently overwritten.
+        with tempfile.TemporaryDirectory(prefix=".archive-", dir=adir) as temporary:
+            staged = Path(temporary) / "artifact"
+            if module in _DIR_MODULES:
+                shutil.copytree(source, staged, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            else:
+                shutil.copyfile(source, staged)
+            if content(staged) != expected:
+                raise ValueError("Candidate changed while archiving; retry admission")
+            if staged.is_dir():
+                staged.rename(archive)
+            else:
+                os.link(staged, archive)  # exclusive publish; refuses existing destination
+        if not os.path.exists(dest):
+            raise RuntimeError(f"archiving {module}:{name} v{version} produced no file at {dest}")
+
+    # ------------------------------------------------------------------
+    # Per-module load / unload dispatch
+    # ------------------------------------------------------------------
+    async def _assert_evolvable(self, module: str, name: str) -> None:
+        """Refuse to overwrite an already-registered *frozen* entity (enable_evolving=False).
+
+        A brand-new entity (not yet registered) returns None → allowed. If the lookup
+        itself ERRORS we **fail closed** (refuse the overwrite): we cannot confirm the
+        target is not a frozen built-in, so blocking is the safe default — a genuine new
+        component looks up cleanly as "not found" (None) and is unaffected.
+        """
+        try:
+            current = await self._current_enable_evolving(module, name)
+        except Exception as e:
+            raise PermissionError(
+                f"{module}:{name}: could not verify evolvability ({e}). Refusing the overwrite to "
+                f"protect frozen built-ins (fail-closed). Retry once the registry is healthy."
+            )
+        if current is False:
+            raise PermissionError(
+                f"{module}:{name} is frozen (enable_evolving=False) and cannot be overwritten by "
+                f"evolution. Set 'enable_evolving: true' on it first if you intend to evolve it."
+            )
+
+    async def _current_enable_evolving(self, module: str, name: str):
+        """The currently-registered entity's enable_evolving flag, or None if not registered.
+
+        Lookups return None cleanly for an unregistered name; any *exception* here is a real
+        registry malfunction and is propagated so the caller can fail closed (see
+        ``_assert_evolvable``) rather than silently allowing an overwrite.
+        """
+        if module == "tool":
+            from agentevolver.tool.server import tool_manager
+            inst = await tool_manager.get(name)
+            return getattr(inst, "enable_evolving", None) if inst is not None else None
+        if module == "agent":
+            from agentevolver.agent.server import agent_manager
+            info = await agent_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
+        if module == "environment":
+            from agentevolver.environment.server import environment_manager
+            info = await environment_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
+        if module == "skill":
+            from agentevolver.skill.server import skill_manager
+            info = await skill_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
+        if module == "connector":
+            from agentevolver.connector.server import connector_manager
+            info = await connector_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
+        if module == "workflow":
+            from agentevolver.workflow import workflow_manager
+            definition = workflow_manager.get(name)
+            return getattr(definition, "enable_evolving", None) if definition is not None else None
+        if module == "plugin":
+            from agentevolver.plugins import plugin_manager
+            info = await plugin_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
+        if module == "memory":
+            from agentevolver.memory import memory_manager
+            info = await memory_manager.get_info(name)
+            return getattr(info, "enable_evolving", None) if info is not None else None
+        return None
+
+    @staticmethod
+    def _dir_component_name(abspath: str, md_name: str, default: str) -> str:
+        """Read the `name:` from a dir component's SKILL.md/CONNECTOR.md frontmatter."""
+        import re as _re
+
+        import yaml as _yaml
+        try:
+            raw = open(os.path.join(abspath, md_name), encoding="utf-8").read()
+            m = _re.match(r"^---\s*\n(.*?)\n---", raw, _re.DOTALL)
+            fm = _yaml.safe_load(m.group(1)) if m else {}
+            return (fm or {}).get("name") or default
+        except Exception:
+            return default
+
+    async def _load_component(self, module: str, abspath: str, name_hint: Optional[str],
+                              version: Optional[str], config: Optional[dict], return_version: bool = False,
+                              enforce_evolvable: bool = False):
+        if not self._probing:
+            abspath = await self.check(module, abspath, config)
+        if module in _CLASS_MODULES:
+            result = await self._load_class_component(module, abspath, version, config, return_version, enforce_evolvable)
+        elif module == "prompt":
+            result = await self._load_prompt(abspath, return_version, version, enforce_evolvable)
+        elif module == "skill":
+            result = await self._load_skill(abspath, version, return_version, enforce_evolvable, config)
+        elif module == "connector":
+            result = await self._load_connector(abspath, version, return_version, enforce_evolvable, config)
+        elif module == "workflow":
+            result = await self._load_workflow(abspath, version, return_version, enforce_evolvable)
+        else:
+            raise ValueError(f"Unknown extension module: {module}")
+        # Carry the admitted source into archiving. The author's working copy can
+        # change while loading awaits; it is not evidence of what was installed.
+        return (*result, abspath) if return_version else result
+
+    async def _fresh_version(self, module: str, name: str) -> str:
+        from agentevolver.version import version_manager
+
+        return await version_manager.generate_next_version(
+            module, name, known_versions=self.list_component_versions(module, name),
+        )
+
+    async def _load_class_component(self, module: str, abspath: str, version: Optional[str],
+                                    config: Optional[dict], return_version: bool,
+                                    enforce_evolvable: bool = False):
+        from agentevolver.dynamic import dynamic_manager
+        base_cls = self._base_class(module)
+        # Directory-type class modules (environment) keep the class in a fixed entry
+        # file inside the dir; single-file class modules (tool/agent) load the file itself.
+        entry = _CLASS_ENTRY.get(module)
+        package_dir = None
+        if entry and os.path.isdir(abspath):
+            class_file = os.path.join(abspath, entry)
+            stem = os.path.basename(os.path.normpath(abspath))
+            # The entry file is loaded as a package rooted at its own directory, so code
+            # in it can import its siblings. A plugin has to: its shape is `plugin.py`
+            # beside one `PluginTool` per file under `tools/`, reached with
+            # `from .tools.x import Y`. Loaded as a plain module, that import looked for
+            # a parent package nobody had created and every generated plugin died with
+            # `No module named 'ext'`.
+            package_dir = abspath
+        else:
+            class_file = abspath
+            stem = os.path.splitext(os.path.basename(abspath))[0]
+        module_name = f"ext.{module}.{stem}"
+        if package_dir:
+            # Admission returns an immutable, content-addressed source directory.
+            # Reloading just the entry module under a stable name leaves its imported
+            # helpers cached in sys.modules. Give each admitted revision its own
+            # package, including late relative imports on retained/rollback objects.
+            identity = f"{os.path.realpath(package_dir)}\0{version or ''}"
+            module_name += "_" + hashlib.sha256(identity.encode()).hexdigest()
+        cls = dynamic_manager.load_class_from_path(
+            class_file, base_class=base_cls, context=module, module_name=module_name,
+            package_dir=package_dir,
+        )
+        cls.__source_file__ = class_file
+        with open(class_file, "r", encoding="utf-8") as f:
+            code = f.read()
+
+        if enforce_evolvable:
+            fields = getattr(cls, "model_fields", {})
+            intended = fields["name"].default if "name" in fields else getattr(cls, "name", stem)
+            if isinstance(intended, str) and intended:
+                await self._assert_evolvable(module, intended)
+                if version is None:
+                    version = await self._fresh_version(module, intended)
+
+        if module == "tool":
+            from agentevolver.tool.server import tool_manager
+            cfg = await tool_manager.register(tool=cls, config=config or {}, code=code, override=True, version=version)
+        elif module == "agent":
+            from agentevolver.agent.server import agent_manager
+            cfg = await agent_manager.register(agent_cls=cls, agent_config_dict=config, override=True, version=version)
+        elif module == "environment":
+            from agentevolver.environment.server import environment_manager
+            cfg = await environment_manager.register(env_cls=cls, env_config_dict=config, override=True, version=version)
+        elif module == "memory":
+            from agentevolver.memory.server import memory_manager
+            cfg = await memory_manager.register(cls, memory_config_dict=config, override=True, version=version)
+        elif module == "plugin":
+            from agentevolver.plugins import plugin_manager
+            cfg = await plugin_manager.register(cls, plugin_config_dict=config, override=True, version=version)
+        else:
+            raise ValueError(f"Not a class-based module: {module}")
+        name = getattr(cfg, "name", None) or getattr(cls, "__name__", "")
+        return (name, getattr(cfg, "version", version or "1.0.0")) if return_version else name
+
+    async def _load_prompt(self, abspath: str, return_version: bool,
+                           version: Optional[str] = None, enforce_evolvable: bool = False):
+        from agentevolver.prompt.server import prompt_manager
+        from agentevolver.prompt.types import parse_prompt_file
+        cfg = parse_prompt_file(abspath)
+        if not cfg.name:
+            stem = os.path.splitext(os.path.basename(abspath))[0]
+            cfg = cfg.model_copy(update={"name": stem})
+        if enforce_evolvable:
+            await self._assert_evolvable("prompt", cfg.name)
+            version = version or await self._fresh_version("prompt", cfg.name)
+        if version is not None:
+            cfg = cfg.model_copy(update={"version": version})
+        registered = await prompt_manager.register(prompt=cfg.model_dump(), override=True)
+        return (registered.name, getattr(registered, "version", "1.0.0")) if return_version else registered.name
+
+    async def _load_skill(self, abspath: str, version: Optional[str], return_version: bool,
+                          enforce_evolvable: bool = False, config: Optional[dict] = None):
+        from agentevolver.skill.server import skill_manager
+        if enforce_evolvable:
+            name = self._dir_component_name(abspath, "SKILL.md", os.path.basename(abspath))
+            await self._assert_evolvable("skill", name)
+            version = version or await self._fresh_version("skill", name)
+        ev = (config or {}).get("enable_evolving")
+        cfg = await skill_manager.register(skill_dir=abspath, override=True, version=version, enable_evolving=ev)
+        name = getattr(cfg, "name", os.path.basename(abspath))
+        return (name, getattr(cfg, "version", version or "1.0.0")) if return_version else name
+
+    async def _load_connector(self, abspath: str, version: Optional[str], return_version: bool,
+                              enforce_evolvable: bool = False, config: Optional[dict] = None):
+        from agentevolver.connector.server import connector_manager
+        if enforce_evolvable:
+            name = self._dir_component_name(abspath, "CONNECTOR.md", os.path.basename(abspath))
+            await self._assert_evolvable("connector", name)
+            version = version or await self._fresh_version("connector", name)
+        ev = (config or {}).get("enable_evolving")
+        cfg = await connector_manager.register(connector_dir=abspath, override=True, version=version, enable_evolving=ev)
+        name = getattr(cfg, "name", os.path.basename(abspath))
+        return (name, getattr(cfg, "version", version or "1.0.0")) if return_version else name
+
+    async def _load_workflow(self, abspath: str, version: Optional[str], return_version: bool,
+                             enforce_evolvable: bool = False):
+        from agentevolver.version import version_manager
+        from agentevolver.workflow import workflow_compiler, workflow_manager
+        definition = workflow_compiler.compile_file(abspath)
+        if enforce_evolvable:
+            await self._assert_evolvable("workflow", definition.name)
+            version = version or await self._fresh_version("workflow", definition.name)
+        if version is None:
+            current = await version_manager.get_current_version("workflow", definition.name)
+            version = (
+                await version_manager.generate_next_version("workflow", definition.name)
+                if current else definition.version
+            )
+        definition = definition.model_copy(update={"version": version})
+        workflow_manager.register(definition, override=True)
+        await version_manager.register_version(
+            "workflow", definition.name, definition.version,
+            description=definition.description,
+            metadata={"status": definition.status.value},
+        )
+        return (definition.name, definition.version) if return_version else definition.name
+
+    async def _unload_component(self, module: str, name: str) -> bool:
+        """Remove everything this component installed, not only its headline registration.
+
+        One registration, so one removal. A `Scope` object stood here, opened per
+        component so that a loader installing a *second* thing could add it and have both
+        removed together. Nothing ever added a second thing: `scope_for` — the entry point
+        for exactly that — had no callers, and every scope held the single entry seeded
+        into it. Four properties (reverse order, partial-failure tolerance, idempotence,
+        whole-set removal) all degenerate at one entry, so what remained was this call
+        behind 144 lines.
+        """
+        try:
+            manager = self._manager(module)
+            removed = await manager.unregister(name)
+            if removed is False:
+                logger.warning(f"| ⚠️ ExtensionManager: {module}:{name} was not registered")
+                return False
+            logger.info(f"| 🧹 ExtensionManager: unregistered {module}:{name}")
+            return True
+        except Exception as e:
+            logger.warning(f"| ⚠️ ExtensionManager: failed to unregister {module}:{name}: {e}")
+            return False
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _base_class(module: str):
+        if module == "tool":
+            from agentevolver.tool.types import Tool
+            return Tool
+        if module == "agent":
+            from agentevolver.agent.types import Agent
+            return Agent
+        if module == "environment":
+            from agentevolver.environment.types import Environment
+            return Environment
+        if module == "memory":
+            from agentevolver.memory.types import Memory
+            return Memory
+        if module == "plugin":
+            from agentevolver.plugins.types import Plugin
+            return Plugin
+        return None
+
+    @staticmethod
+    def _manager(module: str):
+        if module == "tool":
+            from agentevolver.tool.server import tool_manager
+            return tool_manager
+        if module == "agent":
+            from agentevolver.agent.server import agent_manager
+            return agent_manager
+        if module == "prompt":
+            from agentevolver.prompt.server import prompt_manager
+            return prompt_manager
+        if module == "skill":
+            from agentevolver.skill.server import skill_manager
+            return skill_manager
+        if module == "environment":
+            from agentevolver.environment.server import environment_manager
+            return environment_manager
+        if module == "connector":
+            from agentevolver.connector.server import connector_manager
+            return connector_manager
+        if module == "workflow":
+            from agentevolver.workflow import workflow_manager
+            return workflow_manager
+        if module == "memory":
+            from agentevolver.memory.server import memory_manager
+            return memory_manager
+        if module == "plugin":
+            from agentevolver.plugins import plugin_manager
+            return plugin_manager
+        raise ValueError(f"Unknown extension module: {module}")
+
+
+def admission_probe():
+    """Private subprocess entry point. Never invoked in the live runtime."""
+    async def run():
+        payload = json.loads(sys.argv[1])
+        manager = ExtensionManagerServer(base_dir="/tmp/extensions")
+        manager._probing = True
+        probe_config = dict(payload["config"])
+        if "base_dir" in probe_config:
+            probe_config["base_dir"] = "/tmp/workspace"
+        name = await manager._load_component(
+            payload["module"], payload["path"], None, version=None, config=probe_config,
+        )
+        await manager._validate_candidate(payload["module"], name)
+        Path("/result/result.json").write_text(json.dumps({"name": name, "checks": ["load", "contract"]}))
+    asyncio.run(run())
+
+
+# Global singleton
+extension_manager = ExtensionManagerServer()

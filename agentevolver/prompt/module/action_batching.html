@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="module" content="action_batching">
+  <link rel="stylesheet" href="../../visual/prompt/style.css">
+  <script src="../../visual/prompt/app.js"></script>
+</head>
+<body>
+<action-batching-rules>
+Up to {{ max_actions }} actions are accepted in one turn. The executor runs a batch concurrently
+when every action is known independent (read-only tools, skill reads, separate child Agents,
+or operations explicitly marked parallel_safe). Runtime still serializes conflicting resource
+access. Unclassified batches execute in order. Use an available background-job or native batch
+interface for long-running work. Never mislabel writes as read-only to obtain parallel execution.
+Batch independent work, not unresolved dependencies; an edit and its consuming test must be sequential. Do not run
+concurrent edits to the same files, or checks against files another action is changing.
+
+Known sequential shell operations may share a command (e.g. `make && ./run-tests`): keep
+results attributable and stop dependent work on failure. When arguments or a fix depend on
+interpreting output, read it before choosing the next call. One action is correct when needed;
+batching is not a quota.
+
+Use complete, focused patches and verify coherent implementation units. Do not generate an
+entire complex project or truncate source/tool arguments to reduce calls. There is no fixed
+file-length or one-file-per-call rule. Use scripts for reusable or complex work, not just to
+bundle unrelated actions. Optimize completion time, including generation, testing and rework.
+</action-batching-rules>
+</body>
+</html>

@@ -1,0 +1,142 @@
+{
+  "schema": 2,
+  "study_id": "signal-foundry-tsla-daily-v13",
+  "market": {
+    "symbol": "TSLA",
+    "exchange_calendar": "XNAS",
+    "currency": "USD",
+    "bar_frequency": "1Day",
+    "session": "regular",
+    "start": "2016-09-12",
+    "end": "2026-09-11",
+    "completed_sessions_only": true,
+    "volume_scope": "provider_reported_US_equity_volume",
+    "corporate_actions_required": true
+  },
+  "data_policy": {
+    "mode": "public_data_research",
+    "allow_documented_adjusted_price_proxy": true,
+    "allow_unverified_consolidated_volume_for_research": true,
+    "require_explicit_basis_and_limitations": true,
+    "strict_data_required_for_research_completion": false,
+    "strict_reference_requirements": [
+      "as_traded_execution_prices",
+      "consolidated_US_equities_volume",
+      "verified_corporate_action_accounting"
+    ],
+    "strict_data_status_separate_from_statistical_gates": true,
+    "adjusted_proxy_accounting": "Apply the documented adjusted-close/close ratio consistently to provider OHLC; simulate fractional units on that total-return-adjusted proxy without additional split or dividend cash flows. Retain original fields and action metadata. This is a research proxy, not as-traded fills.",
+    "preserve_user_data_and_execution_constraints": true
+  },
+  "splits": {
+    "train": [
+      "2016-09-12",
+      "2023-12-31"
+    ],
+    "test": [
+      "2024-01-01",
+      "2026-09-11"
+    ],
+    "development": "All factor discovery, combination fitting, policy optimization and candidate selection occur inside train using agent-designed chronological rolling windows.",
+    "window_policy": "Choose initial fit history, rolling score windows, refit cadence and gap from training data, target availability and mechanism. Purge every fitted label whose outcome is not available by its fit cutoff. No fixed fold count or calendar years.",
+    "final_test_attempts": 1
+  },
+  "execution": {
+    "signal_at": "completed regular-session close",
+    "earliest_fill": "next tradable regular-session open",
+    "position_range": [
+      0.0,
+      1.0
+    ],
+    "initial_capital_usd": 100000,
+    "commission_bps_per_side": 5,
+    "slippage_bps_per_side": 5,
+    "stress_cost_multiplier": 2,
+    "cash_annual_return": 0.0,
+    "sharpe_reference_annual_return": 0.0,
+    "annualization_sessions": 252,
+    "accounting": "verified raw execution with explicit actions when available; otherwise the explicitly qualified adjusted-price research proxy defined in data_policy",
+    "terminal_liquidation": true,
+    "benchmarks": [
+      "cash",
+      "same_stock_buy_and_hold_total_return"
+    ]
+  },
+  "evaluation_policy": {
+    "accounting_scopes": "Before scoring, distinguish fold-reset statistical scores from a continuous account over the declared split calendar. Declare the primary selection scope, refit effective dates, position and policy-state transitions, terminal liquidation and annualization denominators.",
+    "boundary_isolation": "Use a shared versioned session plan. Each factor and combination fit uses only its allowed past prefix and targets available by the cutoff. Derive exclusions/gaps from the declared labels and availability; verify actual retained rows. A continuous account uses eligible fits without backfilling earlier dates with later models.",
+    "calendar_comparison": "Before qualifying a shortlisted strategy, compute both the fold-reset and continuous-calendar candidate/benchmark paths under prospectively declared rules; explain excluded-window sensitivity. Secondary results cannot override failed primary gates. Freeze corresponding final scenarios before the single final evaluation.",
+    "benchmark_semantics": "Distinguish holding initial shares from daily target-weight rebalancing. For a risk/timing claim plausibly explained by lower exposure, compare a simple training-determined or prospectively fixed risk/exposure-controlled hold allocation before qualification.",
+    "selection_uncertainty": "Agent chooses and explains uncertainty/support methods from train and the claim. Distinguish fixed-candidate uncertainty from fitting/search uncertainty. Rolling score windows reused in research remain training evidence; trial counts and resampling are not independent confirmation.",
+    "numerical_choices": "Agent selects thresholds, horizons, weights, support criteria and statistical methods with training-based reasons. No universal IC, correlation or confidence-level gate. Version the standard before the comparison it governs; revisions are new research, never retroactive passes. Freeze the final standard before test."
+  },
+  "research_policy": {
+    "completion_basis": "evidence_based_researcher_judgment",
+    "fixed_return_target": false,
+    "fixed_candidate_or_round_ceiling": false,
+    "fixed_nonimprovement_patience": false,
+    "continuation_basis": "Researcher judgment of the next experiment's expected information, improvement potential and cost.",
+    "completion_reasons": [
+      "research_objective_supported_by_required_evidence",
+      "repeated_ineffective_improvements_and_low_expected_value_of_further_research"
+    ],
+    "exhaustive_search_required": false,
+    "resource_limit_outcome": "interrupted_not_research_complete",
+    "track_all_trials_and_observed_results": true
+  },
+  "exploration": {
+    "scope": "single_stock_joint_multifactor_strategy_and_factor_candidates",
+    "allocation": "Agent chooses batch size, working pool and continued exploration from evidence, behavioral diversity, expected information and resource cost; no fixed mechanism counts or structure/parameter quotas.",
+    "counting": "Count distinct evaluated information/combination/policy mechanisms separately from formula revisions, parameter changes, controls, benchmarks and repeated evaluations. Planned work is not evaluated work.",
+    "strategy_design": "Research complete policies: factor roles, conditional/interaction structure, combination fitting, entry, holding, exit, sizing and risk. Factors are not required to share a universal percentile/AND/probability-product template.",
+    "joint_refinement_policy": "Diagnose missing information, combination losses and holding/execution mismatch. Test the change that best discriminates these causes, including joint changes when justified. Parameter calibration and stability checks support a mechanism; they do not substitute for revising it.",
+    "comparison_integrity": "Derive controls from the exact executable parent configuration, record all changes, verify no-intervention decision parity, and distinguish input interventions from refitted reduced policies. A changed setting invalidates a claimed single-component comparison unless declared.",
+    "review_every_shortlisted_route": true
+  },
+  "acceptance": {
+    "kind": "research_quality_and_supported_conclusions_not_a_return_promise",
+    "factor_admission": {
+      "scope": "exact version and declared individual, conditional or group claim",
+      "method": "Agent defines evidence appropriate to the role using train. Marginal IC, coverage, support, dependence and redundancy are diagnostics, with any decision criteria justified prospectively.",
+      "conditional_and_group_claims": "A context or interaction input need not pass a standalone directional-IC gate. Require evidence for the actual conditional/group claim and its exact consumer; preserve any failed standalone claim.",
+      "meaningful_use": "Inspect executed dependencies and matched contribution comparisons; no inert or affine copies to satisfy multi-factor scope.",
+      "retrospective_relabeling_permitted": false
+    },
+    "final_submission": {
+      "require_claim_qualified_factor_bindings": true,
+      "require_predeclared_comparison_and_evidence_standard": true,
+      "require_predeclared_robustness_evidence": true,
+      "require_documented_readiness_and_selection_reason": true,
+      "require_diversity_and_joint_refinement_review": true,
+      "require_multifactor_candidate": true,
+      "minimum_distinct_used_factors": 2,
+      "diagnostic_controls_eligible": false,
+      "uncertainty_policy": "Agent selects estimand, comparator, dependence-aware method and support/evidence criteria from train. Required criteria have recorded values and pass/fail/inconclusive verdicts. Inconclusive evidence cannot be presented as support; no fixed confidence level or interval-bound rule is prescribed."
+    },
+    "research_quality": {
+      "economic_explanation": "Falsifiable factor mechanisms and executable, strategy-specific uses.",
+      "diversity_and_joint_refinement": "Distinct evaluated mechanisms and individual shortlist reviews. Preserve factor/policy revision evidence and reasons for deferring low-value changes; explain exploration coverage against guidance.",
+      "incremental_value": "Matched baseline and ablation evidence for the claimed return, risk or execution benefit; disclose all tradeoffs.",
+      "robustness": "Fold/regime and parameter-neighborhood evidence supports the claim without unexplained dependence on one interval, parameter or exceptional trade.",
+      "costs_and_feasibility": "Net effects, stressed costs, turnover, exposure and execution assumptions support the stated use.",
+      "uncertainty_and_selection": "Dependence-aware uncertainty, adequate sample/trade support and full search history constrain the strength of the conclusion.",
+      "final_evidence": "Interpret the frozen test with the predeclared evidence standard, including degradation and contradictions; never select or retune using test results.",
+      "closure": "Researcher judges completion from supported objectives or repeated ineffective improvements and low expected value of further work. Cite results, counterevidence and scope limitations without requiring exhaustive search or budget exhaustion. Completion does not imply a supported strategy.",
+      "reproducibility": "Data, code, versions, calculations and the continuous report reconcile and can be replayed."
+    }
+  },
+  "test_policy": {
+    "prior_exposure": "previously_exposed",
+    "known_exposure": {
+      "symbol": "TSLA",
+      "interval": [
+        "2024-01-01",
+        "2026-09-11"
+      ],
+      "source": "Prior project experiments, including the operator diagnostic for e2dac449/S005-v003."
+    },
+    "interpretation": "This historical test is reserved from the current run's optimization but is not project-wide unseen confirmation. A new session does not reset known exposure.",
+    "access": "Freeze one selected bundle and interpretation standard before retrieval/evaluation. Ordinary research operations read train only. Replay an interrupted final evaluation only with the identical bundle; preserve exposure.",
+    "new_confirmation": "Requires genuinely unused observations and a prospective study; do not silently move dates or select replacements on this test."
+  }
+}

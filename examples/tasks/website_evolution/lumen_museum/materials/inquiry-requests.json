@@ -1,0 +1,59 @@
+{
+  "provenance": "Original fictional teaching requests. Claims are hypotheses to investigate, not verified findings. These are public design inputs, not hidden tests or answer keys.",
+  "requests": [
+    {
+      "id": "perfect_score",
+      "question": "Our machine got every example right. Has it learned a useful rule?",
+      "audience": "First-time visitors who can sort shapes but have not studied statistics.",
+      "constraints": "A short tactile investigation; explain the mechanism without equations.",
+      "material": "A toy collection with shape, colour and labels. Several copied examples carry different filenames.",
+      "proposed_claim": "A perfect score on a random split proves the system will work on new collections.",
+      "deliverable": "A manipulable experiment, a counterexample, an explanation tied to the observed result, and a next question."
+    },
+    {
+      "id": "new_collection",
+      "question": "Why does a useful rule stop working when the collection changes?",
+      "audience": "Visitors returning from the first exhibit.",
+      "constraints": "Preserve their previous trial and compare two explicit assumptions.",
+      "material": "A second synthetic collection changes the relationship between colour and label while keeping the shape convention.",
+      "proposed_claim": "Changing a colour palette cannot affect a machine's predictions.",
+      "deliverable": "Choose what to hold fixed, show an input-dependent comparison and distinguish a measured error from its explanation."
+    },
+    {
+      "id": "better_for_everyone",
+      "question": "Does the better overall score mean everyone benefits?",
+      "audience": "A mixed group comparing two toy classifiers.",
+      "constraints": "Keyboard-only and no reliance on colour; preserve uncertainty.",
+      "material": "Two aggregate accuracy figures but no subgroup membership or subgroup error counts.",
+      "proposed_claim": "The classifier with higher aggregate accuracy has fewer errors in every subgroup.",
+      "deliverable": "Explain what the supplied evidence can support, identify missing evidence and propose a labelled synthetic counterexample without presenting it as measured data."
+    }
+  ],
+  "revision": {
+    "revises": "perfect_score",
+    "change": "The curator discovers duplicated items crossing the original evaluation split.",
+    "preserve": "Earlier notebook results as historical runs; mark affected interpretations for review.",
+    "question": "How should the inquiry and its explanation change while the original observation remains inspectable?",
+    "source_change": "The new source packet has citation metadata but no usable full text for one proposed claim. Treat the missing evidence explicitly; a local replay can exercise missing fields without altering the real source.",
+    "audience_change": "The revised visit has half the initial duration, needs keyboard-only operation and must retain the scientific caveat.",
+    "comparison": "Apply the earlier source-handling, inquiry-design and exhibit-review approaches to this request first. Preserve the results, improve the weak layer on identical inputs and replay another successful inquiry."
+  },
+  "transfer": "Create a new inquiry with a different question, source packet and interaction constraint. Reuse the authoring approach, not the previous answer.",
+  "sources": {
+    "metadata": "https://www.crossref.org/documentation/retrieve-metadata/rest-api/",
+    "content_limits": "https://www.crossref.org/documentation/retrieve-metadata/text-and-data-mining/",
+    "primary_teaching_reference": "https://scikit-learn.org/stable/common_pitfalls.html"
+  },
+  "source_requests": [
+    {
+      "for": "perfect_score",
+      "query": "data leakage machine learning evaluation",
+      "need": "Inspect a bounded set of real bibliographic results, select a relevant stable identifier and resolve its record. Read accessible primary content to support the chosen claim."
+    },
+    {
+      "for": "new_collection",
+      "query": "dataset shift machine learning evaluation",
+      "need": "Repeat for a different question. Preserve what was actually read separately from titles, abstracts and inaccessible links."
+    }
+  ]
+}

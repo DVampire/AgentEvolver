@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="stylesheet" href="assets/theme.css">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AgentEvolver · The Web UI, feature by feature</title>
+<meta name="description" content="A recorded tour of the AgentEvolver workbench: project overview, living plans, Runtime, eight evolvable entity types, Chat, Canvas, Code and Science." />
+<link rel="stylesheet" href="assets/ui.css">
+<link rel="stylesheet" href="assets/chrome.css">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#07100e">
+</head>
+<body>
+<div class="bg-fx"></div>
+<div class="grid-fx"></div>
+
+<!-- ============ NAV ============ -->
+<nav data-ae-nav="ui"></nav>
+<script src="assets/chrome.js"></script>
+
+<!-- ============ HERO ============ -->
+<header class="hero" id="top">
+  <div class="wrap">
+    <span class="pill"><span class="dot"></span><span data-i18n="hero_pill">Recorded September 16, 2026 · Current workbench</span></span>
+    <h1 class="title" data-i18n="hero_title_html">The workbench, <span class="grad">one feature at a time</span></h1>
+    <p class="subtitle" data-i18n="hero_sub">Eleven short tours of the current interface, recorded against a live Gateway with a prepared sample project. Follow the plan, explore eight evolvable entity types, and move between Chat, Canvas, Code and Science.</p>
+    <div class="toc">
+      <a href="#layout" data-i18n="toc1">Project overview</a>
+      <a href="#workspaces" data-i18n="toc2">Workspaces</a>
+      <a href="#canvas" data-i18n="toc9">Canvas</a>
+      <a href="#code" data-i18n="toc10">Code</a>
+      <a href="#science" data-i18n="toc11">Science</a>
+      <a href="#capabilities" data-i18n="toc3">Capabilities</a>
+      <a href="#composer" data-i18n="toc4">Task composer</a>
+      <a href="#panels" data-i18n="toc5">Session panels</a>
+      <a href="#machines" data-i18n="toc6">Machines</a>
+      <a href="#models" data-i18n="toc7">Models</a>
+      <a href="#theme" data-i18n="toc8">Theme & connection</a>
+    </div>
+  </div>
+</header>
+
+<!-- ============ 1. LAYOUT ============ -->
+<section class="feat" id="layout">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/01-overview.mp4" poster="assets/ui/01-overview.jpg"
+             muted loop playsinline controls preload="none" data-autoplay></video>
+      <figcaption data-i18n="caption1">Project overview · Plan & Runtime</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">01</div>
+      <h2 data-i18n="s1_h">Keep the whole project in view</h2>
+      <p data-i18n="s1_p">Overview brings the living plan, Runtime activity, capabilities, candidates and project files together. Search projects from the sidebar and pick up the next step in the same workspace.</p>
+      <ul class="kv">
+        <li data-i18n="s1_a"><b>Living plan</b> — switch between the progress summary and detailed plan</li>
+        <li data-i18n="s1_b"><b>Runtime</b> — inspect task activity and delegated agent threads</li>
+        <li data-i18n="s1_c"><b>Eight entity types</b> — browse capabilities and shared session notes</li>
+        <li data-i18n="s1_d"><b>Actual project state</b> — mounted capabilities, staged candidates and files</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2. WORKSPACES ============ -->
+<section class="feat flip" id="workspaces">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/02-views.mp4" poster="assets/ui/02-views.jpg"
+             muted loop playsinline controls preload="none" data-autoplay></video>
+      <figcaption data-i18n="caption2">Five views · Shared project</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">02</div>
+      <h2 data-i18n="s2_h">Five views, one shared project</h2>
+      <p data-i18n="s2_p">Overview, Chat, Canvas, Code and Science provide different ways to work with one project. Switching views keeps the project resources together.</p>
+      <ul class="kv">
+        <li data-i18n="s2_e"><b>Overview</b> — plan, Runtime, evolution candidates and project files</li>
+        <li data-i18n="s2_a"><b>Chat</b> — describe a task and watch it get worked</li>
+        <li data-i18n="s2_b"><b>Canvas</b> — a node editor with a component palette: inputs, flow control, agents, data, processing</li>
+        <li data-i18n="s2_c"><b>Code</b> — an editor over the session workspace</li>
+        <li data-i18n="s2_d"><b>Science</b> — a Jupyter kernel on the same files, with a JupyterLab escape hatch</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. CANVAS ============ -->
+<section class="feat" id="canvas">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/03-canvas.mp4" poster="assets/ui/03-canvas.jpg"
+             muted loop playsinline controls preload="none" data-autoplay></video>
+      <figcaption data-i18n="caption3">Canvas · Compose a flow</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">03</div>
+      <h2 data-i18n="s9_h">Wire a flow instead of describing one</h2>
+      <p data-i18n="s9_p">The Canvas is a node editor for the times a picture beats a paragraph. Components are dragged in from a categorised palette and joined into a flow you can save and reuse — a human-facing library, separate from the agent-facing workflows.</p>
+      <ul class="kv">
+        <li data-i18n="s9_a"><b>Input &amp; Output</b> — where a flow takes in and hands back</li>
+        <li data-i18n="s9_b"><b>Flow control</b> — map, branch, loop, reduce, verify, checkpoint</li>
+        <li data-i18n="s9_c"><b>Agents</b> and <b>Data</b> — delegation and dataset steps as nodes</li>
+        <li data-i18n="s9_d"><b>Processing</b> — select, filter, sort, split, regex over records</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. CODE ============ -->
+<section class="feat flip" id="code">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/04-code.mp4" poster="assets/ui/04-code.jpg"
+             muted loop playsinline controls preload="none" data-autoplay></video>
+      <figcaption data-i18n="caption4">Code · Edit project files</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">04</div>
+      <h2 data-i18n="s10_h">A real editor, on the session's own files</h2>
+      <p data-i18n="s10_p">Code opens an OpenVSCode server on the project workspace. Prepare the local base image once; the first Code launch builds and starts the editor container. Later launches reuse the image and installed extensions.</p>
+      <ul class="kv">
+        <li data-i18n="s10_a"><b>Explorer</b> — open the same project files available in Chat and Science</li>
+        <li data-i18n="s10_b"><b>Full editor</b> — search, source control, extensions, terminal</li>
+        <li data-i18n="s10_c"><b>Per-session container</b> — kept alive while in use and reclaimed after inactivity</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. SCIENCE ============ -->
+<section class="feat" id="science">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/05-science.mp4" poster="assets/ui/05-science.jpg"
+             muted loop playsinline controls preload="none" data-autoplay></video>
+      <figcaption data-i18n="caption5">Science · Run a Python cell</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">05</div>
+      <h2 data-i18n="s11_h">A kernel you and the agent share</h2>
+      <p data-i18n="s11_p">Run Python on the project files and inspect the result in the Notebook panel. The REPL, JupyterLab and the agent’s code interpreter use the shared project kernel. This clip runs a small example on synthetic data.</p>
+      <ul class="kv">
+        <li data-i18n="s11_a"><b>Notebook</b> — run cells, interrupt, restart, save as <code>.ipynb</code></li>
+        <li data-i18n="s11_b"><b>Compute</b> — live GPU, CPU, memory and disk for the session host</li>
+        <li data-i18n="s11_c"><b>JupyterLab</b> — an escape hatch to the full interface</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 6. CAPABILITIES ============ -->
+<section class="feat flip" id="capabilities">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/06-capabilities.mp4" poster="assets/ui/06-capabilities.jpg"
+             muted loop playsinline controls preload="none" data-autoplay></video>
+      <figcaption data-i18n="caption6">Eight entity types · Capabilities & memory</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">06</div>
+      <h2 data-i18n="s3_h">Explore all eight evolvable entity types</h2>
+      <p data-i18n="s3_p">The Overview cards lead to the capability library and shared session notes. Library availability, session selection and candidate staging describe different states; each remains visible in its own place.</p>
+      <ul class="kv">
+        <li data-i18n="s3_a"><b>Skills</b> and <b>Tools</b> — specialist workflows and callable actions</li>
+        <li data-i18n="s3_b"><b>Agents</b> — specialists available for delegation</li>
+        <li data-i18n="s3_c"><b>Connectors</b> — external data sources and services</li>
+        <li data-i18n="s3_d"><b>Workflow</b>, <b>Memory</b>, <b>Environment</b> and <b>Plugin</b> — reusable flows, session notes, execution contexts and integrations</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. COMPOSER ============ -->
+<section class="feat" id="composer">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/07-composer.mp4" poster="assets/ui/07-composer.jpg"
+             muted loop playsinline controls preload="none" data-autoplay></video>
+      <figcaption data-i18n="caption7">Chat · Compose a task</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">07</div>
+      <h2 data-i18n="s4_h">Start from a card, or just say it</h2>
+      <p data-i18n="s4_p">Four starting points cover the usual asks — review, plan, explain, investigate — and the composer underneath takes anything else. Files can be attached to the session before the run begins.</p>
+      <ul class="kv">
+        <li data-i18n="s4_a"><b>Starter cards</b> — review, plan a feature, explain the architecture, investigate</li>
+        <li data-i18n="s4_b"><b>Free-form prompt</b> — Enter to send, Shift+Enter for a newline</li>
+        <li data-i18n="s4_c"><b>Attach files</b> — staged into the session workspace</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. PANELS ============ -->
+<section class="feat flip" id="panels">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/08-panels.mp4" poster="assets/ui/08-panels.jpg"
+             muted loop playsinline controls preload="none" data-autoplay></video>
+      <figcaption data-i18n="caption8">Files · Activity · Inspector</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">08</div>
+      <h2 data-i18n="s5_h">Inspect files and follow task activity</h2>
+      <p data-i18n="s5_p">Chat’s right-hand panel provides file previews, task activity and details of selected execution steps. The prepared sample is idle, so the recording shows the file viewer and the empty activity and inspector states.</p>
+      <ul class="kv">
+        <li data-i18n="s5_a"><b>Files</b> — browse and open anything in the session workspace</li>
+        <li data-i18n="s5_b"><b>Activity</b> — task status and gateway connection</li>
+        <li data-i18n="s5_c"><b>Inspector</b> — inspect a selected execution step when one is available</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 6. MACHINES ============ -->
+<section class="feat" id="machines">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/09-machines.mp4" poster="assets/ui/09-machines.jpg"
+             muted loop playsinline controls preload="none" data-autoplay></video>
+      <figcaption data-i18n="caption9">Machines · Live-view launchers</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">09</div>
+      <h2 data-i18n="s6_h">Give the agent a screen, or a second host</h2>
+      <p data-i18n="s6_p">The sidebar groups the Browser and Computer live-view launchers with configured remote machines and deployments. This clip shows the local launch controls; available remote hosts depend on the session configuration.</p>
+      <ul class="kv">
+        <li data-i18n="s6_a"><b>Browser</b> — headful Chrome, driven over noVNC</li>
+        <li data-i18n="s6_b"><b>Computer</b> — a full desktop for GUI automation, over noVNC</li>
+        <li data-i18n="s6_c"><b>Remote machines</b> — SSH hosts that open a shell</li>
+        <li data-i18n="s6_d"><b>Deployments</b> — services the session has published</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 7. MODELS ============ -->
+<section class="feat flip" id="models">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/10-models.mp4" poster="assets/ui/10-models.jpg"
+             muted loop playsinline controls preload="none" data-autoplay></video>
+      <figcaption data-i18n="caption10">Providers · Model capabilities</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">10</div>
+      <h2 data-i18n="s7_h">One catalogue for every provider</h2>
+      <p data-i18n="s7_p">Browse registered providers and inspect each model’s advertised tool, vision and streaming support. Provider connections and model settings can be configured from the same workbench.</p>
+      <ul class="kv">
+        <li data-i18n="s7_a"><b>Per-model flags</b> — tool use, vision, streaming</li>
+        <li data-i18n="s7_b"><b>Grouped by provider</b> — Anthropic, Google, OpenRouter and friends</li>
+        <li data-i18n="s7_c"><b>Add a model</b> — register a new endpoint without a redeploy</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 8. THEME ============ -->
+<section class="feat" id="theme">
+  <div class="wrap feat-grid reveal">
+    <figure class="shot">
+      <video src="assets/ui/11-theme.mp4" poster="assets/ui/11-theme.jpg"
+             muted loop playsinline controls preload="none" data-autoplay></video>
+      <figcaption data-i18n="caption11">Light & dark · Connection settings</figcaption>
+    </figure>
+    <div class="feat-copy">
+      <div class="num">11</div>
+      <h2 data-i18n="s8_h">Dark or light, local or remote</h2>
+      <p data-i18n="s8_p">The theme is remembered across sessions, and the endpoint is not baked in: point the workbench at a gateway on another host, or supply a token when the gateway requires one.</p>
+      <ul class="kv">
+        <li data-i18n="s8_a"><b>Theme</b> — light and dark, remembered per browser</li>
+        <li data-i18n="s8_b"><b>Connection</b> — change the gateway endpoint at runtime</li>
+        <li data-i18n="s8_c"><b>Token</b> — <code>AGENTEVOLVER_GATEWAY_TOKEN</code> for protected gateways</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ RUN IT ============ -->
+<section class="feat" id="run">
+  <div class="wrap reveal">
+    <div class="num">▸</div>
+    <h2 style="font-size:clamp(24px,3.2vw,33px);font-weight:800" data-i18n="run_h">Run this yourself</h2>
+    <p style="margin-top:14px;color:var(--muted);max-width:760px" data-i18n="run_p">Prepare the base image once, then launch the Python Gateway and Vite together inside the base sandbox. For a host conda setup, follow the Frontend README.</p>
+    <pre class="note">docker build -f docker/base/Dockerfile -t agentevolver/base:latest .
+scripts/run-in-sandbox.sh -- scripts/serve-ui.sh</pre>
+    <p style="margin-top:16px;color:var(--muted-2);font-size:13.5px;max-width:760px" data-i18n="run_note">Then open <code>http://127.0.0.1:5173</code>. The sandbox runs with <code>--network host</code>, so the container loopback is the host loopback; the UI connects to <code>ws://127.0.0.1:9876/ws</code> by default.</p>
+  </div>
+</section>
+
+<section style="padding:0">
+  <div class="wrap">
+    <div class="cta-banner reveal">
+      <h2 data-i18n="cta_h">See the rest of the framework</h2>
+      <p data-i18n="cta_p">The workbench makes a system with global evolution, living plans and a shared Runtime visible and usable.</p>
+      <div class="cta-row">
+        <a class="btn primary" href="index.html" style="padding:13px 26px;font-size:15px" data-i18n="cta_b1">← Back to the overview</a>
+        <a class="btn" href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener" style="padding:13px 26px;font-size:15px" data-i18n="cta_b2">★ Star on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<ae-footer></ae-footer>
+
+<script>
+/* ---------------- i18n ---------------- */
+const I18N = {
+  "en": {
+    "nav_home": "Home",
+    "nav_tut": "Tutorial",
+    "nav_arch": "Architecture",
+    "nav_mod": "Modules",
+    "nav_dev": "Development",
+    "nav_ui": "Web UI",
+    "nav_features": "Features",
+    "nav_bench": "Benchmarks",
+    "nav_start": "Quick Start",
+    "hero_pill": "Recorded September 16, 2026 · Current workbench",
+    "hero_title_html": "The workbench, <span class=\"grad\">one feature at a time</span>",
+    "hero_sub": "Eleven short tours of the current interface, recorded against a live Gateway with a prepared sample project. Follow the plan, explore eight evolvable entity types, and move between Chat, Canvas, Code and Science.",
+    "toc1": "Project overview",
+    "toc2": "Workspaces",
+    "toc3": "Capabilities",
+    "toc4": "Task composer",
+    "toc5": "Session panels",
+    "toc6": "Machines",
+    "toc7": "Models",
+    "toc8": "Theme & connection",
+    "toc9": "Canvas",
+    "toc10": "Code",
+    "toc11": "Science",
+    "s9_h": "Wire a flow instead of describing one",
+    "s9_p": "The Canvas is a node editor for the times a picture beats a paragraph. Components are dragged in from a categorised palette and joined into a flow you can save and reuse — a human-facing library, separate from the agent-facing workflows.",
+    "s9_a": "<b>Input &amp; Output</b> — where a flow takes in and hands back",
+    "s9_b": "<b>Flow control</b> — map, branch, loop, reduce, verify, checkpoint",
+    "s9_c": "<b>Agents</b> and <b>Data</b> — delegation and dataset steps as nodes",
+    "s9_d": "<b>Processing</b> — select, filter, sort, split, regex over records",
+    "s10_h": "A real editor, on the session's own files",
+    "s10_p": "Code opens an OpenVSCode server on the project workspace. Prepare the local base image once; the first Code launch builds and starts the editor container. Later launches reuse the image and installed extensions.",
+    "s10_a": "<b>Explorer</b> — open the same project files available in Chat and Science",
+    "s10_b": "<b>Full editor</b> — search, source control, extensions, terminal",
+    "s10_c": "<b>Per-session container</b> — kept alive while in use and reclaimed after inactivity",
+    "s11_h": "A kernel you and the agent share",
+    "s11_p": "Run Python on the project files and inspect the result in the Notebook panel. The REPL, JupyterLab and the agent’s code interpreter use the shared project kernel. This clip runs a small example on synthetic data.",
+    "s11_a": "<b>Notebook</b> — run cells, interrupt, restart, save as <code>.ipynb</code>",
+    "s11_b": "<b>Compute</b> — live GPU, CPU, memory and disk for the session host",
+    "s11_c": "<b>JupyterLab</b> — an escape hatch to the full interface",
+    "s1_h": "Keep the whole project in view",
+    "s1_p": "Overview brings the living plan, Runtime activity, capabilities, candidates and project files together. Search projects from the sidebar and pick up the next step in the same workspace.",
+    "s1_a": "<b>Living plan</b> — switch between the progress summary and detailed plan",
+    "s1_b": "<b>Runtime</b> — inspect task activity and delegated agent threads",
+    "s1_c": "<b>Eight entity types</b> — browse capabilities and shared session notes",
+    "s1_d": "<b>Actual project state</b> — mounted capabilities, staged candidates and files",
+    "s2_h": "Five views, one shared project",
+    "s2_p": "Overview, Chat, Canvas, Code and Science provide different ways to work with one project. Switching views keeps the project resources together.",
+    "s2_a": "<b>Chat</b> — describe a task and watch it get worked",
+    "s2_b": "<b>Canvas</b> — a node editor with a component palette: inputs, flow control, agents, data, processing",
+    "s2_c": "<b>Code</b> — an editor over the session workspace",
+    "s2_d": "<b>Science</b> — a Jupyter kernel on the same files, with a JupyterLab escape hatch",
+    "s3_h": "Explore all eight evolvable entity types",
+    "s3_p": "The Overview cards lead to the capability library and shared session notes. Library availability, session selection and candidate staging describe different states; each remains visible in its own place.",
+    "s3_a": "<b>Skills</b> and <b>Tools</b> — specialist workflows and callable actions",
+    "s3_b": "<b>Agents</b> — specialists available for delegation",
+    "s3_c": "<b>Connectors</b> — external data sources and services",
+    "s3_d": "<b>Workflow</b>, <b>Memory</b>, <b>Environment</b> and <b>Plugin</b> — reusable flows, session notes, execution contexts and integrations",
+    "s4_h": "Start from a card, or just say it",
+    "s4_p": "Four starting points cover the usual asks — review, plan, explain, investigate — and the composer underneath takes anything else. Files can be attached to the session before the run begins.",
+    "s4_a": "<b>Starter cards</b> — review, plan a feature, explain the architecture, investigate",
+    "s4_b": "<b>Free-form prompt</b> — Enter to send, Shift+Enter for a newline",
+    "s4_c": "<b>Attach files</b> — staged into the session workspace",
+    "s5_h": "Inspect files and follow task activity",
+    "s5_p": "Chat’s right-hand panel provides file previews, task activity and details of selected execution steps. The prepared sample is idle, so the recording shows the file viewer and the empty activity and inspector states.",
+    "s5_a": "<b>Files</b> — browse and open anything in the session workspace",
+    "s5_b": "<b>Activity</b> — task status and gateway connection",
+    "s5_c": "<b>Inspector</b> — inspect a selected execution step when one is available",
+    "s6_h": "Give the agent a screen, or a second host",
+    "s6_p": "The sidebar groups the Browser and Computer live-view launchers with configured remote machines and deployments. This clip shows the local launch controls; available remote hosts depend on the session configuration.",
+    "s6_a": "<b>Browser</b> — headful Chrome, driven over noVNC",
+    "s6_b": "<b>Computer</b> — a full desktop for GUI automation, over noVNC",
+    "s6_c": "<b>Remote machines</b> — SSH hosts that open a shell",
+    "s6_d": "<b>Deployments</b> — services the session has published",
+    "s7_h": "One catalogue for every provider",
+    "s7_p": "Browse registered providers and inspect each model’s advertised tool, vision and streaming support. Provider connections and model settings can be configured from the same workbench.",
+    "s7_a": "<b>Per-model flags</b> — tool use, vision, streaming",
+    "s7_b": "<b>Grouped by provider</b> — Anthropic, Google, OpenRouter and friends",
+    "s7_c": "<b>Add a model</b> — register a new endpoint without a redeploy",
+    "s8_h": "Dark or light, local or remote",
+    "s8_p": "The theme is remembered across sessions, and the endpoint is not baked in: point the workbench at a gateway on another host, or supply a token when the gateway requires one.",
+    "s8_a": "<b>Theme</b> — light and dark, remembered per browser",
+    "s8_b": "<b>Connection</b> — change the gateway endpoint at runtime",
+    "s8_c": "<b>Token</b> — <code>AGENTEVOLVER_GATEWAY_TOKEN</code> for protected gateways",
+    "run_h": "Run this yourself",
+    "run_p": "Prepare the base image once, then launch the Python Gateway and Vite together inside the base sandbox. For a host conda setup, follow the Frontend README.",
+    "run_note": "Then open <code>http://127.0.0.1:5173</code>. The sandbox runs with <code>--network host</code>, so the container loopback is the host loopback; the UI connects to <code>ws://127.0.0.1:9876/ws</code> by default.",
+    "cta_h": "See the rest of the framework",
+    "cta_p": "The workbench makes a system with global evolution, living plans and a shared Runtime visible and usable.",
+    "cta_b1": "← Back to the overview",
+    "cta_b2": "★ Star on GitHub",
+    "foot_tag": "A self-evolving multi-agent framework · MIT License",
+    "foot_home": "Overview",
+    "foot_fe": "Frontend README",
+    "foot_top": "Back to top ↑",
+    "s2_e": "<b>Overview</b> — plan, Runtime, evolution candidates and project files",
+    "caption1": "Project overview · Plan & Runtime",
+    "caption2": "Five views · Shared project",
+    "caption3": "Canvas · Compose a flow",
+    "caption4": "Code · Edit project files",
+    "caption5": "Science · Run a Python cell",
+    "caption6": "Eight entity types · Capabilities & memory",
+    "caption7": "Chat · Compose a task",
+    "caption8": "Files · Activity · Inspector",
+    "caption9": "Machines · Live-view launchers",
+    "caption10": "Providers · Model capabilities",
+    "caption11": "Light & dark · Connection settings"
+  },
+  "zh": {
+    "nav_home": "首页",
+    "nav_tut": "教程",
+    "nav_arch": "架构",
+    "nav_mod": "模块",
+    "nav_dev": "开发文档",
+    "nav_ui": "Web 界面",
+    "nav_features": "特性",
+    "nav_bench": "基准",
+    "nav_start": "快速开始",
+    "hero_pill": "2026 年 9 月 16 日录制 · 当前版工作台",
+    "hero_title_html": "界面功能，<span class=\"grad\">逐个看过来</span>",
+    "hero_sub": "十一段新版界面实录，连接真实 Gateway，使用预先准备的示例项目。查看计划、探索八类可演化实体，在 Chat、Canvas、Code 与 Science 之间协作。",
+    "toc1": "项目总览",
+    "toc2": "工作视图",
+    "toc3": "能力目录",
+    "toc4": "任务输入",
+    "toc5": "会话面板",
+    "toc6": "机器环境",
+    "toc7": "模型",
+    "toc8": "主题与连接",
+    "toc9": "Canvas 画布",
+    "toc10": "代码",
+    "toc11": "Science",
+    "s9_h": "与其描述流程，不如把它连出来",
+    "s9_p": "Canvas 是节点编辑器，用在图胜过一段话的场合。组件从分类面板里拖进来，连成可保存复用的流程——这是给人用的流程库，和给 agent 用的 workflows 是两回事。",
+    "s9_a": "<b>Input &amp; Output</b>——流程的入口与出口",
+    "s9_b": "<b>流程控制</b>——map、branch、loop、reduce、verify、checkpoint",
+    "s9_c": "<b>Agents</b> 与 <b>Data</b>——把委派和数据集步骤变成节点",
+    "s9_d": "<b>Processing</b>——对记录做选取、过滤、排序、拆分、正则提取",
+    "s10_h": "一个真正的编辑器，开在会话自己的文件上",
+    "s10_p": "Code 在项目工作区上打开 OpenVSCode。先准备一次本地基础镜像，首次打开 Code 时构建并启动编辑器容器；之后复用镜像和已安装的扩展。",
+    "s10_a": "<b>Explorer</b>——打开 Chat 和 Science 使用的同一批项目文件",
+    "s10_b": "<b>完整编辑器</b>——搜索、源码管理、扩展、终端",
+    "s10_c": "<b>每会话独立容器</b>——使用中保持存活，长时间闲置后回收",
+    "s11_h": "你和 agent 共用同一个内核",
+    "s11_p": "直接在项目文件上运行 Python，并在 Notebook 面板查看结果。REPL、JupyterLab 与 Agent 的代码解释器共用项目内核。这段视频使用合成数据运行一个小示例。",
+    "s11_a": "<b>Notebook</b>——运行 cell、中断、重启、存成 <code>.ipynb</code>",
+    "s11_b": "<b>Compute</b>——会话所在主机的 GPU、CPU、内存、磁盘实时状态",
+    "s11_c": "<b>JupyterLab</b>——需要完整界面时的出口",
+    "s1_h": "把整个项目放在眼前",
+    "s1_p": "Overview 集中呈现持续更新的计划、Runtime 活动、能力、候选组件与项目文件。在侧栏搜索项目，随时回到同一工作区继续推进。",
+    "s1_a": "<b>Living plan</b>——切换进度摘要与完整计划",
+    "s1_b": "<b>Runtime</b>——查看任务状态和委派的 Agent 线程",
+    "s1_c": "<b>八类实体</b>——浏览能力目录与会话共享笔记",
+    "s1_d": "<b>真实项目状态</b>——已挂载能力、暂存候选与文件",
+    "s2_h": "五种视图，共享一个项目",
+    "s2_p": "Overview、Chat、Canvas、Code 和 Science 提供不同的工作方式。切换视图后仍使用同一个项目的资源。",
+    "s2_a": "<b>Chat</b>——描述任务，看它被一步步执行",
+    "s2_b": "<b>Canvas</b>——节点编辑器，左侧组件面板含输入输出、流程控制、Agents、数据、处理",
+    "s2_c": "<b>Code</b>——直接编辑会话工作区里的文件",
+    "s2_d": "<b>Science</b>——挂在同一批文件上的 Jupyter 内核，另有 JupyterLab 入口",
+    "s3_h": "探索八类可演化实体",
+    "s3_p": "从 Overview 的八类实体卡片进入能力目录或会话共享笔记。目录中可用、会话中已选、项目中暂存的候选各有明确展示，方便判断能力处于哪个阶段。",
+    "s3_a": "<b>Skills</b> 与 <b>Tools</b>——专项工作流与可调用动作",
+    "s3_b": "<b>Agents</b>——可供委派的专家 agent",
+    "s3_c": "<b>Connectors</b>——外部数据源与服务",
+    "s3_d": "<b>Workflow</b>、<b>Memory</b>、<b>Environment</b> 与 <b>Plugin</b>——可复用流程、会话笔记、执行环境和集成",
+    "s4_h": "从卡片起步，或者直接说",
+    "s4_p": "四张起始卡覆盖了最常见的诉求——审查、规划、讲解、排查——下方的输入框接住其余一切。运行开始前可以先把文件挂到会话里。",
+    "s4_a": "<b>起始卡片</b>——审查项目、规划功能、讲解架构、排查问题",
+    "s4_b": "<b>自由输入</b>——Enter 发送，Shift+Enter 换行",
+    "s4_c": "<b>附加文件</b>——暂存进会话工作区",
+    "s5_h": "查看文件，跟踪任务活动",
+    "s5_p": "Chat 右侧面板提供文件预览、任务活动和选中步骤的详情。示例项目当前没有运行 Agent 任务，视频展示文件查看，以及活动和检查器的空状态。",
+    "s5_a": "<b>Files</b>——浏览并打开会话工作区里的任何文件",
+    "s5_b": "<b>Activity</b>——任务状态与 Gateway 连接",
+    "s5_c": "<b>Inspector</b>——存在执行步骤时查看选中步骤的详情",
+    "s6_h": "给 agent 一块屏幕，或者另一台主机",
+    "s6_p": "侧栏集中放置 Browser、Computer 实时画面的入口，以及已配置的远程机器和部署。本段演示本地环境的启动入口；远程主机是否可用取决于会话配置。",
+    "s6_a": "<b>Browser</b>——有头 Chrome，经 noVNC 驱动",
+    "s6_b": "<b>Computer</b>——完整桌面，用于 GUI 自动化，经 noVNC",
+    "s6_c": "<b>Remote machines</b>——通过 SSH 打开 shell 的远程主机",
+    "s6_d": "<b>Deployments</b>——该会话已发布的服务",
+    "s7_h": "所有 provider，一张目录",
+    "s7_p": "浏览已注册的 Provider，查看各模型声明的工具调用、视觉和流式支持，并从同一工作台配置模型与连接。",
+    "s7_a": "<b>逐模型能力标记</b>——工具调用、视觉、流式",
+    "s7_b": "<b>按 provider 分组</b>——Anthropic、Google、OpenRouter 等",
+    "s7_c": "<b>Add model</b>——不重新部署即可注册新端点",
+    "s8_h": "深色浅色，本地远程",
+    "s8_p": "主题跨会话记住，端点也不是写死的：可以把工作台指向另一台主机上的 Gateway，或在 Gateway 需要鉴权时提供 token。",
+    "s8_a": "<b>主题</b>——深浅两套，按浏览器记忆",
+    "s8_b": "<b>Connection</b>——运行时更改 Gateway 端点",
+    "s8_c": "<b>Token</b>——受保护的 Gateway 用 <code>AGENTEVOLVER_GATEWAY_TOKEN</code>",
+    "run_h": "自己跑一遍",
+    "run_p": "首次使用先准备基础镜像，再在 base 沙箱内一同启动 Python Gateway 和 Vite。宿主机 conda 启动方式见 Frontend README。",
+    "run_note": "然后打开 <code>http://127.0.0.1:5173</code>。沙箱以 <code>--network host</code> 运行，容器的 loopback 就是宿主的 loopback；界面默认连 <code>ws://127.0.0.1:9876/ws</code>。",
+    "cta_h": "看看框架的其余部分",
+    "cta_p": "通过工作台查看和使用全局演化、持续更新的计划，以及共享 Runtime。",
+    "cta_b1": "← 回到总览",
+    "cta_b2": "★ 去 GitHub 点星",
+    "foot_tag": "自进化多智能体框架 · MIT 许可证",
+    "foot_home": "总览",
+    "foot_fe": "前端 README",
+    "foot_top": "回到顶部 ↑",
+    "s2_e": "<b>Overview</b>——计划、Runtime、演化候选和项目文件",
+    "caption1": "项目总览 · Plan 与 Runtime",
+    "caption2": "五种视图 · 共享项目",
+    "caption3": "Canvas · 构建流程",
+    "caption4": "Code · 编辑项目文件",
+    "caption5": "Science · 运行 Python cell",
+    "caption6": "八类实体 · 能力与记忆",
+    "caption7": "Chat · 输入任务",
+    "caption8": "文件 · 活动 · 步骤检查",
+    "caption9": "机器环境 · 实时画面入口",
+    "caption10": "Provider · 模型能力",
+    "caption11": "深浅主题 · 连接设置"
+  }
+};
+
+function applyLang(lang){
+  const dict = I18N[lang] || I18N.en;
+  document.querySelectorAll("[data-i18n]").forEach(el=>{
+    const v = dict[el.dataset.i18n];
+    if (v != null) el.innerHTML = v;
+  });
+  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  document.querySelectorAll(".lang button").forEach(b=>
+    b.classList.toggle("active", b.dataset.lang === lang));
+  try{ localStorage.setItem("ae_lang", lang); }catch(e){}
+}
+document.querySelectorAll(".lang button").forEach(b=>
+  b.addEventListener("click", ()=>applyLang(b.dataset.lang)));
+
+let lang0 = "en";
+try{
+  lang0 = new URLSearchParams(location.search).get("lang")
+       || localStorage.getItem("ae_lang")
+       || ((navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en");
+}catch(e){}
+applyLang(lang0);
+
+/* -------- reveal on scroll -------- */
+const revealIO = new IntersectionObserver((entries)=>{
+  for (const e of entries) if (e.isIntersecting){ e.target.classList.add("in"); revealIO.unobserve(e.target); }
+}, {rootMargin:"0px 0px -8% 0px"});
+document.querySelectorAll(".reveal").forEach(el=>revealIO.observe(el));
+
+/* -------- play a clip only while it is on screen --------
+   Eleven autoplaying videos would pull several megabytes up front and keep
+   decoding off-screen. preload="none" plus this observer means a clip is only
+   fetched and decoded once someone is actually looking at it. */
+const playIO = new IntersectionObserver((entries)=>{
+  for (const e of entries){
+    const v = e.target;
+    if (e.isIntersecting){
+      if (v.preload === "none") v.preload = "auto";
+      v.play().catch(()=>{});      // autoplay can still be refused; the poster stays
+    } else {
+      v.pause();
+    }
+  }
+}, {threshold:0.35});
+document.querySelectorAll("video[data-autoplay]").forEach(v=>{
+  playIO.observe(v);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,780 @@
+"""One hook installs all eight component types, and the table says how each differs.
+
+Eight registration hooks used to exist as eight near-copies, which is how one type ended
+up with no hook at all — a generated plugin was written, reported as created, and never
+installed — and how only one of them read a path out of backticks. They are now one hook
+and one table, so the tests that matter are: does the table still cover every type the
+framework evolves, and does each row still describe its type's real shape.
+
+The table is what a ninth component type will forget to update. `test_every_evolvable...`
+is where that shows up, at import time in CI, rather than at the end of a generate run
+that did all the work and then could not install it.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+import pytest
+
+from agentevolver.capability.types import COMPONENT_TYPES, component_type
+from agentevolver.hook.default.registration import (
+    SHAPES,
+    RegistrationHook,
+    _mentions,
+    resolve_artifact,
+    shape_for,
+)
+from agentevolver.hook.types import HookContext, HookDecision
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", [None, "shadow", "canary", "active", "reverted"])
+async def test_registration_receipt_distinguishes_candidate_from_serving_version(monkeypatch, phase):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from agentevolver.extension import extension_manager
+    from agentevolver.hook import promotion
+    from agentevolver.tool.default.adoption import AdoptionTool
+    from agentevolver.agent.loop.decision import ActionCall
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.task.evolution import observe, state
+
+    active = "1.0.1" if phase in (None, "active") else "1.0.0"
+    rollout = None if phase is None else {
+        "phase": phase, "candidate_version": "1.0.1", "baseline_version": "1.0.0",
+    }
+    comp = SimpleNamespace(module="tool", name="font_probe", version=active)
+    monkeypatch.setattr(promotion, "install_generated_component", AsyncMock(return_value=(True, "installed")))
+    monkeypatch.setattr(type(extension_manager), "read_manifest", lambda self: SimpleNamespace(components=[comp]))
+    monkeypatch.setattr(type(extension_manager), "rollout_status", lambda *args: rollout)
+    result = await AdoptionTool()(action="register", module="tool", name="font_probe",
+                                  artifact_path="/source/font_probe.py")
+    assert result.success
+    expected = "1.0.1" if phase in (None, "shadow", "canary", "active") else "1.0.0"
+    assert result.data["version"] == result.data["candidate_version"] == expected
+    assert result.data["active_version"] == active
+    if phase in ("shadow", "canary"):
+        assert "ordinary calls may still use the baseline" in result.message
+
+    ctx = SimpleNamespace(extra={"task_manifest": {"evolution": {"require_verified_improvement": True}}})
+    call = ActionCall("register-1", "adoption_tool", {"action": "register"})
+    observe(ctx, [CapabilityRouter._from_response(call, result)], {"adoption_tool": ("tool", "adoption_tool")})
+    candidate = state(ctx)["candidates"][f"tool:font_probe:{expected}"]
+    candidate["decision"] = {"decision": "keep", "evaluation": {"verdict": "pass"}}
+    candidate["use"] = {"consumer_call_id": "later-real-use"}
+    # Registering the same immutable version again must not erase its prior evidence.
+    repeat = ActionCall("register-2", "adoption_tool", {"action": "register"})
+    observe(ctx, [CapabilityRouter._from_response(repeat, result)], {"adoption_tool": ("tool", "adoption_tool")})
+    assert candidate["registration"] == "register-1"
+    assert state(ctx)["candidates"][f"tool:font_probe:{expected}"]["use"] == {"consumer_call_id": "later-real-use"}
+
+
+def _ctx(**payload: Any) -> HookContext:
+    return HookContext(id="reg-test", name="registration_hook", input=payload)
+
+
+# --------------------------------------------------------------------------- #
+# Coverage
+# --------------------------------------------------------------------------- #
+def test_every_evolvable_component_type_can_be_installed():
+    """Generation is offered for exactly the types installation handles.
+
+    A type present in one and absent from the other is the plugin bug: a run builds the
+    thing, and finds out at its last step that nothing knows how to install it.
+    """
+    from agentevolver.extension import EVOLVABLE_MODULES
+
+    installable = {e.type for e in COMPONENT_TYPES if shape_for(e.type) is not None}
+    assert installable == set(EVOLVABLE_MODULES), (
+        f"installable but not evolvable: {sorted(installable - set(EVOLVABLE_MODULES))}; "
+        f"evolvable but not installable: {sorted(set(EVOLVABLE_MODULES) - installable)}"
+    )
+
+
+def test_only_the_two_types_that_need_to_differ_carry_a_behaviour_row():
+    """Six of the eight install identically, and a row that says nothing goes stale.
+
+    `SHAPES` used to hold one row per type, six of them repeating the defaults — and the
+    artifact shape as well, which promotion held a second copy of and got wrong.
+    """
+    assert set(SHAPES) == {"agent", "workflow"}
+    for module in ("tool", "skill", "connector", "plugin", "environment", "memory"):
+        assert shape_for(module) is shape_for("tool"), f"{module} takes the default"
+
+
+def test_promotion_walks_every_component_type():
+    """The bug this refactor was chasing.
+
+    `ProjectSandbox` kept its own list of promotable modules and it stopped at six, so a
+    generated workflow, plugin or memory was registered and then refused by promotion —
+    "Requested staged extension component was not found", for a file sitting right there.
+    Both now read the capability table.
+    """
+    from agentevolver.sandbox.project import _promotable_shapes
+
+    promotable = set(_promotable_shapes())
+    missing = {e.type for e in COMPONENT_TYPES} - promotable
+    assert not missing, f"generated but never promotable: {sorted(missing)}"
+    assert "prompt" in promotable, (
+        "an agent's prompt is promoted beside the agent; promotion has to know its shape"
+    )
+
+
+def test_promotion_and_installation_agree_on_what_each_type_looks_like():
+    """Two readers of one fact, checked against each other rather than trusted.
+
+    They disagreed for as long as each had its own copy, and the disagreement was silent:
+    one list simply had fewer entries than the other.
+    """
+    from agentevolver.sandbox.project import _promotable_shapes
+
+    shapes = _promotable_shapes()
+    for entry in COMPONENT_TYPES:
+        assert shapes[entry.type] == (entry.directory, entry.suffix), (
+            f"{entry.type}: promotion sees {shapes[entry.type]}, "
+            f"the capability table says {(entry.directory, entry.suffix)}"
+        )
+
+
+def test_there_is_exactly_one_registration_hook():
+    """The merge, asserted rather than assumed.
+
+    Eight names in the registry meant eight copies of one algorithm; a reappearing second
+    one means a type was special-cased by forking the hook again instead of adding a row.
+    """
+    import agentevolver.hook  # noqa: F401  — registers the defaults
+    from agentevolver.registry import HOOK
+
+    registered = sorted(
+        name
+        for name in (
+            getattr(cls, "model_fields", {}).get("name").default
+            for cls in HOOK.module_dict.values()
+            if "name" in getattr(cls, "model_fields", {})
+        )
+        if isinstance(name, str) and "registration" in name
+    )
+    assert registered == ["registration_hook"], registered
+
+
+def test_the_dispatcher_asks_for_that_one_hook_by_name():
+    """`install_generated_component` names the hook it fires. A stale
+    `{type}_registration_hook` there would resolve to nothing and fail every run, for every
+    type at once."""
+    import inspect
+
+    from agentevolver.hook import promotion
+
+    source = inspect.getsource(promotion.install_generated_component)
+    assert 'name="registration_hook"' in source
+    assert '"target_type": target' in source, (
+        "the hook selects its row by target_type; the dispatcher must pass it"
+    )
+
+
+@pytest.mark.asyncio
+async def test_registering_is_reachable_as_an_action_rather_than_by_ending_a_run(monkeypatch):
+    """The installer needs a caller, and `adoption_tool` is it.
+
+    Installing used to be the last act of the three evolution agents: their `finalize` fired
+    the hook, so deleting them left the hook and all eight of its shapes with no caller at
+    all. A component could be written and evaluated and never become a version — which is
+    what a live run reported, as `record_decision` refusing a candidate that was "nothing
+    registered". The check is that the action reaches the hook with the type it was given.
+    """
+    from agentevolver.hook.types import HookDecision, HookResult
+    from agentevolver.tool.default.adoption import AdoptionTool
+
+    seen = {}
+
+    async def _hook_manager(*, name, input, ctx, required):
+        seen.update(hook=name, payload=input)
+        return HookResult(decision=HookDecision.ALLOW)
+
+    from agentevolver.hook import server
+
+    monkeypatch.setattr(server, "hook_manager", _hook_manager)
+
+    result = await AdoptionTool()(
+        action="register", module="tool", name="calculator_tool",
+        artifact_path="/tmp/calculator_tool.py",
+    )
+    assert result.success is True
+    assert seen["hook"] == "registration_hook"
+    assert seen["payload"]["target_type"] == "tool"
+    assert seen["payload"]["target_name"] == "calculator_tool"
+    assert seen["payload"]["artifact_path"] == "/tmp/calculator_tool.py"
+
+    # An unknown family is refused here rather than reaching a hook that cannot select a row.
+    unknown = await AdoptionTool()(
+        action="register", module="widget", name="x", artifact_path="/tmp/x.py",
+    )
+    assert unknown.success is False and "must be one of" in unknown.message
+
+
+@pytest.mark.parametrize(
+    "module,directory,entry,suffix",
+    [
+        ("tool", False, "", ".py"),
+        ("memory", False, "", ".py"),
+        ("agent", False, "", ".py"),
+        ("workflow", False, "", ".html"),
+        ("skill", True, "", ".py"),
+        ("connector", True, "", ".py"),
+        ("plugin", True, "plugin.py", ".py"),
+        ("environment", True, "environment.py", ".py"),
+    ],
+)
+def test_each_type_declares_its_real_artifact_shape(module, directory, entry, suffix):
+    """Checked one by one, because these are what every reader of the table relies on:
+    a skill is a directory, a workflow is `.html`, an environment must hold the file its
+    loader reads."""
+    declared = component_type(module)
+    assert (declared.directory, declared.entry, declared.suffix) == (directory, entry, suffix)
+
+
+# --------------------------------------------------------------------------- #
+# Finding the artifact
+# --------------------------------------------------------------------------- #
+def _staged(root, module: str, *parts: str):
+    """A path inside the bound session's staging tree, with its parent created."""
+    path = root.joinpath(module, *parts)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+@pytest.fixture(autouse=True)
+def promotion_log(monkeypatch):
+    """Stand in for the promotion step, recording when it ran.
+
+    Any root that is not the shared one is a staging tree, so a bound test session always
+    takes the staged branch. Promotion itself copies between real project roots, which is
+    not what these tests are about — but *when* it runs is: a type that rewrites its
+    artifact must do it to the staged copy, so what gets promoted is what was validated.
+
+    `autouse` because the real function writes into the machine's shared extension tree.
+    Left opt-in, it ran for one test that had not asked for the fixture and left two stub
+    files — `# tool`, `# agent` — installed in the working copy. A safeguard that has to
+    be remembered on every new test is one that will be forgotten on some new test.
+    """
+    order: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "agentevolver.sandbox.project.validate_staged_extension",
+        lambda root: order.append(("validate", "")) or {},
+    )
+
+    def _promote(root, path):
+        # The artifact as it stood at promotion time, not as it ends up: the two differ
+        # for any type that rewrites its own file, and which one gets promoted is the
+        # whole question.
+        from pathlib import Path
+
+        try:
+            snapshot = Path(path).read_text(encoding="utf-8")
+        except OSError:
+            snapshot = ""
+        order.append(("promote", snapshot))
+        return path
+
+    monkeypatch.setattr("agentevolver.hook.promotion.promote_approved_component", _promote)
+    return order
+
+
+@pytest.fixture(autouse=True)
+def staging(bound_session, monkeypatch):
+    """Point the staged-path fallback at this run's staging tree.
+
+    `resolve_artifact` falls back to `extension_manager.stage_path(module, leaf)` when a
+    run named no path at all. Unpatched, that reads the machine's actual extension tree,
+    so a test asserting "nothing resolves" passes or fails on what happens to be
+    installed.
+    """
+    from agentevolver.extension import extension_manager
+
+    root = bound_session["extension"]
+    monkeypatch.setattr(
+        extension_manager,
+        "stage_path",
+        lambda module, leaf: str(root / module / leaf),
+    )
+
+
+def test_a_file_type_is_found_from_a_path_in_prose(bound_session):
+    artifact = _staged(bound_session["extension"], "tool", "web_search_tool.py")
+    artifact.write_text("# tool")
+    found = resolve_artifact(
+        module="tool",
+        target_name=None,
+        reasoning="Wrote the tool to extension/tool/web_search_tool.py and verified it.",
+        extension_root=str(bound_session["extension"]),
+        matches=_mentions("tool", component_type("tool")),
+    )
+    assert found == str(artifact)
+
+
+def test_a_directory_type_is_found_when_the_run_names_its_entry_file(bound_session):
+    """The generate skill tells a run either spelling is fine, and the loader wants the
+    directory — so naming `environment.py` has to resolve up to the directory holding it.
+    """
+    directory = _staged(bound_session["extension"], "environment", "shell_env", "environment.py")
+    directory.write_text("# env")
+    found = resolve_artifact(
+        module="environment",
+        directory=True,
+        entry="environment.py",
+        target_name=None,
+        reasoning="Created `extension/environment/shell_env/environment.py`.",
+        extension_root=str(bound_session["extension"]),
+        matches=_mentions("environment", component_type("environment")),
+    )
+    assert found == str(directory.parent)
+
+
+def test_a_directory_missing_its_entry_file_is_not_accepted(bound_session):
+    """Accepting it defers the failure to load time, where the message names neither the
+    run that produced it nor the file it lacks."""
+    directory = _staged(bound_session["extension"], "plugin", "notes", "README.md")
+    directory.write_text("# notes")
+    assert (
+        resolve_artifact(
+            module="plugin",
+            directory=True,
+            entry="plugin.py",
+            target_name=None,
+            reasoning="Created extension/plugin/notes/",
+            extension_root=str(bound_session["extension"]),
+            matches=_mentions("plugin", component_type("plugin")),
+        )
+        is None
+    )
+
+
+def test_a_source_file_the_run_merely_quoted_is_not_registered(tmp_path, bound_session):
+    """Prose names the artifact alongside everything the run read to write it.
+
+    Without the `extension/` requirement, a run that says "modelled on
+    agentevolver/tool/default/inspect.py" gets *that* file registered as its output.
+    """
+    quoted = tmp_path / "agentevolver" / "tool" / "default" / "inspect.py"
+    quoted.parent.mkdir(parents=True)
+    quoted.write_text("# framework source")
+    assert (
+        resolve_artifact(
+            module="tool",
+            target_name=None,
+            reasoning=f"Modelled it on {quoted}, then wrote mine.",
+            extension_root=str(bound_session["extension"]),
+            matches=_mentions("tool", component_type("tool")),
+        )
+        is None
+    )
+
+
+def test_a_path_from_another_module_does_not_resolve(bound_session):
+    """A skill run naming its own `references/tool.md` must not install a tool."""
+    other = _staged(bound_session["extension"], "tool", "unrelated.py")
+    other.write_text("# not mine")
+    assert (
+        resolve_artifact(
+            module="skill",
+            directory=True,
+            target_name=None,
+            reasoning=f"See {other} for the pattern.",
+            extension_root=str(bound_session["extension"]),
+            matches=_mentions("skill", component_type("skill")),
+        )
+        is None
+    )
+
+
+def test_a_structured_path_is_believed_without_the_prose_filter(tmp_path, bound_session):
+    """`artifact_path` is the run stating which file it means, not a mention to sift out
+    of a paragraph — so it is accepted wherever it points, including outside `extension/`.
+    """
+    artifact = tmp_path / "elsewhere" / "custom_tool.py"
+    artifact.parent.mkdir()
+    artifact.write_text("# tool")
+    assert resolve_artifact(
+        module="tool",
+        target_name=None,
+        artifact_path=str(artifact),
+        extension_root=str(bound_session["extension"]),
+        matches=_mentions("tool", component_type("tool")),
+    ) == str(artifact)
+
+
+# --------------------------------------------------------------------------- #
+# The hook itself
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_an_unknown_target_type_is_blocked_with_the_list_of_known_ones():
+    """The one failure the run can act on directly, so the message names the choices."""
+    result = await RegistrationHook().handle(_ctx(target_type="widget", target_name="x"))
+    assert result.decision == HookDecision.BLOCK
+    assert "widget" in result.reason
+    for module in SHAPES:
+        assert module in result.reason
+
+
+@pytest.mark.asyncio
+async def test_a_missing_target_type_is_blocked_rather_than_defaulted():
+    """Defaulting picks a module at random and reports 'file not found' for a run whose
+    real problem is that nobody said what it built."""
+    result = await RegistrationHook().handle(_ctx(target_name="x"))
+    assert result.decision == HookDecision.BLOCK
+    assert "target_type" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_a_run_whose_artifact_cannot_be_found_is_told_what_to_include(bound_session):
+    result = await RegistrationHook().handle(
+        _ctx(
+            target_type="tool",
+            target_name="missing_tool",
+            reasoning="I wrote the tool.",
+        )
+    )
+    assert result.decision == HookDecision.BLOCK
+    assert "adoption_tool" in result.reason and "artifact_path" in result.reason
+    assert "done_tool" not in result.reason
+
+
+@pytest.mark.asyncio
+async def test_an_agent_evolution_that_only_changed_the_prompt_still_registers(
+    bound_session, monkeypatch, promotion_log
+):
+    """An optimizer's remit is the class, the prompt, or both.
+
+    Blocking a prompt-only change for a `.py` it never needed to write rejects the run for
+    succeeding at the narrower thing it set out to do — and the change is already on disk.
+    """
+    prompt = _staged(bound_session["extension"], "prompt", "triage_agent.html")
+    prompt.write_text("<div></div>")
+    registered = []
+
+    async def _add(module, path, config=None):
+        registered.append((module, path))
+        return "triage_agent"
+
+    from agentevolver.extension import extension_manager
+
+    monkeypatch.setattr(extension_manager, "add_component", _add)
+
+    result = await RegistrationHook().handle(
+        _ctx(
+            target_type="agent",
+            target_name="triage_agent",
+            reasoning="Rewrote the prompt at extension/prompt/triage_agent.html; no class change.",
+        )
+    )
+    assert result.decision == HookDecision.ALLOW
+    assert registered == [("prompt", str(prompt))]
+
+
+@pytest.mark.asyncio
+async def test_a_workflow_is_activated_and_compiled_before_it_is_registered(
+    bound_session, monkeypatch, promotion_log
+):
+    """The `workflow` row's whole reason: the artifact is rewritten before promotion, so
+    what gets promoted is what compiled."""
+    artifact = _staged(bound_session["extension"], "workflow", "review.html")
+    artifact.write_text(
+        "<!DOCTYPE html><html><body><workflow name='review'>"
+        "<flow><checkpoint /></flow></workflow></body></html>"
+    )
+
+    async def _add(module, path, config=None):
+        return "review"
+
+    from agentevolver.extension import extension_manager
+
+    monkeypatch.setattr(extension_manager, "add_component", _add)
+
+    result = await RegistrationHook().handle(
+        _ctx(
+            target_type="workflow",
+            target_name="review",
+            artifact_path=str(artifact),
+        )
+    )
+    assert result.decision == HookDecision.ALLOW
+    rewritten = artifact.read_text()
+    assert 'status="active"' in rewritten
+    assert 'enable-evolving="true"' in rewritten
+    assert [step for step, _ in promotion_log] == ["validate", "promote"]
+    promoted = dict(promotion_log)["promote"]
+    assert 'status="active"' in promoted, (
+        "the artifact was promoted before it was activated and compiled, so the shared "
+        "tree can receive a workflow that never compiled"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_workflow_that_is_not_a_document_is_blocked_with_the_reason(bound_session):
+    """A bare `<workflow>` fragment is the shape a run reaches for first, and it would be
+    registered as active without ever compiling. The message has to say which."""
+    artifact = _staged(bound_session["extension"], "workflow", "fragment.html")
+    artifact.write_text("<workflow name='x'><flow><checkpoint /></flow></workflow>")
+
+    result = await RegistrationHook().handle(
+        _ctx(
+            target_type="workflow",
+            target_name="fragment",
+            artifact_path=str(artifact),
+        )
+    )
+    assert result.decision == HookDecision.BLOCK
+    assert "DOCTYPE" in result.reason
+
+
+# --------------------------------------------------------------------------- #
+# One table, and everyone reading from it
+# --------------------------------------------------------------------------- #
+def test_the_extension_tree_still_sees_what_it_saw_before_the_tables_were_derived():
+    """Six hand-written tables in `extension/server.py` describing the same nine types.
+
+    None of them was wrong, which is the point: a seventh copy elsewhere was — promotion's
+    list stopped at six modules — and these six would have gone the same way the next time
+    a type was added. So they are derived now.
+
+    Asserted against the literal values they held before, not against the same derivation
+    that produces them: written the second way this is a tautology, and a mutation removing
+    `plugin`'s manifest or `memory`'s `class_based` changed both sides at once and passed.
+    These are the facts, and the derivation has to keep producing them.
+    """
+    import agentevolver.extension.server as extension_server
+
+    assert set(extension_server._MODULES) == {
+        "tool",
+        "agent",
+        "prompt",
+        "skill",
+        "environment",
+        "connector",
+        "workflow",
+        "memory",
+        "plugin",
+    }
+    assert extension_server._CLASS_MODULES == {"tool", "agent", "environment", "memory", "plugin"}
+    assert extension_server._DIR_MODULES == {"skill", "environment", "connector", "plugin"}
+    assert extension_server._CLASS_ENTRY == {"environment": "environment.py", "plugin": "plugin.py"}
+    assert extension_server._MANIFEST_FILE == {
+        "skill": "SKILL.md",
+        "environment": "ENVIRONMENT.md",
+        "connector": "CONNECTOR.md",
+        "plugin": "PLUGIN.md",
+    }
+    assert extension_server._EXT == {
+        "tool": ".py",
+        "agent": ".py",
+        "environment": "",
+        "prompt": ".html",
+        "skill": "",
+        "connector": "",
+        "workflow": ".html",
+        "memory": ".py",
+        "plugin": "",
+    }
+
+
+def test_promotion_sees_the_same_shapes_the_extension_tree_does():
+    """The two readers, checked against each other rather than each against the table.
+
+    They disagreed for as long as each kept its own copy, and silently: one simply had
+    fewer entries. `_EXT` spells a directory as `""` while the capability table keeps the
+    suffix and a `directory` flag, so the comparison is on what each actually means.
+    """
+    import agentevolver.extension.server as extension_server
+    from agentevolver.sandbox.project import _promotable_shapes
+
+    promotion = _promotable_shapes()
+    assert set(promotion) == set(extension_server._MODULES)
+    for module, (directory, suffix) in promotion.items():
+        assert directory == (module in extension_server._DIR_MODULES), module
+        assert ("" if directory else suffix) == extension_server._EXT[module], module
+
+
+def test_prompt_is_stored_but_is_not_a_component():
+    """The one row that has to be in one set and not the other.
+
+    An evolution agent never targets a prompt — a prompt-only change is registered as part
+    of the agent it belongs to — but the tree stores one, promotion copies one and the
+    commands address one. Kept as a row rather than as a line each place appends: both
+    `extension/server.py` and `sandbox/project.py` had appended their own.
+    """
+    from agentevolver.capability.types import (
+        COMPONENT_TYPES,
+        STORED_TYPES,
+        component_type,
+        stored_type,
+    )
+
+    assert {e.type for e in STORED_TYPES} - {e.type for e in COMPONENT_TYPES} == {"prompt"}
+    assert component_type("prompt") is None, "a prompt is not something an agent evolves"
+    assert stored_type("prompt") is not None, "but the extension tree stores one"
+
+
+def test_evolvable_modules_is_exactly_the_component_types():
+    """What `/create`, the dispatcher and the generate agents all gate on."""
+    from agentevolver.capability.types import COMPONENT_TYPES
+    from agentevolver.extension import EVOLVABLE_MODULES
+
+    assert set(EVOLVABLE_MODULES) == {e.type for e in COMPONENT_TYPES}
+    assert "prompt" not in EVOLVABLE_MODULES
+
+
+# --------------------------------------------------------------------------- #
+# Three relations, not one list
+# --------------------------------------------------------------------------- #
+def test_the_three_roles_partition_the_eight_component_types():
+    """A capability is used, an environment is inhabited, a memory is had.
+
+    The table carried one distinction — `mounted: bool` — which could say that `memory`
+    was not in a roster but had no way to say `environment` was in one it did not belong
+    in. So `environment` sat in `CAPABILITY_TYPES` and three separate patches took it back
+    out: a slots override, a template of its own, and a state block.
+    """
+    from agentevolver.capability.types import COMPONENT_TYPES, Role
+
+    by_role = {}
+    for entry in COMPONENT_TYPES:
+        by_role.setdefault(entry.role, set()).add(entry.type)
+
+    assert by_role[Role.CAPABILITY] == {"tool", "skill", "connector", "agent", "workflow", "plugin"}
+    assert by_role[Role.ENVIRONMENT] == {"environment"}
+    assert by_role[Role.MEMORY] == {"memory"}
+
+
+def test_capability_means_the_six_an_agent_calls():
+    """The name is the point of the change: it held seven, and one of them was not one."""
+    from agentevolver.capability.types import CAPABILITY_TYPES
+
+    assert {e.type for e in CAPABILITY_TYPES} == {
+        "tool",
+        "skill",
+        "connector",
+        "agent",
+        "workflow",
+        "plugin",
+    }
+    assert "environment" not in {e.type for e in CAPABILITY_TYPES}
+    assert "memory" not in {e.type for e in CAPABILITY_TYPES}
+
+
+def test_the_six_capabilities_are_exactly_the_six_roster_blocks():
+    """What makes the name honest, checked against the template that renders them.
+
+    `capability_context.html` has always had six blocks. The constant had seven, so the
+    two could only be reconciled by knowing which row to skip.
+    """
+    import re
+    from pathlib import Path
+
+    from agentevolver.capability.types import CAPABILITY_TYPES
+
+    template = Path("agentevolver/prompt/module/capability_context.html").read_text()
+    rendered = set(re.findall(r"\{\{ available_(\w+) \}\}", template))
+    assert rendered == {e.mount_type for e in CAPABILITY_TYPES}
+
+
+def test_the_sets_nest():
+    """capability ⊂ mounted ⊂ component ⊂ stored, each adding exactly one kind of row."""
+    from agentevolver.capability.types import (
+        CAPABILITY_TYPES,
+        COMPONENT_TYPES,
+        MOUNTED_TYPES,
+        STORED_TYPES,
+    )
+
+    capability, mounted = set(CAPABILITY_TYPES), set(MOUNTED_TYPES)
+    component, stored = set(COMPONENT_TYPES), set(STORED_TYPES)
+    assert capability < mounted < component < stored
+    assert {e.type for e in mounted - capability} == {"environment"}
+    assert {e.type for e in component - mounted} == {"memory"}
+    assert {e.type for e in stored - component} == {"prompt"}
+
+
+def test_the_canvas_mount_order_is_unchanged():
+    """The order is a panel people already know, so narrowing the table must not move it.
+
+    `environment` is fifth. Deriving `MOUNTED_TYPES` as "capabilities plus environment"
+    would have appended it, silently rearranging every agent node's mount picker.
+    """
+    from agentevolver.capability import AGENT_MOUNT_TYPES
+
+    assert AGENT_MOUNT_TYPES == (
+        "tools",
+        "skills",
+        "connectors",
+        "agents",
+        "environments",
+        "workflows",
+        "plugins",
+    )
+
+
+def test_dispatch_and_the_plan_gate_look_up_all_seven():
+    """`capability_type` answers `None` for `environment` now — correctly, and dangerously.
+
+    Three callers ask by name: prompt assembly, action dispatch, and the plan gate. All
+    three act on a type the agent was handed, and none cares whether the agent calls it or
+    acts in it. Left on `capability_type`, the gate would stop judging environment actions
+    and the other two would raise on the missing entry.
+    """
+    from agentevolver.capability import capability_type, mounted_type
+
+    assert capability_type("environment") is None
+    assert mounted_type("environment") is not None
+    assert mounted_type("memory") is None, "memory is not mounted; it is merged into context"
+
+
+def test_the_fallback_looks_in_the_root_the_run_was_shown(bound_session, monkeypatch, tmp_path):
+    """A run that wrote where it was told must not be declared empty-handed.
+
+    The prompt names one staging tree — the session's own — and the configured
+    `extension_root` can be another. The `target_name` fallback consulted only the
+    configured one, so a run that followed its instructions exactly had its artifact
+    reported missing, and the live symptom was "Could not locate generated tool file"
+    for a file sitting on disk.
+    """
+    from agentevolver.extension import extension_manager
+
+    elsewhere = tmp_path / "configured_root"
+    monkeypatch.setattr(
+        extension_manager, "stage_path",
+        lambda module, leaf: str(elsewhere / module / leaf),
+    )
+    artifact = _staged(bound_session["extension"], "tool", "subscription_turn_tool.py")
+    artifact.write_text("# tool")
+
+    found = resolve_artifact(
+        module="tool",
+        target_name="subscription_turn_tool",
+        reasoning="Registered it.",
+        extension_root=str(bound_session["extension"]),
+        matches=_mentions("tool", component_type("tool")),
+    )
+    assert found == str(artifact)
+
+
+def test_the_fallback_still_looks_in_the_configured_root(bound_session, monkeypatch, tmp_path):
+    """The root that used to be the only one searched stays searched."""
+    from agentevolver.extension import extension_manager
+
+    configured = tmp_path / "configured_root"
+    artifact = _staged(configured, "tool", "subscription_turn_tool.py")
+    artifact.write_text("# tool")
+    monkeypatch.setattr(
+        extension_manager, "stage_path",
+        lambda module, leaf: str(configured / module / leaf),
+    )
+
+    found = resolve_artifact(
+        module="tool",
+        target_name="subscription_turn_tool",
+        reasoning="Registered it.",
+        extension_root=str(bound_session["extension"]),
+        matches=_mentions("tool", component_type("tool")),
+    )
+    assert found == str(artifact)

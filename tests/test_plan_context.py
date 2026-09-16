@@ -1,0 +1,169 @@
+"""Planning reaches coordinator requests, survives folding, and stays off workers."""
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from agentevolver.agent.actor.code_agent import CodeAgent
+from agentevolver.agent.actor.game_builder_agent import GameBuilderAgent
+from agentevolver.agent.actor.meta_agent import MetaAgent
+from agentevolver.agent.actor.website_builder_agent import WebsiteBuilderAgent
+from agentevolver.agent.actor.website_user_agent import WebsiteUserAgent
+from agentevolver.agent.context.conversation import Conversation
+from agentevolver.agent.loop.agent import Agent
+from agentevolver.message import CompactionMessage, SystemMessage
+from agentevolver.plan.server import PlanManagerServer
+from agentevolver.plan.types import PlanMode
+
+
+@pytest.fixture
+def planning(tmp_path, monkeypatch):
+    manager = PlanManagerServer.__new__(PlanManagerServer)
+    manager._states = {}
+    monkeypatch.setattr("agentevolver.plan.server.plan_manager", manager)
+    monkeypatch.setattr(
+        "agentevolver.plan.server.plan_path",
+        lambda session_id="", *, owner="": tmp_path / f"{session_id}.md",
+    )
+
+    async def environment_state(self, ctx):
+        return ""
+
+    monkeypatch.setattr(Agent, "environment_state", environment_state)
+    return manager, tmp_path
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("actor", [MetaAgent, WebsiteBuilderAgent, GameBuilderAgent])
+@pytest.mark.parametrize("evolving", [False, True])
+async def test_coordinator_reads_latest_plan_after_feedback_and_folding(planning, actor, evolving):
+    manager, root = planning
+    agent = actor(enable_evolving=not evolving)  # Target mutability is independent.
+    agent.middleware = []
+    agent.ctx = SimpleNamespace(id="coordinator", extra={})
+    routes = {
+        name: (kind, name) for kind, name in (
+            ("agent", "generate_agent"), ("agent", "optimize_agent"),
+            ("agent", "evaluate_agent"), ("tool", "adoption_tool"),
+            ("tool", "inspect_tool"), ("skill", "self_evolving_skill"),
+        )
+    }
+    agent.router = SimpleNamespace(schemas=AsyncMock(return_value=([], routes if evolving else {})))
+    await agent.prompt_modules(agent.ctx)
+    conversation = Conversation(task="Build and improve the website")
+    agent.conversation = conversation
+    conversation.system = [SystemMessage(content="Stable instructions")]
+    plan = root / "coordinator.md"
+    missing = "\n".join(await agent._live_blocks(0))
+    assert "No index.md yet" in missing and str(plan) in missing
+    rules = manager.instructions(enabled=agent.use_plan, evolution_enabled=evolving)
+    assert ("Evolution opportunities" in rules) is evolving
+    assert not plan.exists()  # The coordinator authors it; runtime never fabricates a plan.
+    opportunity = (
+        "\n"
+        "E1 deferred: bounded browser observation; evidence call-17 returned an entire scene. "
+        "Consumer: next gallery preview. Revisit after the first working preview.\n"
+    ) if evolving else ""
+    plan.write_text("## Detailed design\nFull implementation details stay on disk.")
+    index = root / "index.md"
+    index.write_text("## Brief\nInitial approach: ship a gallery." + opportunity
+                     + "\n## Documents\n[Plan](coordinator.md): implementation detail.")
+    before = agent.assembler.build_envelope(conversation, live=await agent._live_blocks(0))
+    assert "ship a gallery" in "\n".join(m.text for m in before.live)
+    assert not before.recent
+    assert "Full implementation details" not in "\n".join(m.text for m in before.flatten())
+    assert all("ship a gallery" not in m.text for m in before.fixed)
+
+    await agent.on_event(SimpleNamespace(text="Participant 2 requests an undo action."), None)
+    live = await agent._live_blocks(1)
+    assert "Participant 2 requests an undo action" in "\n".join(m.text for m in conversation.items)
+    assert "Before implementing a change" in rules
+    assert any("plan-index" in block for block in live)
+    # The coordinator's next action updates the actual shared document.
+    revised_opportunity = opportunity.replace(
+        "E1 deferred", "E1 probing",
+    ).replace(
+        "Revisit after the first working preview.",
+        "Compare output size and diagnostic coverage; check a second page before adoption.",
+    )
+    index.write_text(
+        "## Brief\nReplanned: add undo for Participant 2; verify restore and reload." + revised_opportunity
+        + "\n## Documents\n[Plan](coordinator.md): implementation detail."
+    )
+    conversation.checkpoint = CompactionMessage(content="Older conversation was folded.")
+    after = agent.assembler.build_envelope(conversation, live=await agent._live_blocks(2))
+    assert [m.text for m in before.fixed] == [m.text for m in after.fixed]
+    current = "\n".join(m.text for m in after.live)
+    assert "add undo for Participant 2" in current
+    assert "ship a gallery" not in current
+    if evolving:
+        assert "E1 probing" in current
+        assert "call-17" in current
+        assert "E1 deferred" not in current
+        assert all("Evolution opportunities" not in m.text for m in after.fixed)
+    assert all("plan-context" not in m.text for m in conversation.items)
+    assert not manager.active("coordinator")
+    agent.router.schemas.assert_awaited_once()  # Live planning does not rediscover every step.
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("actor", [CodeAgent, WebsiteUserAgent])
+@pytest.mark.parametrize("evolving", [False, True])
+async def test_workers_do_not_read_or_create_automatic_plans(planning, actor, evolving):
+    _, root = planning
+    (root / "parent.md").write_text("Coordinator-only plan")
+    agent = actor(enable_evolving=evolving)
+    agent.middleware = []
+    agent.ctx = SimpleNamespace(id="worker", parent_session_id="parent", extra={})
+    assert not agent.use_plan
+    assert not any("plan-context" in block for block in await agent._live_blocks(0))
+    assert not (root / "worker.md").exists()
+
+
+def test_explicit_modes_preserve_review_gate_and_off_semantics(planning):
+    manager, root = planning
+    manager.set_mode("coordinator", PlanMode.OFF)
+    assert manager.context("coordinator", enabled=True) == ""
+    manager.enter("coordinator")
+    context = manager.context("coordinator", enabled=True)
+    assert "exit_plan_mode" in context and 'active="true"' in context
+    # An explicitly gated worker must also see how to leave the gate.
+    assert "exit_plan_mode" in manager.context("coordinator", enabled=False)
+    manager.approve("coordinator", "Approved approach: build undo.")
+    assert (root / "coordinator.md").read_text() == "Approved approach: build undo."
+    assert 'active="false"' in manager.context("coordinator", enabled=True)
+    assert "No legacy ## Brief section exists" in manager.context("coordinator", enabled=True)
+
+
+def test_evolution_planning_respects_off_and_explicit_worker_gate(planning):
+    manager, _ = planning
+    manager.set_mode("coordinator", PlanMode.OFF)
+    assert manager.context("coordinator", enabled=True, evolution_enabled=True) == ""
+    manager.enter("coordinator")
+    context = manager.context("coordinator", enabled=True, evolution_enabled=True)
+    assert "Evolution opportunities" in context
+    assert "exit_plan_mode" in context and manager.active("coordinator")
+    # An explicit worker review gate must not opt the worker into coordinator planning.
+    worker_context = manager.context("coordinator", enabled=False, evolution_enabled=True)
+    assert "exit_plan_mode" in worker_context
+    assert "Evolution opportunities" not in worker_context
+
+
+def test_plan_projection_is_bounded_and_names_the_full_document(planning):
+    manager, root = planning
+    (root / "coordinator.md").write_text("## Brief\n" + "x" * 20_000
+                                       + "\n## Design\nPrivate full design body")
+    context = manager.context("coordinator", enabled=True, include_rules=False)
+    assert "truncated" in context
+    assert str(root / "coordinator.md") in context
+    assert len(context) < 2_800
+    assert "Private full design body" not in context
+
+
+def test_website_launcher_defaults_to_automatic_planning():
+    from examples.run_website_evolution_demo import parse_args
+
+    assert parse_args([]).plan_mode == "auto"
+    assert parse_args(["--plan-mode", "off"]).plan_mode == "off"
+    assert parse_args(["--plan-mode", "plan"]).plan_mode == "plan"

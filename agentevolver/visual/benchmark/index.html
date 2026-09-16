@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Benchmark · Live</title>
+  <link rel="stylesheet" href="./benchmark.css">
+  <link rel="stylesheet" href="./usage.css">
+  <script type="module" src="./usage.js"></script>
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+  <main class="shell">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">AgentEvolver · Live Evaluation</p>
+        <h1 id="title">Benchmark</h1>
+        <p id="run-name" class="run-name">Connecting to run…</p>
+      </div>
+      <div class="health">
+        <span id="health-dot" class="health-dot waiting"></span>
+        <div>
+          <strong id="health-label">Connecting</strong>
+          <small id="updated-at">Not yet refreshed</small>
+        </div>
+      </div>
+    </header>
+
+    <section class="hero-grid">
+      <article class="card progress-card">
+        <div class="card-label">Evaluated tasks</div>
+        <div class="progress-value"><span id="completed">—</span><small id="total">/ —</small></div>
+        <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+        <div class="split-meta">
+          <span id="progress-percent">0.0%</span>
+          <span id="eta">Estimating time remaining</span>
+        </div>
+      </article>
+
+      <article class="card score-card">
+        <div class="card-label">Pass rate</div>
+        <div id="score" class="score-value">—</div>
+        <div class="score-detail">
+          <span class="pass"><i></i><b id="resolved">—</b> resolved</span>
+          <span class="fail"><i></i><b id="unresolved">—</b> unresolved</span>
+          <span class="warning"><i></i><b id="harness-errors">—</b> evaluation issues</span>
+        </div>
+      </article>
+
+      <article class="card runtime-card">
+        <div class="card-label">Run status</div>
+        <div id="elapsed" class="runtime-value">—</div>
+        <div class="runtime-detail">
+          <span><b id="active-count">—</b> / <b id="concurrency">—</b> slots active</span>
+          <span id="launcher-pid">PID —</span>
+          <span id="attempt-summary">No execution issues</span>
+        </div>
+      </article>
+    </section>
+
+    <section data-usage-endpoint="./api/usage" aria-label="Model usage explorer"></section>
+    <section>
+      <article class="panel slots-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Workers</p>
+            <h2>Worker slots</h2>
+          </div>
+          <span id="slot-summary" class="pill">—</span>
+        </div>
+        <div id="slots" class="slots"></div>
+      </article>
+
+
+    </section>
+
+    <section class="panel recent-panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">Latest results</p>
+          <h2>Recent attempts</h2>
+        </div>
+        <span id="error-summary" class="pill muted">No runtime errors</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Result</th><th>Task</th><th>Duration</th><th>Calls</th><th>Cost</th></tr></thead>
+          <tbody id="recent-results"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <span>Auto-refresh every 5 seconds</span>
+      <span id="data-path"></span>
+    </footer>
+  </main>
+  <script src="./benchmark.js" defer></script>
+</body>
+</html>

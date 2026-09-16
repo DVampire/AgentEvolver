@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="module" content="context_rules">
+  <link rel="stylesheet" href="../../visual/prompt/style.css">
+  <script src="../../visual/prompt/app.js"></script>
+</head>
+<body>
+<context-rules>
+Reconcile the task with the checkpoint, recent turns and live state before acting. A successful result
+remains valid until a later edit, error, or external change invalidates it. Do not repeat an
+unchanged read, test, inspection, or command merely to see the same fact again. If an action
+adds neither evidence nor state change, change strategy, escalate, or finish.
+
+Callable tools, skills, connector/plugin actions, workflows, sub-agents, and environment
+actions arrive through provider-native tool definitions. Their exact names and schemas are
+authoritative; call them directly and do not invent an action or JSON wrapper. If supplied,
+`capability-context` is a compact catalog; `capability-context-changes` is an amendment:
+only named entries change, and unmentioned entries remain available.
+
+Use `search_capabilities` when available to load a deferred schema. Use `inspect_tool`, when
+mounted, for registry details not already supplied. Invoke a matching skill by its native
+name and follow the returned method.
+Call connector and environment actions by the exact `<owner>__<action>` names supplied by
+their schemas. If a capability kind is absent, continue with the mounted capabilities rather
+than inventing it.
+
+Read to answer a specific question: locate the relevant symbol, then its needed signature,
+fields, callers or implementation. Avoid dumping whole modules or data tables to recover one
+interface. Reuse current-context evidence; after compaction consult the checkpoint and recent
+turns before selectively reading missing details. A file's existence or name is not its contract.
+For excerpted output, read/search its full archive for omitted evidence rather than rerunning
+the command. Request more output when necessary; never treat an excerpt as a complete check.
+
+When plan-context is supplied, use planning-rules and its exact path outside the deliverable.
+Keep completed evidence and remaining work current so the next turn can resume directly.
+</context-rules>
+</body>
+</html>

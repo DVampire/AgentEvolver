@@ -1,0 +1,69 @@
+{
+  "provenance": "Investigation requests, not astronomical measurements or cached API responses. Fetch and preserve real records before claiming source-backed results.",
+  "sources": {
+    "vectors": "https://ssd-api.jpl.nasa.gov/doc/horizons.html",
+    "service_policy": "https://ssd-api.jpl.nasa.gov/doc/index.php",
+    "imagery": "https://images.nasa.gov/docs/images.nasa.gov_api_docs.pdf"
+  },
+  "requests": [
+    {
+      "id": "earth_interval",
+      "question": "Where does the local planetary model differ from the reference over this interval?",
+      "target_id": "399",
+      "center": "500@10",
+      "start": "2026-01-01",
+      "stop": "2026-01-03",
+      "step": "1 d",
+      "reference_system": "ICRF",
+      "reference_plane": "ECLIPTIC",
+      "time_scale": "TDB",
+      "vector_correction": "NONE",
+      "output_units": "KM-S",
+      "image_query": "Earth Apollo 17",
+      "inspect": "Identity, query, source version, sample times, units, origin, frame, actual vectors and image attribution; explain any model residual."
+    },
+    {
+      "id": "mars_transfer",
+      "question": "Does the same investigation work for a different planet and interval?",
+      "target_id": "499",
+      "center": "500@10",
+      "start": "2026-02-01",
+      "stop": "2026-02-04",
+      "step": "1 d",
+      "reference_system": "ICRF",
+      "reference_plane": "ECLIPTIC",
+      "time_scale": "TDB",
+      "vector_correction": "NONE",
+      "output_units": "AU-D",
+      "image_query": "Mars Viking",
+      "inspect": "Convert units explicitly before comparing; do not silently reuse Earth's cached query or image identity."
+    }
+  ],
+  "recovery_cases": [
+    "An invalid calendar date or reversed interval is corrected without losing the selected object.",
+    "An ambiguous name requires object selection; never silently choose the first match.",
+    "An empty image result retains the numerical investigation and offers a revised query.",
+    "A locally injected timeout or 429 produces bounded recovery; do not induce rate limits upstream.",
+    "A saved successful response is replayed offline with its original query and an explicit cached label.",
+    "A changed or malformed response schema is rejected visibly, not parsed into plausible-looking zeros."
+  ],
+  "transport_notes": "Check live documentation. Serialize JPL calls, cache unchanged queries and respect backoff. Use a controlled server-side retrieval or explicit import; never expose credentials or fabricate live success.",
+  "inquiries": [
+    {
+      "id": "frame_or_force",
+      "question": "Does a winding planetary path demonstrate an extra force, or could the chosen reference frame explain it?",
+      "need": "State competing explanations, match physical times and origins, design a discriminating comparison and connect it to inspectable scene states."
+    },
+    {
+      "id": "residual_or_units",
+      "question": "A model and its reference disagree. Is this unit conversion, frame alignment or the approximation itself?",
+      "need": "Choose diagnostic comparisons before changing the model; show what each result supports and what remains unresolved."
+    }
+  ],
+  "revision": {
+    "revises": "earth_interval",
+    "change": "Investigate Mars with AU-D output and a longer interval chosen within documented provider limits. Compare against the shorter KM-S method while preserving the original Earth notebook.",
+    "new_constraint": "A visitor has only a short guided visit and an offline replay of the saved reference packet; a deliberately exaggerated visual scale must remain distinguishable from physical measurements.",
+    "comparison": "Run the previously successful retrieval, investigation-design and scientific-review approaches on the changed request first. Identify the weak layer, improve it under the same inputs and replay the original case. Retain raw records and component-version provenance."
+  }
+}

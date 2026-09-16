@@ -1,0 +1,147 @@
+"""Every bash command's full output is archived to the session's bash log.
+
+The tool result the model reads is still bounded by the universal output policy, but a
+durable, complete copy is written beside it under ``<session>/log/bash`` — named by the
+job id for a background run (so the file and ``job__output(job_id=...)`` are visibly the
+same handle, the way Claude Code names a task's output file by the task id) and by a
+timestamp for a one-shot foreground call that has no such handle. Archiving never fails
+the command: a command that ran is a command that ran.
+"""
+
+import os
+import asyncio
+
+import pytest
+
+import agentevolver.tool.default.workspace.bash as bash
+from agentevolver.paths import P, path_manager
+
+
+@pytest.fixture
+def session(tmp_path, monkeypatch):
+    """Point the whole layout at a temp dir and bind a session, so archives land there."""
+    monkeypatch.setenv("AGENTEVOLVER_HOME", str(tmp_path))
+    path_manager.bind_session(owner="o", session_id="s")
+    return tmp_path
+
+
+def test_foreground_output_is_archived_verbatim(session):
+    text = "STDOUT:\n" + ("line\n" * 5000)  # larger than any inline excerpt cap
+    path = bash._write_bash_archive("echo hi", text)
+    assert path is not None
+    body = open(path, encoding="utf-8").read()
+    assert body.startswith("$ echo hi\n")  # header names the command
+    assert text in body  # complete — nothing dropped
+    # under the session's bash log, and a timestamp name (no handle to refer to it by)
+    assert os.path.dirname(path) == str(path_manager.get(P.SESSION_BASH))
+    assert path.endswith(".txt") and os.path.basename(path)[0].isdigit()
+
+
+def test_background_file_is_named_by_job_id(session):
+    path = bash._bash_archive_path(stem="job_ab12cd34")
+    assert path is not None and os.path.basename(path) == "job_ab12cd34.txt"
+    # and it can be created empty (header only), the way a background job starts it
+    written = bash._write_bash_archive("python train.py", "", path=path)
+    assert written == path
+    assert open(path, encoding="utf-8").read().startswith("$ python train.py\n")
+
+
+def test_archive_note_is_appended_only_when_archived():
+    assert bash._with_archive_note("done", None) == "done"
+    noted = bash._with_archive_note("done", "/x/y.txt")
+    assert noted.startswith("done") and "/x/y.txt" in noted
+
+
+def test_archiving_never_raises_when_path_unresolvable(monkeypatch):
+    def _boom(*a, **k):
+        raise RuntimeError("no bound session")
+
+    monkeypatch.setattr(bash.path_manager, "get", _boom)
+    assert bash._bash_archive_path() is None
+    assert bash._write_bash_archive("cmd", "some output") is None
+
+
+def test_large_archived_observation_keeps_diagnostics_and_retrievable_middle(tmp_path):
+    from agentevolver.tool.default.workspace.bash import _write_bash_archive, _with_archive_note
+    raw = "STDOUT: start\n" + "details " * 10_000 + "\nSTDERR: assertion failed\nExit code: 1"
+    path = str(tmp_path / "output.txt")
+    archived = _write_bash_archive("test", raw, path=path)
+    view = _with_archive_note(raw, archived, 4000)
+    assert len(view) < 4500
+    assert "STDOUT: start" in view and "assertion failed" in view and "Exit code: 1" in view
+    assert "omitted inline" in view and path in view
+    assert raw in (tmp_path / "output.txt").read_text()
+    assert _with_archive_note(raw, None, 4000) == raw
+    assert _with_archive_note(raw, archived, 0).startswith(raw)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["local", "tty", "container"])
+@pytest.mark.parametrize("full_output", [False, True])
+async def test_foreground_routes_share_default_excerpt_and_explicit_full_output(
+    session, monkeypatch, route, full_output,
+):
+    """A peer container must not silently bypass the same output budget."""
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    stdout = "first line\n" + "detail\n" * 2000 + "MIDDLE_EVIDENCE\n" + "detail\n" * 2000 + "last line"
+    stderr = "important failure diagnostic"
+    monkeypatch.setattr(bash, "permission_manager", SimpleNamespace(
+        check_declared=lambda *a, **kw: SimpleNamespace(allowed=True, warning=""),
+    ))
+    monkeypatch.setattr("agentevolver.session.resolve_workspace_root", lambda ctx: str(session))
+    monkeypatch.setenv(bash._EXEC_CONTAINER_ENV, "fixture-container" if route == "container" else "")
+    monkeypatch.setattr(bash, "_run_in_container", AsyncMock(return_value=(stdout, stderr, 7, False)))
+    monkeypatch.setattr(bash, "_run_under_pty", lambda *a: (stdout + "\n" + stderr, 7, False))
+    process = SimpleNamespace(returncode=7, communicate=AsyncMock(return_value=(stdout.encode(), stderr.encode())))
+    monkeypatch.setattr(bash.asyncio, "create_subprocess_exec", AsyncMock(return_value=process))
+    kwargs = {"max_output_chars": 0} if full_output else {}
+    response = await bash.BashTool()(command="fixture", tty=route == "tty", **kwargs)
+
+    assert response.success and response.data["exit_code"] == 7
+    assert "first line" in response.message and stderr in response.message
+    assert "Exit code: 7" in response.message
+    archive = Path(response.data["archived"])
+    assert stdout in archive.read_text() and stderr in archive.read_text()
+    if full_output:
+        assert "MIDDLE_EVIDENCE" in response.message
+        assert "omitted inline" not in response.message
+    else:
+        assert len(response.message) < 13_000
+        assert "omitted inline" in response.message and str(archive) in response.message
+        assert "MIDDLE_EVIDENCE" not in response.message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["local", "tty", "background"])
+async def test_actual_shell_honors_advertised_bash_syntax(session, monkeypatch, route):
+    from types import SimpleNamespace
+    from agentevolver.job import job_manager
+
+    monkeypatch.setattr(bash, "permission_manager", SimpleNamespace(
+        check_declared=lambda *a, **kw: SimpleNamespace(allowed=True, warning=""),
+    ))
+    monkeypatch.setattr("agentevolver.session.resolve_workspace_root", lambda ctx: str(session))
+    monkeypatch.delenv(bash._EXEC_CONTAINER_ENV, raising=False)
+    # The real run silently created a literal `research/{protocol,rounds` directory.
+    command = 'mkdir -p research/{protocol,rounds/R001}; values=(alpha beta); [[ ${values[1]} == beta ]] && test -d research/protocol'
+    response = await bash.BashTool()(command, tty=route == "tty",
+                                     run_in_background=route == "background")
+    assert response.success, response.message
+    if route == "background":
+        job = job_manager.get(response.data["job_id"])
+        try:
+            async with asyncio.timeout(5):
+                while not job.status.is_final:
+                    await asyncio.sleep(.01)
+            assert job.exit_code == 0, job
+        finally:
+            if not job.status.is_final:
+                await job_manager.kill_async(job.id)
+    else:
+        assert response.data["exit_code"] == 0, response.message
+    assert (session / "research/protocol").is_dir()
+    assert (session / "research/rounds/R001").is_dir()
+    assert not any("{" in p.name for p in session.rglob("*"))

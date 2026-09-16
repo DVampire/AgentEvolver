@@ -1,0 +1,96 @@
+/* AgentEvolver visual language. Dark surface and accent values match agentevolver/visual/request/style.css
+   and benchmark/style.css. HSL channels also feed the Tailwind/Radix components.
+   Light mode keeps the same green identity with contrast-adjusted accents. */
+:root {
+  color-scheme: light;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Courier New", Courier, monospace;
+  --radius: 0.75rem;
+  --background: 135.000000 20.000000% 96.078431%; /* #f3f7f4 */
+  --foreground: 159.375000 42.105263% 14.901961%; /* #16362b */
+  --card: 0.000000 0.000000% 100.000000%; /* #ffffff */
+  --muted: 142.500000 22.222222% 92.941176%; /* #e9f1ec */
+  --accent: 144.000000 27.272727% 89.215686%; /* #dcebe2 */
+  --muted-foreground: 148.888889 13.989637% 37.843137%; /* #536e60 */
+  --primary: 159.529412 65.891473% 25.294118%; /* #166b4e */
+  --primary-hover: 159.428571 68.627451% 20.000000%; /* #10563e */
+  --primary-foreground: 0.000000 0.000000% 100.000000%; /* #ffffff */
+  --border: 141.428571 17.073171% 83.921569%; /* #cfddd4 */
+  --input: 141.176471 15.315315% 78.235294%; /* #bfd0c5 */
+  --destructive: 351.562500 54.237288% 46.274510%; /* #b63648 */
+  --destructive-foreground: 0.000000 0.000000% 100.000000%; /* #ffffff */
+  --warning: 37.142857 75.000000% 32.941176%; /* #936315 */
+  --info: 202.000000 47.368421% 37.254902%; /* #326b8c */
+  --purple: 256.451613 24.409449% 49.803922%; /* #71609e */
+  --text-soft: 150.000000 19.480519% 30.196078%; /* #3e5c4d */
+  --canvas-dot: 144.545455 18.032787% 76.078431%; /* #b7cdc0 */
+  --shadow-panel: 0 16px 48px rgb(22 54 43 / .07);
+  --shadow-dialog: 0 28px 90px rgb(22 54 43 / .2);
+  --border-strong: hsl(var(--input));
+}
+
+:root.dark {
+  color-scheme: dark;
+  --background: 166.666667 39.130435% 4.509804%; /* #07100e */
+  --foreground: 152.727273 40.740741% 94.705882%; /* #ecf7f2 */
+  --card: 167.142857 33.333333% 8.235294%; /* #0e1c19 */
+  --muted: 165.882353 29.824561% 11.176471%; /* #142521 */
+  --accent: 162.000000 26.315789% 14.901961%; /* #1c302a */
+  --muted-foreground: 156.000000 12.315271% 60.196078%; /* #8da69c */
+  --primary: 157.557252 72.375691% 64.509804%; /* #63e6b5 */
+  --primary-hover: 157.800000 76.923077% 74.509804%; /* #8cf0cb */
+  --primary-foreground: 166.666667 39.130435% 4.509804%; /* #07100e */
+  --border: 156.666667 20.000000% 17.647059%; /* #24362f: opaque mint border for utility opacity modifiers */
+  --input: 158.400000 17.985612% 27.254902%; /* #395249: opaque mint border for utility opacity modifiers */
+  --destructive: 356.250000 100.000000% 74.901961%; /* #ff7f87 */
+  --destructive-foreground: 166.666667 39.130435% 4.509804%; /* #07100e */
+  --warning: 35.076923 84.415584% 69.803922%; /* #f3bd71 */
+  --info: 202.758621 53.374233% 68.039216%; /* #82b8d9 */
+  --purple: 254.736842 45.600000% 75.490196%; /* #b2a4dd */
+  --text-soft: 151.428571 19.626168% 79.019608%; /* #bfd4ca */
+  --canvas-dot: 159.310345 28.155340% 20.196078%; /* #254238 */
+  --shadow-panel: 0 16px 48px rgb(0 0 0 / .18);
+  --shadow-dialog: 0 28px 90px rgb(0 0 0 / .45);
+}
+
+:root {
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --card-foreground: var(--foreground);
+  --secondary: var(--muted);
+  --secondary-foreground: var(--foreground);
+  --secondary-hover: var(--accent);
+  --accent-foreground: var(--foreground);
+  --accent-emerald-foreground: var(--primary);
+  --ring: var(--primary);
+  --canvas: var(--background);
+  --node-selected: var(--primary);
+  --node-ring: var(--primary);
+  --placeholder-foreground: var(--muted-foreground);
+  --warning-foreground: var(--background);
+  --warning-text: var(--warning);
+  --tooltip: var(--accent);
+  --tooltip-foreground: var(--foreground);
+  --error: hsl(var(--destructive));
+  --error-background: hsl(var(--destructive) / .1);
+  --error-foreground: hsl(var(--destructive));
+  --success-background: hsl(var(--primary) / .1);
+  --success-foreground: hsl(var(--primary));
+  --surface: hsl(var(--card));
+  --surface-2: hsl(var(--muted));
+  --surface-3: hsl(var(--accent));
+  --ground: hsl(var(--background));
+  --text: hsl(var(--foreground));
+  --text-mid: hsl(var(--muted-foreground));
+  --text-body: hsl(var(--text-soft));
+  --green: hsl(var(--primary));
+  --green-bg: hsl(var(--primary) / .1);
+  --amber: hsl(var(--warning));
+  --amber-bg: hsl(var(--warning) / .1);
+  --red: hsl(var(--destructive));
+  --red-bg: hsl(var(--destructive) / .1);
+  --blue: hsl(var(--info));
+  --blue-bg: hsl(var(--info) / .1);
+  --violet: hsl(var(--purple));
+  --violet-bg: hsl(var(--purple) / .1);
+}

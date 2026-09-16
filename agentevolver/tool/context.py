@@ -1,0 +1,1231 @@
+"""Tool Context Manager for managing tool lifecycle and resources with lazy loading."""
+import asyncio
+import inspect
+import re
+from typing import Any, Dict, List, Optional, Type
+
+import inflection
+from asyncio_atexit import register as async_atexit_register
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+
+from agentevolver.config import config
+from agentevolver.dynamic import dynamic_manager
+from agentevolver.logger import logger
+from agentevolver.paths import P, path_manager
+from agentevolver.permission import PermissionMode, permission_manager
+from agentevolver.registry import TOOL
+from agentevolver.response.types import Response, ResponseType
+from agentevolver.session import isolated_workspace_root
+from agentevolver.tool.execution import (
+    ToolErrorCode,
+    ToolExecution,
+    ToolExecutionPipeline,
+    ToolPolicyDecision,
+)
+from agentevolver.tool.spill import SpillSource
+from agentevolver.tool.spill import save_text as spill_text
+from agentevolver.tool.types import OUTPUT_LIMIT, Tool, ToolConfig, ToolContext
+from agentevolver.utils import (
+    assemble_workspace_path,
+    gather_with_concurrency,
+    render_capability_card,
+)
+from agentevolver.version import version_manager
+
+_UNSET = object()  # sentinel: get_instruction cache is empty / invalidated
+
+def _field_default(tool_cls, name):
+    """A declared field's default, or None when the tool does not declare it."""
+    field = tool_cls.model_fields.get(name)
+    return getattr(field, "default", None) if field is not None else None
+
+
+def _validate_tool_call_contract(tool_cls: Type[Tool]) -> None:
+    """Require the runtime-only keyword channel used by every tool invocation."""
+    signature = inspect.signature(tool_cls.__call__)
+    if any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return
+    raise TypeError(
+        f"{tool_cls.__name__}.__call__{signature} must accept **kwargs; "
+        "the tool manager injects runtime-only values such as ctx through it"
+    )
+
+
+#: How much of a capability's instruction to render. Two levels, because there are
+#: two callers and they want different things:
+#:
+#: ``brief`` — name, description, guidance. What a prompt carries for every resident
+#:     capability, every step.
+#: ``full``  — plus the examples. What ``inspect_tool`` returns for the one
+#:     capability an agent has stopped to ask about.
+#:
+#: The parameters are at neither level. They are derived from the signature and
+#: travel in the request's own ``tools`` array, which is how the model calls anything
+#: at all — printing them here would be a second spelling of one contract. The one
+#: place they are still rendered is `inspect_tool`, which appends
+#: `get_schema(format="md")` for an agent evaluating a capability that is *not* in
+#: its own tool list and so has never been sent the schema.
+#:
+#: A name-only level was written and removed before it had a caller. If a roster ever
+#: grows past what guidance can afford, it comes back then, with the caller in hand.
+INSTRUCTION_LEVELS = ("brief", "full")
+
+#: Legacy blob sections that restate something else. ``Function`` restates the
+#: description, ``Parameters`` restates the schema.
+_BLOB_GUIDANCE_SECTIONS = frozenset({"guidance", "actions", "returns"})
+
+
+def _blob_sections(instruction: str) -> Dict[str, str]:
+    """Split an authored ``_INSTRUCTION`` blob into its ``## `` sections, lowercased.
+
+    Only for tools that have not been split into fields — a tool written before the
+    split, or one an optimizer generated at runtime from the old template.
+    """
+    sections: Dict[str, str] = {}
+    # `##` only: a deeper heading belongs to the section above it, and splitting on
+    # every level lets a sub-heading restart a section that was being skipped.
+    for block in re.split(r"(?m)^(?=##[ \t])", (instruction or "").strip()):
+        head, _, rest = block.partition("\n")
+        heading = re.match(r"##[ \t]+(.+?)[ \t]*#*[ \t]*$", head)
+        if heading:
+            label = heading.group(1).strip().lower().split(" (")[0]
+            sections[label] = rest.strip()
+    return sections
+
+
+def _instruction_at(config: Any, level: str = "brief") -> str:
+    """One tool's instruction at ``level``, composed from its fields.
+
+    ``guidance`` and ``examples`` are the two parts a tool authors; the rest of what
+    an instruction used to say is either the description above it or the schema
+    beside it. A tool that still carries only the old blob is read out of it here
+    rather than being made to migrate first.
+    """
+    guidance = (getattr(config, "guidance", "") or "").strip()
+    examples = list(getattr(config, "examples", None) or [])
+    if not guidance and not examples:
+        sections = _blob_sections(getattr(config, "instruction", "") or "")
+        guidance = "\n\n".join(
+            body for label, body in sections.items()
+            if label in _BLOB_GUIDANCE_SECTIONS and body)
+        examples = [line for line in (sections.get("example") or sections.get("examples") or "").splitlines()
+                    if line.strip()]
+    parts = []
+    if guidance:
+        parts.append(f"## Guidance\n{guidance}")
+    if level == "full" and examples:
+        parts.append("## Example\n" + "\n".join(examples))
+    return "\n\n".join(parts)
+
+
+class ToolContextManager(BaseModel):
+    """Global context manager for all tools with lazy loading support."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    # One authoritative pipeline per registry/context manager. It is private rather
+    # than serialized configuration: guards and observers are live callables owned by
+    # the process and cannot be meaningfully reconstructed from JSON.
+    _execution_pipeline: ToolExecutionPipeline = PrivateAttr(
+        default_factory=ToolExecutionPipeline
+    )
+    
+    base_dir: str = Field(default=None, description="The base directory to use for the tools")
+    
+    def __init__(self, 
+                 base_dir: Optional[str] = None,
+                 model_name: str = "openrouter/gemini-3-flash-preview",
+                 default_timeout: Optional[float] = 1800.0,
+                 **kwargs):
+        """Initialize the tool context manager.
+
+        Args:
+            base_dir: Base directory for storing tool data
+            model_name: The model to use for the tools
+            default_timeout: Default timeout in seconds for tool calls (None means no timeout, default 1800s = 30 minutes)
+        """
+        super().__init__(**kwargs)
+        
+        if base_dir is not None:
+            self.base_dir = assemble_workspace_path(base_dir)
+        else:
+            self.base_dir = assemble_workspace_path(path_manager.under(config.log_root, P.LOG_MODULE, module="tool"))
+        logger.info(f"| 📁 Tool context manager base directory: {self.base_dir}.")    
+        logger.info("| 📁 Tool context manager.")
+
+        self._tool_configs: Dict[str, ToolConfig] = {}  # Current active configs (latest version)
+        # Tool version history, e.g., {"tool_name": {"1.0.0": ToolConfig, "1.0.1": ToolConfig}}
+        self._tool_history_versions: Dict[str, Dict[str, ToolConfig]] = {}
+        # get_instruction cache: (allowlist tuple) -> assembled text; invalidated on registry change.
+        self._instr_key: Any = _UNSET
+        self._instr_cache: str = ""
+
+        self.model_name = model_name
+        self.default_timeout = default_timeout
+
+        self._cleanup_registered = False
+        self._variables_lock = asyncio.Lock()  # Lock for get/set trainable variables
+        
+    async def initialize(self, tool_names: Optional[List[str]] = None):
+        """Initialize the tool context manager."""
+        
+        # Register tool-related symbols for auto-injection in dynamic code
+        dynamic_manager.register_symbol("TOOL", TOOL)
+        dynamic_manager.register_symbol("Tool", Tool)
+        dynamic_manager.register_symbol("Response", Response)
+        dynamic_manager.register_symbol("ResponseType", ResponseType)
+
+        # Register tool context provider for automatic import injection
+        def tool_context_provider():
+            """Provide tool-related imports for dynamic tool classes."""
+            return {
+                "TOOL": TOOL,
+                "Tool": Tool,
+                "Response": Response,
+                "ResponseType": ResponseType,
+            }
+        dynamic_manager.register_context_provider("tool", tool_context_provider)
+        
+        # Load tools from TOOL registry
+        tool_configs = {}
+        registry_tool_configs: Dict[str, ToolConfig] = await self._load_from_registry()
+        tool_configs.update(registry_tool_configs)
+        
+        # Load tools from code
+        code_tool_configs: Dict[str, ToolConfig] = {}
+        
+        # Merge code configs with registry configs, only override if code version is strictly greater
+        for tool_name, code_config in code_tool_configs.items():
+            if tool_name in tool_configs:
+                registry_config = tool_configs[tool_name]
+                # Compare versions: only override if code version is strictly greater
+                if version_manager.compare_versions(code_config.version, registry_config.version) > 0:
+                    logger.info(f"| 🔄 Overriding tool {tool_name} from registry (v{registry_config.version}) with code version (v{code_config.version})")
+                    tool_configs[tool_name] = code_config
+                else:
+                    logger.info(f"| 📌 Keeping tool {tool_name} from registry (v{registry_config.version}), code version (v{code_config.version}) is not greater")
+                    # If versions are equal, update the history with registry config (which has real class, not dynamic)
+                    if version_manager.compare_versions(code_config.version, registry_config.version) == 0:
+                        # Replace the code config in history with registry config to preserve real class reference
+                        if tool_name in self._tool_history_versions:
+                            self._tool_history_versions[tool_name][registry_config.version] = registry_config
+            else:
+                # New tool from code, add it
+                tool_configs[tool_name] = code_config
+        
+        # Filter tools by names if provided
+        if tool_names is not None:
+            tool_configs = {name: tool_configs[name] for name in tool_names}
+        
+        # Build all tools concurrently with a concurrency limit
+        tool_names = list(tool_configs.keys())
+        tasks = [
+            self.build(tool_configs[name]) for name in tool_names
+        ]
+        results = await gather_with_concurrency(tasks, max_concurrency=10, return_exceptions=True)
+
+        for tool_name, result in zip(tool_names, results):
+            if isinstance(result, Exception):
+                logger.error(f"| ❌ Failed to initialize tool {tool_name}: {result}")
+                continue
+            self._tool_configs[tool_name] = result
+            logger.info(f"| 🔧 Tool {tool_name} initialized")
+        
+        # Save tool configs to json file
+        # Save contract to file
+        self._invalidate_instruction()
+        
+        # Register cleanup callback
+        async_atexit_register(self.cleanup)
+        self._cleanup_registered = True
+        
+        logger.info("| ✅ Tools initialization completed")
+        
+    async def _load_from_registry(self):
+        """Load tools from TOOL registry."""
+        
+        tool_configs: Dict[str, ToolConfig] = {}
+        
+        async def register_tool_class(tool_cls: Type[Tool]):
+            """Register a tool class synchronously.
+            
+            Args:
+                tool_cls: Tool class to register
+            """
+            try:
+                _validate_tool_call_contract(tool_cls)
+                # Get tool config from global config
+                tool_config_key = inflection.underscore(tool_cls.__name__)
+                tool_config_dict = config.get(tool_config_key, {})
+                tool_enable_evolving = tool_config_dict.get("enable_evolving", False) if tool_config_dict and "enable_evolving" in tool_config_dict else False
+                
+                # Get tool properties from tool class
+                tool_name = tool_cls.model_fields['name'].default
+                tool_description = tool_cls.model_fields['description'].default
+                tool_metadata = tool_cls.model_fields['metadata'].default
+                # Behavioural declarations, read off the class so the registry carries what
+                # the tool says about itself. All three were being dropped here, which left
+                # them at their fallback on every registered config no matter what a tool
+                # declared. `permission_mode` outlived the first fix by one field: its
+                # fallback is `workspace_write`, so a built-in that declared `read_only`
+                # was reported as writing, and plan mode refused `escalate_tool` and
+                # `reply_tool` — the two ways an agent has of talking to a person while
+                # the gate is shut.
+                tool_mutates = _field_default(tool_cls, "mutates")
+                tool_call_timeout = _field_default(tool_cls, "call_timeout_seconds")
+                tool_permission_mode = _field_default(tool_cls, "permission_mode")
+
+                # Get or generate version from version_manager
+                tool_version = await version_manager.get_version("tool", tool_name)
+                
+                # Get full module source code
+                tool_code = dynamic_manager.get_full_module_source(tool_cls)
+                
+                tool_parameters = dynamic_manager.get_parameters(tool_cls)
+                tool_function_calling = dynamic_manager.build_function_calling(tool_name, tool_description, tool_parameters)
+                tool_text = dynamic_manager.build_text_representation(tool_name, tool_description, tool_parameters)
+                tool_args_schema = dynamic_manager.build_args_schema(tool_name, tool_parameters)
+                
+                # Create tool config (ToolConfig.id is auto-incremented internally if needed)
+                try:
+                    tool_path = inspect.getfile(tool_cls)
+                except Exception:
+                    tool_path = None
+                tool_config = ToolConfig(
+                    name=tool_name,
+                    description=tool_description,
+                    version=tool_version,
+                    cls=tool_cls,
+                    config=tool_config_dict,
+                    instance=None,
+                    function_calling=tool_function_calling,
+                    text=tool_text,
+                    args_schema=tool_args_schema,
+                    metadata=tool_metadata,
+                    enable_evolving=tool_enable_evolving,
+                    mutates=tool_mutates,
+                    permission_mode=tool_permission_mode,
+                    call_timeout_seconds=tool_call_timeout,
+                    code=tool_code,
+                    path=tool_path,
+                )
+                
+                # Store tool config
+                tool_configs[tool_name] = tool_config
+                
+                # Store in version history (by version string)
+                if tool_name not in self._tool_history_versions:
+                    self._tool_history_versions[tool_name] = {}
+                self._tool_history_versions[tool_name][tool_version] = tool_config
+                
+                # Register version to version manager
+                await version_manager.register_version("tool", tool_name, tool_version)
+                
+                logger.info(f"| 📝 Registered tool: {tool_name} ({tool_cls.__name__})")
+                
+            except Exception as e:
+                logger.error(f"| ❌ Failed to register tool class {tool_cls.__name__}: {e}")
+                raise
+            
+        import agentevolver.tool  # noqa: F401
+        
+        # Get all registered tool classes from TOOL registry
+        tool_classes = list(TOOL._module_dict.values())
+        
+        logger.info(f"| 🔍 Discovering {len(tool_classes)} tools from TOOL registry")
+        
+        # Register each tool class concurrently with a concurrency limit
+        tasks = [
+            register_tool_class(tool_cls) for tool_cls in tool_classes
+        ]
+        results = await gather_with_concurrency(tasks, max_concurrency=10, return_exceptions=True)
+        success_count = sum(1 for r in results if not isinstance(r, Exception))
+        
+        logger.info(f"| ✅ Discovered and registered {success_count}/{len(tool_classes)} tools from TOOL registry")
+        
+        return tool_configs
+    
+    async def build(self, tool_config: ToolConfig) -> ToolConfig:
+        """Create a tool instance and store it.
+        
+        Args:
+            tool_config: Tool configuration
+            
+        Returns:
+            ToolConfig: Tool configuration with instance
+        """
+        if tool_config.name in self._tool_configs:
+            existing_config = self._tool_configs[tool_config.name]
+            if existing_config.instance is not None:
+                return existing_config
+        
+        # Create new tool instance
+        try:
+            # cls should already be loaded (either from registry or from code)
+            if tool_config.cls is None:
+                raise ValueError(f"Cannot create tool {tool_config.name}: no class provided. Class should be loaded during initialization.")
+            _validate_tool_call_contract(tool_config.cls)
+            
+            # Instantiate tool instance
+            tool_instance = tool_config.cls(**tool_config.config) if tool_config.config else tool_config.cls()
+            
+            # Initialize tool if it has an initialize method
+            if hasattr(tool_instance, "initialize"):
+                await tool_instance.initialize()
+
+            # Register with permission manager
+            permission_manager.register(
+                entity_name=tool_instance.name,
+                mode=PermissionMode(tool_instance.permission_mode),
+            )
+
+            tool_config.instance = tool_instance
+
+            # Store tool metadata
+            self._tool_configs[tool_config.name] = tool_config
+
+            logger.info(f"| 🔧 Tool {tool_config.name} created and stored")
+            
+            return tool_config
+        except Exception as e:
+            logger.error(f"| ❌ Failed to create tool {tool_config.name}: {e}")
+            raise
+    
+    async def register(self, 
+                       tool_cls: Type[Tool],
+                       tool_config_dict: Optional[Dict[str, Any]] = None,
+                       override: bool = False,
+                       version: Optional[str] = None,
+                       code: Optional[str] = None) -> ToolConfig:
+        """Register a tool class or instance.
+        
+        This will:
+        - Create (or reuse) a tool instance
+        - Create a `ToolConfig`
+        - Store it as the current config and append to version history
+        - Register the version in `version_manager` and FAISS index
+        - Persist the tool source code (if available / provided)
+        """
+        
+        try:
+            _validate_tool_call_contract(tool_cls)
+            if tool_config_dict is None:
+                # Fallback to global config by class name
+                tool_config_key = inflection.underscore(tool_cls.__name__)
+                tool_config_dict = config.get(tool_config_key, {})
+            
+            # Instantiate tool immediately (register is a runtime operation)
+            try:
+                tool_instance = tool_cls(**tool_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create tool instance for {tool_cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate tool {tool_cls.__name__} with provided config: {e}")
+            
+            tool_name = tool_instance.name
+            tool_description = tool_instance.description
+            tool_metadata = tool_instance.metadata
+            # Get enable_evolving from tool_config_dict if provided, otherwise from tool_instance
+            tool_enable_evolving = tool_config_dict.get("enable_evolving", tool_instance.enable_evolving) if tool_config_dict and "enable_evolving" in tool_config_dict else tool_instance.enable_evolving
+
+            # Register with permission manager
+            permission_manager.register(
+                entity_name=tool_name,
+                mode=PermissionMode(tool_instance.permission_mode),
+            )
+
+            # Get or generate version from version_manager
+            if version is None:
+                tool_version = await version_manager.get_version("tool", tool_name)
+            else:
+                tool_version = version
+                
+            # Get tool code (prefer explicit code if provided)
+            tool_code = code if code is not None else dynamic_manager.get_source_code(tool_cls)
+            if not tool_code:
+                logger.warning(f"| ⚠️ Tool {tool_name} is dynamic but source code cannot be extracted (and no code was provided)")
+            
+            # Get tool parameters
+            tool_parameters = dynamic_manager.get_parameters(tool_cls)
+            tool_function_calling = dynamic_manager.build_function_calling(tool_name, tool_description, tool_parameters)
+            tool_text = dynamic_manager.build_text_representation(tool_name, tool_description, tool_parameters)
+            tool_args_schema = dynamic_manager.build_args_schema(tool_name, tool_parameters)
+            
+            # --- Build ToolConfig ---
+            # Dynamically-loaded extension classes have no real module file, so
+            # inspect.getfile() fails on them. The extension loader stamps the
+            # active source path onto the class as __source_file__ — prefer it.
+            tool_path = getattr(tool_cls, "__source_file__", None)
+            if not tool_path:
+                try:
+                    tool_path = inspect.getfile(tool_cls)
+                except Exception:
+                    tool_path = None
+            tool_config = ToolConfig(
+                name=tool_name,
+                description=tool_description,
+                metadata=tool_metadata,
+                enable_evolving=tool_enable_evolving,
+                version=tool_version,
+                cls=tool_cls,
+                config=tool_config_dict or {},
+                instance=tool_instance,
+                function_calling=tool_function_calling,
+                text=tool_text,
+                args_schema=tool_args_schema,
+                code=tool_code,
+                path=tool_path,
+                # Carried across, as `_load_from_registry` does. Omitting them left a
+                # runtime-registered tool with no declaration at all, and plan mode
+                # refuses what has not declared itself — so every tool this framework
+                # evolved was unusable the moment a person asked to approve the plan.
+                # The direction was safe and the effect was not: self-evolution produced
+                # capabilities that could not be used in the mode that reviews them.
+                mutates=tool_instance.mutates,
+                permission_mode=tool_instance.permission_mode,
+                call_timeout_seconds=tool_instance.call_timeout_seconds,
+            )
+
+            # --- Persist current config and history ---
+            self._tool_configs[tool_name] = tool_config
+            
+            # Store in dict-based history (for quick lookup by version)
+            if tool_name not in self._tool_history_versions:
+                self._tool_history_versions[tool_name] = {}
+            self._tool_history_versions[tool_name][tool_config.version] = tool_config
+            
+            # Register version in version manager
+            await version_manager.register_version("tool", tool_name, tool_config.version)
+            
+            # Persist to JSON
+            # Save contract to file
+            self._invalidate_instruction()
+            
+            logger.info(f"| 📝 Registered tool config: {tool_name}: {tool_config.version}")
+            return tool_config
+        
+        except Exception as e:
+            logger.error(f"| ❌ Failed to register tool: {e}")
+            raise
+    
+    
+    async def get(self, tool_name: str) -> Tool:
+        """Get tool configuration by name
+        
+        Args:
+            tool_name: Tool name
+            
+        Returns:
+            Tool: Tool instance or None if not found
+        """
+        tool_config = self._tool_configs.get(tool_name)
+        if tool_config is None:
+            return None
+        return tool_config.instance if tool_config.instance is not None else None
+    
+    async def get_info(self, tool_name: str) -> Optional[ToolConfig]:
+        """Get tool info by name
+        
+        Args:
+            tool_name: Tool name
+            
+        Returns:
+            ToolConfig: Tool info or None if not found
+        """
+        return self.peek(tool_name)
+
+    def peek(self, tool_name: str) -> Optional[ToolConfig]:
+        """Read an already-loaded declaration without discovery, loading, or I/O."""
+        return self._tool_configs.get(tool_name)
+
+    async def get_version_info(
+        self, tool_name: str, version: str,
+    ) -> Optional[ToolConfig]:
+        """Return an immutable version snapshot without changing the live registry."""
+        return self._tool_history_versions.get(tool_name, {}).get(str(version))
+    
+    async def list(self) -> List[str]:
+        """Get list of registered tools
+        
+        Returns:
+            List[str]: List of tool names
+        """
+        return [name for name in self._tool_configs.keys()]
+    
+    async def update(self, 
+                     tool_cls: Type[Tool],
+                     tool_config_dict: Optional[Dict[str, Any]] = None,
+                     new_version: Optional[str] = None, 
+                     description: Optional[str] = None,
+                     code: Optional[str] = None) -> ToolConfig:
+        """Update an existing tool with new configuration and create a new version
+        
+        Args:
+            tool_cls: New tool class with updated implementation
+            tool_config_dict: Configuration dict for tool initialization
+                   If None, will try to get from global config
+            new_version: New version string. If None, auto-increments from current version.
+            description: Description for this version update
+            code: Optional source code string. If provided, uses this instead of extracting from tool_cls.
+                  This is useful when tool_cls is dynamically created from code string.
+            
+        Returns:
+            ToolConfig: Updated tool configuration
+        """
+        try:
+            _validate_tool_call_contract(tool_cls)
+            if tool_config_dict is None:
+                # Fallback to global config by class name
+                tool_config_key = inflection.underscore(tool_cls.__name__)
+                tool_config_dict = config.get(tool_config_key, {})
+            
+            # Instantiate tool immediately (update is a runtime operation)
+            try:
+                tool_instance = tool_cls(**tool_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create tool instance for {tool_cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate tool {tool_cls.__name__} with provided config: {e}")
+            
+            tool_name = tool_instance.name
+            
+            # Check if tool exists
+            original_config = self._tool_configs.get(tool_name)
+            if original_config is None:
+                raise ValueError(f"Tool {tool_name} not found. Use register() to register a new tool.")
+            
+            tool_description = tool_instance.description
+            tool_metadata = tool_instance.metadata
+            # Get enable_evolving from tool_config_dict if provided, otherwise from tool_instance
+            tool_enable_evolving = tool_config_dict.get("enable_evolving", tool_instance.enable_evolving) if tool_config_dict and "enable_evolving" in tool_config_dict else tool_instance.enable_evolving
+            
+            # Determine new version from version_manager
+            if new_version is None:
+                # Get current version from version_manager and generate next patch version
+                new_version = await version_manager.generate_next_version("tool", tool_name, "patch")
+            
+            # Get tool code - use provided code if available (for dynamically created classes)
+            if code is not None:
+                tool_code = code
+            else:
+                tool_code = dynamic_manager.get_source_code(tool_cls)
+                if not tool_code:
+                    logger.warning(f"| ⚠️ Tool {tool_name} is dynamic but source code cannot be extracted")
+            
+            # Get tool parameters and build properties using dynamic_manager methods
+            tool_parameters = dynamic_manager.get_parameters(tool_cls)
+            tool_function_calling = dynamic_manager.build_function_calling(tool_name, tool_description, tool_parameters)
+            tool_text = dynamic_manager.build_text_representation(tool_name, tool_description, tool_parameters)
+            tool_args_schema = dynamic_manager.build_args_schema(tool_name, tool_parameters)
+            
+            # --- Build ToolConfig ---
+            updated_config = ToolConfig(
+                name=tool_name,  # Keep same name
+                description=tool_description,
+                metadata=tool_metadata,
+                enable_evolving=tool_enable_evolving,
+                version=new_version,
+                cls=tool_cls,
+                config=tool_config_dict or {},
+                instance=tool_instance,
+                function_calling=tool_function_calling,
+                text=tool_text,
+                args_schema=tool_args_schema,
+                code=tool_code,
+                # Carried across, as registration does. An evolved or copied tool
+                # that arrives undeclared is refused by the plan gate — and these
+                # are the two paths self-evolution takes, so the capabilities this
+                # framework produces were the only ones it could not review.
+                mutates=tool_instance.mutates,
+                permission_mode=tool_instance.permission_mode,
+                call_timeout_seconds=tool_instance.call_timeout_seconds,
+            )
+            
+            # Update the tool config (replaces current version)
+            self._tool_configs[tool_name] = updated_config
+            
+            # Store in version history
+            if tool_name not in self._tool_history_versions:
+                self._tool_history_versions[tool_name] = {}
+            self._tool_history_versions[tool_name][updated_config.version] = updated_config
+            
+            # Register new version record to version manager
+            await version_manager.register_version(
+                "tool", 
+                tool_name, 
+                new_version,
+                description=description or f"Updated from {original_config.version}"
+            )
+            
+            # Persist to JSON
+            # Save contract to file
+            self._invalidate_instruction()
+            
+            logger.info(f"| 🔄 Updated tool {tool_name} from v{original_config.version} to v{new_version}")
+            return updated_config
+        
+        except Exception as e:
+            logger.error(f"| ❌ Failed to update tool: {e}")
+            raise
+    
+    async def copy(self, 
+                  tool_name: str,
+                  new_name: Optional[str] = None, 
+                  new_version: Optional[str] = None, 
+                  new_config: Optional[Dict[str, Any]] = None) -> ToolConfig:
+        """Copy an existing tool configuration
+        
+        Args:
+            tool_name: Name of the tool to copy
+            new_name: New name for the copied tool. If None, uses original name.
+            new_version: New version for the copied tool. If None, increments version.
+            new_config: New configuration dict for the copied tool. If None, uses original config.
+            
+        Returns:
+            ToolConfig: New tool configuration
+        """
+        try:
+            original_config = self._tool_configs.get(tool_name)
+            if original_config is None:
+                raise ValueError(f"Tool {tool_name} not found")
+            
+            if original_config.cls is None:
+                raise ValueError(f"Cannot copy tool {tool_name}: no class provided")
+            
+            # Determine new name
+            if new_name is None:
+                new_name = tool_name
+            
+            # Prepare config dict (merge original config with new config)
+            tool_config_dict = original_config.config.copy() if original_config.config else {}
+            if new_config:
+                # Merge new config into original config
+                tool_config_dict.update(new_config)
+            
+            # Instantiate tool instance (copy is a runtime operation)
+            try:
+                tool_instance = original_config.cls(**tool_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create tool instance for {original_config.cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate tool {original_config.cls.__name__} with provided config: {e}")
+            
+            # Apply name override if provided (after instantiation)
+            if new_name != tool_name:
+                tool_instance.name = new_name
+            
+            tool_description = tool_instance.description
+            tool_metadata = tool_instance.metadata
+            tool_enable_evolving = tool_config_dict.get("enable_evolving", tool_instance.enable_evolving) if tool_config_dict and "enable_evolving" in tool_config_dict else tool_instance.enable_evolving
+            
+            # Determine new version from version_manager
+            if new_version is None:
+                if new_name == tool_name:
+                    # If copying with same name, get next version from version_manager
+                    new_version = await version_manager.generate_next_version("tool", new_name, "patch")
+                else:
+                    # If copying with different name, get or generate version for new name
+                    new_version = await version_manager.get_version("tool", new_name)
+            
+            # Get tool code
+            tool_code = dynamic_manager.get_source_code(original_config.cls)
+            if not tool_code:
+                logger.warning(f"| ⚠️ Tool {new_name} is dynamic but source code cannot be extracted")
+            
+            # Get tool parameters and build properties using dynamic_manager methods
+            tool_parameters = dynamic_manager.get_parameters(original_config.cls)
+            tool_function_calling = dynamic_manager.build_function_calling(new_name, tool_description, tool_parameters)
+            tool_text = dynamic_manager.build_text_representation(new_name, tool_description, tool_parameters)
+            tool_args_schema = dynamic_manager.build_args_schema(new_name, tool_parameters)
+            
+            # --- Build ToolConfig ---
+            new_config = ToolConfig(
+                name=new_name,
+                description=tool_description,
+                metadata=tool_metadata,
+                enable_evolving=tool_enable_evolving,
+                version=new_version,
+                cls=original_config.cls,
+                config=tool_config_dict,
+                instance=tool_instance,
+                function_calling=tool_function_calling,
+                text=tool_text,
+                args_schema=tool_args_schema,
+                code=tool_code,
+                # Carried across, as registration does. An evolved or copied tool
+                # that arrives undeclared is refused by the plan gate — and these
+                # are the two paths self-evolution takes, so the capabilities this
+                # framework produces were the only ones it could not review.
+                mutates=tool_instance.mutates,
+                permission_mode=tool_instance.permission_mode,
+                call_timeout_seconds=tool_instance.call_timeout_seconds,
+            )
+            
+            # Register new tool
+            self._tool_configs[new_name] = new_config
+            
+            # Store in version history
+            if new_name not in self._tool_history_versions:
+                self._tool_history_versions[new_name] = {}
+            self._tool_history_versions[new_name][new_version] = new_config
+            
+            # Register version record to version manager
+            await version_manager.register_version(
+                "tool", 
+                new_name, 
+                new_version,
+                description=f"Copied from {tool_name}@{original_config.version}"
+            )
+            
+            # Persist to JSON
+            # Save contract to file
+            self._invalidate_instruction()
+            
+            logger.info(f"| 📋 Copied tool {tool_name}@{original_config.version} to {new_name}@{new_version}")
+            return new_config
+        
+        except Exception as e:
+            logger.error(f"| ❌ Failed to copy tool: {e}")
+            raise
+    
+    async def unregister(self, tool_name: str) -> bool:
+        """Unregister a tool
+        
+        Args:
+            tool_name: Name of the tool to unregister
+            
+        Returns:
+            True if unregistered successfully, False otherwise
+        """
+        if tool_name not in self._tool_configs:
+            logger.warning(f"| ⚠️ Tool {tool_name} not found")
+            return False
+        
+        tool_config = self._tool_configs[tool_name]
+        
+        # Remove from configs
+        del self._tool_configs[tool_name]
+
+        # Persist to JSON after unregister
+        # Save contract to file
+        self._invalidate_instruction()
+        
+        logger.info(f"| 🗑️ Unregistered tool {tool_name}@{tool_config.version}")
+        return True
+    
+    async def restore(self, tool_name: str, version: str, auto_initialize: bool = True) -> Optional[ToolConfig]:
+        """Restore a specific version of a tool from history
+        
+        Args:
+            tool_name: Name of the tool
+            version: Version string to restore
+            auto_initialize: Whether to automatically initialize the restored tool
+            
+        Returns:
+            ToolConfig of the restored version, or None if not found
+        """
+        # Look up version from dict-based history (O(1) lookup)
+        version_config = None
+        if tool_name in self._tool_history_versions:
+            version_config = self._tool_history_versions[tool_name].get(version)
+        
+        if version_config is None:
+            logger.warning(f"| ⚠️ Version {version} not found for tool {tool_name}")
+            return None
+        
+        # Create a copy to avoid modifying the history
+        restored_config = ToolConfig(**version_config.model_dump())
+        
+        # Set as current active config
+        self._tool_configs[tool_name] = restored_config
+        
+        # Update version manager current version
+        version_history = await version_manager.get_version_history("tool", tool_name)
+        if version_history:
+            # Check if version exists in version history, if not register it
+            if version not in version_history.versions:
+                await version_manager.register_version("tool", tool_name, version)
+            version_history.current_version = version
+        else:
+            # If version history doesn't exist, register the version first
+            await version_manager.register_version("tool", tool_name, version)
+        
+        # Initialize if requested
+        if auto_initialize and restored_config.cls is not None:
+            await self.build(restored_config)
+        
+        # Persist to JSON (current_version changes)
+        
+        logger.info(f"| 🔄 Restored tool {tool_name} to version {version}")
+        return restored_config
+    
+    async def get_instruction(self, allowlist=None, types=None, level: str = "brief") -> str:
+        """Assemble the tool instruction text, cut to ``level``.
+
+        Args:
+            allowlist: Which tools to include. ``None`` = all loaded, ``[]`` = none,
+                ``[names]`` = only those.
+            types: Accepted for a uniform manager interface; tools have no type filter.
+            level: One of :data:`INSTRUCTION_LEVELS`. ``brief`` is what a prompt
+                carries — guidance, but not the parameters the request's own ``tools``
+                array already states. ``full`` adds the examples, and is what
+                ``inspect_tool`` returns for a tool an agent has stopped
+                to ask about.
+
+        Returns:
+            The rendered cards, joined. Cached per (allowlist, level) and reused until
+            the registry changes (``_invalidate_instruction``).
+        """
+        key = (None if allowlist is None else tuple(allowlist), level)
+        if key == self._instr_key:
+            return self._instr_cache
+        targets = list(self._tool_configs.keys()) if allowlist is None else allowlist
+        parts = []
+        for name in targets:
+            info = await self.get_info(name)
+            if info is None:
+                continue
+            description = info.description or ""
+            block = render_capability_card(
+                name=info.name,
+                description=description,
+                body=_instruction_at(info, level),
+            )
+            parts.append(block)
+        text = "\n\n".join(parts)
+        self._instr_key = key
+        self._instr_cache = text
+        return text
+
+    def _invalidate_instruction(self) -> None:
+        """Drop the cached instruction so the next get_instruction rebuilds it."""
+        self._instr_key = _UNSET
+    
+    async def cleanup(self):
+        """Cleanup all active tools."""
+        from agentevolver.runtime.invocation import runtime
+        await runtime().release(module="tool")
+        try:
+            # Clear all tool configs and version history
+            self._tool_configs.clear()
+            self._tool_history_versions.clear()
+                
+            logger.info("| 🧹 Tool context manager cleaned up")
+            
+        except Exception as e:
+            logger.error(f"| ❌ Error during tool context manager cleanup: {e}")
+            
+    async def __call__(self,
+                       name: str,
+                       input: Dict[str, Any],
+                       ctx: ToolContext = None,
+                       execution_context: Optional[Dict[str, Any]] = None,
+                       **kwargs
+                       ) -> Response:
+        """Execute one tool through the authoritative, versioned pipeline.
+
+        Args:
+            name: Tool name
+            input: Input for the tool
+            ctx: Optional tool context to pass to the tool
+        Returns:
+            Response: Tool result
+        """
+        tool_info = await self.get_info(name)
+        return await self.invoke_config(
+            name,
+            tool_info,
+            input,
+            ctx=ctx,
+            execution_context=execution_context,
+            **kwargs,
+        )
+
+    async def invoke_config(
+        self,
+        name: str,
+        tool_info: Optional[ToolConfig],
+        input: Dict[str, Any],
+        ctx: ToolContext = None,
+        execution_context: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Response:
+        """Run an explicit version snapshot through the normal execution pipeline.
+
+        Rollout traffic must not replace the process-global registry to call a canary:
+        another request could observe that temporary replacement.  This entry point
+        keeps the selected ``ToolConfig`` call-local while retaining argument checks,
+        permission guards, checkpoints, timeouts, output bounds, and trace receipts.
+        """
+        ctx = ToolContext.from_context(ctx)
+        version = str(getattr(tool_info, "version", "") or "")
+        effective_execution_context = dict(execution_context or {})
+        execution = ToolExecution.create(
+            name=name,
+            version=version,
+            arguments=input,
+            ctx=ctx,
+            context=effective_execution_context,
+        )
+        # Validate and invoke the exact canonical snapshot the guards inspect. Tool
+        # arguments are a JSON contract; keeping a caller-owned dict on the policy/body
+        # boundary would let another coroutine rewrite it after approval.
+        call_input = execution.arguments
+        if ctx is not None:
+            ctx.input = dict(call_input)
+
+        if tool_info is None:
+            error_msg = f"Tool '{name}' is not registered. Available tools: {list(self._tool_configs.keys())}"
+            logger.error(f"| ❌ {error_msg}")
+            return await self._execution_pipeline.execute(
+                execution,
+                self._unreachable_tool_body,
+                timeout=None,
+                preflight_error=(ToolErrorCode.NOT_FOUND, error_msg),
+                initial_denials=list((execution_context or {}).get("guard_denials") or []),
+            )
+
+        tool_instance = tool_info.instance
+        logger.info(f"| ✅ Using tool {name}@{version}")
+
+        # Other tool args
+        tool_kwargs = dict(ctx=ctx, **kwargs)
+
+        # A model's tool call may omit a required parameter or pass an unknown one
+        # (e.g. done_tool without `result`). Binding that to the tool's signature would
+        # raise a raw TypeError that bubbles up as an opaque "Action failed:
+        # __call__() missing 1 required positional argument" — internal noise the model
+        # cannot act on cleanly. Validate the binding first and, on failure, hand back a
+        # structured, recoverable error that names the offending call and the parameters
+        # the tool actually expects, so the agent can simply re-issue the call. The real
+        # invocation below is separate, so a TypeError raised *inside* the body is
+        # classified as ``execution_error`` rather than mislabeled as bad arguments.
+        validation_error = None
+        try:
+            inspect.signature(tool_instance.__call__).bind(**call_input, **tool_kwargs)
+        except TypeError as bind_error:
+            required = [
+                p.name
+                for p in inspect.signature(tool_instance.__call__).parameters.values()
+                if p.default is inspect.Parameter.empty
+                and p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+                and p.name not in ("self", "ctx")
+            ]
+            msg = (
+                f"Invalid arguments for tool '{name}': {bind_error}. "
+                f"Required parameter(s): {required}. Re-issue the call with all required parameters."
+            )
+            logger.warning(f"| ⚠️ {msg}")
+            validation_error = (ToolErrorCode.INVALID_ARGUMENTS, msg)
+
+        from agentevolver.runtime.invocation import invocation_claims
+        timeout = self._call_timeout(tool_instance)
+        permission_guard = self._permission_guard(tool_instance, ctx)
+        checkpoint: Dict[str, Any] = {}
+
+        async def before_invoke() -> None:
+            checkpoint.update(await self._checkpoint_before_invoke(
+                execution, tool_instance, ctx,
+            ))
+
+        return await self._execution_pipeline.execute(
+            execution,
+            lambda: tool_instance(**call_input, **tool_kwargs),
+            timeout=timeout,
+            runtime_options={"ctx": ctx, "claims": lambda: invocation_claims(
+                tool_instance, ctx, call_input, module="tool", name=name)},
+            preflight_error=validation_error,
+            initial_denials=list((execution_context or {}).get("guard_denials") or []),
+            call_guards=[permission_guard],
+            before_invoke=before_invoke,
+            finalize=lambda response: self._bound_output(
+                response, name=name, ctx=ctx, checkpoint=checkpoint,
+                model_limit=tool_instance.model_output_limit(call_input),
+                observation=tool_instance.model_observation(response),
+            ),
+        )
+
+    @staticmethod
+    async def _checkpoint_before_invoke(
+        execution: ToolExecution, tool_instance: Tool, ctx: ToolContext,
+    ) -> Dict[str, Any]:
+        """Commit policy/approval evidence after guards and before a possible effect."""
+        if getattr(tool_instance, "mutates", None) is False:
+            return {}
+        from agentevolver.trace.integrity import (
+            TraceDurabilityBoundary,
+            ensure_trace_durable,
+        )
+
+        await ensure_trace_durable(
+            execution.session_id,
+            TraceDurabilityBoundary.EXTERNAL_EFFECT,
+            ctx=ctx,
+            metadata={
+                "tool_name": execution.tool_name,
+                "call_id": execution.call_id,
+                "root_call_id": execution.root_call_id,
+            },
+        )
+        request = tool_instance.permission_request(execution.arguments, ctx)
+        if request is None or request.op.value != "write":
+            return {}
+        from agentevolver.tool.checkpoint import capture_file_checkpoint
+        try:
+            return await asyncio.to_thread(
+                capture_file_checkpoint, execution, request,
+            )
+        except RuntimeError as error:
+            # A standalone interactive manager may have a workspace but no bound Session
+            # log tree. It cannot offer rollback metadata, while strict training/high-risk
+            # runs must never proceed without it.
+            from agentevolver.trace.integrity import resolve_integrity_profile
+            if resolve_integrity_profile(ctx=ctx).required:
+                raise
+            logger.warning(
+                f"| ⚠️ Tool '{execution.tool_name}' has no workspace checkpoint: {error}"
+            )
+            return {}
+
+    @staticmethod
+    def _permission_guard(tool_instance: Tool, ctx: ToolContext):
+        """Translate one Tool-owned permission intent into a monotonic guard.
+
+        The closure is evaluated by ``ToolExecutionPipeline`` so an exception fails
+        closed as ``guard_error``. Keeping intent construction on the Tool avoids an
+        unsafe executor table that guesses semantics from argument names.
+        """
+        def guard(execution):
+            request = tool_instance.permission_request(execution.arguments, ctx)
+            if request is None:
+                if permission_manager.restrict() == PermissionMode.READ_ONLY:
+                    effects = tool_instance.will_mutate(execution.arguments)
+                    if effects is not False and not (
+                        effects is None and tool_instance.permission_mode == PermissionMode.READ_ONLY
+                    ):
+                        return ToolPolicyDecision.deny(
+                            "Permission denied: tool has no verified read-only operation contract"
+                        )
+                return None
+            result = permission_manager.check(
+                tool_instance.name,
+                request,
+                workspace=isolated_workspace_root(ctx),
+            )
+            if not result.allowed:
+                return ToolPolicyDecision.deny(
+                    f"Permission denied: {result.reason or 'operation is not allowed'}"
+                )
+            if result.requires_approval:
+                return ToolPolicyDecision.ask(
+                    result.warning or "This operation requires approval."
+                )
+            return None
+
+        return guard
+
+    @staticmethod
+    async def _unreachable_tool_body() -> Response:
+        """A body placeholder for preflight failures; the pipeline never calls it."""
+        raise RuntimeError("unreachable tool body")
+
+    def guard(self, guard):
+        """Register a monotonic execution guard and return its disposer."""
+        return self._execution_pipeline.guard(guard)
+
+    def postprocess(self, processor):
+        """Register an ordered result processor and return its disposer."""
+        return self._execution_pipeline.postprocess(processor)
+
+    def observe(self, observer):
+        """Observe frozen final execution summaries; failures are contained."""
+        return self._execution_pipeline.observe(observer)
+
+    def set_approval_resolver(self, resolver):
+        """Install/remove the one-shot approval seam and return its disposer."""
+        return self._execution_pipeline.set_approval_resolver(resolver)
+
+    def _call_timeout(self, tool_instance: Tool) -> Optional[float]:
+        """The budget for one call of this tool.
+
+        Read from the tool's own declaration rather than passed in by the caller, so
+        the budget lives next to the code that knows what the work costs and no call
+        site can name a tool that does not exist. A tool that declares nothing gets
+        the manager default, which is what every tool used to get.
+
+        A declared value that is not a positive number is ignored with a warning:
+        the alternative — honouring ``0`` or ``-1`` — turns a typo in an evolved tool
+        into every call of it failing instantly, which reads as the tool being broken
+        rather than as its declaration being wrong.
+        """
+        declared = getattr(tool_instance, "call_timeout_seconds", None)
+        if declared is None:
+            return self.default_timeout
+        if not isinstance(declared, (int, float)) or isinstance(declared, bool) or declared <= 0:
+            logger.warning(
+                f"| ⚠️ Tool '{tool_instance.name}' declares call_timeout_seconds={declared!r}, "
+                f"which is not a positive number; using the default of {self.default_timeout}s"
+            )
+            return self.default_timeout
+        return float(declared)
+
+    async def _bound_output(
+        self, response: Response, *, name: str, ctx: ToolContext,
+        checkpoint: Optional[Dict[str, Any]] = None,
+        model_limit: int = OUTPUT_LIMIT,
+        observation: Optional[str] = None,
+    ) -> Response:
+        """Preserve canonical output and provide an archived model-facing excerpt."""
+        if checkpoint:
+            response = response.model_copy(deep=True)
+            response.extra = {
+                **dict(response.extra or {}),
+                "workspace_checkpoint": dict(checkpoint),
+            }
+        final = bool((response.data or {}).get("done"))
+        explicit = (response.extra or {}).get("model_observation")
+        message = response.message if final else (
+            explicit if isinstance(explicit, str) else
+            observation if observation is not None else response.message
+        )
+        if message != response.message and not final:
+            response = response.model_copy(update={
+                "extra": {**dict(response.extra or {}), "model_observation": message},
+            })
+        if not isinstance(message, str) or (
+            len(message) <= OUTPUT_LIMIT and (model_limit <= 0 or len(message) <= model_limit)
+        ):
+            return response
+
+        # The path table, not `ctx.extra["project_root"]` — a key nothing ever wrote, so
+        # this was always "" and every session's spilled output shared one bucket.
+        from agentevolver.paths import path_manager
+
+        roots = path_manager.session_roots()
+        ref = await spill_text(
+            message,
+            SpillSource(tool_name=name, call_id=str(getattr(ctx, "id", "") or ""), label="result"),
+            session_key=str(roots["project"]) if roots else "",
+            suggested_name=f"{name}.txt",
+        )
+        if ref is not None:
+            extra = dict(response.extra or {})
+            extra["output_archive"] = ref.model_dump()
+            # Final answers are deliverables, not observations to abbreviate. Keep
+            # programmatic results complete; only the conversation uses this view.
+            final = bool((response.data or {}).get("done"))
+            if not final:
+                extra["model_observation"] = f"{message}\n\n{ref.retrieval_hint}"
+            if model_limit > 0 and len(message) > model_limit and not final:
+                head = (model_limit + 1) // 2
+                tail = model_limit // 2
+                extra["model_observation"] = (
+                    message[:head]
+                    + f"\n\n[{len(message) - model_limit:,} characters omitted inline; "
+                    "read/search the complete archive for omitted evidence.]\n\n"
+                    + (message[-tail:] if tail else "")
+                    + f"\n\n{ref.retrieval_hint}"
+                )
+            response = response.model_copy(update={
+                "extra": extra,
+            })
+        return response

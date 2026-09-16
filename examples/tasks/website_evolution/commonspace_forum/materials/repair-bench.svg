@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="840" viewBox="0 0 720 840" role="img" aria-labelledby="title desc">
+  <title id="title">Fictional repair-bench discussion sketch, revision 1</title>
+  <desc id="desc">A portrait sketch of a bench with a back tray, a side tray, a central working area and a lower standing edge. Both tray positions are alternatives, not a final layout.</desc>
+  <rect width="720" height="840" fill="#eeeae2"/>
+  <text x="45" y="60" fill="#433e39" font-size="28" font-family="serif">Room to mend together</text>
+  <rect x="80" y="160" width="550" height="530" rx="12" fill="#dbc3a0" stroke="#7c644a" stroke-width="4"/>
+  <rect x="135" y="195" width="375" height="82" rx="8" fill="#b5c3bb" stroke="#46655a" stroke-width="3" stroke-dasharray="9 6"/>
+  <rect x="520" y="340" width="135" height="235" rx="8" fill="#c9b9cd" stroke="#7a627e" stroke-width="3" stroke-dasharray="9 6"/>
+  <rect x="143" y="325" width="318" height="259" rx="30" fill="#f0e2cc"/>
+  <path d="M180 644H486" stroke="#746045" stroke-width="5"/>
+  <g fill="#433e39" font-size="22" font-family="sans-serif">
+    <text x="163" y="245">Back tray?</text><text x="540" y="430">Side</text><text x="540" y="460">tray?</text>
+    <text x="191" y="445">Working area</text><text x="153" y="730">Ash usually stands here</text>
+  </g>
+  <text x="45" y="794" fill="#6d655e" font-size="16" font-family="sans-serif">Fictional sample · alternative positions · not a safety assessment</text>
+</svg>

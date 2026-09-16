@@ -1,0 +1,224 @@
+"""The research demo assembles without running a model or querying market data."""
+import json
+from pathlib import Path
+import re
+import sys
+from types import SimpleNamespace
+
+import pytest
+from mmengine import Config
+
+from examples.run_factor_strategy_mining_demo import (
+    ROOT, DEFAULT_CONFIG, DEFAULT_TASK_DIR, launch, parse_args, task_inputs,
+)
+from agentevolver.agent.actor.factor_strategy_mining_agent import FactorStrategyMiningAgent
+from agentevolver.config import validate_assembly
+from agentevolver.task.context import bind_manifest, parse_manifest, resolve_task
+
+
+def test_one_researcher_keeps_shared_plan_and_dynamic_environment_scope():
+    cfg = Config.fromfile(str(DEFAULT_CONFIG))
+    assert validate_assembly(cfg) == []
+    assert cfg.agent_names == ["factor_strategy_mining_agent"]
+    assert cfg.connector_names == []
+    assert cfg.env_names == ["job"]
+    assert "browser_environment" not in cfg
+    assert cfg.skill_names == ["factor_strategy_research_skill", "self_evolving_skill"]
+    assert cfg.task_manifest_defaults.deployment.required_releases == 1
+    defaults = FactorStrategyMiningAgent()
+    assert defaults.env_names == ["job"]
+    assert defaults.capability_allowlists["environment"] == ["job"]
+    agent = FactorStrategyMiningAgent(**cfg.factor_strategy_mining_agent)
+    assert agent.use_plan and agent.use_memory and agent.enable_evolving
+    assert not agent.include_agents and agent.capability_allowlists["agent"] == []
+    assert agent.accepts_evolved == ["environment"]
+    assert "connector" not in agent.capability_allowlists
+    assert agent.model_name == "llm_hub/gpt-6-astra"
+    assert agent.compact_input_tokens == 100_000
+
+
+def test_obsolete_factor_environment_and_worker_assembly_are_removed():
+    import agentevolver.environment  # noqa: F401
+    from agentevolver.registry import AGENT, ENVIRONMENT
+
+    assert "FactorMiningEnvironment" not in ENVIRONMENT.module_dict
+    assert "FactorMiningAgent" not in AGENT.module_dict
+    assert "StrategyMiningAgent" not in AGENT.module_dict
+    assert not (ROOT / "agentevolver/environment/default/factor_mining/environment.py").exists()
+    assert not (ROOT / "configs/factor_mining.py").exists()
+    assert not (ROOT / "examples/run_factor_mining.py").exists()
+
+
+def test_task_and_study_are_staged_with_runtime_policy_from_config(tmp_path):
+    inputs = task_inputs(DEFAULT_TASK_DIR)
+    cfg = Config.fromfile(str(DEFAULT_CONFIG))
+    text, files, metadata = resolve_task(
+        SimpleNamespace(task_file=str(inputs[0]), attach=[str(inputs[1])]), str(tmp_path),
+        manifest_defaults=cfg.task_manifest_defaults,
+    )
+    assert files == list(map(str, inputs))
+    manifest = parse_manifest(text)[2]
+    assert manifest["evolution"]["required_module_counts"] == {"connector": 1, "environment": 2}
+    assert manifest["subscribers"] == []
+    assert manifest["research"]["holdout_control"] == "protocol_only"
+    assert manifest["run_policy"]["require_completion_outcome"] is True
+    assert manifest["run_policy"]["self_review"] is False
+    # Configuration is applied to runtime input, never written into the product document/view.
+    assert "runtime-input-manifest" not in Path(metadata["task_view"]).read_text()
+    staged = [f"/session/inputs/{i}_{path.name}" for i, path in enumerate(inputs)]
+    bound = bind_manifest(text, staged)[2]
+    assert bound["attachments"][0]["path"] == staged[0]
+    assert bound["attachments"][1]["path"] == staged[1]
+    assert "minimum_net_cagr" not in text  # numerical protocol is read from the attachment
+    assert "record_use" not in text  # lifecycle instructions stay in the prompt/skill
+    study = json.loads(inputs[1].read_text())
+    splits = study["splits"]
+    assert "validation" not in splits
+    assert splits["train"][1] < splits["test"][0]
+    assert splits["final_test_attempts"] == 1
+    assert "holdout_control" not in splits
+
+
+def test_prompt_modules_and_domain_skill_can_be_loaded(tmp_path):
+    from agentevolver.prompt.types import parse_prompt_file
+    from agentevolver.skill.context import SkillContextManager
+
+    prompt = parse_prompt_file(str(ROOT / "agentevolver/prompt/default/factor_strategy_mining_agent.html"))
+    assert prompt.system_template and prompt.user_template
+    folder = ROOT / "agentevolver/skill/finance/factor_strategy_research_skill"
+    manager = SkillContextManager(base_dir=str(tmp_path))
+    skill = manager._parse_skill_dir(folder)
+    assert skill.name == "factor_strategy_research_skill"
+    # The loader must expose every routed reference, including newly added methods.
+    references = {Path(path).resolve() for path in skill.references}
+    entry_links = re.findall(r"\]\((references/[^)]+)\)", skill.content)
+    assert entry_links
+    assert {(folder / link).resolve() for link in entry_links} == references
+    # Follow local reference links as the agent would after receiving a skill path.
+    for source in [folder / "SKILL.md", *references]:
+        for link in re.findall(r"\]\(([^)]+)\)", source.read_text()):
+            if "://" not in link and not link.startswith("#"):
+                assert (source.parent / link.split("#", 1)[0]).is_file(), (source, link)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("browser_review", [False, True])
+async def test_research_release_without_browser_preserves_preview_and_explicit_review_gates(monkeypatch, browser_review):
+    from agentevolver.deploy import deployment_manager
+    from agentevolver.deploy.types import SiteRecord, SiteStatus
+    from agentevolver.runtime import kernel
+    from agentevolver.task import self_review
+    from agentevolver.tool.default.deployment.deploy import DeployTool
+
+    cfg = Config.fromfile(str(DEFAULT_CONFIG))
+    manifest = cfg.task_manifest_defaults.to_dict()
+    if browser_review:
+        # An explicit browser requirement still needs real interaction receipts.
+        manifest["run_policy"]["self_review"] = True
+    ctx = SimpleNamespace(id="research-release", extra={"task_manifest": manifest, "task_state": {}})
+    revision = "results-1"
+    deployed = []
+
+    async def deploy(request):
+        deployed.append(request)
+        return SiteRecord(site_id=request.site_id, runtime="static", status=SiteStatus.RUNNING,
+                          url=f"http://site.test/s/{request.site_id}/", source_revision=revision,
+                          release_number=1)
+
+    async def stop(site_id):
+        pass
+
+    async def publish(*args, **kwargs):
+        return 0, "research-release::deployment.ready", SimpleNamespace(id="release-event")
+
+    monkeypatch.setattr(deployment_manager, "deploy", deploy)
+    monkeypatch.setattr(deployment_manager, "source_revision", lambda req: revision)
+    monkeypatch.setattr(deployment_manager, "stop_site", stop)
+    monkeypatch.setattr(kernel, "publish_scoped", publish)
+    tool = DeployTool()
+    args = dict(site_id="research", content="<main>Research report</main>", ctx=ctx)
+    missing = await tool(action="deploy", **args)
+    assert not missing.success and "preview" in missing.message
+    assert not deployed
+    preview = await tool(action="preview", **args)
+    assert preview.success, preview.message
+    revision = "results-2"
+    changed = await tool(action="deploy", **args)
+    assert not changed.success and "changed after preview" in changed.message
+    assert len(deployed) == 1
+    revision = "results-1"
+    release = await tool(action="deploy", **args)
+    if browser_review:
+        assert not release.success and "native browser" in release.message
+        assert len(deployed) == 1
+    else:
+        assert release.success, release.message
+        status = deployment_manager.release_status(ctx)
+        assert status["ready"] and status["completed_releases"] == 1
+        assert self_review.status(ctx) == {"required": False, "ready": True}
+        assert len(deployed) == 2
+
+
+@pytest.mark.asyncio
+async def test_registered_environments_expand_the_researcher_scope_without_children(monkeypatch):
+    from agentevolver.agent.context import capabilities
+    from agentevolver.agent.loop.router import CapabilityRouter
+    from agentevolver.extension import extension_manager
+    from agentevolver.extension.types import Manifest, ManifestComponent
+
+    manifest = Manifest(components=[])
+    monkeypatch.setattr(type(extension_manager), "read_manifest", lambda self: manifest)
+    # Existing routing tests cover manager transport. Here exercise actual grant expansion
+    # on this actor's assembled configuration, without starting environment processes.
+    captured = []
+
+    async def assemble(agent, ctx, *, include_agents):
+        captured.append((list(ctx.extra["environment_allowlist"]), include_agents))
+        return [], {}
+
+    monkeypatch.setattr(capabilities, "assemble_native_tools", assemble)
+    cfg = Config.fromfile(str(DEFAULT_CONFIG))
+    agent = FactorStrategyMiningAgent(**cfg.factor_strategy_mining_agent)
+    router = CapabilityRouter(include_agents=agent.include_agents)
+    ctx = SimpleNamespace(extra={})
+    await router.schemas(agent, ctx)
+    assert captured[-1] == (["job"], False)
+    for name in ("factors", "strategies"):
+        manifest.components.append(ManifestComponent(
+            module="environment", name=name, version="1.0.0", file=f"environment/{name}",
+        ))
+    await router.schemas(agent, ctx)
+    assert captured[-1] == (["job", "factors", "strategies"], False)
+    assert ctx.extra["agent_allowlist"] == []
+
+
+def test_launcher_uses_shared_lifecycle_and_config_overrides(monkeypatch, tmp_path):
+    from examples import run_meta_agent
+
+    forwarded = []
+
+    async def record_launch():
+        forwarded.extend(sys.argv)
+        args = run_meta_agent.parse_args()
+        cfg = Config.fromfile(args.config)
+        cfg.merge_from_dict(args.cfg_options)
+        text, files, _ = resolve_task(args, str(tmp_path), manifest_defaults=cfg.task_manifest_defaults)
+        assert parse_manifest(text)[2]["evolution"]["required_module_counts"]["environment"] == 3
+        assert len(files) == 2
+
+    original = sys.argv
+    monkeypatch.setattr(run_meta_agent, "run_with_lifecycle", record_launch)
+    launch(parse_args(["--model", "llm_hub/gpt-6-astra", "--cfg-options",
+                       "factor_strategy_mining_agent.max_step=20",
+                       "task_manifest_defaults.evolution.required_module_counts.environment=3"]))
+    assert sys.argv is original
+    assert forwarded[forwarded.index("--agent-name") + 1] == "factor_strategy_mining_agent"
+    assert "--attach" in forwarded and "--plan-mode" in forwarded
+    assert "--task-file" in forwarded and "--task" not in forwarded
+    assert "factor_strategy_mining_agent.max_step=20" in forwarded
+    assert "factor_strategy_mining_agent.model_name=llm_hub/gpt-6-astra" in forwarded
+
+
+def test_missing_input_fails_before_runtime_start(tmp_path):
+    with pytest.raises(FileNotFoundError, match="task.html"):
+        task_inputs(tmp_path)

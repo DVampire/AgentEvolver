@@ -1,0 +1,971 @@
+"""Provider-neutral model configuration, streaming events, usage, and adapters."""
+
+from __future__ import annotations
+
+import json as _json
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from html.parser import HTMLParser as _HTMLParser
+from typing import Any, AsyncIterator, Dict, List, Literal, Optional
+
+import httpx
+from pydantic import BaseModel, ConfigDict, Field
+
+from agentevolver.session import BaseContext
+
+
+class ModelContext(BaseContext):
+    """Context passed into model manager and individual model invocations."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    id: str = Field(description="Unique session/call identifier.")
+    name: Optional[str] = Field(default=None, description="Human-readable label for this invocation context.")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data attached to this context.")
+
+
+class ModelConfig(BaseModel):
+    """Configuration container describing a single LLM/provider pairing."""
+
+    model_name: str = Field(description="Human-readable name used across the codebase.")
+    model_type: str = Field(description="Model type, e.g. 'chat/completions', 'responses', 'embeddings'.")
+    model_id: str = Field(description="Provider-specific identifier passed to the API.")
+    provider: str = Field(description="Provider slug, e.g. 'openai', 'anthropic'.")
+    api_base: Optional[str] = Field(default=None, description="Override API base URL.")
+    api_key: Optional[str] = Field(default=None, description="Override API key.")
+    temperature: Optional[float] = Field(default=None, description="Temperature parameter for the model.")
+    reasoning: Optional[Dict[str, Any]] = Field(default={
+        "reasoning_effort": "high"
+    }, description="Reasoning configuration.")
+    plugins: Optional[List[Dict[str, Any]]] = Field(default=None, description="Plugins to use for the model.")
+    max_completion_tokens: Optional[int] = Field(default=None, description="Maximum completion tokens for chat/completions models.")
+    max_output_tokens: Optional[int] = Field(default=None, description="Maximum output tokens for responses API models.")
+    context_window: Optional[int] = Field(
+        default=None,
+        description="Provider context capacity used for deterministic request-pressure accounting.",
+    )
+    supports_streaming: bool = Field(default=True, description="Whether streaming is supported.")
+    supports_functions: bool = Field(default=False, description="Whether tool/function calling is supported.")
+    supports_vision: bool = Field(default=False, description="Whether multimodal inputs are supported.")
+    native_compaction: bool = Field(
+        default=False,
+        description="Whether this exact model route has verified provider-native "
+        "compaction support. The client method alone is not sufficient: one protocol "
+        "client may serve models or relays with different capabilities.",
+    )
+    persisted_reasoning: bool = Field(
+        default=False,
+        description="Whether this exact route can replay provider-owned reasoning state.",
+    )
+    native_programmatic_tool_calling: bool = Field(
+        default=False,
+        description="Whether this exact route supports hosted programmatic tool calling.",
+    )
+    native_multi_agent: bool = Field(
+        default=False,
+        description="Whether this exact route supports provider-hosted multi-agent execution.",
+    )
+    native_async_tools: bool = False
+    output_version: Optional[str] = Field(
+        default=None,
+        description="Optional output schema version when required by provider.",
+    )
+    explicit_prompt_cache: bool = False
+    native_configuration_updates: bool = False
+    reasoning_efforts: List[str] = Field(default_factory=list)
+    supports_sampling: bool = True
+    timeout: Optional[float] = Field(default=None, description="Request timeout in seconds.")
+    cost: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Per-token USD prices used to price a call when the provider does not "
+        "return a `cost` in usage (llm_hub/Bedrock does not). Keys: `input`, `output`, "
+        "`cache_write`, `cache_read` — each USD per single token (e.g. Opus 5 input is "
+        "5e-6). Estimated from the model's public list price; the token counts are exact, "
+        "the dollar figure is an estimate that a relay's actual billing may differ from.",
+    )
+    max_retries: Optional[int] = Field(
+        default=None,
+        description="Attempts before this model's call is treated as failed. Overrides the "
+        "default of 3 per model — raise it for a route with a flaky upstream (e.g. a relay "
+        "that intermittently returns empty completions) so a transient bad window is ridden "
+        "out rather than surfaced as a failed step. A per-call `max_retries` still wins.",
+    )
+    key_pool_name: Optional[str] = Field(default=None, description="Key pool name for round-robin key lookup. Defaults to provider if not set.")
+    fallback_model: Optional[str] = Field(
+        default=None,
+        description="Fallback model name to use if the primary model fails due to policy/content filter errors.",
+    )
+
+
+#: How long a cached prefix stays readable, for every provider that takes a breakpoint.
+#:
+#: Defined once. It was copied into three serializers, and three copies of a constant are
+#: three chances to change two of them — the kind of drift that shows up as one provider
+#: quietly losing its cache while the others keep theirs, with no error anywhere.
+#:
+#: An hour rather than the five-minute default because an orchestrator's steps are minutes
+#: apart by construction: it delegates, the sub-agent runs, and by its next step a
+#: five-minute entry has expired. Measured on `penguins_analysis`, meta_agent wrote 308,469
+#: input tokens across three steps and read back zero, while agents whose steps are seconds
+#: apart hit 36-49% in the same run.
+#:
+#: The write costs 2x base against 1.25x, and reads are 0.1x either way — so a single
+#: otherwise-missed hit already pays for it, and the case this fixes missed every one.
+CACHE_TTL = "1h"
+
+
+# --- the cache breakpoint, located by tag structure -------------------------
+#
+# agent_context.html lays the agent-context out in two zones by how often each block
+# changes. The CACHED zone holds only the reliably-stable blocks (task,
+# inherited-context, plan); the LIVE zone holds everything that changes too often to
+# cache. The breakpoint goes at the boundary — right before the first live-zone block.
+#
+# We locate that boundary by parsing TAGS, not by searching for a marker string. A tag
+# name written in a comment or in prose (this very list, say) must never move the split;
+# the earlier string-search version did exactly that and cached the catalog alone. The
+# tag NAME is the tier: adding a block means classifying its tag here, nothing more.
+_LIVE_ZONE_TAGS = frozenset({
+    "constraints", "step-info", "working-memory", "recent-steps",
+    "environment-state", "workspace", "errors",
+})
+
+
+def _line_start_offsets(text: str) -> List[int]:
+    """Char offset at which each line begins (index i → line i+1), counting by '\\n'
+    the way :class:`html.parser.HTMLParser` counts lines, so ``getpos()`` maps back."""
+    starts = [0]
+    i = text.find("\n")
+    while i != -1:
+        starts.append(i + 1)
+        i = text.find("\n", i + 1)
+    return starts
+
+
+class _LiveZoneLocator(_HTMLParser):
+    """Byte offset of the first live-zone opening tag inside ``<agent-context>``.
+
+    Real opening tags only: HTMLParser routes ``<!-- ... -->`` to ``handle_comment``,
+    which we do not override, so a tag name inside a comment (or as plain text) is never
+    mistaken for the block. Gated on being inside ``<agent-context>`` so a capability
+    description that happens to contain one of these names cannot move the split either.
+    """
+
+    def __init__(self, text: str):
+        super().__init__(convert_charrefs=False)
+        self._line_starts = _line_start_offsets(text)
+        self._in_agent_context = False
+        # NOT `self.offset` — HTMLParser keeps its own `self.offset` for line/column
+        # tracking, and shadowing it breaks getpos() (and crashes updatepos).
+        self.mark: Optional[int] = None
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        if tag == "agent-context":
+            self._in_agent_context = True
+            return
+        if (self.mark is None and self._in_agent_context
+                and tag in _LIVE_ZONE_TAGS):
+            line, col = self.getpos()               # (1-based line, 0-based col)
+            self.mark = self._line_starts[line - 1] + col
+
+
+def split_cached_prefix(text: str) -> Optional[tuple]:
+    """Split a user turn into ``(cached_prefix, live_rest)`` at the cache breakpoint.
+
+    The breakpoint is the start of the first live-zone block (see agent_context.html and
+    ``_LIVE_ZONE_TAGS``), found by parsing tags rather than searching for a marker
+    string — so the catalog, task, inherited-context, and plan ride in the cached prefix
+    while the live state (constraints, step-info, working-memory, recent-steps, …) stays
+    out of it. Falls back to the end of ``</capability-context>`` (catalog only) for a
+    turn that renders no agent-context, and returns ``None`` when there is no catalog
+    either — a turn with nothing stable must not get a breakpoint that caches nothing and
+    spends a write to learn it.
+    """
+    try:
+        locator = _LiveZoneLocator(text)
+        locator.feed(text)
+        if locator.mark is not None:
+            cut = locator.mark
+            return text[:cut], text[cut:]
+    except Exception:  # noqa: BLE001 — never fail serialization over the split
+        pass
+    marker = "</capability-context>"
+    end = text.find(marker)
+    if end == -1:
+        return None
+    end += len(marker)
+    return text[:end], text[end:]
+
+
+class TokenUsage(BaseModel):
+    """Provider-neutral usage for one call.
+
+    ``input_tokens`` is uncached, normally-priced input. ``context_input_tokens``
+    is the complete provider input (cached + uncached) used for context growth.
+    """
+    input_tokens: int = 0
+    context_input_tokens: int = 0
+    output_tokens: int = 0
+    reasoning_tokens: int = 0
+    cache_write_tokens: int = 0
+    cache_read_tokens: int = 0
+    provider_reported_total: Optional[int] = None
+    cost: Optional[float] = None
+    cost_status: Literal["reported", "estimated", "unknown"] = "unknown"
+    runtime_receipt: str = ""
+
+    @property
+    def total(self) -> int:
+        context = self.context_input_tokens or (
+            self.input_tokens + self.cache_write_tokens + self.cache_read_tokens
+        )
+        return context + self.output_tokens
+
+    @property
+    def cache_hit_ratio(self) -> Optional[float]:
+        context = self.context_input_tokens or (
+            self.input_tokens + self.cache_write_tokens + self.cache_read_tokens
+        )
+        return (
+            self.cache_read_tokens / context if context else None
+        )
+
+    @classmethod
+    def from_raw(cls, raw: Optional[Dict[str, Any]]) -> Optional["TokenUsage"]:
+        """Normalize provider-specific usage dicts into TokenUsage."""
+        if not raw:
+            return None
+        if not any(key in raw for key in (
+            "input_tokens", "output_tokens", "context_input_tokens", "prompt_tokens",
+            "completion_tokens", "prompt_token_count", "candidates_token_count",
+            "cache_read_tokens", "cache_read_input_tokens", "cache_creation_input_tokens",
+        )):
+            return None  # Cost-only/metadata-only is not evidence of zero tokens.
+        # Every surface names the cache counts differently, and a name this does not
+        # know reads as "nothing was cached" rather than as "not reported" — the two
+        # look identical downstream, so a provider is silently written off as
+        # uncacheable. Anthropic uses top-level `cache_*_input_tokens`;
+        # chat/completions nests `prompt_tokens_details`; the Responses API nests
+        # `input_tokens_details` with a differently spelled write count; Gemini's
+        # `cached_content_token_count` is mapped at the provider.
+        # Pricing and Trace can both read the same dictionary. Trust an explicit
+        # context total so normalisation is idempotent.
+        if "context_input_tokens" in raw:
+            return cls(
+                runtime_receipt=str(raw.get("runtime_receipt") or ""),
+                input_tokens=int(raw.get("input_tokens") or 0),
+                context_input_tokens=int(raw.get("context_input_tokens") or 0),
+                output_tokens=int(raw.get("output_tokens") or 0),
+                reasoning_tokens=int(raw.get("reasoning_tokens") or 0),
+                cache_write_tokens=int(raw.get("cache_write_tokens") or 0),
+                cache_read_tokens=int(raw.get("cache_read_tokens") or 0),
+                provider_reported_total=(
+                    int(raw["provider_reported_total"])
+                    if raw.get("provider_reported_total") is not None else None
+                ),
+                cost=float(raw["cost"]) if raw.get("cost") is not None else None,
+                cost_status=str(
+                    raw.get("cost_status")
+                    or ("reported" if raw.get("cost") is not None else "unknown")
+                ),
+            )
+
+        prompt_details = raw.get("prompt_tokens_details") or {}
+        input_details = raw.get("input_tokens_details") or {}
+        cache_read = (
+            raw.get("cache_read_tokens") or
+            raw.get("cache_read_input_tokens") or
+            prompt_details.get("cached_tokens") or
+            input_details.get("cached_tokens") or 0
+        )
+        cache_write = (
+            raw.get("cache_write_tokens") or
+            raw.get("cache_creation_input_tokens") or
+            prompt_details.get("cache_write_tokens") or
+            input_details.get("cache_write_tokens") or 0
+        )
+        # cost: OpenRouter returns top-level cost field
+        cost_raw = raw.get("cost")
+        cost = float(cost_raw) if cost_raw is not None else None
+        output_details = raw.get("output_tokens_details") or {}
+        completion_details = raw.get("completion_tokens_details") or {}
+        raw_input = int(
+            raw.get("prompt_tokens") or raw.get("input_tokens") or
+            raw.get("prompt_token_count") or 0
+        )
+        # OpenAI-compatible Chat/Responses and Gemini report a total prompt with a
+        # cached subset. Anthropic reports uncached input plus separate cache buckets.
+        inclusive_input = bool(
+            prompt_details or input_details or "prompt_token_count" in raw
+        )
+        uncached_input = (
+            max(0, raw_input - int(cache_read) - int(cache_write))
+            if inclusive_input else raw_input
+        )
+        context_input = (
+            raw_input if inclusive_input
+            else raw_input + int(cache_read) + int(cache_write)
+        )
+        # Zero is an explicit provider value, not a missing field. Boolean
+        # fallback would replace total_tokens=0 with an absent alias and int(None).
+        provider_total = raw.get("total_tokens")
+        if provider_total is None:
+            provider_total = raw.get("total_token_count")
+        return cls(
+            input_tokens=uncached_input,
+            context_input_tokens=context_input,
+            output_tokens=(
+                raw.get("completion_tokens") or raw.get("output_tokens") or
+                raw.get("candidates_token_count") or 0
+            ),
+            reasoning_tokens=int(
+                raw.get("reasoning_tokens")
+                or output_details.get("reasoning_tokens")
+                or completion_details.get("reasoning_tokens")
+                or 0
+            ),
+            cache_write_tokens=cache_write,
+            cache_read_tokens=cache_read,
+            provider_reported_total=(
+                int(provider_total) if provider_total is not None else None
+            ),
+            cost=cost,
+            cost_status="reported" if cost is not None else "unknown",
+        )
+
+    def summary_line(self, model: str = "") -> str:
+        parts = [
+            f"in={self.input_tokens}", f"context_in={self.context_input_tokens}",
+            f"out={self.output_tokens}",
+        ]
+        if self.reasoning_tokens:
+            parts.append(f"reasoning={self.reasoning_tokens}")
+        if self.cache_write_tokens:
+            parts.append(f"cache_write={self.cache_write_tokens}")
+        if self.cache_read_tokens:
+            parts.append(f"cache_read={self.cache_read_tokens}")
+        if self.cost is not None:
+            parts.append(f"cost=${self.cost:.6f}")
+        else:
+            parts.append("cost=unknown")
+        prefix = f"[{model}] " if model else ""
+        return f"{prefix}tokens: {', '.join(parts)}"
+
+
+def compute_cost(usage: Dict[str, Any], pricing: Optional[Dict[str, Any]]) -> Optional[float]:
+    """Price a call's token counts against a per-token USD table.
+
+    ``usage`` is a TokenUsage-shaped dict (``input_tokens`` / ``output_tokens`` /
+    ``cache_write_tokens`` / ``cache_read_tokens``). ``pricing`` maps ``input`` / ``output``
+    / ``cache_write`` / ``cache_read`` to USD-per-single-token. Cache prices default to the
+    usual multiples of the input price when omitted (write 1.25x, read 0.1x). Returns None
+    when there is no pricing to apply, so the caller leaves ``cost`` untouched. Cached
+    tokens are billed at the cache rate INSTEAD of the input rate. The observational
+    ``context_input_tokens`` total is never billed directly, so there is no double count.
+    """
+    if not pricing:
+        return None
+    selected = pricing
+    threshold = pricing.get("long_context_threshold")
+    long_context = pricing.get("long_context")
+    context_tokens = int(
+        usage.get("context_input_tokens")
+        or (
+            int(usage.get("input_tokens", 0) or 0)
+            + int(usage.get("cache_write_tokens", 0) or 0)
+            + int(usage.get("cache_read_tokens", 0) or 0)
+        )
+    )
+    if threshold is not None and context_tokens > int(threshold) and isinstance(long_context, dict):
+        selected = {**pricing, **long_context}
+
+    p_in = float(selected.get("input", 0.0))
+    p_out = float(selected.get("output", 0.0))
+    p_cw = float(selected.get("cache_write", p_in * 1.25))
+    p_cr = float(selected.get("cache_read", p_in * 0.1))
+    return (
+        int(usage.get("input_tokens", 0) or 0) * p_in
+        + int(usage.get("output_tokens", 0) or 0) * p_out
+        + int(usage.get("cache_write_tokens", 0) or 0) * p_cw
+        + int(usage.get("cache_read_tokens", 0) or 0) * p_cr
+    )
+
+
+def price_usage_dict(raw_usage: Optional[Dict[str, Any]], pricing: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Return ``raw_usage`` with a computed ``cost`` when it has none and pricing exists.
+
+    Used at the two model-call chokepoints (buffered and streaming) so every recorded call
+    carries a dollar figure. If the provider already returned a ``cost`` (OpenRouter does),
+    it is kept as-is — the relay's own number beats an estimate. Normalises through
+    TokenUsage.from_raw first so the token keys are canonical before pricing.
+    """
+    if not raw_usage:
+        return raw_usage
+    normalised = TokenUsage.from_raw(raw_usage)
+    if normalised is None:
+        return raw_usage
+    priced = normalised.model_dump()
+    if priced.get("cost") is None:
+        priced["cost"] = compute_cost(priced, pricing)
+        if priced["cost"] is not None:
+            priced["cost_status"] = "estimated"
+    return priced
+
+
+# ---------------------------------------------------------------------------
+# Canonical tool-calling + streaming representation (provider-agnostic)
+# ---------------------------------------------------------------------------
+# The agent and capability layers only ever see these types. Each provider's
+# serializer converts to/from its own wire format (tool_use / tool_calls /
+# functionCall; input_json_delta / arguments fragments / whole part), so format
+# differences never leak past the provider boundary.
+
+
+class ToolCall(BaseModel):
+    """A normalized 'model wants to call tool X' — input is always a parsed dict."""
+    id: str = ""
+    name: str = ""
+    input: Dict[str, Any] = Field(default_factory=dict)
+    caller: Optional[Dict[str, Any]] = None
+
+
+class ToolResult(BaseModel):
+    """A normalized tool result to feed back to the model."""
+    tool_call_id: str
+    content: str
+    is_error: bool = False
+
+
+# --- canonical stream events (dataclasses = cheap on the hot path) ---
+@dataclass
+class TextDelta:
+    text: str
+
+
+@dataclass
+class ThinkingDelta:
+    text: str
+
+
+@dataclass
+class ToolCallStart:
+    index: int
+    id: str
+    name: str
+    caller: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class ToolCallArgsDelta:
+    index: int
+    partial_json: str
+
+
+@dataclass
+class ToolCallComplete:
+    """Whole-part providers (Gemini) emit the tool call in one piece."""
+    index: int
+    id: str
+    name: str
+    input: Dict[str, Any] = field(default_factory=dict)
+    caller: Optional[Dict[str, Any]] = None
+    asynchronous: bool = False
+
+
+@dataclass
+class ProviderState:
+    """Opaque replay data that must survive one provider's next request."""
+    data: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class StreamDone:
+    stop_reason: Optional[str] = None          # canonical: tool_use | end_turn | max_tokens | ...
+    usage: Optional[Dict[str, Any]] = None     # raw provider usage dict (TokenUsage.from_raw handles it)
+
+
+StreamEvent = Any  # union of the dataclasses above
+
+
+def normalize_stop_reason(raw: Optional[str]) -> Optional[str]:
+    """Map any provider's finish/stop reason to the canonical vocabulary."""
+    if raw is None:
+        return None
+    r = str(raw).lower()
+    if r in ("tool_use", "tool_calls", "function_call"):
+        return "tool_use"
+    if r in ("end_turn", "stop", "stop_sequence"):
+        return "end_turn"
+    if r in ("max_tokens", "length", "max_output_tokens"):
+        return "max_tokens"
+    if r in ("refusal",):
+        return "refusal"
+    if r in ("pause_turn",):
+        return "pause_turn"
+    return r
+
+
+async def accumulate_stream(events: "AsyncIterator[StreamEvent]") -> Dict[str, Any]:
+    """Fold a canonical event stream into a buffered result.
+
+    Returns ``{text, thinking, tool_calls: List[ToolCall], stop_reason, usage}``.
+    Lets the buffered ``__call__`` path be implemented on top of streaming, and
+    lets the agent get a final message after consuming a stream.
+    """
+    text_parts: List[str] = []
+    thinking_parts: List[str] = []
+    # index -> {"id","name","args"(str, for fragment providers)|"input"(dict, whole)}
+    tools: Dict[int, Dict[str, Any]] = {}
+    stop_reason: Optional[str] = None
+    usage: Optional[Dict[str, Any]] = None
+    provider_state: Dict[str, Any] = {}
+
+    async for ev in events:
+        if isinstance(ev, TextDelta):
+            text_parts.append(ev.text)
+        elif isinstance(ev, ThinkingDelta):
+            thinking_parts.append(ev.text)
+        elif isinstance(ev, ToolCallStart):
+            slot = tools.setdefault(ev.index, {"id": "", "name": "", "args": ""})
+            if ev.id:
+                slot["id"] = ev.id
+            if ev.name:
+                slot["name"] = ev.name
+            if ev.caller:
+                slot["caller"] = dict(ev.caller)
+        elif isinstance(ev, ToolCallArgsDelta):
+            slot = tools.setdefault(ev.index, {"id": "", "name": "", "args": ""})
+            slot["args"] = slot.get("args", "") + ev.partial_json
+        elif isinstance(ev, ToolCallComplete):
+            tools[ev.index] = {
+                "id": ev.id, "name": ev.name, "input": ev.input,
+                "caller": dict(ev.caller) if ev.caller else None,
+            }
+        elif isinstance(ev, ProviderState):
+            provider_state.update(ev.data)
+        elif isinstance(ev, StreamDone):
+            stop_reason = ev.stop_reason
+            usage = ev.usage
+
+    tool_calls: List[ToolCall] = []
+    for idx in sorted(tools):
+        t = tools[idx]
+        if "input" in t:                     # whole-part provider
+            parsed = t["input"] or {}
+        else:                                # fragment provider: join + json.loads
+            raw = (t.get("args") or "").strip()
+            try:
+                parsed = _json.loads(raw) if raw else {}
+            except Exception:
+                parsed = {"__raw__": raw}
+        tool_calls.append(ToolCall(
+            id=t.get("id") or f"call_{idx}", name=t.get("name", ""), input=parsed,
+            caller=t.get("caller"),
+        ))
+
+    return {
+        "text": "".join(text_parts),
+        "thinking": "".join(thinking_parts),
+        "tool_calls": tool_calls,
+        "stop_reason": stop_reason,
+        "usage": usage,
+        "provider_state": provider_state,
+    }
+
+
+async def build_response_from_stream(
+    events: "AsyncIterator[StreamEvent]",
+    *,
+    tools: Any = None,
+    response_format: Any = None,
+    structured_tool_name: Optional[str] = None,
+) -> Any:
+    """Fold a canonical event stream into a buffered ``Response`` — same shape as
+    each provider's ``_format_response`` (functions / parsed_model / plain text).
+
+    This is the single place the streaming path builds a buffered result, so
+    ``__call__(stream=True)`` on every provider returns exactly what the
+    non-streaming path would. Structured output stays pydantic: when
+    ``response_format`` is a ``BaseModel`` subclass, the accumulated text is
+    parsed and validated into it and returned as ``Response.parsed_model``.
+    """
+    from agentevolver.response.types import Response, ResponseType
+
+    acc = await accumulate_stream(events)
+    usage = TokenUsage.from_raw(acc.get("usage"))
+    stop_reason = acc.get("stop_reason")
+    common: Dict[str, Any] = {
+        "usage": acc.get("usage"),
+        "stop_reason": stop_reason,
+        "text": acc.get("text", ""),
+        "thinking": acc.get("thinking", ""),
+        "provider_state": acc.get("provider_state", {}),
+    }
+
+    if stop_reason == "max_tokens":
+        # A provider can stop in the middle of text, structured JSON, or native tool
+        # arguments. Preserve the exact partial bytes in data for diagnosis, but never
+        # advertise them as a successful answer or executable function call.
+        return Response(
+            type=ResponseType.LLM,
+            success=False,
+            message="Model response stopped at max_tokens before completing the turn.",
+            data={**common, "retryable": False, "partial_tool_calls": [
+                {"id": call.id, "name": call.name, "input": call.input}
+                for call in acc["tool_calls"]
+            ]},
+            usage=usage,
+        )
+
+    # 0) Structured output via a synthetic schema-tool. When ``structured_tool_name``
+    #    is set (tools were present, so the schema rode along as a tool), structured
+    #    output is a tool call of that name, not message content — validate THAT
+    #    tool's input into parsed_model (takes priority over the generic function-
+    #    call branch below).
+    if (structured_tool_name and isinstance(response_format, type)
+            and issubclass(response_format, BaseModel)):
+        for c in acc["tool_calls"]:
+            if c.name == structured_tool_name:
+                try:
+                    parsed = response_format.model_validate(c.input)
+                except Exception as e:
+                    msg = (f"Structured output truncated at max_tokens: {e}"
+                           if stop_reason == "max_tokens"
+                           else f"Structured output failed schema validation: {e}")
+                    return Response(type=ResponseType.LLM, success=False, message=msg,
+                                    data={**common, "content": c.input})
+                model_name = response_format.__name__
+                field_lines = [f"{k}={v!r}" for k, v in parsed.model_dump().items()]
+                msg = f"Response result:\n\n{model_name}(\n" + ",\n".join(f"    {line}" for line in field_lines) + "\n)"
+                return Response(type=ResponseType.LLM, success=True, message=msg,
+                                data=common, usage=usage, parsed_model=parsed)
+
+    # 1) Tool calls (native tool calling)
+    if tools and acc["tool_calls"]:
+        functions = []
+        lines = []
+        for c in acc["tool_calls"]:
+            functions.append({
+                "id": c.id, "name": c.name, "args": c.input, "caller": c.caller,
+            })
+            if c.input:
+                args_str = ", ".join(f"{k}={v!r}" for k, v in c.input.items())
+                lines.append(f"Calling function {c.name}({args_str})")
+            else:
+                lines.append(f"Calling function {c.name}()")
+        return Response(
+            type=ResponseType.LLM, success=True, message="\n".join(lines),
+            data={**common, "functions": functions}, usage=usage,
+        )
+
+    # 2) Structured output (pydantic BaseModel → parsed_model)
+    if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+        text = acc.get("text", "")
+        if not text:
+            return Response(type=ResponseType.LLM, success=False,
+                            message="Empty response content from model", data=common)
+        try:
+            parsed = response_format.model_validate(_json.loads(text))
+        except Exception as e:
+            msg = (f"Structured output truncated at max_tokens: {e}"
+                   if stop_reason == "max_tokens"
+                   else f"Failed to parse structured output: {e}")
+            return Response(type=ResponseType.LLM, success=False,
+                            message=msg, data={**common, "content": text})
+        model_name = response_format.__name__
+        field_lines = [f"{k}={v!r}" for k, v in parsed.model_dump().items()]
+        msg = f"Response result:\n\n{model_name}(\n" + ",\n".join(f"    {line}" for line in field_lines) + "\n)"
+        return Response(type=ResponseType.LLM, success=True, message=msg,
+                        data=common, usage=usage, parsed_model=parsed)
+
+    # 3) Plain text
+    return Response(type=ResponseType.LLM, success=True, message=acc.get("text", ""),
+                    data=common, usage=usage)
+
+
+async def buffered_response_to_events(response: Any) -> "AsyncIterator[StreamEvent]":
+    """Emit canonical stream events from a final buffered ``Response``.
+
+    Graceful-degradation for providers whose client cannot truly stream
+    (custom single-POST REST clients): the whole response is delivered at once
+    as canonical events, so ``model_manager.stream()`` presents a uniform
+    interface across all providers (SDK-backed stream token-by-token; the rest
+    emit the full result in one shot).
+    """
+    data = getattr(response, "data", None) or {}
+    reasoning = data.get("reasoning") or data.get("thinking")
+    if reasoning:
+        yield ThinkingDelta(str(reasoning))
+    if data.get("provider_state"):
+        yield ProviderState(dict(data["provider_state"]))
+    functions = data.get("functions")
+    if functions:
+        for i, fn in enumerate(functions):
+            yield ToolCallComplete(
+                index=i, id=fn.get("id") or f"call_{i}",
+                name=fn.get("name", ""), input=fn.get("args") or {},
+                caller=fn.get("caller"),
+            )
+    else:
+        text = data.get("text")
+        if text is None:
+            text = getattr(response, "message", "") or ""
+        if text:
+            yield TextDelta(text)
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        usage = data.get("usage")
+    if hasattr(usage, "model_dump"):
+        usage = usage.model_dump()
+    yield StreamDone(
+        stop_reason=normalize_stop_reason(data.get("stop_reason") or data.get("finish_reason")),
+        usage=usage,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Synthetic structured-output tool
+# ---------------------------------------------------------------------------
+
+
+class _StructuredOutputTool:
+    """Duck-typed Tool shim carrying a ``function_calling`` dict.
+
+    ``synthetic_tool`` mode projects a ``response_format`` (a pydantic model)
+    into one of these and appends it to ``tools``; every provider's
+    ``serialize_tools`` reads ``.function_calling`` (falling back to
+    ``.name`` / ``.description``), so the shim serializes like any real tool
+    without importing ``agentevolver.tool.types``.
+    """
+
+    def __init__(self, name: str, description: str, parameters: Dict[str, Any]):
+        self.name = name
+        self.description = description
+        self.function_calling = {
+            "type": "function",
+            "function": {"name": name, "description": description, "parameters": parameters},
+        }
+
+
+def _pydantic_tool_parameters(model: type) -> Dict[str, Any]:
+    """Bare JSON-Schema object for a pydantic model, usable as a tool's
+    ``parameters`` — ``$defs`` are inlined so providers that reject ``$ref``
+    (e.g. Gemini) still work."""
+    schema = model.model_json_schema()
+    defs = schema.pop("$defs", {})
+
+    def inline(o: Any) -> Any:
+        if isinstance(o, dict):
+            ref = o.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                return inline(defs.get(ref.split("/")[-1], {"type": "object"}))
+            return {k: inline(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [inline(x) for x in o]
+        return o
+
+    return inline(schema)
+
+
+# ---------------------------------------------------------------------------
+# BaseChatModel — the contract every provider chat client implements
+# ---------------------------------------------------------------------------
+
+
+class BaseChatModel(BaseModel, ABC):
+    """Common contract for every provider chat client — two unified call modes.
+
+    - ``chat``   — non-streaming; structured output is native ``response_format``
+      when no tools are passed, or a synthetic schema-tool when tools are (see
+      the structured-output helpers below).
+    - ``stream`` — streaming + function calling + structured output; yields the
+      canonical stream events above. True-streaming providers override
+      ``_open_stream`` / ``_parse_stream``; the rest set
+      ``supports_true_streaming = False`` and fall back to buffering ``chat`` and
+      replaying it through ``buffered_response_to_events``.
+
+    ``__call__`` is an alias of ``chat`` (with a legacy ``stream=True`` shortcut
+    that folds a stream into a buffered ``Response``) so existing callers keep
+    working unchanged.
+
+    A provider subclass implements only the wire details — ``_build_params``,
+    ``_call_model``, ``_format_response``, and (when truly streaming)
+    ``_open_stream`` / ``_parse_stream``. This base owns the orchestration so the
+    two modes stay consistent across every provider.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    # Providers that truly stream override _open_stream / _parse_stream; the rest
+    # set this False and fall back to buffering chat() and replaying it as events.
+    supports_true_streaming: bool = True
+
+    # ---- identity ----
+    @property
+    def provider(self) -> str:
+        return "base"
+
+    @property
+    def name(self) -> str:
+        return str(getattr(self, "model", ""))
+
+    def set_api_key(self, api_key: str) -> None:
+        self.api_key = api_key
+
+    # ---- structured output ----
+    # There is no mode flag: how structured output is done is DERIVED from whether
+    # the caller also passes tools. With tools present, native response_format and
+    # native tool calling can't coexist in one request, so the schema rides along
+    # as a synthetic tool; with no tools, native structured output is used.
+    @staticmethod
+    def _schema_model(response_format) -> Optional[type]:
+        """The pydantic model behind a ``response_format`` (class or instance), else None."""
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            return response_format
+        if isinstance(response_format, BaseModel):
+            return type(response_format)
+        return None
+
+    def _structured_tool_name(self, tools, response_format) -> Optional[str]:
+        """Name of the synthetic structured-output tool (the schema model's name),
+        or None when structured output is native. Non-None iff ``response_format``
+        is a pydantic model AND real ``tools`` are present."""
+        m = self._schema_model(response_format)
+        return m.__name__ if (m and tools) else None
+
+    def _structured_output(self, tools, response_format):
+        """Derive the mechanism from whether tools are present: with tools, project
+        ``response_format`` into a synthetic tool and clear ``response_format``;
+        with no tools, leave it native. Returns ``(tools, response_format, tool_name)``
+        — ``tool_name`` is non-None only on the synthetic path."""
+        name = self._structured_tool_name(tools, response_format)
+        if not name:
+            return tools, response_format, None
+        model = self._schema_model(response_format)
+        synthetic = _StructuredOutputTool(
+            name=name,
+            description=(model.__doc__ or f"Return the result as {name}.").strip(),
+            parameters=_pydantic_tool_parameters(model),
+        )
+        return list(tools) + [synthetic], None, name
+
+    def _fold_structured_functions(self, response, response_format, tool_name):
+        """Fold the synthetic tool's call (in ``response.data['functions']``) into
+        ``parsed_model`` — the non-streaming counterpart of
+        ``build_response_from_stream``'s synthetic-tool branch. Shape-identical to
+        the native structured branch (drops the tool-call-only ``functions`` key)."""
+        from agentevolver.response.types import Response, ResponseType
+
+        model = self._schema_model(response_format)
+        if model is None or not getattr(response, "success", False):
+            return response
+        for fn in (getattr(response, "data", None) or {}).get("functions") or []:
+            if fn.get("name") != tool_name:
+                continue
+            args = fn.get("args", fn.get("arguments")) or {}
+            if isinstance(args, str):
+                try:
+                    args = _json.loads(args)
+                except Exception:
+                    args = {}
+            try:
+                parsed = model.model_validate(args)
+            except Exception as e:
+                return Response(type=ResponseType.LLM, success=False,
+                                message=f"Structured output failed schema validation: {e}",
+                                data={**(response.data or {}), "content": args})
+            field_lines = [f"{k}={v!r}" for k, v in parsed.model_dump().items()]
+            msg = (f"Response result:\n\n{model.__name__}(\n"
+                   + ",\n".join(f"    {line}" for line in field_lines) + "\n)")
+            data = {k: v for k, v in (response.data or {}).items() if k != "functions"}
+            return Response(type=ResponseType.LLM, success=True, message=msg,
+                            data=data, usage=response.usage, parsed_model=parsed)
+        return response  # model called a real tool instead — leave as function calls
+
+    # ---- provider wire details (subclasses implement) ----
+    @abstractmethod
+    async def _build_params(self, messages, tools=None, response_format=None,
+                            stream: bool = False, **kwargs) -> Dict[str, Any]:
+        """Serialize messages/tools/response_format into a provider-specific dict."""
+        ...
+
+    @abstractmethod
+    async def _call_model(self, built: Dict[str, Any]) -> Any:
+        """Perform ONE non-streaming API call from a ``_build_params`` result."""
+        ...
+
+    @abstractmethod
+    async def _format_response(self, response, tools=None, response_format=None):
+        """Fold a raw provider response into a ``Response``."""
+        ...
+
+    async def _open_stream(self, built: Dict[str, Any]) -> Any:
+        """Open the provider's native streaming response. Required only when
+        ``supports_true_streaming`` is True."""
+        raise NotImplementedError(f"{type(self).__name__}._open_stream not implemented")
+
+    def _parse_stream(self, raw) -> "AsyncIterator[Any]":
+        """Translate the provider's native stream into canonical events. Required
+        only when ``supports_true_streaming`` is True."""
+        raise NotImplementedError(f"{type(self).__name__}._parse_stream not implemented")
+
+    # ---- unified orchestration (shared by all providers) ----
+    async def chat(self, messages, tools=None, response_format=None, **kwargs):
+        """Non-streaming call. Structured output is native when no tools are passed,
+        or a synthetic schema-tool (folded into parsed_model) when tools are."""
+        from agentevolver.logger import logger
+        from agentevolver.response.types import Response, ResponseType
+        tools, effective_rf, tool_name = self._structured_output(tools, response_format)
+        try:
+            built = await self._build_params(
+                messages, tools=tools, response_format=effective_rf, stream=False, **kwargs)
+            raw = await self._call_model(built)
+            resp = await self._format_response(raw, tools=tools, response_format=effective_rf)
+            return self._fold_structured_functions(resp, response_format, tool_name) if tool_name else resp
+        except httpx.TimeoutException:
+            raise  # the context layer owns retry / fallback on timeout
+        except Exception as e:
+            logger.error(f"| 🔴 {self.provider} chat error (model={self.name}): {type(e).__name__}: {e}")
+            return Response(type=ResponseType.LLM, success=False,
+                            message=f"{type(e).__name__}: {e}",
+                            data={"error": str(e), "model": self.name})
+
+    async def stream(self, messages, tools=None, response_format=None, **kwargs):
+        """Streaming + function calling + structured output; yields canonical events."""
+        if not self.supports_true_streaming:
+            # Graceful degradation: buffer one chat() call (which derives + folds
+            # structured output itself), replay it as events.
+            resp = await self.chat(messages, tools=tools, response_format=response_format, **kwargs)
+            async for ev in buffered_response_to_events(resp):
+                yield ev
+            return
+        # With tools the schema becomes a tool call; the caller folds it into
+        # parsed_model via build_response_from_stream's synthetic branch.
+        tools, effective_rf, _ = self._structured_output(tools, response_format)
+        built = await self._build_params(
+            messages, tools=tools, response_format=effective_rf, stream=True, **kwargs)
+        raw = await self._open_stream(built)
+        async for ev in self._parse_stream(raw):
+            yield ev
+
+    async def __call__(self, messages, tools=None, response_format=None,
+                       stream: bool = False, **kwargs):
+        """Alias of ``chat``. ``stream=True`` folds the stream into a buffered
+        ``Response`` (kept for backward compatibility with existing callers)."""
+        if stream:
+            return await build_response_from_stream(
+                self.stream(messages, tools=tools, response_format=response_format, **kwargs),
+                tools=tools, response_format=response_format,
+                structured_tool_name=self._structured_tool_name(tools, response_format),
+            )
+        return await self.chat(messages, tools=tools, response_format=response_format, **kwargs)
+
+
+__all__ = [
+    "ModelContext", "ModelConfig", "TokenUsage",
+    "ToolCall", "ToolResult",
+    "TextDelta", "ThinkingDelta", "ToolCallStart", "ToolCallArgsDelta",
+    "ToolCallComplete", "StreamDone", "StreamEvent",
+    "normalize_stop_reason", "accumulate_stream", "build_response_from_stream",
+    "ProviderState",
+    "buffered_response_to_events", "BaseChatModel",
+]

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="module" content="constraint_rules">
+  <link rel="stylesheet" href="../../visual/prompt/style.css">
+  <script src="../../visual/prompt/app.js"></script>
+</head>
+<body>
+<constraint-rules>
+You run under hard resource limits (steps, tokens and wall-clock time). Hitting a limit stops execution; save durable progress as you work.
+
+The current budget appears in the live runtime `budget` block, updated every step with used / limit / remaining per resource and an overall urgency tier. Shared session token usage includes outstanding reservations. Optional constraint policies may add further limits:
+- **NORMAL**: proceed as planned.
+- **TIGHT** (any budget over 60%): stop broadening scope; prioritize the critical path and prepare to conclude.
+- **CRITICAL** (any budget over 85%): consolidate verified work and, if required work cannot be finished in the remainder, use `done_tool` with `outcome=resource_limited` and explicit unmet requirements. A partial handoff is not successful task completion.
+
+Factor the remaining budget into every plan: prefer fewer, more certain actions when budget is tight, and never start work you cannot finish within the remaining budget.
+Use the runtime snapshot when claiming a resource boundary. A self-assigned batch, report release, context compaction or per-response token limit is not the task budget. When resources remain, execute useful unfinished work; do not invent a stopping boundary.
+</constraint-rules>
+</body>
+</html>

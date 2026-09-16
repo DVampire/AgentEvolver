@@ -1,0 +1,45 @@
+/* Shared with agentevolver/visual: deep green surfaces, mint, semantic accents.
+   GitHub Pages ships docs/ alone, so its small token sheet is self-contained. */
+:root {
+  color-scheme: dark;
+  --ground: #07100e;
+  --surface: #0e1c19;
+  --surface-2: #142521;
+  --surface-3: #1c302a;
+  --text: #ecf7f2;
+  --text-body: #bfd4ca;
+  --text-mid: #8da69c;
+  --green: #63e6b5;
+  --amber: #f3bd71;
+  --red: #ff7f87;
+  --blue: #82b8d9;
+  --purple: #b2a4dd;
+  --border: #24362f;
+  --border-strong: #395249;
+  --bg: var(--ground);
+  --bg-2: var(--surface);
+  --panel: var(--surface);
+  --panel-strong: var(--surface-2);
+  --muted: var(--text-body);
+  --muted-2: var(--text-mid);
+  --brand: var(--green);
+  --brand-2: var(--green);
+  --brand-3: var(--amber);
+  --ok: var(--green);
+  --warn: var(--amber);
+  --font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --sans: var(--font);
+  --mono: "Courier New", monospace;
+  --radius: 16px;
+  --maxw: 1180px;
+}
+::selection { background: #295341; color: var(--text); }
+:focus-visible { outline: 2px solid var(--green); outline-offset: 4px; }
+button, input, select, textarea { font: inherit; }
+img { max-width: 100%; }
+.skip-link { position: fixed; top: -100px; left: 16px; z-index: 1100; padding: 12px 20px; background: var(--green); color: var(--ground); border-radius: 8px; }
+.skip-link:focus { top: 10px; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto !important; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

@@ -1,0 +1,474 @@
+"""The context window: four layers, where the cache may be cut, and when history folds.
+
+Layout is a cost decision, not a formatting one. A provider's prompt cache is a prefix
+match, so a breakpoint in the wrong place makes a session pay for its own history on
+every step — and that failure is invisible, because the request is still correct. Each
+test here pins one placement rule against exactly that.
+"""
+
+import pytest
+
+from agentevolver.agent.context import (
+    ContextAssembler,
+    ContextEnvelope,
+    ContextProtocolError,
+    Conversation,
+)
+from agentevolver.message.types import (
+    AssistantMessage,
+    Function,
+    HumanMessage,
+    SystemMessage,
+    ToolCall,
+    ToolMessage,
+)
+
+_ids = iter(range(1, 10**6))
+
+ANTHROPIC_NATIVE = {"anthropic": {"compaction_blocks": [{"type": "compaction"}]}}
+RESPONSES_NATIVE = {"responses": {"compaction_items": [{"type": "compaction"}]}}
+
+
+def turn(conversation: Conversation, bulk: int = 2) -> None:
+    index = next(_ids)
+    call_id = f"c{index}"
+    conversation.add_turn(
+        AssistantMessage(content=f"step {index}", tool_calls=[ToolCall(
+            id=call_id,
+            function=Function(name="read_file", arguments=f'{{"path":"f{index}.py"}}'),
+        )]),
+        [ToolMessage(
+            content=f"line {index}\n" * bulk, tool_call_id=call_id, name="read_file",
+        )],
+    )
+
+
+def conversation(turns: int = 6, bulk: int = 2) -> Conversation:
+    held = Conversation(task="fix the parser")
+    held.set_system([SystemMessage(content="You are a coding agent.")])
+    for _ in range(turns):
+        turn(held, bulk)
+    return held
+
+
+def layer(messages, name):
+    return [message for message in messages if message.context_layer == name]
+
+
+def test_default_compaction_counts_full_input_even_when_history_is_small():
+    held = conversation()
+    pressure = {"estimated_tokens_after": 100_001, "pressure_ratio_after": 0.11}
+    reason = ContextAssembler().fold_reason(held, request_pressure=pressure)
+    assert "full input" in reason
+    assert ContextAssembler(compact_input_tokens=0).fold_reason(held, request_pressure=pressure) == ""
+
+
+@pytest.mark.parametrize("use_memory", [False, True])
+def test_specialist_uses_full_input_policy_independently_of_durable_memory(use_memory):
+    from agentevolver.agent.actor.code_agent import CodeAgent
+
+    agent = CodeAgent(use_memory=use_memory)
+    pressure = {"estimated_tokens_after": 100_001, "pressure_ratio_after": 0.11}
+    assert "full input" in agent.assembler.fold_reason(conversation(), request_pressure=pressure)
+
+
+@pytest.mark.parametrize("benchmark", ["swebench_pro", "swebench_verified", "programbench"])
+def test_baseline_and_evolution_configs_use_the_same_full_input_compaction(benchmark):
+    from pathlib import Path
+    from mmengine.config import Config
+    from agentevolver.agent.loop import Agent
+
+    root = Path(__file__).resolve().parents[1]
+    pressure = {"estimated_tokens_after": 100_001, "pressure_ratio_after": 0.11}
+    for suffix in ("", "_baseline"):
+        cfg = Config.fromfile(str(root / "configs" / f"{benchmark}_agent{suffix}.py"))
+        assembler = Agent(**cfg.meta_agent).assembler
+        assert "full input" in assembler.fold_reason(conversation(), request_pressure=pressure)
+        assert assembler.fold_reason(conversation(30)) == "", "short histories should not fold by turn count"
+
+
+# ---------------------------------------------------------------------------
+# Layout
+# ---------------------------------------------------------------------------
+
+
+def test_the_layers_come_out_in_order_with_the_volatile_block_last():
+    held = conversation()
+    messages = ContextAssembler().build(held, live=["<budget>2 steps left</budget>"])
+    order = ["fixed", "checkpoint", "recent", "live"]
+    positions = [order.index(message.context_layer) for message in messages]
+
+    assert positions == sorted(positions)
+    assert messages[0].role == "system"
+    assert messages[-1].context_layer == "live"
+    assert messages[-1].cache is False
+
+
+def test_the_volatile_state_is_one_message_however_many_blocks_it_carries():
+    """Each is a cache miss by construction, and the model reads them as one situation."""
+    messages = ContextAssembler().build(
+        conversation(), live=["<budget>a</budget>", "<errors>b</errors>", ""],
+    )
+    live = layer(messages, "live")
+    assert len(live) == 1
+    assert "<budget>a</budget>" in live[0].text
+    assert "<errors>b</errors>" in live[0].text
+
+
+def test_no_live_block_means_no_live_message():
+    messages = ContextAssembler().build(conversation())
+    assert layer(messages, "live") == []
+
+
+def test_runtime_notice_cannot_be_confused_with_original_user_feedback():
+    held = conversation()
+    held.note("Please improve the companion animation.")
+    messages = ContextAssembler().build(held, live=["System evolution evidence complete: tool:a:1.0"])
+    runtime = layer(messages, "live")[0]
+    assert 'source="framework" user-authored="false"' in runtime.text
+    assert "not user feedback, approval, or acceptance" in runtime.text
+    feedback = [m for m in layer(messages, "recent") if "Please improve" in m.text][0]
+    assert feedback.text == "Please improve the companion animation."
+    assert "runtime-context" not in feedback.text
+    assert runtime.cache is False
+
+
+def test_images_ride_in_the_live_layer_so_they_survive_more_than_one_step():
+    held = conversation()
+    picture = HumanMessage(content="[screenshot]")
+    messages = ContextAssembler().build(held, live=["<budget>x</budget>"], attachments=[picture])
+    live = layer(messages, "live")
+    assert len(live) == 2
+    assert live[-1].cache is False
+
+
+# ---------------------------------------------------------------------------
+# Cache placement
+# ---------------------------------------------------------------------------
+
+
+def test_without_a_checkpoint_the_anchor_and_the_last_turn_are_the_breakpoints():
+    messages = ContextAssembler().build(conversation())
+    marked = [(message.context_layer, message.role) for message in messages if message.cache]
+    assert marked == [("fixed", "user"), ("recent", "assistant")]
+
+
+def test_a_text_checkpoint_leaves_the_anchor_breakpoint_where_it_was():
+    held = conversation()
+    held.fold("read five files", keep_turns=2)
+    messages = ContextAssembler().build(held)
+
+    assert layer(messages, "fixed")[-1].cache is True
+    assert layer(messages, "checkpoint")[0].cache is False
+
+
+def test_an_anthropic_native_block_becomes_the_prefix_and_takes_the_breakpoint():
+    """The provider's own compaction replaced the history, so caching the old anchor
+    would ask it to cache a prefix it has already superseded."""
+    held = conversation()
+    held.fold("read five files", keep_turns=2, provider_state=ANTHROPIC_NATIVE)
+    messages = ContextAssembler().build(held)
+
+    assert layer(messages, "fixed")[-1].cache is False
+    assert layer(messages, "checkpoint")[0].cache is True
+
+
+def test_a_responses_native_item_does_not_move_the_breakpoint():
+    held = conversation()
+    held.fold("read five files", keep_turns=2, provider_state=RESPONSES_NATIVE)
+    messages = ContextAssembler().build(held)
+    assert layer(messages, "fixed")[-1].cache is True
+
+
+def test_marking_breakpoints_never_mutates_the_held_conversation():
+    held = conversation()
+    held.fold("summary", keep_turns=2, provider_state=ANTHROPIC_NATIVE)
+    ContextAssembler().build(held)
+    assert held.checkpoint.cache is False
+    assert all(message.cache is False for message in held.items)
+
+
+# ---------------------------------------------------------------------------
+# Protocol
+# ---------------------------------------------------------------------------
+
+
+def test_a_turn_whose_results_never_arrived_is_refused():
+    held = conversation(turns=1)
+    held.append(AssistantMessage(content="pending", tool_calls=[ToolCall(
+        id="dangling", function=Function(name="read_file", arguments="{}"),
+    )]))
+    assert held.complete is False
+    with pytest.raises(ContextProtocolError):
+        ContextAssembler().build(held)
+
+
+def test_a_reused_tool_call_id_is_refused():
+    held = conversation(turns=0)
+    for _ in range(2):
+        held.add_turn(
+            AssistantMessage(content="x", tool_calls=[ToolCall(
+                id="same", function=Function(name="read_file", arguments="{}"),
+            )]),
+            [ToolMessage(content="y", tool_call_id="same", name="read_file")],
+        )
+    with pytest.raises(ContextProtocolError):
+        ContextAssembler().build(held)
+
+
+def test_a_compaction_message_outside_the_checkpoint_layer_is_refused():
+    held = conversation()
+    held.fold("summary", keep_turns=2)
+    with pytest.raises(ContextProtocolError):
+        ContextEnvelope(recent=(held.checkpoint,)).validate()
+
+
+# ---------------------------------------------------------------------------
+# Folding
+# ---------------------------------------------------------------------------
+
+
+def test_turn_trigger_requires_useful_savings_but_safety_triggers_are_independent():
+    by_turns = ContextAssembler(retain_turns=2, compact_after_turns=5,
+                                compact_body_tokens=0, fold_at_pressure=0)
+    by_body = ContextAssembler(retain_turns=2, compact_after_turns=0,
+                               compact_body_tokens=2_000, fold_at_pressure=0)
+    by_pressure = ContextAssembler(retain_turns=2, compact_after_turns=0,
+                                   compact_body_tokens=0, fold_at_pressure=0.5,
+                                   context_window=2_000)
+    small, large = conversation(turns=6, bulk=1), conversation(turns=6, bulk=200)
+
+    assert by_turns.fold_reason(small) == ""
+    assert "turns" in by_turns.fold_reason(conversation(turns=6, bulk=3000))
+    assert by_body.fold_reason(small) == ""
+    assert "body" in by_body.fold_reason(large)
+    assert "capacity" in by_pressure.fold_reason(large)
+
+
+def test_folding_waits_for_a_complete_turn():
+    """Cutting across an unanswered call would sever it from its result."""
+    assembler = ContextAssembler(retain_turns=2, compact_after_turns=2)
+    held = conversation(turns=6, bulk=3000)
+    assert assembler.fold_reason(held) != ""
+    held.append(AssistantMessage(content="pending", tool_calls=[ToolCall(
+        id="dangling", function=Function(name="read_file", arguments="{}"),
+    )]))
+    assert assembler.fold_reason(held) == ""
+
+
+def test_the_fold_budget_and_the_retained_tail_both_stop_folding():
+    assembler = ContextAssembler(retain_turns=2, compact_after_turns=2, max_folds=3)
+    held = conversation(turns=6)
+    assert assembler.fold_reason(held, folds=3) == ""
+    assert ContextAssembler(retain_turns=99).fold_reason(held) == ""
+
+
+@pytest.mark.asyncio
+async def test_only_a_fold_that_reclaims_nothing_spends_the_budget():
+    """The budget guards against a history that will not shrink, not against long work.
+
+    It counted every fold, so a run that folded successfully often enough exhausted it and
+    then refused to fold at all. That is what killed a 90-step browser agent: 32 healthy
+    folds in one dispatch, then twenty-two minutes of overflow on every remaining step,
+    surfacing as a rejected release rather than as anything about compaction.
+    """
+    from types import SimpleNamespace
+
+    from agentevolver.agent.loop.agent import Agent
+
+    assembler = ContextAssembler(retain_turns=2, compact_after_turns=2, max_folds=3)
+    sizes = iter([1000, 400])  # one fold that reclaims, then a floor nothing shrinks
+    assembler.body_tokens = lambda _conversation: next(sizes, 400)
+    reclaimed = {"value": True}
+
+    async def _fold(_trigger):
+        return reclaimed["value"], "text"
+
+    async def _emit(*_args, **_kwargs):
+        return None
+
+    full_sizes = iter([1000, 400])
+
+    async def _measure():
+        return {"estimated_tokens_after": next(full_sizes, 400)}
+
+    agent = SimpleNamespace(
+        name="probe", ctx=None, step=0, _folds=0, _unproductive_folds=0,
+        conversation=conversation(turns=2), assembler=assembler,
+        _events=SimpleNamespace(emit=_emit), _fold=_fold,
+        _measure_compaction_context=_measure, _input_token_ratio=1.0,
+        compact_output_tokens=2048,
+        _identity=lambda: {"agent": "probe"},
+    )
+
+    # A fold that reclaims room leaves the budget untouched, however often it happens.
+    assert await Agent.make_room(agent, trigger="overflow") is True
+    assert agent._unproductive_folds == 0
+
+    # One that reclaims nothing spends it, and enough of those in a row stop folding.
+    reclaimed["value"] = False
+    for expected in (1, 2, 3):
+        await Agent.make_room(agent, trigger="overflow")
+        assert agent._unproductive_folds == expected
+    assert assembler.fold_reason(
+        conversation(turns=6), folds=agent._unproductive_folds,
+    ) == ""
+
+
+def test_a_fold_cuts_at_a_turn_boundary_and_keeps_the_tail_sendable():
+    assembler = ContextAssembler(retain_turns=2, compact_after_turns=2)
+    held = conversation(turns=6)
+    before = len(held.items)
+
+    assert assembler.fold(held, "read six files; nothing changed yet") > 0
+    assert held.turns == 2
+    assert len(held.items) < before
+    assert held.complete
+    # The kept tail opens with an assistant turn, never an orphan result.
+    assert isinstance(held.items[0], AssistantMessage)
+    assembler.build(held)
+
+
+def test_a_second_fold_installs_one_replacement_checkpoint():
+    assembler = ContextAssembler(retain_turns=2, compact_after_turns=2)
+    held = conversation(turns=6)
+    assembler.fold(held, "first pass")
+    for _ in range(4):
+        turn(held)
+    assembler.fold(held, "second pass")
+
+    envelope = assembler.build_envelope(held)
+    assert len(envelope.checkpoint) == 1
+    # The summariser, not the history container, merges the old checkpoint.
+    assert "first pass" not in envelope.checkpoint[0].text
+    assert "second pass" in envelope.checkpoint[0].text
+
+
+def test_checkpoint_length_does_not_veto_replacement():
+    assembler = ContextAssembler(retain_turns=2, compact_after_turns=2)
+    held = conversation(turns=6, bulk=1)
+    bloated = "x " * 5_000
+
+    assert assembler.fold(held, bloated) > 0
+    assert bloated.strip() in held.checkpoint.text
+    assert held.turns == 2 and held.complete
+    assert assembler.fold(held, "") == 0
+
+
+def test_a_native_checkpoint_is_trusted_without_the_size_check():
+    assembler = ContextAssembler(retain_turns=2, compact_after_turns=2)
+    held = conversation(turns=6, bulk=1)
+    assert assembler.fold(held, "", provider_state=ANTHROPIC_NATIVE) > 0
+    assert held.checkpoint.provider_state == ANTHROPIC_NATIVE
+
+
+def test_the_compaction_policy_carries_all_signals_to_the_model_layer():
+    """Omitted, native compaction never engages and the thresholds fall back."""
+    policy = ContextAssembler().compaction_policy()
+    assert set(policy) == {
+        "retain_recent_steps", "compact_after_steps",
+        "compact_body_tokens", "compact_input_tokens", "fold_at_pressure",
+    }
+
+
+# ---------------------------------------------------------------------------
+# A declared fold policy has to reach the assembler
+# ---------------------------------------------------------------------------
+
+
+def test_a_declared_fold_policy_overrides_the_shared_default():
+    """`extra="allow"` accepts any field, which is why this could look configured.
+
+    The agent took the shared module-level assembler and rebuilt it only when
+    `compact_output_tokens` differed, so `compact_body_tokens`, `retain_recent_steps`,
+    `compact_after_steps` and `fold_at_pressure` were stored on the model and never
+    read. A config asking to fold at 60k folded at the shared default of 100k, and a
+    live run's context climbed past 100k with the tuning apparently in place — the same
+    shape as the `env_name` field three configs set and a property silently overruled.
+    """
+    from tests.agent_probe import AgentProbe
+
+    agent = AgentProbe(
+        base_dir="",
+        compact_body_tokens=60_000,
+        compact_input_tokens=50_000,
+        retain_recent_steps=2,
+        compact_after_steps=9,
+        fold_at_pressure=0.7,
+    )
+    assert agent.assembler.compact_body_tokens == 60_000
+    assert agent.assembler.compact_input_tokens == 50_000
+    assert agent.assembler.retain_turns == 2
+    assert agent.assembler.compact_after_turns == 9
+    assert agent.assembler.fold_at_pressure == 0.7
+
+
+def test_an_agent_that_declares_nothing_keeps_sharing_one_assembler():
+    """Rebuilding per agent would multiply a shared object for no reason."""
+    from agentevolver.agent.context import context_assembler
+    from tests.agent_probe import AgentProbe
+
+    assert AgentProbe(base_dir="").assembler is context_assembler
+
+
+def test_declaring_the_same_values_is_not_an_override():
+    """Equality, not presence, decides — restating a default must not fork the object."""
+    from agentevolver.agent.context import context_assembler
+    from tests.agent_probe import AgentProbe
+
+    agent = AgentProbe(
+        base_dir="",
+        compact_body_tokens=context_assembler.compact_body_tokens,
+        fold_at_pressure=context_assembler.fold_at_pressure,
+    )
+    assert agent.assembler is context_assembler
+
+
+def test_a_declared_policy_actually_changes_when_history_folds():
+    """The point of the field is the decision it drives, not the number it stores."""
+    from tests.agent_probe import AgentProbe
+
+    patient = AgentProbe(base_dir="", compact_body_tokens=10**9)
+    eager = AgentProbe(base_dir="", compact_body_tokens=1)
+    held = conversation(turns=6)
+    assert eager.assembler.fold_reason(held) != ""
+    assert "body" not in patient.assembler.fold_reason(held)
+
+
+@pytest.mark.parametrize("estimated,ratio,triggers", [
+    (49_999, 1.0, False), (50_000, 1.0, True),
+    (35_000, 1.5, True), (35_000, 1.0, False),
+])
+def test_full_input_trigger_includes_prefix_and_calibrates_provider_undercount(estimated, ratio, triggers):
+    held = conversation()
+    assembler = ContextAssembler(compact_after_turns=0, compact_body_tokens=0,
+                                 compact_input_tokens=50_000, fold_at_pressure=0)
+    assert assembler.body_tokens(held) < 1_000
+    pressure = {"estimated_tokens_after": estimated, "reserved_output_tokens": 128_000}
+    reason = assembler.fold_reason(held, request_pressure=pressure, input_token_ratio=ratio)
+    assert bool(reason) is triggers
+
+
+def test_full_input_trigger_preserves_tool_pairs_and_observations_after_fold():
+    held = conversation(turns=12, bulk=3_000)
+    held.observe("plan", "Do not publish: browser verification is still pending.")
+    assembler = ContextAssembler(compact_after_turns=0, compact_body_tokens=0,
+                                 compact_input_tokens=50_000, fold_at_pressure=0)
+    before = assembler.estimate(held)
+    assert before > 50_000 and assembler.should_fold(held)
+    exact_tail = [m.model_dump() for m in held.items[-8:]]
+    assert assembler.fold(held, "Read the parser; browser verification is still pending.")
+    assembler.build_envelope(held).validate()
+    assert [m.model_dump() for m in held.items[-8:]] == exact_tail
+    assert held.observations[0].text.endswith("verification is still pending.")
+    assert assembler.estimate(held) < 50_000
+    assert not assembler.should_fold(held)
+
+
+def test_full_input_trigger_never_folds_an_open_turn():
+    held = conversation()
+    held.append(AssistantMessage(content="", tool_calls=[ToolCall(
+        id="unanswered", function=Function(name="read_file", arguments="{}"),
+    )]))
+    assembler = ContextAssembler(compact_input_tokens=1)
+    assert not assembler.should_fold(held)
