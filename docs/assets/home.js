@@ -1,6 +1,7 @@
 /* Landing-page copy and accessible interactions. */
 window.I18N = {
   "en": {
+    "demo_collection": "Watch all six evolution stories →",
     "qs_k": "07 / GET STARTED",
     "qs_h": "Bring a task.<br>Choose your capabilities.",
     "qs_p": "Install the framework, configure your model provider, then launch a task. The example commands are for your local checkout.",
@@ -31,7 +32,7 @@ window.I18N = {
     "hero_h": "Build with agents.<br><em>Evolve the<br>whole system.</em>",
     "hero_p": "Plan, execute and inspect complex work in one platform. Turn discoveries from real tasks into reusable improvements across eight kinds of agent capability.",
     "start": "Start building",
-    "explore": "Explore global evolution",
+    "explore": "Watch evolution demos",
     "hero_note": "Python · Single & multi-agent · Open source / MIT",
     "scene_label": "HOW IT CONNECTS",
     "scene_task_k": "YOUR TASK",
@@ -156,6 +157,7 @@ window.I18N = {
     "page_description": "An agent platform with eight evolvable entity types, a shared Runtime, living plans and evidence-backed capability development. Build, inspect and improve in one workspace."
   },
   "zh": {
+    "demo_collection": "观看六个完整的进化故事 →",
     "qs_k": "07 / 开始使用",
     "qs_h": "带上任务，选择能力。",
     "qs_p": "安装框架、配置模型服务，然后启动任务。以下命令在本地仓库中运行。",
@@ -186,7 +188,7 @@ window.I18N = {
     "hero_h": "让 Agent 做成任务。<br><em>让整个能力体系<br>持续演化。</em>",
     "hero_p": "在同一平台中规划、执行和检查复杂任务，将真实工作中的发现，沉淀为覆盖八类实体的可复用能力。",
     "start": "开始使用",
-    "explore": "探索全局演化",
+    "explore": "观看进化演示",
     "hero_note": "Python · 单 Agent / 多 Agent · 开源 / MIT",
     "scene_label": "系统协作示意",
     "scene_task_k": "你的任务",

@@ -1,0 +1,78 @@
+{
+  "benchmark": "SWE-bench Pro",
+  "split": "Public",
+  "metric": "resolved_percent",
+  "snapshot_date": "2026-09-19",
+  "comparison_source": "https://codingfleet.com/blog/swe-bench-pro-leaderboard-2026/",
+  "comparison_source_updated": "2026-09-11",
+  "selection": "Selected published reference scores; not an exhaustive ranking. Fable 5 and Mythos 5 share a row because the source reports the same score.",
+  "methodology": "Results use different models, harnesses, budgets and evaluation settings. This chart is not a controlled experiment or an official ranking.",
+  "results": [
+    {
+      "name": "AgentEvolver",
+      "score": 82.08,
+      "provider": "Team-reported",
+      "source_kind": "team_reported",
+      "source_url": null,
+      "upstream_link_listed_by_source": null,
+      "reported_date": "2026-09-19",
+      "note": "Formal evaluation on a separate machine, supplied by the project owner. Raw report, base model, run configuration and official leaderboard acceptance were not supplied for this page."
+    },
+    {
+      "name": "Claude Fable 5.1",
+      "score": 81.2,
+      "provider": "Anthropic",
+      "source_kind": "third_party_compilation",
+      "source_url": "https://codingfleet.com/blog/swe-bench-pro-leaderboard-2026/",
+      "upstream_link_listed_by_source": "https://benchlm.ai/models/claude-fable-5-1"
+    },
+    {
+      "name": "Claude Fable 5 / Mythos 5",
+      "score": 80.3,
+      "provider": "Anthropic",
+      "source_kind": "third_party_compilation",
+      "source_url": "https://codingfleet.com/blog/swe-bench-pro-leaderboard-2026/",
+      "upstream_link_listed_by_source": "https://www.anthropic.com/news/claude-fable-5-mythos-5"
+    },
+    {
+      "name": "Claude Opus 5",
+      "score": 79.2,
+      "provider": "Anthropic",
+      "source_kind": "third_party_compilation",
+      "source_url": "https://codingfleet.com/blog/swe-bench-pro-leaderboard-2026/",
+      "upstream_link_listed_by_source": "https://www.anthropic.com/news/claude-opus-5"
+    },
+    {
+      "name": "Sakana Fugu-Ultra",
+      "score": 73.7,
+      "provider": "Sakana",
+      "source_kind": "third_party_compilation",
+      "source_url": "https://codingfleet.com/blog/swe-bench-pro-leaderboard-2026/",
+      "upstream_link_listed_by_source": "https://www.datacamp.com/blog/sakana-fugu"
+    },
+    {
+      "name": "Claude Opus 4.8",
+      "score": 69.2,
+      "provider": "Anthropic",
+      "source_kind": "third_party_compilation",
+      "source_url": "https://codingfleet.com/blog/swe-bench-pro-leaderboard-2026/",
+      "upstream_link_listed_by_source": "https://www.anthropic.com/news/claude-opus-4-8"
+    },
+    {
+      "name": "Qwen3.8 Max",
+      "score": 67.7,
+      "provider": "Alibaba",
+      "source_kind": "third_party_compilation",
+      "source_url": "https://codingfleet.com/blog/swe-bench-pro-leaderboard-2026/",
+      "upstream_link_listed_by_source": "https://qwen.ai/blog?id=qwen3.8"
+    },
+    {
+      "name": "GPT-5.6 Sol",
+      "score": 64.6,
+      "provider": "OpenAI",
+      "source_kind": "third_party_compilation",
+      "source_url": "https://codingfleet.com/blog/swe-bench-pro-leaderboard-2026/",
+      "upstream_link_listed_by_source": "https://openai.com/index/gpt-5-6/"
+    }
+  ]
+}

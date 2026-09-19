@@ -18,6 +18,9 @@ publishes only `docs/`. Layouts live in [home.css](assets/home.css),
 [chrome.css](assets/chrome.css) and [chrome.js](assets/chrome.js) own shared navigation.
 
 The [homepage](index.html) introduces the system and its task examples. The
+[results and demos page](demos.html) presents the reported SWE-bench Pro Public
+score and six evolution films. Its [media guide](assets/demos/README.md) owns
+score provenance and the static video assets. The
 [architecture guide](architecture.html) explains implementation boundaries and links
 their source owners. Their translations and interactions live in
 [home.js](assets/home.js) and [architecture.js](assets/architecture.js), with shared

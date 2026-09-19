@@ -20,7 +20,8 @@
   document.querySelectorAll('[data-i18n]').forEach((el) => authoredEnglish.set(el, el.innerHTML));
 
   function applyLang(lang) {
-    const dict = DICTS[lang] || DICTS.en || {};
+    const shared = { en: { nav_demos: 'Demos' }, zh: { nav_demos: '演示' } };
+    const dict = { ...(shared[lang] || shared.en), ...(DICTS[lang] || DICTS.en || {}) };
     document.querySelectorAll('.table-scroll').forEach((table) => {
       table.setAttribute('aria-label', lang === 'zh' ? '可横向滚动的表格' : 'Scrollable table');
     });

@@ -17,8 +17,9 @@ PUBLIC_PAGES = {
     "modules.html": "modules",
     "development.html": "development",
     "ui.html": "ui",
+    "demos.html": "demos",
 }
-GLOBAL_KEYS = {"nav_home", "nav_tut", "nav_arch", "nav_mod", "nav_dev", "nav_ui"}
+GLOBAL_KEYS = {"nav_home", "nav_tut", "nav_arch", "nav_mod", "nav_dev", "nav_ui", "nav_demos"}
 
 
 def test_every_public_page_uses_the_shared_chrome_and_favicon():
@@ -44,6 +45,12 @@ def test_every_page_can_translate_every_global_column():
     problems = []
     for filename in PUBLIC_PAGES:
         body = (DOCS / filename).read_text(encoding="utf-8")
+        # Pages may keep their dictionary in a local script; site.js also owns
+        # shared navigation labels. Check the sources actually loaded by each page.
+        for src in re.findall(r'<script\b[^>]*\bsrc="([^"]+)"', body):
+            script = DOCS / src
+            if script.is_file():
+                body += "\n" + script.read_text(encoding="utf-8")
         for key in GLOBAL_KEYS:
             declarations = re.findall(rf'["\']?{key}["\']?\s*:', body)
             if len(declarations) < 2:
@@ -54,7 +61,7 @@ def test_every_page_can_translate_every_global_column():
 def test_shared_navigation_targets_are_real_public_pages():
     source = (DOCS / "assets" / "chrome.js").read_text(encoding="utf-8")
     items = re.findall(
-        r"\['(home|tutorial|architecture|modules|development|ui)', "
+        r"\['(home|tutorial|architecture|modules|development|ui|demos)', "
         r"'([^']+)', '(nav_[^']+)', '([^']+)'\]",
         source,
     )

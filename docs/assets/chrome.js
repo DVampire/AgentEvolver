@@ -6,6 +6,7 @@
   const current = nav.dataset.aeNav || '';
   const items = [
     ['home', 'index.html', 'nav_home', 'Home'],
+    ['demos', 'demos.html', 'nav_demos', 'Demos'],
     ['tutorial', 'tutorial.html', 'nav_tut', 'Tutorial'],
     ['architecture', 'architecture.html', 'nav_arch', 'Architecture'],
     ['modules', 'modules.html', 'nav_mod', 'Modules'],
@@ -55,7 +56,7 @@
             <span class="ae-footer-tag" data-i18n="foot_tag">A self-evolving multi-agent framework · MIT License</span>
           </div>
           <div class="ae-footer-links">
-            <a href="index.html" data-i18n="nav_home">Home</a><a href="tutorial.html" data-i18n="nav_tut">Tutorial</a><a href="architecture.html" data-i18n="nav_arch">Architecture</a><a href="modules.html" data-i18n="nav_mod">Modules</a><a href="development.html" data-i18n="nav_dev">Development</a><a href="ui.html" data-i18n="nav_ui">Web UI</a><a href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
+            <a href="index.html" data-i18n="nav_home">Home</a><a href="demos.html" data-i18n="nav_demos">Demos</a><a href="tutorial.html" data-i18n="nav_tut">Tutorial</a><a href="architecture.html" data-i18n="nav_arch">Architecture</a><a href="modules.html" data-i18n="nav_mod">Modules</a><a href="development.html" data-i18n="nav_dev">Development</a><a href="ui.html" data-i18n="nav_ui">Web UI</a><a href="https://github.com/DVampire/AgentEvolver" target="_blank" rel="noopener">GitHub</a>
           </div>
         </div></footer>`;
       }

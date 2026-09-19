@@ -28,7 +28,7 @@
 .ae-menu-toggle[aria-expanded="true"] span:nth-child(2){opacity:0}
 .ae-menu-toggle[aria-expanded="true"] span:last-child{transform:translateY(-5.5px) rotate(-45deg)}
 
-@media(max-width:1040px){
+@media(max-width:1140px){
   .ae-nav-inner{gap:14px}
   .ae-menu-toggle{display:block;order:2}
   .ae-links{display:none;position:absolute;left:18px;right:18px;top:72px;margin:0;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:15px;background:rgba(14,28,25,.98);box-shadow:0 22px 55px rgba(0,0,0,.5)}
