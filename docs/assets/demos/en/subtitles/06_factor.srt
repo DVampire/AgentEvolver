@@ -1,0 +1,31 @@
+1
+00:00:00,000 --> 00:00:08,000
+Signal Foundry turns market hypotheses into research that can be traced, tested and reproduced.
+
+2
+00:00:08,000 --> 00:00:17,000
+Exploration and comparison work, but a native freeze, authorization and final-evaluation flow is missing.
+
+3
+00:00:17,000 --> 00:00:32,000
+The agent extends a data connector and two research environments, preserving input identity and failures.
+
+4
+00:00:32,000 --> 00:00:42,000
+This run retains 77 factor definitions, 20 strategy mechanisms and 40 formally evaluated versions.
+
+5
+00:00:42,000 --> 00:00:49,000
+Research begins with factor definitions and fit evidence. A single score is not enough to enter a strategy.
+
+6
+00:00:49,000 --> 00:00:56,000
+Mechanisms, revisions, diagnostic controls and failure reasons form an inspectable research history.
+
+7
+00:00:56,000 --> 00:01:12,000
+The frozen strategy has positive net proxy return but negative relative utility: no declared advantage.
+
+8
+00:01:12,000 --> 00:01:20,000
+This case demonstrates capability growth and reuse. It does not turn a failed study into a winning strategy.

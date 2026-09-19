@@ -1,17 +1,13 @@
 {
   "created": "2026-09-19",
-  "media": "H.264 / AAC; Chinese editorial captions and original ambient music; no narration",
+  "media": "H.264 / AAC; English and Chinese editorial editions, original ambient music; no narration. Recorded product interfaces retain their original language.",
   "films": [
     {
       "id": "arkbound",
       "title": "ARKBOUND",
-      "video": "videos/01_arkbound_evolution_1080p.mp4",
-      "poster": "posters/01_arkbound.jpg",
-      "subtitles": "subtitles/01_arkbound.srt",
       "duration_seconds": 80,
       "width": 1920,
       "height": 1080,
-      "sha256": "4e6ba9f2d9d6984b5ca010642e07bce8581ff32d2e4e8a5e4a992ee60da8faf3",
       "evolved_entities": [
         "Connector",
         "Agent",
@@ -19,35 +15,55 @@
       ],
       "outcome": "666,655 bytes of verified assets within a 700,000-byte budget.",
       "scope": "Self-play evidence; no independent player study.",
-      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment."
+      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment.",
+      "editions": {
+        "en": {
+          "video": "en/videos/01_arkbound_evolution_1080p.mp4",
+          "poster": "en/posters/01_arkbound.jpg",
+          "subtitles": "en/subtitles/01_arkbound.srt",
+          "sha256": "234f9c67c3006bee8abe50cf83523629ba8aaaca35c3c7e4043d2cf8837c0094"
+        },
+        "zh": {
+          "video": "videos/01_arkbound_evolution_1080p.mp4",
+          "poster": "posters/01_arkbound.jpg",
+          "subtitles": "subtitles/01_arkbound.srt",
+          "sha256": "4e6ba9f2d9d6984b5ca010642e07bce8581ff32d2e4e8a5e4a992ee60da8faf3"
+        }
+      }
     },
     {
       "id": "commonspace",
       "title": "COMMONSPACE",
-      "video": "videos/02_commonspace_evolution_1080p.mp4",
-      "poster": "posters/02_commonspace.jpg",
-      "subtitles": "subtitles/02_commonspace.srt",
       "duration_seconds": 80,
       "width": 1920,
       "height": 1080,
-      "sha256": "07c70f0f2af093b93c301cc1b10f3b41adee34c266f62bbfffdf8db810cbef98",
       "evolved_entities": [
         "Tool"
       ],
       "outcome": "4 of 9 objects flagged for review, with links to affected actions.",
       "scope": "A demonstrated project case; no speedup claim.",
-      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment."
+      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment.",
+      "editions": {
+        "en": {
+          "video": "en/videos/02_commonspace_evolution_1080p.mp4",
+          "poster": "en/posters/02_commonspace.jpg",
+          "subtitles": "en/subtitles/02_commonspace.srt",
+          "sha256": "41c89be14432de940c3abc0663b53c488d4eb5cf57ea642e00c28c1b924081b4"
+        },
+        "zh": {
+          "video": "videos/02_commonspace_evolution_1080p.mp4",
+          "poster": "posters/02_commonspace.jpg",
+          "subtitles": "subtitles/02_commonspace.srt",
+          "sha256": "07c70f0f2af093b93c301cc1b10f3b41adee34c266f62bbfffdf8db810cbef98"
+        }
+      }
     },
     {
       "id": "lumen",
       "title": "LUMEN",
-      "video": "videos/03_lumen_evolution_1080p.mp4",
-      "poster": "posters/03_lumen.jpg",
-      "subtitles": "subtitles/03_lumen.srt",
       "duration_seconds": 80,
       "width": 1920,
       "height": 1080,
-      "sha256": "a27f8b18c8c1259956bfca7e6103efa1b0bd62f090befc66aaf14b105272dff2",
       "evolved_entities": [
         "Connector",
         "Agent",
@@ -55,61 +71,110 @@
       ],
       "outcome": "The new review method detects 5 issues missed by a structural check.",
       "scope": "Museum experiment counts are teaching examples, not platform benchmark scores.",
-      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment."
+      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment.",
+      "editions": {
+        "en": {
+          "video": "en/videos/03_lumen_evolution_1080p.mp4",
+          "poster": "en/posters/03_lumen.jpg",
+          "subtitles": "en/subtitles/03_lumen.srt",
+          "sha256": "193190f7c55145483e26f12fc725bcb2b3ec73d86d39b3b7988d5959833ce6ee"
+        },
+        "zh": {
+          "video": "videos/03_lumen_evolution_1080p.mp4",
+          "poster": "posters/03_lumen.jpg",
+          "subtitles": "subtitles/03_lumen.srt",
+          "sha256": "a27f8b18c8c1259956bfca7e6103efa1b0bd62f090befc66aaf14b105272dff2"
+        }
+      }
     },
     {
       "id": "orbital",
       "title": "ORBITAL",
-      "video": "videos/04_orbital_evolution_1080p.mp4",
-      "poster": "posters/04_orbital.jpg",
-      "subtitles": "subtitles/04_orbital.srt",
       "duration_seconds": 80,
       "width": 1920,
       "height": 1080,
-      "sha256": "1e1b9b9229c95980ec4a59d45eae2c8b2c05dda5d5b0ec5fa19e4d3518a06acb",
       "evolved_entities": [
         "Connector",
         "Agent"
       ],
       "outcome": "Rejects mismatched dates; the updated connector is reused for Mars data.",
       "scope": "The review skill was not adopted; the full evolution target remained incomplete.",
-      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment."
+      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment.",
+      "editions": {
+        "en": {
+          "video": "en/videos/04_orbital_evolution_1080p.mp4",
+          "poster": "en/posters/04_orbital.jpg",
+          "subtitles": "en/subtitles/04_orbital.srt",
+          "sha256": "319b70c23901c8af1f379a96c086d32f088938a7dc361703b90af044370e770e"
+        },
+        "zh": {
+          "video": "videos/04_orbital_evolution_1080p.mp4",
+          "poster": "posters/04_orbital.jpg",
+          "subtitles": "subtitles/04_orbital.srt",
+          "sha256": "1e1b9b9229c95980ec4a59d45eae2c8b2c05dda5d5b0ec5fa19e4d3518a06acb"
+        }
+      }
     },
     {
       "id": "godot",
       "title": "TIDEBOUND ECHOES",
-      "video": "videos/05_godot_evolution_1080p.mp4",
-      "poster": "posters/05_godot.jpg",
-      "subtitles": "subtitles/05_godot.srt",
       "duration_seconds": 80,
       "width": 1920,
       "height": 1080,
-      "sha256": "d6d748f5fec4c1b45b1f22970fef74597fb9bcfdf2034fb51e5327971cc5fe10",
       "evolved_entities": [
         "Tool",
         "Skill"
       ],
       "outcome": "30.1% less median image-analysis time on the same screenshot.",
       "scope": "Tool timing, not game FPS. The delivered game is a playable prototype.",
-      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment."
+      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment.",
+      "editions": {
+        "en": {
+          "video": "en/videos/05_godot_evolution_1080p.mp4",
+          "poster": "en/posters/05_godot.jpg",
+          "subtitles": "en/subtitles/05_godot.srt",
+          "sha256": "e14481af733f384e2846ca2ba649a9ab3f5d18c942abed66637395b2aa31c2cd"
+        },
+        "zh": {
+          "video": "videos/05_godot_evolution_1080p.mp4",
+          "poster": "posters/05_godot.jpg",
+          "subtitles": "subtitles/05_godot.srt",
+          "sha256": "d6d748f5fec4c1b45b1f22970fef74597fb9bcfdf2034fb51e5327971cc5fe10"
+        }
+      }
     },
     {
       "id": "factor",
       "title": "SIGNAL FOUNDRY",
-      "video": "videos/06_factor_evolution_1080p.mp4",
-      "poster": "posters/06_factor.jpg",
-      "subtitles": "subtitles/06_factor.srt",
       "duration_seconds": 80,
       "width": 1920,
       "height": 1080,
-      "sha256": "36c0cfc446dcc129d23385ed7a604f0c0fcc44758b992d28e3c42b3628d3bac8",
       "evolved_entities": [
         "Connector",
         "Environment"
       ],
       "outcome": "77 evaluated factors · 40 formal strategy versions · final equity and drawdown.",
       "scope": "The final strategy did not establish an advantage over its declared benchmark.",
-      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment."
+      "production": "Historical experiment recap with recordings of actual artifacts; not a new live agent experiment.",
+      "editions": {
+        "en": {
+          "video": "en/videos/06_factor_evolution_1080p.mp4",
+          "poster": "en/posters/06_factor.jpg",
+          "subtitles": "en/subtitles/06_factor.srt",
+          "sha256": "94dfd0bda006d90564de71700c069f1160df029ff1f618b94acca271057c5e15"
+        },
+        "zh": {
+          "video": "videos/06_factor_evolution_1080p.mp4",
+          "poster": "posters/06_factor.jpg",
+          "subtitles": "subtitles/06_factor.srt",
+          "sha256": "36c0cfc446dcc129d23385ed7a604f0c0fcc44758b992d28e3c42b3628d3bac8"
+        }
+      }
     }
+  ],
+  "default_language": "en",
+  "available_languages": [
+    "en",
+    "zh"
   ]
 }

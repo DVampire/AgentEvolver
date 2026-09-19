@@ -1,0 +1,31 @@
+1
+00:00:00,000 --> 00:00:08,000
+Starting with a small boat, the system iterates on assets, routes and review methods.
+
+2
+00:00:08,000 --> 00:00:17,000
+Assets must satisfy size, source and gameplay constraints—not just download successfully.
+
+3
+00:00:17,000 --> 00:00:32,000
+Three component types are evaluated. An invalid candidate is rolled back; retained methods are reused.
+
+4
+00:00:32,000 --> 00:00:42,000
+The new connector retrieves 666,655 bytes within a 700,000-byte budget, with traceable sources.
+
+5
+00:00:42,000 --> 00:00:49,000
+Restore the same saved state to compare the workshop across two product releases.
+
+6
+00:00:49,000 --> 00:00:56,000
+The new view reveals centerline parts. Product revisions and capability evolution are recorded separately.
+
+7
+00:00:56,000 --> 00:01:12,000
+Sail, refit and edit routes. Retained methods support the next round of content.
+
+8
+00:01:12,000 --> 00:01:20,000
+Adoption and reuse are recorded. Experience conclusions come from builder self-play.

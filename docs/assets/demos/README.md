@@ -25,16 +25,24 @@ when a result changes. Do not derive a score by merging partial or retried runs.
 
 ## Films
 
-[manifest.json](manifest.json) lists each MP4, poster, subtitle file, SHA-256 hash,
-observed outcome and scope. The films combine historical experiment records with
+[manifest.json](manifest.json) lists English and Chinese editions of each film,
+including MP4s, posters, subtitles and SHA-256 hashes, plus the observed outcome
+and scope. The films combine historical experiment records with
 new recordings of actual product artifacts. They are not recordings of newly
-launched agent experiments. Captions are Chinese, with original ambient music
-and no narration. Separate SRT files accompany the burned-in editorial captions.
+launched agent experiments. Each edition localizes the title cards, evolution
+diagrams, result explanations and burned-in captions. Recorded product interfaces
+retain their original language. Both editions use original ambient music and no
+narration; separate SRT files accompany each edition.
 
 Videos use H.264/AAC, 1920 × 1080, 24 fps, 80 seconds each. They live in this
 published directory; no output-directory links, live agent services or external
 video hosts are required. The page initially loads posters only and assigns the
 MP4 source when the user opens a film. Closing the dialog releases the media.
-Cards retain ordinary MP4 links if JavaScript is unavailable.
+Page language selects the corresponding film, poster and download. The player
+also has an independent EN / 中文 switch that preserves the playback position and
+paused state. Cards retain ordinary English MP4 links if JavaScript is unavailable.
+
+Chinese assets retain their original paths under this directory. English assets
+live under `en/`. Both editions have matching chapter timings.
 
 The existing Pages workflow uploads `docs/`, including these media assets.

@@ -1,0 +1,31 @@
+1
+00:00:00,000 --> 00:00:08,000
+In a community project, which earlier decisions should change when new evidence arrives?
+
+2
+00:00:08,000 --> 00:00:17,000
+A diff reveals changes, but cannot identify the dependent work that needs another look.
+
+3
+00:00:17,000 --> 00:00:32,000
+Semantic auditing finds the G01 change. The system then builds a dependency-tracing tool.
+
+4
+00:00:32,000 --> 00:00:42,000
+After adoption, the new tool flags four of nine objects in the actual project graph.
+
+5
+00:00:42,000 --> 00:00:49,000
+Before, users had to read revisions and find changes and dependencies themselves.
+
+6
+00:00:49,000 --> 00:00:56,000
+After, G01 changing from 5 to 2 appears beside four linked effects on the project.
+
+7
+00:00:56,000 --> 00:01:12,000
+Sources, discussions and actions stay connected. Earlier evidence is preserved, not silently overwritten.
+
+8
+00:01:12,000 --> 00:01:20,000
+The improvement turns a changed source into specific review work.

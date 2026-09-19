@@ -1,0 +1,31 @@
+1
+00:00:00,000 --> 00:00:08,000
+LUMEN turns a scientific question into an investigation you can run, save and review.
+
+2
+00:00:08,000 --> 00:00:17,000
+Retrieving sources and writing explanations is not enough: routes and cross-step review are still missing.
+
+3
+00:00:17,000 --> 00:00:32,000
+A connector organizes sources, a specialist agent designs steps, and a skill reviews claims and records.
+
+4
+00:00:32,000 --> 00:00:42,000
+On the same flawed fixture, the new review finds five issues missed by the structural check.
+
+5
+00:00:42,000 --> 00:00:49,000
+The early product places results and explanations side by side; visitors must find the differences.
+
+6
+00:00:49,000 --> 00:00:56,000
+The revision aligns objects and changes. On-screen counts belong to a teaching experiment.
+
+7
+00:00:56,000 --> 00:01:12,000
+All three capabilities are reused. Source identity and limitations stay with the investigation.
+
+8
+00:01:12,000 --> 00:01:20,000
+Cross-entity evolution preserves useful methods and makes the product easier to inspect.

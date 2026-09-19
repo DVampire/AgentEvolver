@@ -56,6 +56,7 @@
     document.querySelectorAll('[data-diagram-link]').forEach((a) => { a.href = diagram + '.svg'; });
     document.querySelectorAll('[data-diagram-ppt]').forEach((a) => { a.href = diagram + '.pptx'; });
     try { localStorage.setItem('ae_lang', lang); } catch (e) { /* private mode */ }
+    window.dispatchEvent(new CustomEvent('ae:languagechange', { detail: { lang } }));
   }
 
   document.querySelectorAll('.lang button').forEach((b) => {

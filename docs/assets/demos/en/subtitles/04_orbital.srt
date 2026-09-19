@@ -1,0 +1,31 @@
+1
+00:00:00,000 --> 00:00:08,000
+ORBITAL explores the universe while asking the system to explain the data behind the view.
+
+2
+00:00:08,000 --> 00:00:17,000
+A comparison exposes the flaw: the dates are wrong, but matching sample counts still pass.
+
+3
+00:00:17,000 --> 00:00:32,000
+Data validation and investigation design improve. An unevaluated skill is unloaded, not counted as a success.
+
+4
+00:00:32,000 --> 00:00:42,000
+The new connector rejects shifted dates and is later reused to retrieve Mars data.
+
+5
+00:00:42,000 --> 00:00:49,000
+The product evolves too: early Saturn rings resemble evenly spaced discs.
+
+6
+00:00:49,000 --> 00:00:56,000
+Finer ring bands and a corrected plane follow. This is a product revision, not a single-variable experiment.
+
+7
+00:00:56,000 --> 00:01:12,000
+Actual interactions show the final observatory. Values, reference frames and display effects stay distinct.
+
+8
+00:01:12,000 --> 00:01:20,000
+Two capability types are adopted and reused. The required skill remains incomplete.

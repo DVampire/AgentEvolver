@@ -30,7 +30,7 @@ window.I18N = {
     "data_download": "Download chart data ↓",
     "films_k": "02 / EVOLUTION IN PRACTICE",
     "films_h": "Six tasks. Visible change.",
-    "films_meta": "4 websites · 1 game · 1 research workbench<br>80 seconds each · 1080p · Chinese captions",
+    "films_meta": "4 websites · 1 game · 1 research workbench<br>80 seconds each · 1080p · English & Chinese editions",
     "films_p": "Discover a gap → evolve a capability → evaluate it → use it again. Each film connects that process with the actual product.",
     "arkbound_category": "Website / exploration game",
     "arkbound_title": "From a voyage to a repeatable exploration loop.",
@@ -69,7 +69,7 @@ window.I18N = {
     "factor_note": "The final strategy did not establish an advantage over its declared benchmark.",
     "factor_watch": "Watch the story ↗",
     "production_h": "Real artifacts. Retained evidence.",
-    "production_p": "These films combine historical experiment records with newly recorded product interactions. Capability adoption and product completion are shown separately. Each film retains its limitations and unsuccessful outcomes.",
+    "production_p": "English and Chinese editions translate the editorial graphics and captions; recorded product interfaces retain their original language. The films combine historical records with newly recorded interactions and preserve their limitations and unsuccessful outcomes.",
     "manifest_link": "Video facts & provenance ↗",
     "closing_h": "Build the next evolution story.",
     "start": "Start building ↗",
@@ -120,7 +120,7 @@ window.I18N = {
     "data_download": "下载图表数据 ↓",
     "films_k": "02 / 真实任务中的演化",
     "films_h": "六个任务，看得见的改变。",
-    "films_meta": "4 个网站 · 1 个游戏 · 1 个研究工作台<br>每支 80 秒 · 1080p · 中文字幕",
+    "films_meta": "4 个网站 · 1 个游戏 · 1 个研究工作台<br>每支 80 秒 · 1080p · 中英文双版本",
     "films_p": "发现能力缺口 → 演化组件 → 对照评估 → 后续复用。每支短片都将这条过程与实际产出放在一起。",
     "arkbound_category": "网站 / 探索游戏",
     "arkbound_title": "从一次航行，到可持续探索的玩法。",
@@ -159,7 +159,7 @@ window.I18N = {
     "factor_note": "最终策略未建立相对预声明基准的优势。",
     "factor_watch": "观看演化故事 ↗",
     "production_h": "真实产出，保留证据。",
-    "production_p": "短片将历史实验记录与重新录制的产品操作结合呈现，区分能力采纳与产品完成情况，并保留各实验的局限和未成功结论。",
+    "production_p": "提供中英文双版本，片头、演化图、结果说明和字幕随版本切换，实录产品界面保留原始语言。短片结合历史记录与重新录制的实际操作，保留各实验的局限和未成功结论。",
     "manifest_link": "视频信息与来源 ↗",
     "closing_h": "让下一个进化故事，从你的任务开始。",
     "start": "开始使用 ↗",
@@ -188,15 +188,63 @@ window.I18N = {
   const video = document.querySelector('#film-player');
   const error = dialog.querySelector('.player-error');
   let trigger = null;
+  let activeFilm = null;
+  let mediaVersion = 0;
+  let metadataListener = null;
+  const pageLanguage = () => document.documentElement.lang.startsWith('zh') ? 'zh' : 'en';
+  const mediaSource = (link, lang) => link.getAttribute(`data-video-${lang}`);
+  const posterSource = (img, lang) => img.getAttribute(`data-poster-${lang}`);
+
+  function updateCards(lang) {
+    document.querySelectorAll('[data-poster-en]').forEach(img => {
+      img.src = posterSource(img, lang);
+    });
+    document.querySelectorAll('[data-film]').forEach(link => {
+      link.href = mediaSource(link, lang);
+      link.setAttribute('aria-label', `${lang === 'zh' ? '播放中文版' : 'Play English edition'} ${link.dataset.title}`);
+      const card = link.closest('.film-card');
+      card.querySelector('.film-duration').textContent = `${lang === 'zh' ? '中文' : 'EN'} · 01:20`;
+      const download = card.querySelector('[data-media-download]');
+      download.href = link.href;
+      download.textContent = `${lang === 'zh' ? '中文' : 'EN'} · MP4 ↓`;
+    });
+  }
+
+  function selectVideoLanguage(lang, preservePosition = false, play = true) {
+    if (!activeFilm) return;
+    const position = preservePosition ? video.currentTime : 0;
+    const version = ++mediaVersion;
+    if (metadataListener) video.removeEventListener('loadedmetadata', metadataListener);
+    error.hidden = true;
+    video.pause();
+    video.preload = 'metadata';
+    video.poster = posterSource(activeFilm.querySelector('img'), lang);
+    video.src = mediaSource(activeFilm, lang);
+    video.setAttribute('aria-label', `${activeFilm.dataset.title} / ${lang === 'zh' ? '中文版' : 'English edition'}`);
+    dialog.querySelectorAll('[data-video-lang]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.videoLang === lang));
+    });
+    metadataListener = () => {
+      metadataListener = null;
+      if (version !== mediaVersion || !dialog.open) return;
+      video.currentTime = Math.min(position, Math.max(0, video.duration - 0.05));
+    };
+    video.addEventListener('loadedmetadata', metadataListener, {once:true});
+    // preload="none" avoids fetching films until opened. Explicit load also
+    // permits a paused language switch to load metadata and restore its position.
+    video.load();
+    // Start within the click gesture so audible playback is allowed. Metadata
+    // restoration then seeks to the equivalent point in the other edition.
+    if (play) video.play().catch(() => { /* Native controls remain available. */ });
+  }
+
   function openFilm(link, from) {
     trigger = from;
+    activeFilm = link;
     document.querySelector('#film-title').textContent = link.dataset.title;
-    error.hidden = true;
-    video.poster = link.querySelector('img').src;
-    video.src = link.href;
     dialog.showModal();
     document.body.classList.add('film-open');
-    video.play().catch(() => { /* Native controls remain available if autoplay is blocked. */ });
+    selectVideoLanguage(pageLanguage());
   }
   document.querySelectorAll('[data-film]').forEach(link => link.addEventListener('click', event => {
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
@@ -205,9 +253,22 @@ window.I18N = {
   document.querySelectorAll('[data-open]').forEach(button => button.addEventListener('click', () => {
     openFilm(document.querySelector(`[data-film="${button.dataset.open}"]`), button);
   }));
+  dialog.querySelectorAll('[data-video-lang]').forEach(button => button.addEventListener('click', () => {
+    if (button.getAttribute('aria-pressed') === 'true') return;
+    selectVideoLanguage(button.dataset.videoLang, true, !video.paused);
+  }));
+  window.addEventListener('ae:languagechange', event => {
+    updateCards(event.detail.lang);
+    if (dialog.open) selectVideoLanguage(event.detail.lang, true, !video.paused);
+  });
+  updateCards(pageLanguage());
   dialog.querySelector('.close-player').addEventListener('click', () => dialog.close());
   dialog.addEventListener('close', () => {
-    video.pause(); video.removeAttribute('src'); video.load();
+    ++mediaVersion;
+    if (metadataListener) video.removeEventListener('loadedmetadata', metadataListener);
+    metadataListener = null;
+    video.pause(); video.removeAttribute('src'); video.preload = 'none'; video.load();
+    activeFilm = null;
     document.body.classList.remove('film-open');
     trigger?.focus({preventScroll:true});
   });
@@ -217,7 +278,11 @@ window.I18N = {
     if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) dialog.close();
   });
   dialog.querySelectorAll('[data-seek]').forEach(button => button.addEventListener('click', () => {
-    const seek = () => { video.currentTime = Number(button.dataset.seek); video.play().catch(() => {}); };
+    const version = mediaVersion;
+    const seek = () => {
+      if (version !== mediaVersion || !dialog.open) return;
+      video.currentTime = Number(button.dataset.seek); video.play().catch(() => {});
+    };
     if (video.readyState >= 1) seek();
     else video.addEventListener('loadedmetadata', seek, {once:true});
   }));
